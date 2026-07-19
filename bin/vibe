@@ -70,7 +70,7 @@ script_dir() {
 }
 
 VIBE_HOME="$(dirname "$(script_dir)")"      # <repo>/bin/vibe -> <repo>
-TEMPLATE_DIR="${VIBE_TEMPLATE_DIR:-$VIBE_HOME/templates}"
+TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$VIBE_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
 # Pure bash: no sed, so a value containing the delimiter (worktree paths hold

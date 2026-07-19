@@ -1,12 +1,13 @@
 ---
 name: project-status-scaffold
-description: Ensures every repo has an up-to-date PROJECT_STATUS.md (long-lived project state) and each worktree a HANDOFF.md (short-lived session handoff), and keeps them current. Use this skill whenever starting work in a repo that lacks these files, when the user says "scaffold status files", "set up handoff", or "update project status", AND proactively at the end of a work session to record what changed. Always check for and maintain these two files when working across the Mac-local / Linux-server vibe workflow, even if the user does not explicitly ask.
+description: Ensures every repo has an up-to-date PROJECT_STATUS.md (long-lived project state) and each worktree a HANDOFF.md (short-lived session handoff), and keeps them current. Use this skill whenever starting work in a repo that lacks these files, when the user says "scaffold status files", "set up handoff", or "update project status", AND proactively at the end of a work session to record what changed. Always check for and maintain these two files when work moves between machines, worktrees, or sessions, even if the user does not explicitly ask.
 ---
 
 # Project Status & Handoff Scaffold
 
-This skill maintains two Markdown files that let work move cleanly between the
-Mac (local) and the Linux server, and across sessions/agents.
+This skill maintains two Markdown files that let work move cleanly across
+sessions, worktrees, machines, and agents — so the next session can pick up
+without re-reading the whole diff to work out where things stand.
 
 ## The two files (different lifespans)
 
@@ -14,8 +15,9 @@ Mac (local) and the Linux server, and across sessions/agents.
   picture of the project: goal, architecture, key decisions, TODOs, open
   questions. Survives across all tasks and branches. Committed to git.
 - **HANDOFF.md** — lives at the **worktree root**, short-lived. "Where am I
-  right now, what should the next session (on the other machine) do first."
-  One per worktree/branch. Usually git-ignored or committed per taste.
+  right now, and what should the next session do first?" One per
+  worktree/branch. Usually git-ignored or committed per taste — commit it if
+  the handoff has to reach another machine.
 
 ## When to act
 
@@ -24,7 +26,7 @@ Mac (local) and the Linux server, and across sessions/agents.
    missing in the current worktree, create it too.
 2. **On request** — user asks to scaffold, set up, or update these files.
 3. **At the end of a work session (proactive)** — before wrapping up, update
-   both files so the other machine can pick up:
+   both files so the next session can pick up:
    - Update `HANDOFF.md`: current status, next steps, open PRs, gotchas.
    - Update `PROJECT_STATUS.md` **only** when something durable changed: a new
      decision, an architecture change, a TODO completed or added.

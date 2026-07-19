@@ -32,7 +32,7 @@ script_dir() {
 
 SKILL_DIR="$(script_dir)"
 TOOLKIT_HOME="$(dirname "$(dirname "$SKILL_DIR")")" # skills/<name>/ -> repo root
-TEMPLATE_DIR="${VIBE_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
+TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
 # Pure bash: no sed, so a value containing slashes cannot corrupt the result.
