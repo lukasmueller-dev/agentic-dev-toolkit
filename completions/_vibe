@@ -1,0 +1,76 @@
+#compdef vibe
+#
+# zsh completion for vibe.
+#
+# Installed by install.sh to ~/.zsh/completions/_vibe. That directory has to be
+# on $fpath *before* compinit runs, so add this to ~/.zshrc above any
+# `compinit` line:
+#
+#   fpath=(~/.zsh/completions $fpath)
+#   autoload -Uz compinit && compinit
+#
+# The filename must stay `_vibe` — zsh finds completers by name.
+
+_vibe_tasks() {
+  # Task directories under <worktree root>/<repo>/. Computed directly rather
+  # than by calling `vibe list`, so completion works inside a worktree too.
+  local root repo common cfg
+  cfg="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
+  root="${VIBE_WORKTREE_ROOT:-}"
+  if [[ -z "$root" && -r "$cfg" ]]; then
+    root="${$(sed -n 's/^[[:space:]]*VIBE_WORKTREE_ROOT[[:space:]]*=[[:space:]]*//p' "$cfg" | tail -1)//[\"\']/}"
+  fi
+  root="${root:-$HOME/git/worktrees}"
+
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [[ "$common" == /* ]] || common="$PWD/$common"
+  repo="${${common:h}:t}"
+
+  [[ -d "$root/$repo" ]] || return 0
+  local -a tasks
+  tasks=("$root/$repo"/*(/N:t))
+  (($#tasks)) && _describe -t tasks 'task' tasks
+}
+
+_vibe() {
+  local -a commands
+  commands=(
+    'start:Create branch + worktree for a task and open the agent'
+    'attach:Re-enter an existing task session or worktree'
+    'status:Show environment, worktrees, tmux sessions and open PRs'
+    'list:List task worktrees for this repo'
+    'done:Remove a task worktree (branch is kept)'
+    'sync:Commit handoff files and the rest, then push'
+    'resume:Fast-forward pull only'
+    'where:Print the detected environment and why'
+    'doctor:Check tools, paths, config and upstream state'
+    'help:Show usage'
+  )
+
+  _arguments -C \
+    '1:command:->cmd' \
+    '*::arg:->args'
+
+  case "$state" in
+    cmd)
+      _describe -t commands 'vibe command' commands
+      ;;
+    args)
+      case "${words[1]}" in
+        attach)
+          _vibe_tasks
+          ;;
+        done)
+          _arguments \
+            '(-f --force)'{-f,--force}'[remove even if dirty or unpushed]' \
+            '*:task:_vibe_tasks'
+          ;;
+        start)
+          _message 'new task name'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_vibe "$@"

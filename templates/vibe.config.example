@@ -1,0 +1,46 @@
+# vibe configuration — copy to ~/.config/vibe/config
+#
+#   mkdir -p ~/.config/vibe
+#   cp templates/vibe.config.example ~/.config/vibe/config
+#   chmod 600 ~/.config/vibe/config      # it can hold your ntfy topic
+#
+# Precedence: environment variable > this file > built-in default.
+# So an env var set in your shell always wins over a value here.
+#
+# FORMAT: plain KEY=VALUE lines only, one per line. No command substitution,
+# no pipes, no conditionals. vibe sources this file, but the Claude Code hooks
+# in claude/hooks/ *parse* it instead — anything cleverer than an assignment
+# would work in one place and silently not in the other.
+#
+# Run `vibe doctor` after editing; it validates the format and reports the
+# resulting values.
+
+# Where per-task worktrees are created, as <root>/<repo>/<task>.
+# Default: ~/git/worktrees
+#VIBE_WORKTREE_ROOT=/home/you/git/worktrees
+
+# The agent launched by `vibe start` / `vibe attach`.
+# Anything runnable works — vibe never assumes a particular agent.
+# Default: claude
+#VIBE_AGENT_CMD=claude
+
+# Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
+# Default: vibe
+#VIBE_TMUX_PREFIX=vibe
+
+# Your VPS hostname, as `hostname` reports it there.
+# Only a fallback: vibe treats any SSH session as the server first. Set this
+# so detection still works in a local shell on the VPS (a cron job, a tmux
+# session started at boot) where SSH_CONNECTION is not set.
+# Default: unset
+#VIBE_SERVER_HOSTNAME=your-vps-hostname
+
+# ntfy.sh topic for phone notifications. Unset means notifications are off.
+#
+# On the public ntfy.sh instance the topic name IS the access control: anyone
+# who knows it can read your notifications and publish to them. Use a long
+# random string, not something guessable. Generate one with:
+#   echo "claude-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16)"
+# See docs/notifications.md.
+# Default: unset
+#VIBE_NTFY_TOPIC=claude-xxxxxxxxxxxxxxxx

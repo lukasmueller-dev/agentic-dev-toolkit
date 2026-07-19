@@ -16,24 +16,58 @@
 #   vibe attach <task>    Re-attach to an existing task session (server) or cd into it.
 #   vibe status           Show all worktrees, their branches, tmux state, PRs.
 #   vibe list             Short list of tasks.
-#   vibe done <task>      Remove the worktree (branch is kept).
+#   vibe done [--force] <task>
+#                         Remove the worktree (branch is kept). Refuses if the
+#                         worktree is dirty or holds unpushed commits.
 #   vibe sync             Commit handoff files (own commit) + the rest, then push.
 #                         Aborts on divergence.
 #   vibe resume           Pull remote (fast-forward only). Aborts if dirty/diverged.
 #   vibe where            Print detected environment (local|server) and why.
+#   vibe doctor           Check tools, paths, config and upstream state.
 #
 # Requires: git, tmux (server only for persistence), optionally gh (for PR info).
+#
+# Config: ~/.config/vibe/config (KEY=VALUE). Environment variables win over it.
+#         See templates/vibe.config.example. Run 'vibe doctor' to validate.
 
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Configuration (override via environment)
+# Configuration
+#
+# Precedence, highest first:
+#   1. environment variable
+#   2. ~/.config/vibe/config   (override with $VIBE_CONFIG_FILE)
+#   3. built-in default
+#
+# The config file is sourced, so it must be valid shell — but keep it to plain
+# KEY=VALUE lines. `vibe doctor` enforces that, and the Claude Code hooks in
+# claude/hooks/ read the same file by parsing rather than sourcing, so anything
+# cleverer than an assignment will work here and silently not work there.
 # ---------------------------------------------------------------------------
-VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}"
-VIBE_AGENT_CMD="${VIBE_AGENT_CMD:-claude}"   # the agent launched in each session
-VIBE_TMUX_PREFIX="${VIBE_TMUX_PREFIX:-vibe}" # tmux session name prefix
-# Set VIBE_SERVER_HOSTNAME to your VPS hostname for a reliable fallback check.
-VIBE_SERVER_HOSTNAME="${VIBE_SERVER_HOSTNAME:-}"
+VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
+
+# Capture what the environment set before the config file can shadow it.
+_env_worktree_root="${VIBE_WORKTREE_ROOT:-}"
+_env_agent_cmd="${VIBE_AGENT_CMD:-}"
+_env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
+_env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
+_env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
+
+if [[ -r "$VIBE_CONFIG_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$VIBE_CONFIG_FILE"
+fi
+
+# env > config > default
+VIBE_WORKTREE_ROOT="${_env_worktree_root:-${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}}"
+VIBE_AGENT_CMD="${_env_agent_cmd:-${VIBE_AGENT_CMD:-claude}}"
+VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
+VIBE_SERVER_HOSTNAME="${_env_server_hostname:-${VIBE_SERVER_HOSTNAME:-}}"
+VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
+unset _env_worktree_root _env_agent_cmd _env_tmux_prefix \
+  _env_server_hostname _env_ntfy_topic
+
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
 VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 
@@ -288,19 +322,60 @@ cmd_list() {
   done
 }
 
+# unpushed_commits DIR — echo how many commits in DIR's branch exist nowhere
+# on a remote. Covers the no-upstream case too: a branch that was never pushed
+# has all of its commits unreachable from every remote ref.
+unpushed_commits() {
+  local dir="$1"
+  if git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    git -C "$dir" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0
+  else
+    git -C "$dir" rev-list --count HEAD --not --remotes 2>/dev/null || echo 0
+  fi
+}
+
 cmd_done() {
   need git
-  local task="${1:-}"
-  [[ -n "$task" ]] || die "usage: vibe done <task>"
-  local branch
+  local force=0 task=""
+  while (($#)); do
+    case "$1" in
+      -f | --force) force=1 ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] <task>)" ;;
+      *) task="$1" ;;
+    esac
+    shift
+  done
+  [[ -n "$task" ]] || die "usage: vibe done [--force] <task>"
+
+  local branch repo main dir
   branch="$(slug "$task")"
-  local repo
   repo="$(repo_name)"
-  local main
   main="$(main_repo_root)"
-  local dir
   dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree at $dir"
+
+  # Refuse to destroy work. This used to be an unconditional
+  # `git worktree remove --force`, which silently threw away uncommitted
+  # changes and left unpushed commits reachable only from a branch you were
+  # about to stop looking at.
+  if [[ "$force" != 1 ]]; then
+    local dirty ahead
+    dirty="$(git -C "$dir" status --porcelain 2>/dev/null)"
+    ahead="$(unpushed_commits "$dir")"
+
+    if [[ -n "$dirty" ]]; then
+      warn "worktree has uncommitted changes:"
+      printf '%s\n' "$dirty" | sed 's/^/    /' >&2
+      die "refusing to remove $dir
+  Commit them, or run 'vibe sync', or re-run with --force to discard them."
+    fi
+
+    if ((ahead > 0)); then
+      die "branch '$branch' has $ahead commit(s) that are on no remote.
+  Run 'vibe sync' to push them, or re-run with --force to remove the
+  worktree anyway (the branch is kept, so the commits stay reachable)."
+    fi
+  fi
 
   # kill tmux session if present
   local sess
@@ -309,7 +384,14 @@ cmd_done() {
     tmux kill-session -t "$sess"
     info "killed tmux session $sess"
   fi
-  git -C "$main" worktree remove "$dir" --force
+
+  # --force only when explicitly asked: otherwise let git apply its own checks
+  # as a second line of defence.
+  if [[ "$force" == 1 ]]; then
+    git -C "$main" worktree remove "$dir" --force
+  else
+    git -C "$main" worktree remove "$dir"
+  fi
   info "removed worktree $dir (branch '$branch' kept)"
 }
 
@@ -414,6 +496,152 @@ cmd_where() {
 }
 
 # ---------------------------------------------------------------------------
+# vibe doctor — check everything vibe depends on, and report rather than fix.
+# Exit 1 if anything is genuinely broken; warnings alone still exit 0.
+# ---------------------------------------------------------------------------
+cmd_doctor() {
+  local fail=0 warned=0
+  local pass="  ${c_grn}ok${c_off}  " bad="  ${c_red}FAIL${c_off}" wrn="  ${c_yel}warn${c_off}"
+
+  d_ok() { printf '%s %s\n' "$pass" "$*"; }
+  d_no() {
+    printf '%s %s\n' "$bad" "$*"
+    fail=1
+  }
+  d_wn() {
+    printf '%s %s\n' "$wrn" "$*"
+    warned=1
+  }
+
+  printf '%sTools%s\n' "$c_bld" "$c_off"
+  if command -v git >/dev/null 2>&1; then
+    d_ok "git         $(git --version | awk '{print $3}')"
+  else
+    d_no "git         not installed — vibe cannot work without it"
+  fi
+
+  if command -v tmux >/dev/null 2>&1; then
+    d_ok "tmux        $(tmux -V | awk '{print $2}')"
+  elif [[ "$(detect_env)" == "server" ]]; then
+    d_no "tmux        not installed — sessions will not survive disconnect"
+  else
+    d_wn "tmux        not installed (only needed on the server)"
+  fi
+
+  if command -v gh >/dev/null 2>&1; then
+    if gh auth status >/dev/null 2>&1; then
+      d_ok "gh          authenticated"
+    else
+      d_wn "gh          installed but not authenticated — PR list will be empty"
+    fi
+  else
+    d_wn "gh          not installed (optional — used for PR info)"
+  fi
+
+  # The agent command may legitimately be a shell function or an alias in an
+  # interactive shell, so a miss here is a warning rather than a failure.
+  if command -v "${VIBE_AGENT_CMD%% *}" >/dev/null 2>&1; then
+    d_ok "agent       $VIBE_AGENT_CMD"
+  else
+    d_wn "agent       '$VIBE_AGENT_CMD' not on PATH (set VIBE_AGENT_CMD)"
+  fi
+
+  printf '\n%sPaths%s\n' "$c_bld" "$c_off"
+  if [[ -d "$VIBE_WORKTREE_ROOT" ]]; then
+    d_ok "worktrees   $VIBE_WORKTREE_ROOT"
+  elif [[ -e "$VIBE_WORKTREE_ROOT" ]]; then
+    d_no "worktrees   $VIBE_WORKTREE_ROOT exists but is not a directory"
+  else
+    d_wn "worktrees   $VIBE_WORKTREE_ROOT does not exist yet (created on first 'vibe start')"
+  fi
+
+  if [[ -f "$TEMPLATE_DIR/HANDOFF.md" ]]; then
+    d_ok "templates   $TEMPLATE_DIR"
+  else
+    d_no "templates   no HANDOFF.md under $TEMPLATE_DIR — new worktrees will not be seeded"
+  fi
+
+  printf '\n%sConfig%s\n' "$c_bld" "$c_off"
+  if [[ ! -e "$VIBE_CONFIG_FILE" ]]; then
+    d_wn "config      $VIBE_CONFIG_FILE not present (using env vars and defaults)"
+  elif [[ ! -r "$VIBE_CONFIG_FILE" ]]; then
+    d_no "config      $VIBE_CONFIG_FILE is not readable"
+  else
+    # This file is sourced. Insist it is only plain assignments, both because
+    # anything else is a surprise and because the Claude Code hooks parse it
+    # instead of sourcing it — they would silently disagree.
+    local bad_lines
+    # SC2016: the '$' and backtick below are regex, not shell expansion —
+    # single quotes are exactly what is wanted here.
+    # shellcheck disable=SC2016
+    bad_lines="$(grep -nvE '^[[:space:]]*(#.*)?$|^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=[^;&|`$()]*$' \
+      "$VIBE_CONFIG_FILE" || true)"
+    if [[ -n "$bad_lines" ]]; then
+      d_no "config      $VIBE_CONFIG_FILE has lines that are not plain KEY=VALUE:"
+      printf '%s\n' "$bad_lines" | sed 's/^/         /'
+    else
+      d_ok "config      $VIBE_CONFIG_FILE"
+    fi
+  fi
+
+  if [[ -n "$VIBE_NTFY_TOPIC" ]]; then
+    d_ok "ntfy topic  set (${#VIBE_NTFY_TOPIC} chars)"
+  else
+    d_wn "ntfy topic  unset — phone notifications are off (see docs/notifications.md)"
+  fi
+
+  printf '\n%sEnvironment%s\n' "$c_bld" "$c_off"
+  d_ok "detected    $(detect_env) ($(env_reason))"
+  if [[ "$(detect_env)" == "local" && -z "$VIBE_SERVER_HOSTNAME" ]]; then
+    d_wn "hostname    VIBE_SERVER_HOSTNAME unset — server detection relies on SSH vars alone"
+  fi
+
+  printf '\n%sRepository%s\n' "$c_bld" "$c_off"
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    d_wn "repo        not inside a git repository (run doctor from a repo for more)"
+  else
+    local branch
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+    d_ok "repo        $(repo_name) on '$branch'"
+
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+      d_wn "tree        uncommitted changes present"
+    else
+      d_ok "tree        clean"
+    fi
+
+    if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+      # Report against the last fetch; doctor is a read-only command and must
+      # not reach out to the network behind your back.
+      local a b
+      a="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+      b="$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+      if ((a == 0 && b == 0)); then
+        d_ok "upstream    in sync as of last fetch"
+      elif ((a > 0 && b > 0)); then
+        d_no "upstream    DIVERGED — $a ahead, $b behind (resolve before sync/resume)"
+      elif ((a > 0)); then
+        d_wn "upstream    $a commit(s) ahead — run 'vibe sync' to push"
+      else
+        d_wn "upstream    $b commit(s) behind — run 'vibe resume' to fast-forward"
+      fi
+    else
+      d_wn "upstream    no upstream for '$branch' — nothing to sync against yet"
+    fi
+  fi
+
+  printf '\n'
+  if ((fail)); then
+    printf '%svibe doctor: problems found%s\n' "$c_red" "$c_off"
+    return 1
+  elif ((warned)); then
+    printf '%svibe doctor: healthy, with warnings%s\n' "$c_yel" "$c_off"
+  else
+    printf '%svibe doctor: healthy%s\n' "$c_grn" "$c_off"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 main() {
@@ -428,6 +656,7 @@ main() {
     sync) cmd_sync "$@" ;;
     resume) cmd_resume "$@" ;;
     where) cmd_where "$@" ;;
+    doctor) cmd_doctor "$@" ;;
     -h | --help | help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//' | sed '/^!/d'
       ;;
