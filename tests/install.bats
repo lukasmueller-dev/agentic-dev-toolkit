@@ -51,12 +51,25 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 }
 
 @test "install: skips skills/_template" {
-  mkdir -p "$REPO_ROOT/skills/_template"
-  printf -- '---\nname: x\n---\n' >"$REPO_ROOT/skills/_template/SKILL.md"
+  # Asserts against the template that really lives in the repo. An earlier
+  # version of this test created a fixture under $REPO_ROOT and rm -rf'd it
+  # afterwards, which deleted the real skills/_template. No test may write
+  # anything outside $BATS_TEST_TMPDIR.
+  [ -d "$REPO_ROOT/skills/_template" ]
+
   run "$INSTALL" skills
-  rm -rf "$REPO_ROOT/skills/_template"
   [ "$status" -eq 0 ]
   [ ! -e "$HOME/.claude/skills/_template" ]
+  # and the real skills were still installed
+  [ -L "$HOME/.claude/skills/codebase-health" ]
+}
+
+@test "tests never write outside BATS_TEST_TMPDIR" {
+  # A standing guard: the repo must be clean of stray files after the suite
+  # touches it. Catches the class of bug described above.
+  run git -C "$REPO_ROOT" status --porcelain --untracked-files=all -- skills tests
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "install: backs up a real file instead of deleting it" {
