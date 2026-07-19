@@ -341,13 +341,13 @@ run_doctor() {
     dst="${rest%%	*}"
     if [[ -L "$dst" ]]; then
       target="$(link_target "$dst" 2>/dev/null || true)"
-      if [[ "$target" == "$src" ]]; then
-        if [[ -e "$dst" ]]; then
-          printf '%s %s\n' "$pass" "$dst"
-        else
-          printf '%s %s -> %s (dangling)\n' "$bad" "$dst" "$target"
-          fail=1
-        fi
+      # A broken link is broken no matter what it points at, so this is
+      # checked before comparing targets.
+      if [[ ! -e "$dst" ]]; then
+        printf '%s %s -> %s (dangling)\n' "$bad" "$dst" "$target"
+        fail=1
+      elif [[ "$target" == "$src" ]]; then
+        printf '%s %s\n' "$pass" "$dst"
       elif [[ "$target" == "$REPO"/* ]]; then
         printf '%s %s -> %s (points elsewhere in this repo)\n' "$wrn" "$dst" "$target"
         warned=1

@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel an in-flight run when the branch is pushed again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: shellcheck + shfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck and shfmt
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL -o /usr/local/bin/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64
+          chmod +x /usr/local/bin/shfmt
+          shellcheck --version
+          shfmt --version
+
+      # Every shell file in the repo, found by extension AND by shebang, so a
+      # script added without a .sh suffix (bin/vibe) still gets checked.
+      - name: Collect shell files
+        id: collect
+        run: |
+          {
+            echo 'files<<EOF'
+            shfmt -f . | sort -u
+            echo EOF
+          } >>"$GITHUB_OUTPUT"
+          shfmt -f . | sort -u
+
+      - name: shellcheck
+        run: shfmt -f . | xargs -r shellcheck
+
+      # Completions are sourced, not executed, and have no shebang, so shfmt -f
+      # does not list them. They still have to be valid.
+      - name: shellcheck completions
+        run: shellcheck -s bash completions/vibe.bash
+
+      - name: shfmt (check formatting)
+        run: shfmt -d -i 2 -ci .
+
+  test:
+    name: bats (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS matters here: it ships bash 3.2 and BSD sed/stat, which have
+        # already caught two portability bugs this suite exists to prevent.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bats jq
+
+      - name: Install bats (macOS)
+        if: runner.os == 'macOS'
+        run: brew install bats-core jq
+
+      - name: Show shell versions
+        run: |
+          bash --version | head -1
+          bats --version
+          git --version
+
+      - name: Run tests
+        run: bats --print-output-on-failure tests/
+
+  validate:
+    name: validate JSON and skills
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: settings.json is valid JSON
+        run: jq empty claude/settings.json
+
+      - name: VS Code snippets parse once comments are stripped
+        run: |
+          for f in vscode/*.jsonc; do
+            sed 's|^[[:space:]]*//.*$||' "$f" | jq empty || {
+              echo "::error file=$f::not valid JSON after stripping comments"
+              exit 1
+            }
+          done
+
+      - name: every skill has frontmatter with name and description
+        run: |
+          status=0
+          for f in skills/*/SKILL.md; do
+            case "$f" in skills/_*) continue ;; esac
+            head -1 "$f" | grep -qx -- '---' || {
+              echo "::error file=$f::must start with YAML frontmatter"
+              status=1
+              continue
+            }
+            fm="$(sed -n '2,/^---$/p' "$f")"
+            printf '%s' "$fm" | grep -q '^name:' || {
+              echo "::error file=$f::frontmatter is missing 'name:'"
+              status=1
+            }
+            printf '%s' "$fm" | grep -q '^description:' || {
+              echo "::error file=$f::frontmatter is missing 'description:'"
+              status=1
+            }
+            # The open Agent Skills spec requires name to match the directory
+            # and to be lowercase alphanumerics plus hyphens.
+            dir="$(basename "$(dirname "$f")")"
+            name="$(printf '%s' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)"
+            [ "$name" = "$dir" ] || {
+              echo "::error file=$f::name '$name' does not match directory '$dir'"
+              status=1
+            }
+            printf '%s' "$name" | grep -Eqx '[a-z0-9]+(-[a-z0-9]+)*' || {
+              echo "::error file=$f::name '$name' is not lowercase-hyphenated"
+              status=1
+            }
+          done
+          exit "$status"
+
+      - name: templates stay tool-neutral
+        run: |
+          # A template that names a specific CLI re-couples the document to one
+          # workflow, which is the drift this layout exists to prevent.
+          if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' templates/HANDOFF.md templates/PROJECT_STATUS.md; then
+            echo "::error::templates must not name a specific tool or machine"
+            exit 1
+          fi

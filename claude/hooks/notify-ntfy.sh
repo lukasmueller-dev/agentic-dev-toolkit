@@ -24,7 +24,10 @@ CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
 topic="${VIBE_NTFY_TOPIC:-}"
 if [[ -z "$topic" && -r "$CONFIG_FILE" ]]; then
   # Read without sourcing: this file is config, not code.
-  topic="$(sed -n 's/^[[:space:]]*\(VIBE_NTFY_TOPIC\|ntfy_topic\)[[:space:]]*=[[:space:]]*//p' \
+  # `sed -E`, not a BRE with \|: BSD sed (macOS) does not support alternation
+  # in basic regexes and silently matches nothing, which would leave
+  # notifications quietly switched off on the Mac.
+  topic="$(sed -E -n 's/^[[:space:]]*VIBE_NTFY_TOPIC[[:space:]]*=[[:space:]]*//p' \
     "$CONFIG_FILE" | tail -1 | tr -d '"'\''' | tr -d '[:space:]')"
 fi
 [[ -n "$topic" ]] || exit 0
