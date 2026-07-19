@@ -30,8 +30,8 @@ set -euo pipefail
 # Configuration (override via environment)
 # ---------------------------------------------------------------------------
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}"
-VIBE_AGENT_CMD="${VIBE_AGENT_CMD:-claude}"       # the agent launched in each session
-VIBE_TMUX_PREFIX="${VIBE_TMUX_PREFIX:-vibe}"      # tmux session name prefix
+VIBE_AGENT_CMD="${VIBE_AGENT_CMD:-claude}"   # the agent launched in each session
+VIBE_TMUX_PREFIX="${VIBE_TMUX_PREFIX:-vibe}" # tmux session name prefix
 # Set VIBE_SERVER_HOSTNAME to your VPS hostname for a reliable fallback check.
 VIBE_SERVER_HOSTNAME="${VIBE_SERVER_HOSTNAME:-}"
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
@@ -40,13 +40,20 @@ VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
-c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'
-c_dim=$'\033[2m'; c_bld=$'\033[1m'; c_off=$'\033[0m'
+c_red=$'\033[31m'
+c_grn=$'\033[32m'
+c_yel=$'\033[33m'
+c_dim=$'\033[2m'
+c_bld=$'\033[1m'
+c_off=$'\033[0m'
 
-die()  { printf '%svibe: %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
+die() {
+  printf '%svibe: %s%s\n' "$c_red" "$*" "$c_off" >&2
+  exit 1
+}
 info() { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '%s%s%s\n' "$c_yel" "$*" "$c_off"; }
-ok()   { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
+ok() { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
 
 # ---------------------------------------------------------------------------
@@ -69,17 +76,18 @@ script_dir() {
   cd -P "$(dirname "$src")" && pwd
 }
 
-VIBE_HOME="$(dirname "$(script_dir)")"      # <repo>/bin/vibe -> <repo>
+VIBE_HOME="$(dirname "$(script_dir)")" # <repo>/bin/vibe -> <repo>
 TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$VIBE_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
 # Pure bash: no sed, so a value containing the delimiter (worktree paths hold
 # slashes) cannot corrupt the substitution.
 render_template() {
-  local tpl="$1"; shift
+  local tpl="$1"
+  shift
   local content
   content="$(cat "$tpl")"
-  while (( $# >= 2 )); do
+  while (($# >= 2)); do
     content="${content//$1/$2}"
     shift 2
   done
@@ -94,17 +102,21 @@ render_template() {
 # ---------------------------------------------------------------------------
 detect_env() {
   if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
-    echo "server"; return
+    echo "server"
+    return
   fi
   if [[ -n "$VIBE_SERVER_HOSTNAME" && "$(hostname)" == "$VIBE_SERVER_HOSTNAME" ]]; then
-    echo "server"; return
+    echo "server"
+    return
   fi
   echo "local"
 }
 
 env_reason() {
-  if [[ -n "${SSH_CONNECTION:-}" ]]; then echo "SSH_CONNECTION is set"
-  elif [[ -n "${SSH_TTY:-}" ]]; then echo "SSH_TTY is set"
+  if [[ -n "${SSH_CONNECTION:-}" ]]; then
+    echo "SSH_CONNECTION is set"
+  elif [[ -n "${SSH_TTY:-}" ]]; then
+    echo "SSH_TTY is set"
   elif [[ -n "$VIBE_SERVER_HOSTNAME" && "$(hostname)" == "$VIBE_SERVER_HOSTNAME" ]]; then
     echo "hostname matches VIBE_SERVER_HOSTNAME"
   else echo "no SSH session and hostname does not match server"; fi
@@ -113,11 +125,12 @@ env_reason() {
 # ---------------------------------------------------------------------------
 # Git helpers
 # ---------------------------------------------------------------------------
-repo_root()  { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repository."; }
-repo_name()  { basename "$(main_repo_root)"; }
+repo_root() { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repository."; }
+repo_name() { basename "$(main_repo_root)"; }
 # common dir points at the main repo's .git even from inside a worktree
 main_repo_root() {
-  local common; common="$(git rev-parse --git-common-dir 2>/dev/null)" || die "not a git repo."
+  local common
+  common="$(git rev-parse --git-common-dir 2>/dev/null)" || die "not a git repo."
   # git-common-dir may be relative; resolve it, then take its parent
   common="$(cd "$(dirname "$common")" && pwd)/$(basename "$common")"
   dirname "$common"
@@ -145,14 +158,17 @@ seed_handoff() {
   [[ -f "$f" ]] && return 0
 
   local tpl="$TEMPLATE_DIR/HANDOFF.md"
-  [[ -f "$tpl" ]] || { warn "no HANDOFF template at $tpl — skipping seed"; return 0; }
+  [[ -f "$tpl" ]] || {
+    warn "no HANDOFF template at $tpl — skipping seed"
+    return 0
+  }
 
   render_template "$tpl" \
-    '<repo>'     "$repo" \
-    '<branch>'   "$branch" \
+    '<repo>' "$repo" \
+    '<branch>' "$branch" \
     '<worktree>' "$dir" \
-    '<date>'     "$(date '+%Y-%m-%d %H:%M %Z')" \
-    '<machine>'  "$(detect_env) ($(hostname))" > "$f"
+    '<date>' "$(date '+%Y-%m-%d %H:%M %Z')" \
+    '<machine>' "$(detect_env) ($(hostname))" >"$f"
   info "seeded HANDOFF.md"
 }
 
@@ -161,11 +177,16 @@ seed_handoff() {
 # ---------------------------------------------------------------------------
 cmd_start() {
   need git
-  local task="${1:-}"; [[ -n "$task" ]] || die "usage: vibe start <task>"
-  local branch; branch="$(slug "$task")"
-  local repo; repo="$(repo_name)"
-  local main; main="$(main_repo_root)"
-  local dir; dir="$(worktree_dir "$repo" "$branch")"
+  local task="${1:-}"
+  [[ -n "$task" ]] || die "usage: vibe start <task>"
+  local branch
+  branch="$(slug "$task")"
+  local repo
+  repo="$(repo_name)"
+  local main
+  main="$(main_repo_root)"
+  local dir
+  dir="$(worktree_dir "$repo" "$branch")"
 
   if [[ -d "$dir" ]]; then
     info "worktree already exists, attaching: $dir"
@@ -186,11 +207,13 @@ cmd_start() {
 
 open_session() {
   local repo="$1" branch="$2" dir="$3"
-  local env; env="$(detect_env)"
+  local env
+  env="$(detect_env)"
 
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess; sess="$(tmux_session_name "$repo" "$branch")"
+    local sess
+    sess="$(tmux_session_name "$repo" "$branch")"
     if tmux has-session -t "$sess" 2>/dev/null; then
       info "attaching to existing tmux session: $sess"
     else
@@ -212,17 +235,22 @@ open_session() {
 }
 
 cmd_attach() {
-  local task="${1:-}"; [[ -n "$task" ]] || die "usage: vibe attach <task>"
-  local branch; branch="$(slug "$task")"
-  local repo; repo="$(repo_name)"
-  local dir; dir="$(worktree_dir "$repo" "$branch")"
+  local task="${1:-}"
+  [[ -n "$task" ]] || die "usage: vibe attach <task>"
+  local branch
+  branch="$(slug "$task")"
+  local repo
+  repo="$(repo_name)"
+  local dir
+  dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree for '$branch' (looked in $dir). Run: vibe start $task"
   open_session "$repo" "$branch" "$dir"
 }
 
 cmd_status() {
   need git
-  local repo; repo="$(repo_name 2>/dev/null || echo '?')"
+  local repo
+  repo="$(repo_name 2>/dev/null || echo '?')"
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
   printf '%sWorktrees%s\n' "$c_bld" "$c_off"
@@ -248,9 +276,13 @@ cmd_status() {
 
 cmd_list() {
   need git
-  local repo; repo="$(repo_name)"
+  local repo
+  repo="$(repo_name)"
   local base="$VIBE_WORKTREE_ROOT/$repo"
-  [[ -d "$base" ]] || { echo "no tasks yet for $repo"; return; }
+  [[ -d "$base" ]] || {
+    echo "no tasks yet for $repo"
+    return
+  }
   for d in "$base"/*/; do
     [[ -d "$d" ]] && printf '  %s\n' "$(basename "$d")"
   done
@@ -258,17 +290,24 @@ cmd_list() {
 
 cmd_done() {
   need git
-  local task="${1:-}"; [[ -n "$task" ]] || die "usage: vibe done <task>"
-  local branch; branch="$(slug "$task")"
-  local repo; repo="$(repo_name)"
-  local main; main="$(main_repo_root)"
-  local dir; dir="$(worktree_dir "$repo" "$branch")"
+  local task="${1:-}"
+  [[ -n "$task" ]] || die "usage: vibe done <task>"
+  local branch
+  branch="$(slug "$task")"
+  local repo
+  repo="$(repo_name)"
+  local main
+  main="$(main_repo_root)"
+  local dir
+  dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree at $dir"
 
   # kill tmux session if present
-  local sess; sess="$(tmux_session_name "$repo" "$branch")"
+  local sess
+  sess="$(tmux_session_name "$repo" "$branch")"
   if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
-    tmux kill-session -t "$sess"; info "killed tmux session $sess"
+    tmux kill-session -t "$sess"
+    info "killed tmux session $sess"
   fi
   git -C "$main" worktree remove "$dir" --force
   info "removed worktree $dir (branch '$branch' kept)"
@@ -279,21 +318,23 @@ cmd_done() {
 cmd_sync() {
   need git
   git rev-parse --show-toplevel >/dev/null 2>&1 || die "not inside a git repository."
-  local branch; branch="$(git rev-parse --abbrev-ref HEAD)"
+  local branch
+  branch="$(git rev-parse --abbrev-ref HEAD)"
   [[ "$branch" != "HEAD" ]] || die "detached HEAD — checkout a branch first."
-  local root; root="$(git rev-parse --show-toplevel)"
+  local root
+  root="$(git rev-parse --show-toplevel)"
 
   # 1. handoff/status files first, as their own commit
   local handoff_paths=() f
   for f in "${VIBE_HANDOFF_FILES[@]}"; do
     [[ -e "$root/$f" ]] || continue
-    if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1 \
-         || ! git diff --quiet -- "$f" 2>/dev/null \
-         || ! git diff --cached --quiet -- "$f" 2>/dev/null; then
+    if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1 ||
+      ! git diff --quiet -- "$f" 2>/dev/null ||
+      ! git diff --cached --quiet -- "$f" 2>/dev/null; then
       handoff_paths+=("$f")
     fi
   done
-  if (( ${#handoff_paths[@]} )); then
+  if ((${#handoff_paths[@]})); then
     git add -- "${handoff_paths[@]}"
     git commit -q -m "chore: handoff ($branch @ $(date '+%Y-%m-%d %H:%M'))" \
       -- "${handoff_paths[@]}"
@@ -306,26 +347,30 @@ cmd_sync() {
     git commit -q -m "vibe sync: $branch @ $(date '+%Y-%m-%d %H:%M')"
     info "committed remaining changes on $branch"
   else
-    (( ${#handoff_paths[@]} )) || info "nothing to commit"
+    ((${#handoff_paths[@]})) || info "nothing to commit"
   fi
 
   # 3. push with divergence guard
   if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
     warn "no upstream set — pushing with -u"
     git push -u origin "$branch"
-    ok "pushed $branch (new upstream)"; return
+    ok "pushed $branch (new upstream)"
+    return
   fi
 
   git fetch -q
   local local_rev remote_rev base
-  local_rev="$(git rev-parse @)"; remote_rev="$(git rev-parse '@{u}')"
+  local_rev="$(git rev-parse @)"
+  remote_rev="$(git rev-parse '@{u}')"
   base="$(git merge-base @ '@{u}')"
 
-  if   [[ "$local_rev" == "$remote_rev" ]]; then ok "already in sync"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    ok "already in sync"
   elif [[ "$local_rev" == "$base" ]]; then
     die "remote is ahead. Run 'vibe resume' here first, then sync."
   elif [[ "$remote_rev" == "$base" ]]; then
-    git push -q origin "$branch"; ok "pushed $branch"
+    git push -q origin "$branch"
+    ok "pushed $branch"
   else
     die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync."
   fi
@@ -335,23 +380,28 @@ cmd_sync() {
 cmd_resume() {
   need git
   git rev-parse --show-toplevel >/dev/null 2>&1 || die "not inside a git repository."
-  local branch; branch="$(git rev-parse --abbrev-ref HEAD)"
+  local branch
+  branch="$(git rev-parse --abbrev-ref HEAD)"
 
-  [[ -z "$(git status --porcelain)" ]] || \
+  [[ -z "$(git status --porcelain)" ]] ||
     die "working tree has uncommitted changes. Commit or 'vibe sync' first."
 
   if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-    warn "no upstream for $branch — nothing to pull"; return
+    warn "no upstream for $branch — nothing to pull"
+    return
   fi
 
   git fetch -q
   local local_rev remote_rev base
-  local_rev="$(git rev-parse @)"; remote_rev="$(git rev-parse '@{u}')"
+  local_rev="$(git rev-parse @)"
+  remote_rev="$(git rev-parse '@{u}')"
   base="$(git merge-base @ '@{u}')"
 
-  if   [[ "$local_rev" == "$remote_rev" ]]; then ok "already up to date"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    ok "already up to date"
   elif [[ "$local_rev" == "$base" ]]; then
-    git merge -q --ff-only '@{u}'; ok "fast-forwarded $branch to remote"
+    git merge -q --ff-only '@{u}'
+    ok "fast-forwarded $branch to remote"
   elif [[ "$remote_rev" == "$base" ]]; then
     warn "you are ahead of remote — nothing to pull. Run 'vibe sync' to push."
   else
@@ -367,19 +417,21 @@ cmd_where() {
 # Dispatch
 # ---------------------------------------------------------------------------
 main() {
-  local cmd="${1:-status}"; shift || true
+  local cmd="${1:-status}"
+  shift || true
   case "$cmd" in
-    start)  cmd_start "$@";;
-    attach) cmd_attach "$@";;
-    status) cmd_status "$@";;
-    list)   cmd_list "$@";;
-    done)   cmd_done "$@";;
-    sync)   cmd_sync "$@";;
-    resume) cmd_resume "$@";;
-    where)  cmd_where "$@";;
-    -h|--help|help)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | sed '/^!/d';;
-    *) die "unknown command '$cmd' (try: vibe help)";;
+    start) cmd_start "$@" ;;
+    attach) cmd_attach "$@" ;;
+    status) cmd_status "$@" ;;
+    list) cmd_list "$@" ;;
+    done) cmd_done "$@" ;;
+    sync) cmd_sync "$@" ;;
+    resume) cmd_resume "$@" ;;
+    where) cmd_where "$@" ;;
+    -h | --help | help)
+      grep '^#' "$0" | sed 's/^# \{0,1\}//' | sed '/^!/d'
+      ;;
+    *) die "unknown command '$cmd' (try: vibe help)" ;;
   esac
 }
 main "$@"

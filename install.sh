@@ -33,9 +33,12 @@ SKILLS_DST="$HOME/.claude/skills"
 RUN_TS="$(date +%s)"
 BACKUP_DST="$HOME/.agentic-dev-toolkit-backups/$RUN_TS"
 
-c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_dim=$'\033[2m'; c_red=$'\033[31m'; c_off=$'\033[0m'
-say()  { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
-ok()   { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
+c_grn=$'\033[32m'
+c_yel=$'\033[33m'
+c_dim=$'\033[2m'
+c_off=$'\033[0m'
+say() { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
+ok() { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
 warn() { printf '%s%s%s\n' "$c_yel" "$*" "$c_off"; }
 
 # link SRC -> DST, backing up an existing non-symlink, replacing an old symlink.
@@ -51,9 +54,9 @@ link() {
   fi
   mkdir -p "$(dirname "$dst")"
   if [[ -L "$dst" ]]; then
-    rm "$dst"                                   # stale symlink, replace
+    rm "$dst" # stale symlink, replace
   elif [[ -e "$dst" ]]; then
-    mkdir -p "$bak"                             # real file/dir, back it up
+    mkdir -p "$bak" # real file/dir, back it up
     mv "$dst" "$bak/$(basename "$dst")"
     warn "backed up existing $dst -> $bak/$(basename "$dst")"
   fi

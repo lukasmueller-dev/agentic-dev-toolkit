@@ -1,0 +1,205 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git blame:*)",
+      "Bash(git shortlog:*)",
+      "Bash(git describe:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git symbolic-ref:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git grep:*)",
+      "Bash(git reflog:*)",
+      "Bash(git fetch:*)",
+      "Bash(git --no-pager diff:*)",
+      "Bash(git --no-pager log:*)",
+      "Bash(git --no-pager show:*)",
+      "Bash(git branch)",
+      "Bash(git branch -a)",
+      "Bash(git branch -v)",
+      "Bash(git branch --list:*)",
+      "Bash(git branch --show-current)",
+      "Bash(git tag -l:*)",
+      "Bash(git tag --list:*)",
+      "Bash(git remote -v)",
+      "Bash(git remote get-url:*)",
+      "Bash(git worktree list:*)",
+      "Bash(git stash list:*)",
+      "Bash(git config --get:*)",
+      "Bash(git config --list:*)",
+
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr status:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue status:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run watch:*)",
+      "Bash(gh workflow list:*)",
+      "Bash(gh workflow view:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh release view:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh label list:*)",
+      "Bash(gh auth status)",
+
+      "Bash(npm ci)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm ls:*)",
+      "Bash(pnpm install)",
+      "Bash(pnpm run:*)",
+      "Bash(pnpm test:*)",
+      "Bash(yarn install)",
+      "Bash(yarn run:*)",
+      "Bash(yarn test:*)",
+
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(mypy:*)",
+      "Bash(black:*)",
+
+      "Bash(go test:*)",
+      "Bash(go build:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+
+      "Bash(make test:*)",
+      "Bash(make lint:*)",
+      "Bash(make build:*)",
+      "Bash(make check:*)",
+      "Bash(make fmt:*)",
+
+      "Bash(shellcheck:*)",
+      "Bash(shfmt:*)",
+      "Bash(bats:*)",
+
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(file:*)",
+      "Bash(which:*)",
+      "Bash(command -v:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(tree:*)",
+      "Bash(jq:*)",
+      "Bash(diff:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(basename:*)",
+      "Bash(dirname:*)",
+      "Bash(realpath:*)",
+      "Bash(readlink:*)",
+      "Bash(stat:*)",
+      "Bash(du:*)",
+      "Bash(df:*)",
+      "Bash(pwd)",
+      "Bash(date:*)",
+      "Bash(uname:*)",
+      "Bash(hostname)",
+      "Bash(whoami)",
+      "Bash(env)",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+
+      "Bash(vibe status:*)",
+      "Bash(vibe list:*)",
+      "Bash(vibe where:*)",
+      "Bash(vibe doctor:*)",
+      "Bash(vibe help)",
+      "Bash(tmux ls)",
+      "Bash(tmux list-sessions:*)",
+
+      "Bash(python -)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest -q)",
+      "Bash(python3 -m pytest -q)",
+      "Bash(pyenv versions *)",
+      "Bash(pyenv which *)",
+      "Bash(PYENV_VERSION=3.11.9 python -m pytest -q)",
+      "Bash(PYENV_VERSION=3.11.9 python -m pip install -e \".[dev]\" -q)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('ev_mdt/analysis/sensitivity.py'\\).read\\(\\)\\); ast.parse\\(open\\('ev_mdt/plots/sensitivity.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('ev_mdt/__main__.py'\\).read\\(\\)\\); ast.parse\\(open\\('ev_mdt/analysis/sensitivity.py'\\).read\\(\\)\\); print\\('compile OK'\\)\")",
+      "Bash(git --no-pager diff --stat)",
+      "Bash(git --no-pager diff ev_mdt/__main__.py)",
+      "Bash(git --no-pager diff -- ev_mdt/models/baseline/model.py ev_mdt/models/baseline/__init__.py ev_mdt/models/negbin/__init__.py app/pages/0_Settings.py)",
+      "Bash(git --no-pager diff --stat HEAD)",
+      "Bash(git --no-pager log --oneline -5)",
+      "Bash(break)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push --mirror:*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/.ssh/**)",
+      "Read(**/.aws/credentials)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/.claude/hooks/statusline.sh",
+    "padding": 0
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/session-end-handoff.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/notify-ntfy.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "model": "opus[1m]",
+  "effortLevel": "xhigh",
+  "extraKnownMarketplaces": {
+    "claude-plugins-official": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-official"
+      }
+    }
+  }
+}
