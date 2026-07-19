@@ -1,0 +1,9 @@
+// Mac (local) — add to VS Code *User* Settings (JSON):
+//   Cmd+Shift+P → "Preferences: Open User Settings (JSON)"
+// Makes every new terminal open with `vibe status`.
+{
+  "terminal.integrated.profiles.osx": {
+    "vibe": { "path": "zsh", "args": ["-lic", "vibe status; exec zsh"] }
+  },
+  "terminal.integrated.defaultProfile.osx": "vibe"
+}

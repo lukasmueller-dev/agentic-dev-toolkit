@@ -1,0 +1,7 @@
+# install.sh backups (created when a real file was already in place)
+*.bak.*
+
+# OS / editor cruft
+.DS_Store
+*.swp
+.vscode/
