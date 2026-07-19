@@ -1,88 +1,119 @@
 # agentic-dev-toolkit
 
 Personal tooling for agentic development across a local Mac and a remote Linux
-VPS. One repo, one `install.sh`, synced to both machines with `git pull`.
+VPS. One repo, one `install.sh`, kept in sync on both machines with `git pull`.
 
-## Layout
-
-```
-bin/                     CLI tools → symlinked to ~/bin/
-  vibe                   worktree + tmux + git-sync workflow
-skills/                  Claude Code skills → symlinked to ~/.claude/skills/
-  project-status-scaffold/   keeps HANDOFF.md + PROJECT_STATUS.md current
-settings/                VS Code settings snippets (copy in by hand)
-install.sh               symlinks everything; auto-discovers new tools/skills
-```
-
-Add a new tool by dropping a file in `bin/`, or a new skill as a folder in
-`skills/<name>/` (with its own `SKILL.md`). Re-run `./install.sh` — it picks up
-new entries automatically, no edits to the installer needed.
-
-## Install (run on BOTH machines)
+Installed by symlink, so updating is just pulling — nothing is ever copied into
+place and left to drift.
 
 ```bash
 git clone <this-repo-url> ~/git/agentic-dev-toolkit
-cd ~/git/agentic-dev-toolkit
-./install.sh                     # or ./install.sh --dry to preview
+cd ~/git/agentic-dev-toolkit && ./install.sh
 ```
 
-`install.sh` symlinks `bin/*` into `~/bin/` and each `skills/*/` into
-`~/.claude/skills/`. Because they're symlinks, updating later is just:
+Then `./install.sh doctor` to check it landed.
+
+## What's in it
+
+| Component | What it is |
+| --- | --- |
+| [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with git-based handoff between machines. [Docs](docs/vibe.md) |
+| [`skills/`](skills/) | Agent Skills — portable `SKILL.md`, not Claude Code-specific |
+| [`templates/`](templates/) | `HANDOFF.md` and `PROJECT_STATUS.md`, the single source of truth for both |
+| [`claude/`](claude/) | Claude Code config: permissions, hooks, statusline, global memory |
+| [`completions/`](completions/) | zsh and bash completions for `vibe` |
+| [`vscode/`](vscode/) | Terminal profile that opens every window with `vibe status` |
+| [`tmux/`](tmux/) | tmux snippet tuned for detached agent sessions |
+| [`install.sh`](install.sh) | Install, verify and uninstall, per target |
+
+### Skills
+
+| Skill | Does |
+| --- | --- |
+| [`project-status-scaffold`](skills/project-status-scaffold/) | Keeps `HANDOFF.md` and `PROJECT_STATUS.md` current across sessions and machines |
+| [`codebase-health`](skills/codebase-health/) | Non-behavioral health check — duplication, complexity, drifted docs — then fixes only what you approve |
+| [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first, delivered as a PR |
+| [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
+
+Skills use the open [Agent Skills](https://agentskills.io) format, so they are
+not tied to Claude Code. Start a new one from
+[`skills/_template/`](skills/_template/SKILL.md).
+
+### Claude Code config
+
+| File | Does |
+| --- | --- |
+| [`claude/settings.json`](claude/settings.json) | Permission allowlist, hook wiring, statusline |
+| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Global memory — response style and the two-machine workflow |
+| [`claude/hooks/`](claude/hooks/) | Session-end handoff reminder, [phone notifications](docs/notifications.md), `repo · branch · task` statusline |
+| [`claude/agents/`](claude/agents/) | Subagent definitions (empty for now) |
+
+`codex/` and `gemini/` are placeholders — the layout keeps portable things at
+the top level so adding a second agent is a directory, not a rewrite.
+
+## Installing
 
 ```bash
-cd ~/git/agentic-dev-toolkit && git pull && ./install.sh
+./install.sh                 # everything
+./install.sh --dry           # show what would happen, change nothing
+./install.sh bin skills      # just these targets
+./install.sh doctor          # verify, report drift
+./install.sh --uninstall     # remove only the symlinks this repo owns
 ```
 
-Make sure `~/bin` is on your PATH (installer warns if not):
+Targets: `all` (default), `bin`, `skills`, `claude`, `vscode`.
+
+Adding a tool means dropping a file in `bin/`, or a directory in `skills/`.
+The installer rebuilds its link map every run — no edits needed.
+
+It will not delete anything: a real file at a managed path is moved to
+`~/.agentic-dev-toolkit-backups/<timestamp>/` first, and `--uninstall` removes
+a symlink only after confirming it points back into this checkout.
+
+`vscode/` is the exception — those are fragments, merged into your real
+settings with `jq` (backed up first) rather than symlinked, so unrelated
+settings survive.
+
+### After installing
+
+Put `~/bin` on your PATH:
 
 ```bash
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc   # server; ~/.zshrc on mac
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc    # ~/.bashrc on the server
 ```
 
-On the **server only**, help environment detection with a hostname fallback:
+On the **server**, help environment detection along:
 
 ```bash
 echo 'export VIBE_SERVER_HOSTNAME="$(hostname)"' >> ~/.bashrc
 ```
 
-Then wire up the VS Code auto-status terminal — see `settings/`. Mac snippet
-goes in User Settings, server snippet in Remote Settings.
-
-## The vibe workflow
-
-- `vibe start <task>` — new branch + worktree under `~/git/worktrees/<repo>/<task>`,
-  seeds `HANDOFF.md`, launches the agent (in a persistent tmux session on the
-  server, plain locally).
-- `vibe status` — environment, worktrees, tmux sessions, open PRs.
-- `vibe attach <task>` — re-enter a task's session/worktree.
-- `vibe sync` — commit handoff files (own commit) + the rest, then push.
-  Aborts on divergence.
-- `vibe resume` — fast-forward pull only. Aborts if the tree is dirty or diverged.
-- `vibe done <task>` — remove the worktree (branch kept).
-- `vibe list` / `vibe where`.
-
-### Switching machines
-
-On the machine you leave:
+For zsh completions, add this above `compinit` in `~/.zshrc`:
 
 ```bash
-# tell the agent to update HANDOFF.md, then:
-vibe sync
+fpath=(~/.zsh/completions $fpath)
 ```
 
-On the machine you arrive at:
+Optional: [phone notifications](docs/notifications.md), and
+`source-file ~/git/agentic-dev-toolkit/tmux/tmux.conf` in `~/.tmux.conf`.
 
-```bash
-cd <repo> && vibe resume && vibe attach <task>
-```
+## Docs
 
-The handoff travels through git — nothing uncommitted crosses machines.
+- [The vibe workflow](docs/vibe.md) — tasks, machine switching, phone access,
+  configuration
+- [Phone notifications](docs/notifications.md) — ntfy.sh setup
+- [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
-### Seeing sessions from your phone
+## Requirements
 
-The agent runs in tmux on the VPS, so it survives disconnects. Two ways in from
-mobile:
+`git` and `bash` are the only hard requirements. `tmux` is needed on the
+server for persistent sessions; `jq` for the VS Code merge and the Claude Code
+hooks; `gh` is optional, for PR info in `vibe status`.
 
-- **Claude Code Remote Control**: in the running session type `/rc`, then open
-  the Claude app → Code tab → find the session by name (or scan the QR shown on
-  spacebar). The session stays on the VPS; the phone is just a window into it.
+Everything is bash 3.2 compatible and works on both BSD and GNU userland, so
+the same scripts run unchanged on macOS and Linux. CI checks shellcheck,
+`shfmt`, and the bats suite on both.
+
+## License
+
+[MIT](LICENSE)
