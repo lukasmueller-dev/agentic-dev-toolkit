@@ -3,7 +3,8 @@
 # vibe — remote-first coding workflow across Mac (local) and Linux server.
 #
 # Core idea:
-#   - Each TASK gets its own git branch + git worktree under ~/worktrees/<repo>/<branch>.
+#   - Each TASK gets its own git branch + git worktree under
+#     $VIBE_WORKTREE_ROOT/<repo>/<branch> (default ~/git/worktrees).
 #   - On the SERVER, every task runs inside its own persistent tmux session, so
 #     the agent keeps working when you disconnect SSH.
 #   - On the MAC (local), no tmux is forced — you just get dropped into the worktree.
@@ -16,7 +17,8 @@
 #   vibe status           Show all worktrees, their branches, tmux state, PRs.
 #   vibe list             Short list of tasks.
 #   vibe done <task>      Remove the worktree (branch is kept).
-#   vibe sync             Commit local changes + push. Aborts on divergence.
+#   vibe sync             Commit handoff files (own commit) + the rest, then push.
+#                         Aborts on divergence.
 #   vibe resume           Pull remote (fast-forward only). Aborts if dirty/diverged.
 #   vibe where            Print detected environment (local|server) and why.
 #
@@ -38,7 +40,7 @@ VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
-c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'; c_blu=$'\033[34m'
+c_red=$'\033[31m'; c_grn=$'\033[32m'; c_yel=$'\033[33m'
 c_dim=$'\033[2m'; c_bld=$'\033[1m'; c_off=$'\033[0m'
 
 die()  { printf '%svibe: %s%s\n' "$c_red" "$*" "$c_off" >&2; exit 1; }
@@ -46,6 +48,43 @@ info() { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '%s%s%s\n' "$c_yel" "$*" "$c_off"; }
 ok()   { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
+
+# ---------------------------------------------------------------------------
+# Locating our own files
+#
+# vibe is normally invoked through a symlink (~/bin/vibe -> <repo>/bin/vibe),
+# so $0 and $PWD both point somewhere useless. Walk the symlink chain to find
+# where this script really lives, and read templates/ relative to that.
+# `readlink -f` is not used: macOS shipped BSD readlink without it for years.
+# ---------------------------------------------------------------------------
+script_dir() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [[ -L "$src" ]]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    # a relative link resolves against the directory holding the link
+    [[ "$src" != /* ]] && src="$dir/$src"
+  done
+  # cd -P also resolves symlinked *parent* directories
+  cd -P "$(dirname "$src")" && pwd
+}
+
+VIBE_HOME="$(dirname "$(script_dir)")"      # <repo>/bin/vibe -> <repo>
+TEMPLATE_DIR="${VIBE_TEMPLATE_DIR:-$VIBE_HOME/templates}"
+
+# render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
+# Pure bash: no sed, so a value containing the delimiter (worktree paths hold
+# slashes) cannot corrupt the substitution.
+render_template() {
+  local tpl="$1"; shift
+  local content
+  content="$(cat "$tpl")"
+  while (( $# >= 2 )); do
+    content="${content//$1/$2}"
+    shift 2
+  done
+  printf '%s\n' "$content"
+}
 
 # ---------------------------------------------------------------------------
 # Environment detection: local (Mac) vs server (Linux VPS)
@@ -98,35 +137,22 @@ tmux_session_name() {
 }
 
 # ---------------------------------------------------------------------------
-# HANDOFF.md seeding
+# HANDOFF.md seeding — rendered from templates/, never embedded here.
 # ---------------------------------------------------------------------------
 seed_handoff() {
   local dir="$1" repo="$2" branch="$3"
   local f="$dir/HANDOFF.md"
   [[ -f "$f" ]] && return 0
-  cat > "$f" <<EOF
-# Handoff — $repo / $branch
 
-> Kept in the worktree root. Update at the end of each session so the *other*
-> machine (Mac <-> Server) can pick up without guessing.
+  local tpl="$TEMPLATE_DIR/HANDOFF.md"
+  [[ -f "$tpl" ]] || { warn "no HANDOFF template at $tpl — skipping seed"; return 0; }
 
-- **Repo:** $repo
-- **Branch:** \`$branch\`
-- **Worktree:** \`$dir\`
-- **Created:** $(date '+%Y-%m-%d %H:%M %Z') on $(detect_env) ($(hostname))
-
-## Current status
-_What state is the work in right now?_
-
-## Next steps
-_What should the next session (on either machine) do first?_
-
-## Open PRs / branches
-_Links or numbers. Run \`vibe status\` to refresh._
-
-## Notes / gotchas
-_Anything that would bite the other machine._
-EOF
+  render_template "$tpl" \
+    '<repo>'     "$repo" \
+    '<branch>'   "$branch" \
+    '<worktree>' "$dir" \
+    '<date>'     "$(date '+%Y-%m-%d %H:%M %Z')" \
+    '<machine>'  "$(detect_env) ($(hostname))" > "$f"
   info "seeded HANDOFF.md"
 }
 

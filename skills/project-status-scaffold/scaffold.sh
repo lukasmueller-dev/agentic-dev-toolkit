@@ -3,11 +3,58 @@
 # scaffold.sh — ensure PROJECT_STATUS.md (repo root) and HANDOFF.md (worktree
 # root) exist. Idempotent: never overwrites an existing file.
 #
+# Both files are rendered from the toolkit's templates/ directory, which is the
+# single source of truth. This script holds no copy of either document.
+#
 # Usage: bash scaffold.sh
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# Locating the templates
+#
+# This skill is normally installed as a symlinked directory
+# (~/.claude/skills/project-status-scaffold -> <repo>/skills/project-status-scaffold),
+# so $PWD is the user's repo, not ours. Resolve our own location instead, then
+# read templates/ relative to the toolkit root two levels up.
+# `readlink -f` is avoided: macOS shipped BSD readlink without it for years.
+# ---------------------------------------------------------------------------
+script_dir() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [[ -L "$src" ]]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"
+  done
+  # cd -P resolves symlinked parent directories, which is the usual case here:
+  # the skill *directory* is the symlink, not this file.
+  cd -P "$(dirname "$src")" && pwd
+}
+
+SKILL_DIR="$(script_dir)"
+TOOLKIT_HOME="$(dirname "$(dirname "$SKILL_DIR")")" # skills/<name>/ -> repo root
+TEMPLATE_DIR="${VIBE_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
+
+# render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
+# Pure bash: no sed, so a value containing slashes cannot corrupt the result.
+render_template() {
+  local tpl="$1"
+  shift
+  local content
+  content="$(cat "$tpl")"
+  while (($# >= 2)); do
+    content="${content//$1/$2}"
+    shift 2
+  done
+  printf '%s\n' "$content"
+}
+
+# ---------------------------------------------------------------------------
+# Where the files go
+# ---------------------------------------------------------------------------
 git rev-parse --show-toplevel >/dev/null 2>&1 || {
-  echo "scaffold: not inside a git repository." >&2; exit 1; }
+  echo "scaffold: not inside a git repository." >&2
+  exit 1
+}
 
 # worktree root = top of THIS working tree
 worktree_root="$(git rev-parse --show-toplevel)"
@@ -19,58 +66,35 @@ repo_root="$(dirname "$common")"
 repo="$(basename "$repo_root")"
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
 today="$(date '+%Y-%m-%d')"
-machine="$( [[ -n "${SSH_CONNECTION:-}" ]] && echo server || echo local )"
+machine="$([[ -n "${SSH_CONNECTION:-}" ]] && echo server || echo local)"
 
 status_file="$repo_root/PROJECT_STATUS.md"
 handoff_file="$worktree_root/HANDOFF.md"
 
-if [[ -f "$status_file" ]]; then
-  echo "scaffold: PROJECT_STATUS.md already exists — leaving it."
-else
-  cat > "$status_file" <<EOF
-# Project Status — $repo
+# scaffold_one DST TEMPLATE LABEL [TOKEN VALUE]...
+scaffold_one() {
+  local dst="$1" tpl="$2" label="$3"
+  shift 3
+  if [[ -f "$dst" ]]; then
+    echo "scaffold: $label already exists — leaving it."
+    return 0
+  fi
+  if [[ ! -f "$tpl" ]]; then
+    echo "scaffold: template missing at $tpl — cannot create $label." >&2
+    return 1
+  fi
+  render_template "$tpl" "$@" >"$dst"
+  echo "scaffold: created $dst"
+}
 
-_Last updated: $today · ${machine}_
+scaffold_one "$status_file" "$TEMPLATE_DIR/PROJECT_STATUS.md" "PROJECT_STATUS.md" \
+  '<repo>' "$repo" \
+  '<date>' "$today" \
+  '<machine>' "$machine"
 
-## Goal
-_What is this project trying to achieve? One or two sentences._
-
-## Architecture
-_Key components and how they fit together. Update when structure changes._
-
-## Key decisions
-_Dated, one line each. Why we chose X over Y._
-- $today: (initial scaffold)
-
-## TODOs
-- [ ] ...
-
-## Open questions
-_Unresolved things that block or shape the work._
-- ...
-EOF
-  echo "scaffold: created $status_file"
-fi
-
-if [[ -f "$handoff_file" ]]; then
-  echo "scaffold: HANDOFF.md already exists — leaving it."
-else
-  cat > "$handoff_file" <<EOF
-# Handoff — $repo / $branch
-
-_Last updated: $today · ${machine}_
-
-## Current status
-_What state is the work in right now?_
-
-## Next steps
-_What should the next session (on either machine) do first?_
-
-## Open PRs / branches
-_Links or numbers. \`vibe status\` refreshes this._
-
-## Notes / gotchas
-_Anything that would bite the other machine._
-EOF
-  echo "scaffold: created $handoff_file"
-fi
+scaffold_one "$handoff_file" "$TEMPLATE_DIR/HANDOFF.md" "HANDOFF.md" \
+  '<repo>' "$repo" \
+  '<branch>' "$branch" \
+  '<worktree>' "$worktree_root" \
+  '<date>' "$today" \
+  '<machine>' "$machine"
