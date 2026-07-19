@@ -28,8 +28,9 @@ functionality to tests — this skill builds those tests.
 1. **Scope**: use the path given in `$ARGUMENTS`; if none, the whole repo.
 2. **Language**: detect the primary language of the scope. Then read the
    matching reference file `references/<language>.md` for framework-specific
-   guidance. Currently supported: `python`. If the language has no reference
-   file, tell the user it is not yet supported by this skill and stop.
+   guidance. Currently supported: `python`, `typescript` (covers JavaScript).
+   If the language has no reference file, tell the user it is not yet
+   supported by this skill and stop.
 3. **Starting state** (auto-detect, both are supported):
    - *Greenfield*: no test suite exists.
    - *Existing suite*: detect the framework, test layout, naming conventions,
@@ -113,3 +114,6 @@ workflow does not change.
 
 - `references/python.md` — pytest, fixtures, markers, mocking sim/GPU code,
   hypothesis guidance, coverage tooling, GitHub Actions template.
+- `references/typescript.md` — Vitest, projects instead of markers, fake
+  timers, module mocking and its hoisting rules, fast-check guidance,
+  coverage tooling, GitHub Actions template, and the Jest mapping.
