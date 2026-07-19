@@ -35,7 +35,6 @@
       "Bash(git stash list:*)",
       "Bash(git config --get:*)",
       "Bash(git config --list:*)",
-
       "Bash(gh pr list:*)",
       "Bash(gh pr view:*)",
       "Bash(gh pr diff:*)",
@@ -54,7 +53,6 @@
       "Bash(gh repo view:*)",
       "Bash(gh label list:*)",
       "Bash(gh auth status)",
-
       "Bash(npm ci)",
       "Bash(npm run:*)",
       "Bash(npm test:*)",
@@ -65,7 +63,6 @@
       "Bash(yarn install)",
       "Bash(yarn run:*)",
       "Bash(yarn test:*)",
-
       "Bash(pytest:*)",
       "Bash(python -m pytest:*)",
       "Bash(python3 -m pytest:*)",
@@ -73,7 +70,6 @@
       "Bash(ruff format:*)",
       "Bash(mypy:*)",
       "Bash(black:*)",
-
       "Bash(go test:*)",
       "Bash(go build:*)",
       "Bash(go vet:*)",
@@ -83,17 +79,14 @@
       "Bash(cargo check:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo fmt:*)",
-
       "Bash(make test:*)",
       "Bash(make lint:*)",
       "Bash(make build:*)",
       "Bash(make check:*)",
       "Bash(make fmt:*)",
-
       "Bash(shellcheck:*)",
       "Bash(shfmt:*)",
       "Bash(bats:*)",
-
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
@@ -124,7 +117,6 @@
       "Bash(env)",
       "Bash(echo:*)",
       "Bash(printf:*)",
-
       "Bash(vibe status:*)",
       "Bash(vibe list:*)",
       "Bash(vibe where:*)",
@@ -132,7 +124,6 @@
       "Bash(vibe help)",
       "Bash(tmux ls)",
       "Bash(tmux list-sessions:*)",
-
       "Bash(python -)",
       "Bash(python -c ' *)",
       "Bash(python -m pytest -q)",
@@ -192,8 +183,6 @@
       }
     ]
   },
-  "model": "opus[1m]",
-  "effortLevel": "xhigh",
   "extraKnownMarketplaces": {
     "claude-plugins-official": {
       "source": {

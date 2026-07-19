@@ -43,7 +43,7 @@ not tied to Claude Code. Start a new one from
 
 | File | Does |
 | --- | --- |
-| [`claude/settings.json`](claude/settings.json) | Permission allowlist, hook wiring, statusline |
+| [`claude/settings.json`](claude/settings.json) | Baseline permissions, hook wiring, statusline — *merged* into your real settings, not symlinked |
 | [`claude/CLAUDE.md`](claude/CLAUDE.md) | Global memory — response style and the two-machine workflow |
 | [`claude/hooks/`](claude/hooks/) | Session-end handoff reminder, [phone notifications](docs/notifications.md), `repo · branch · task` statusline |
 | [`claude/agents/`](claude/agents/) | Subagent definitions (empty for now) |
@@ -70,9 +70,13 @@ It will not delete anything: a real file at a managed path is moved to
 `~/.agentic-dev-toolkit-backups/<timestamp>/` first, and `--uninstall` removes
 a symlink only after confirming it points back into this checkout.
 
-`vscode/` is the exception — those are fragments, merged into your real
-settings with `jq` (backed up first) rather than symlinked, so unrelated
-settings survive.
+Two things are merged rather than symlinked, both with `jq` and both backed up
+first: `vscode/*.jsonc`, because those are fragments; and
+`claude/settings.json`, because Claude Code writes to that file itself — a
+symlink would turn every `/model` switch and every "don't ask again" into a
+diff in this repo. The versioned baseline covers permissions, hooks and the
+statusline; your `model`, `effortLevel` and accumulated permission rules are
+left alone, and permission arrays are unioned rather than replaced.
 
 ### After installing
 

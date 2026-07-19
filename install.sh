@@ -14,7 +14,8 @@
 # Targets:
 #   bin      bin/* -> ~/bin/, plus shell completions
 #   skills   skills/<name>/ -> ~/.claude/skills/<name>
-#   claude   claude/* -> ~/.claude/*  (settings.json, CLAUDE.md, hooks/, agents/)
+#   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
+#            and merges claude/settings.json into your real settings.json
 #   vscode   merge vscode/*.jsonc into the real VS Code settings.json
 #   all      every target above (the default)
 #
@@ -154,11 +155,12 @@ build_map() {
   fi
 
   if want claude && [[ -d "$REPO/claude" ]]; then
-    # Regular files at claude/ root: settings.json, CLAUDE.md, anything added
-    # later. README.md is documentation about the directory, not config.
+    # Regular files at claude/ root: CLAUDE.md and anything added later.
+    # README.md documents the directory rather than configuring anything, and
+    # settings.json is merged rather than symlinked — see install_claude_settings.
     for f in "$REPO"/claude/*; do
       [[ -f "$f" ]] || continue
-      case "$(basename "$f")" in README.md) continue ;; esac
+      case "$(basename "$f")" in README.md | settings.json) continue ;; esac
       map_add "$f" "$HOME/.claude/$(basename "$f")" claude
     done
     # Directories: linked once they hold something besides their README, so an
@@ -235,6 +237,94 @@ do_unlink() {
   fi
   rm "$dst"
   ok "  removed  $dst"
+}
+
+# ---------------------------------------------------------------------------
+# Claude Code settings — merged, not symlinked
+#
+# Claude Code writes to ~/.claude/settings.json itself: /model rewrites `model`,
+# "yes, don't ask again" appends to permissions.allow, and feature flags appear
+# on their own. Symlinking it into the repo would turn every one of those into
+# a git diff in the toolkit, and push them to the other machine.
+#
+# So the repo holds a BASELINE of the settings worth versioning — permissions,
+# hooks, statusLine — and this merges it into whatever is already there.
+# Runtime state (model, effortLevel, feature flags) is deliberately absent from
+# the baseline, which is what keeps it from clobbering the live values.
+# ---------------------------------------------------------------------------
+CLAUDE_SETTINGS_SRC="$REPO/claude/settings.json"
+CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
+
+# Deep-merges the baseline over the live file, but UNIONS the permission
+# arrays: jq's `*` replaces arrays wholesale, which would silently discard
+# every rule accumulated through "don't ask again".
+claude_settings_merged() {
+  jq -s '
+    .[0] as $live | .[1] as $repo
+    | ($live * $repo)
+    | .permissions.allow = ((($live.permissions.allow // []) + ($repo.permissions.allow // [])) | unique)
+    | .permissions.deny  = ((($live.permissions.deny  // []) + ($repo.permissions.deny  // [])) | unique)
+  ' "$1" "$CLAUDE_SETTINGS_SRC"
+}
+
+install_claude_settings() {
+  hdr "claude settings"
+  [[ -f "$CLAUDE_SETTINGS_SRC" ]] || {
+    say "  no baseline to merge"
+    return
+  }
+  say "  target   $CLAUDE_SETTINGS_DST"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    warn "  jq not installed — cannot merge settings.json."
+    warn "  Merge $CLAUDE_SETTINGS_SRC into $CLAUDE_SETTINGS_DST by hand."
+    return
+  fi
+
+  # A missing file is merged against an empty object rather than copied, so
+  # creating and merging produce byte-identical output. Copying instead would
+  # leave the permission arrays unsorted while the merge sorts them, and the
+  # very next run would "merge" again and drop a pointless backup.
+  local live="$CLAUDE_SETTINGS_DST" created=0 empty=""
+  if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
+    if ((DRY)); then
+      say "  would create $CLAUDE_SETTINGS_DST from the baseline"
+      return
+    fi
+    empty="$(mktemp)"
+    printf '{}' >"$empty"
+    live="$empty"
+    created=1
+  elif ! jq empty "$CLAUDE_SETTINGS_DST" 2>/dev/null; then
+    err "  $CLAUDE_SETTINGS_DST is not valid JSON — leaving it alone."
+    return
+  fi
+
+  local merged
+  merged="$(claude_settings_merged "$live")"
+  [[ -n "$empty" ]] && rm -f "$empty"
+
+  if ((created)); then
+    mkdir -p "$(dirname "$CLAUDE_SETTINGS_DST")"
+    printf '%s\n' "$merged" >"$CLAUDE_SETTINGS_DST"
+    ok "  created  $CLAUDE_SETTINGS_DST"
+    return
+  fi
+
+  if [[ "$(jq -S '.' "$CLAUDE_SETTINGS_DST")" == "$(printf '%s' "$merged" | jq -S '.')" ]]; then
+    say "  ok       already applied"
+    return
+  fi
+
+  if ((DRY)); then
+    say "  would merge the baseline into your existing settings (backing it up first)"
+    return
+  fi
+
+  cp "$CLAUDE_SETTINGS_DST" "$CLAUDE_SETTINGS_DST.bak.$RUN_TS"
+  printf '%s\n' "$merged" >"$CLAUDE_SETTINGS_DST"
+  warn "  backed up $CLAUDE_SETTINGS_DST.bak.$RUN_TS"
+  ok "  merged   $CLAUDE_SETTINGS_DST"
 }
 
 # ---------------------------------------------------------------------------
@@ -396,6 +486,23 @@ run_doctor() {
     fi
   done
 
+  hdr "Claude settings"
+  if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
+    printf '%s %s does not exist — run ./install.sh claude\n' "$wrn" "$CLAUDE_SETTINGS_DST"
+    warned=1
+  elif ! command -v jq >/dev/null 2>&1; then
+    printf '%s cannot verify without jq\n' "$wrn"
+    warned=1
+  elif ! jq empty "$CLAUDE_SETTINGS_DST" 2>/dev/null; then
+    printf '%s %s is not valid JSON\n' "$bad" "$CLAUDE_SETTINGS_DST"
+    fail=1
+  elif [[ "$(jq -S '.' "$CLAUDE_SETTINGS_DST")" == "$(claude_settings_merged "$CLAUDE_SETTINGS_DST" | jq -S '.')" ]]; then
+    printf '%s baseline applied in %s\n' "$pass" "$CLAUDE_SETTINGS_DST"
+  else
+    printf '%s %s is missing part of the baseline — run ./install.sh claude\n' "$wrn" "$CLAUDE_SETTINGS_DST"
+    warned=1
+  fi
+
   hdr "VS Code"
   local vtarget vsnippet
   vtarget="$(vscode_target_file)"
@@ -459,6 +566,11 @@ if ((UNINSTALL)); then
     rest="${rec#*	}"
     do_unlink "${rest%%	*}"
   done
+  if want claude; then
+    hdr "claude settings"
+    say "  not removed: the baseline was merged into your own settings.json."
+    say "  Undo by restoring a backup: $CLAUDE_SETTINGS_DST.bak.*"
+  fi
   if want vscode; then
     hdr "vscode"
     say "  not removed: settings were merged into your own file, not symlinked."
@@ -488,6 +600,7 @@ for rec in ${MAP[@]+"${MAP[@]}"}; do
   do_link "$src" "$dst" "$kind"
 done
 
+want claude && install_claude_settings
 want vscode && install_vscode
 
 # --- tmux: a snippet, sourced by hand ---------------------------------------

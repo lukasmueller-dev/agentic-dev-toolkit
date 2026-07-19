@@ -20,8 +20,10 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/bin/vibe" ]
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
-  [ -L "$HOME/.claude/settings.json" ]
   [ -L "$HOME/.claude/hooks" ]
+  # settings.json is merged, not symlinked — Claude Code writes to it itself
+  [ -f "$HOME/.claude/settings.json" ]
+  [ ! -L "$HOME/.claude/settings.json" ]
   [ -L "$HOME/.zsh/completions/_vibe" ]
   [ -L "$HOME/.local/share/bash-completion/completions/vibe" ]
 }
@@ -64,12 +66,16 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/.claude/skills/codebase-health" ]
 }
 
-@test "tests never write outside BATS_TEST_TMPDIR" {
-  # A standing guard: the repo must be clean of stray files after the suite
-  # touches it. Catches the class of bug described above.
-  run git -C "$REPO_ROOT" status --porcelain --untracked-files=all -- skills tests
-  [ "$status" -eq 0 ]
+@test "the suite creates and deletes nothing under skills/" {
+  # A standing guard against the bug described above. Only additions (??) and
+  # deletions (D) are checked: ordinary uncommitted *edits* are normal while
+  # working, but a test that leaves a new file behind — or removes a tracked
+  # one — is always wrong.
+  run bash -c "git -C '$REPO_ROOT' status --porcelain --untracked-files=all -- skills \
+    | grep -E '^(\\?\\?|.?D)' || true"
   [ -z "$output" ]
+  # the file the original bug destroyed, named explicitly
+  [ -f "$REPO_ROOT/skills/_template/SKILL.md" ]
 }
 
 @test "install: backs up a real file instead of deleting it" {
@@ -89,7 +95,6 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
   [ ! -e "$HOME/bin/vibe" ]
   [ ! -e "$HOME/.claude/CLAUDE.md" ]
-  [ ! -e "$HOME/.claude/settings.json" ]
   [ ! -e "$HOME/.claude/hooks" ]
   [ ! -e "$HOME/.claude/skills/project-status-scaffold" ]
   # nothing of ours is left anywhere in HOME
@@ -98,12 +103,12 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 @test "uninstall: leaves a symlink that points outside this repo" {
   mkdir -p "$HOME/.claude" "$BATS_TEST_TMPDIR/elsewhere"
-  printf '{}' >"$BATS_TEST_TMPDIR/elsewhere/settings.json"
-  ln -s "$BATS_TEST_TMPDIR/elsewhere/settings.json" "$HOME/.claude/settings.json"
+  printf 'not ours' >"$BATS_TEST_TMPDIR/elsewhere/CLAUDE.md"
+  ln -s "$BATS_TEST_TMPDIR/elsewhere/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
   run "$INSTALL" --uninstall claude
   [ "$status" -eq 0 ]
-  [ -L "$HOME/.claude/settings.json" ]
+  [ -L "$HOME/.claude/CLAUDE.md" ]
   [[ "$(printf '%s\n' "$output" | plain)" == *"points outside this repo"* ]]
 }
 
@@ -186,4 +191,64 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]]
   [ "$(find "$dir" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
+# claude settings merge
+# ---------------------------------------------------------------------------
+@test "claude settings: creates settings.json when none exists" {
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.permissions.allow | length > 0' "$HOME/.claude/settings.json"
+  jq -e '.hooks.SessionEnd' "$HOME/.claude/settings.json"
+  jq -e '.statusLine.type == "command"' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: never clobbers runtime state Claude Code owns" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "model": "sonnet", "effortLevel": "xhigh", "agentPushNotifEnabled": true }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.model == "sonnet"' "$HOME/.claude/settings.json"
+  jq -e '.effortLevel == "xhigh"' "$HOME/.claude/settings.json"
+  jq -e '.agentPushNotifEnabled == true' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: unions permission arrays instead of replacing them" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(my-own-rule:*)"] } }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  # jq's `*` would have replaced this array wholesale, losing the user's rule
+  jq -e '.permissions.allow | index("Bash(my-own-rule:*)")' "$HOME/.claude/settings.json"
+  jq -e '.permissions.allow | index("Bash(git status:*)")' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: re-running is a no-op that leaves no backup" {
+  "$INSTALL" claude >/dev/null
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]]
+  [ "$(find "$HOME/.claude" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+@test "claude settings: a later model switch survives re-installing" {
+  "$INSTALL" claude >/dev/null
+  tmp="$BATS_TEST_TMPDIR/s.json"
+  jq '.model = "opus"' "$HOME/.claude/settings.json" >"$tmp"
+  mv "$tmp" "$HOME/.claude/settings.json"
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.model == "opus"' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: refuses to touch invalid JSON" {
+  mkdir -p "$HOME/.claude"
+  printf 'not json {{{' >"$HOME/.claude/settings.json"
+  run "$INSTALL" claude
+  [ "$(cat "$HOME/.claude/settings.json")" = 'not json {{{' ]
 }

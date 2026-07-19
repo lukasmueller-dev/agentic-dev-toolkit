@@ -70,9 +70,32 @@ Rules the installer keeps, which any change must preserve:
 - **`claude/*/` is linked only once it holds more than a README**, so an empty
   `agents/` does not drop a stray README where Claude Code scans.
 
-`vscode/` is the deliberate exception: those files are fragments, merged with
-`jq` into settings you already have. Symlinking would replace every unrelated
-setting in the file.
+### The two files that are merged, not symlinked
+
+`vscode/*.jsonc` and `claude/settings.json` are both merged with `jq` into
+files you already have, because symlinking either one would be wrong:
+
+- **`vscode/*.jsonc`** are *fragments*. Symlinking would replace every
+  unrelated setting in your VS Code config.
+- **`claude/settings.json`** is written by Claude Code itself. `/model`
+  rewrites `model`, "yes, don't ask again" appends to `permissions.allow`, and
+  feature flags appear unprompted. As a symlink, every one of those becomes a
+  git diff in this repo and syncs to the other machine.
+
+So the repo holds a **baseline** — permissions, hooks, statusLine — and the
+installer merges it into the live file. Two rules follow:
+
+1. **Runtime state stays out of the baseline.** `model`, `effortLevel`, and
+   feature flags are deliberately absent, which is what stops the merge
+   clobbering the live values. Do not add them back.
+2. **Permission arrays are unioned, not replaced.** `jq`'s `*` replaces arrays
+   wholesale, which would discard every rule accumulated through "don't ask
+   again". `claude_settings_merged()` unions and dedupes them instead.
+
+Merging must be idempotent in both directions: creating the file from scratch
+and merging into an existing one produce byte-identical output, so a second
+run reports `already applied` and leaves no backup. Creating by copying broke
+this once — the copy's arrays were unsorted while the merge sorts them.
 
 ## Shell
 
