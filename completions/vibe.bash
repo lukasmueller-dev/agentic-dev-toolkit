@@ -60,7 +60,17 @@ _vibe() {
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi
       ;;
-    attach | pickup | park | rc | sync | resume)
+    resume)
+      if [[ "$cur" == -* ]]; then
+        _vibe_reply "--rebase" "$cur"
+      else
+        _vibe_reply "$(_vibe_tasks)" "$cur"
+      fi
+      ;;
+    status)
+      [[ "$cur" == -* ]] && _vibe_reply "--all" "$cur"
+      ;;
+    attach | pickup | park | rc | sync)
       _vibe_reply "$(_vibe_tasks)" "$cur"
       ;;
     *)

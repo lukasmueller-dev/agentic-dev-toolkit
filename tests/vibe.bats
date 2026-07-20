@@ -208,6 +208,27 @@ slug() {
   [[ "$output" == *"ahead of remote"* ]]
 }
 
+@test "resume --rebase: rebases a diverged branch instead of refusing" {
+  cd "$(make_repo proj)"
+  local other
+  other="$(clone_repo proj other)"
+  echo "theirs" >"$other/theirs.txt"
+  git -C "$other" add -A
+  git -C "$other" commit -q -m "theirs"
+  git -C "$other" push -q
+
+  echo "mine" >mine.txt
+  git add -A
+  git commit -q -m "mine"
+
+  run run_vibe resume --rebase
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rebased"* ]]
+  # remote work pulled in, and local work kept (replayed on top)
+  [ -f theirs.txt ]
+  [ -f mine.txt ]
+}
+
 # ---------------------------------------------------------------------------
 # start / templates
 # ---------------------------------------------------------------------------
@@ -235,6 +256,38 @@ slug() {
 # ---------------------------------------------------------------------------
 # status — the worktree listing must not present the main checkout as a task
 # ---------------------------------------------------------------------------
+@test "status: shows per-worktree sync state" {
+  cd "$(make_repo proj)"
+  run_vibe start "task s"
+  echo "scratch" >"$BATS_TEST_TMPDIR/worktrees/proj/task-s/x.txt"
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dirty"* ]]
+  [[ "$output" == *"ahead"* ]]
+  [[ "$output" == *"behind"* ]]
+  [[ "$output" == *"handoff"* ]]
+}
+
+@test "status --all: works from outside any git repository" {
+  cd "$(make_repo proj)"
+  run_vibe start "task a"
+  run_vibe start "task b"
+
+  mkdir -p "$BATS_TEST_TMPDIR/elsewhere"
+  cd "$BATS_TEST_TMPDIR/elsewhere"
+  run run_vibe status --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"proj/task-a"* ]]
+  [[ "$output" == *"proj/task-b"* ]]
+}
+
+@test "attach: with no task and no tasks, reports there is nothing to pick" {
+  cd "$(make_repo proj)"
+  run run_vibe attach
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no tasks yet"* ]]
+}
+
 @test "status: labels the main checkout so it is not mistaken for a task" {
   cd "$(make_repo proj)"
   run_vibe start "task one"

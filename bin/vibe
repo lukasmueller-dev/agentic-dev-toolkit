@@ -21,7 +21,9 @@
 #   vibe park [<task>]    Leaving-machine verb: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe status           Show all worktrees, their branches, tmux state, PRs.
+#   vibe status [--all]   Show worktrees with per-worktree sync state (dirty,
+#                         ahead/behind, HANDOFF.md age), tmux state, PRs. --all
+#                         scans every repo under $VIBE_WORKTREE_ROOT.
 #   vibe list             Short list of tasks.
 #   vibe done [--force] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
@@ -30,8 +32,10 @@
 #   vibe sync [<task>]    Commit handoff files (own commit) + the rest, then push.
 #                         Aborts on divergence. Infers the task from the cwd; a
 #                         task argument targets that worktree from anywhere.
-#   vibe resume [<task>]  Pull remote (fast-forward only). Aborts if dirty or
-#                         diverged. Task argument as for sync.
+#   vibe resume [--rebase] [<task>]
+#                         Pull remote (fast-forward only). Aborts if dirty or
+#                         diverged; --rebase opts into 'git pull --rebase' for
+#                         the diverged case. Task argument as for sync.
 #   vibe rc <task>        Enable Remote Control on a running task by sending /rc
 #                         into its tmux session (server only), so it can be
 #                         driven from the Claude app on a phone.
@@ -266,6 +270,40 @@ dir_for_optional_task() {
   fi
 }
 
+# pick_task — let the user choose a task for the current repo, printing the
+# chosen name on stdout. Uses fzf when it is on PATH, otherwise a plain shell
+# 'select' menu. Returns non-zero (after a note) when there is nothing to pick
+# or the user cancels, so callers can fall back to a usage message.
+pick_task() {
+  need git
+  local repo base d tasks=()
+  repo="$(repo_name)"
+  base="$VIBE_WORKTREE_ROOT/$repo"
+  if [[ -d "$base" ]]; then
+    for d in "$base"/*/; do
+      [[ -d "$d" ]] && tasks+=("$(basename "$d")")
+    done
+  fi
+  if ((${#tasks[@]} == 0)); then
+    warn "no tasks yet for $repo — run: vibe start <task>" >&2
+    return 1
+  fi
+
+  if command -v fzf >/dev/null 2>&1; then
+    printf '%s\n' "${tasks[@]}" | fzf --prompt='vibe task> ' --height=40% --reverse
+  else
+    # 'select' draws its menu on stderr and reads the choice from the tty, so
+    # stdout stays clean for the chosen name that the caller captures.
+    local choice
+    select choice in "${tasks[@]}"; do
+      [[ -n "$choice" ]] && {
+        printf '%s\n' "$choice"
+        break
+      }
+    done </dev/tty
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # HANDOFF.md seeding — rendered from templates/, never embedded here.
 # ---------------------------------------------------------------------------
@@ -359,6 +397,7 @@ open_session() {
 
 cmd_attach() {
   local task="${1:-}"
+  [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe attach <task>"
   local branch
   branch="$(slug "$task")"
@@ -370,32 +409,125 @@ cmd_attach() {
   open_session "$repo" "$branch" "$dir"
 }
 
+# handoff_age DIR — a short human age for DIR/HANDOFF.md ("3h", "2d"), or
+# "none". stat differs between GNU and BSD, so try both spellings.
+handoff_age() {
+  local dir="$1"
+  local f="$dir/HANDOFF.md" mtime now delta
+  [[ -f "$f" ]] || {
+    echo "none"
+    return
+  }
+  mtime="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)" || {
+    echo "?"
+    return
+  }
+  now="$(date +%s)"
+  delta=$((now - mtime))
+  if ((delta < 3600)); then
+    echo "$((delta / 60))m"
+  elif ((delta < 86400)); then
+    echo "$((delta / 3600))h"
+  else
+    echo "$((delta / 86400))d"
+  fi
+}
+
+# sync_state_line DIR — one dim line summarising a worktree's state, entirely
+# from local refs. Like cmd_doctor, it never fetches: 'ahead'/'behind' are
+# measured against the last fetch so 'vibe status' stays read-only and offline.
+sync_state_line() {
+  local dir="$1" dirty ahead behind
+  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+    dirty="dirty"
+  else
+    dirty="clean"
+  fi
+  ahead="$(unpushed_commits "$dir")"
+  behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  printf '      %s%s · %s ahead · %s behind · handoff %s%s\n' \
+    "$c_dim" "$dirty" "$ahead" "$behind" "$(handoff_age "$dir")" "$c_off"
+}
+
+# print_worktrees — the current repo's worktrees, one per line, each with a
+# sync-state line. git's list starts with the main checkout itself; label
+# anything that is not a vibe task so this never suggests a task 'vibe done'
+# would not find. git prints physical paths, so resolve ours the same way
+# before comparing (cd/pwd -P: no readlink -f on macOS).
+print_worktrees() {
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "  (not in a repo — try 'vibe status --all')"
+    return
+  fi
+  local mainroot vroot wt="" br=""
+  mainroot="$(main_repo_root 2>/dev/null || true)"
+  [[ -d "$mainroot" ]] && mainroot="$(cd "$mainroot" && pwd -P)"
+  vroot="$VIBE_WORKTREE_ROOT"
+  [[ -d "$vroot" ]] && vroot="$(cd "$vroot" && pwd -P)"
+
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) wt="${line#worktree }" ;;
+      "branch "*)
+        br="${line#branch }"
+        br="${br#refs/heads/}"
+        print_one_worktree "$wt" "$br" "$mainroot" "$vroot"
+        ;;
+      "detached") print_one_worktree "$wt" "(detached)" "$mainroot" "$vroot" ;;
+    esac
+  done < <(git worktree list --porcelain 2>/dev/null)
+}
+
+print_one_worktree() {
+  local wt="$1" br="$2" mainroot="$3" vroot="$4" tag=""
+  if [[ -n "$mainroot" && "$wt" == "$mainroot" ]]; then
+    tag="  (main checkout, not a vibe task)"
+  elif [[ -n "$vroot" && "$wt" != "$vroot"/* ]]; then
+    tag="  (not managed by vibe)"
+  fi
+  printf '  %s%s%s  %s%s%s%s\n' "$c_grn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
+  sync_state_line "$wt"
+}
+
+# print_all_worktrees — every vibe worktree under $VIBE_WORKTREE_ROOT, across
+# all repos. Walks the directory tree rather than 'git worktree list', so it
+# works from outside any git repository.
+print_all_worktrees() {
+  local vroot repo_dir wt_dir repo br found=0
+  vroot="$VIBE_WORKTREE_ROOT"
+  if [[ ! -d "$vroot" ]]; then
+    echo "  (no worktree root at $vroot)"
+    return
+  fi
+  vroot="$(cd "$vroot" && pwd -P)"
+  for repo_dir in "$vroot"/*/; do
+    [[ -d "$repo_dir" ]] || continue
+    repo="$(basename "$repo_dir")"
+    for wt_dir in "$repo_dir"*/; do
+      [[ -d "$wt_dir" ]] || continue
+      git -C "$wt_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || continue
+      found=1
+      br="$(git -C "$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+      printf '  %s%s/%s%s  %s%s%s\n' \
+        "$c_grn" "$repo" "$br" "$c_off" "$c_dim" "${wt_dir%/}" "$c_off"
+      sync_state_line "${wt_dir%/}"
+    done
+  done
+  ((found)) || echo "  (no vibe worktrees under $vroot)"
+}
+
 cmd_status() {
   need git
-  local repo
-  repo="$(repo_name 2>/dev/null || echo '?')"
+  local all=0
+  case "${1:-}" in
+    --all) all=1 ;;
+    "") ;;
+    *) die "unknown option '$1' (usage: vibe status [--all])" ;;
+  esac
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
   printf '%sWorktrees%s\n' "$c_bld" "$c_off"
-  # git's list starts with the main checkout itself. Label anything that is
-  # not under $VIBE_WORKTREE_ROOT so this section never suggests a task that
-  # `vibe done` would not find. git prints physical paths, so resolve ours
-  # the same way before comparing (cd/pwd -P: no readlink -f on macOS).
-  local mainroot vroot
-  mainroot="$(main_repo_root 2>/dev/null || true)"
-  if [[ -d "$mainroot" ]]; then mainroot="$(cd "$mainroot" && pwd -P)"; fi
-  vroot="$VIBE_WORKTREE_ROOT"
-  if [[ -d "$vroot" ]]; then vroot="$(cd "$vroot" && pwd -P)"; fi
-  git worktree list --porcelain 2>/dev/null |
-    awk -v grn="$c_grn" -v off="$c_off" -v dim="$c_dim" \
-      -v main="$mainroot" -v root="$vroot/" '
-      /^worktree /  { wt=$2 }
-      /^branch /    { br=$2; sub("refs/heads/","",br)
-                      tag = ""
-                      if (wt == main)                tag = "  (main checkout, not a vibe task)"
-                      else if (index(wt, root) != 1) tag = "  (not managed by vibe)"
-                      printf "  %s%s%s  %s%s%s%s\n", grn, br, off, dim, wt, tag, off }
-    ' || echo "  (not in a repo)"
+  if ((all)); then print_all_worktrees; else print_worktrees; fi
 
   # tmux sessions belonging to vibe
   if command -v tmux >/dev/null 2>&1 && tmux ls >/dev/null 2>&1; then
@@ -403,8 +535,8 @@ cmd_status() {
     tmux ls 2>/dev/null | grep "^${VIBE_TMUX_PREFIX}-" | sed 's/^/  /' || echo "  (none)"
   fi
 
-  # open PRs via gh, if available
-  if command -v gh >/dev/null 2>&1; then
+  # open PRs via gh, if available and we are inside a repo
+  if git rev-parse --show-toplevel >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
     printf '\n%sOpen PRs%s\n' "$c_bld" "$c_off"
     gh pr list --state open 2>/dev/null | sed 's/^/  /' || echo "  (gh not authenticated)"
   fi
@@ -643,6 +775,7 @@ cmd_resume() {
 cmd_pickup() {
   need git
   local task="${1:-}"
+  [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe pickup <task>"
   resolve_by_task "$task"
   info "picking up '$R_branch' in $R_dir"

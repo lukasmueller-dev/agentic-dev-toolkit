@@ -60,13 +60,21 @@ _vibe() {
       ;;
     args)
       case "${words[1]}" in
-        attach | pickup | park | rc | sync | resume)
+        attach | pickup | park | rc | sync)
           _vibe_tasks
           ;;
         done)
           _arguments \
             '(-f --force)'{-f,--force}'[remove even if dirty or unpushed]' \
             '*:task:_vibe_tasks'
+          ;;
+        resume)
+          _arguments \
+            '--rebase[rebase onto upstream when diverged]' \
+            '*:task:_vibe_tasks'
+          ;;
+        status)
+          _arguments '--all[scan every repo under the worktree root]'
           ;;
         start)
           _message 'new task name'

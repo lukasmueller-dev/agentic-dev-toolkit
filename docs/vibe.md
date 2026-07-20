@@ -37,13 +37,13 @@ and launches the agent — no tmux, because nothing needs to survive.
 | Command                        | Does                                                       |
 | ------------------------------ | ---------------------------------------------------------- |
 | `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
-| `vibe attach <task>`           | Re-enter an existing task's session or worktree            |
-| `vibe pickup <task>`           | Fast-forward the task's *own* worktree, then attach        |
+| `vibe attach [<task>]`         | Re-enter an existing task's session or worktree            |
+| `vibe pickup [<task>]`         | Fast-forward the task's *own* worktree, then attach        |
 | `vibe park [<task>]`           | Refresh `HANDOFF.md` via the agent, then sync              |
-| `vibe status`                  | Environment, worktrees, tmux sessions, open PRs            |
+| `vibe status [--all]`          | Worktrees + sync state, tmux sessions, PRs                 |
 | `vibe list`                    | Task names for this repo                                   |
 | `vibe sync [<task>]`           | Commit handoff files separately, then the rest, then push  |
-| `vibe resume [<task>]`         | Fast-forward pull only                                     |
+| `vibe resume [--rebase] [<task>]` | Fast-forward pull only (`--rebase` for the diverged case) |
 | `vibe rc <task>`               | Enable Remote Control on a running task (server only)      |
 | `vibe done [--force] [<task>]` | Remove the worktree, keeping the branch                    |
 | `vibe where`                   | Which environment was detected, and why                    |
@@ -52,6 +52,15 @@ and launches the agent — no tmux, because nothing needs to survive.
 `sync`, `resume`, `park` and `done` infer the task from your cwd when you run
 them inside its worktree, so no argument is needed there. Pass a task name to
 act on that worktree from anywhere else — the main checkout, or another task.
+
+`attach` and `pickup` with no task drop you into a picker over this repo's tasks
+(fzf when it is on `PATH`, a plain numbered menu otherwise).
+
+`vibe status` annotates each worktree with its state — `dirty`/`clean`, commits
+ahead and behind upstream, and the age of its `HANDOFF.md` — read from local
+refs only, so it never touches the network. `vibe status --all` widens the scan
+to every repo under `$VIBE_WORKTREE_ROOT` and works from outside any repo, which
+is the one-glance "what is in flight everywhere" view.
 
 ## Switching machines
 
