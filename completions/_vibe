@@ -37,6 +37,8 @@ _vibe() {
   commands=(
     'start:Create branch + worktree for a task and open the agent'
     'attach:Re-enter an existing task session or worktree'
+    'pickup:Fast-forward the task'\''s own worktree, then attach'
+    'park:Refresh HANDOFF.md via the agent, then sync'
     'status:Show environment, worktrees, tmux sessions and open PRs'
     'list:List task worktrees for this repo'
     'done:Remove a task worktree (branch is kept)'
@@ -57,7 +59,7 @@ _vibe() {
       ;;
     args)
       case "${words[1]}" in
-        attach)
+        attach | pickup | park | sync | resume)
           _vibe_tasks
           ;;
         done)

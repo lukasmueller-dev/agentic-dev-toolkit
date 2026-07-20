@@ -24,6 +24,14 @@
 # Default: claude
 #VIBE_AGENT_CMD=claude
 
+# Arguments that turn VIBE_AGENT_CMD into a one-shot, headless run. `vibe park`
+# uses these to have the agent refresh HANDOFF.md before syncing, appending the
+# prompt as the final argument: `$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"`.
+# The default is Claude Code's `-p`; point it at whatever your agent uses so
+# nothing here assumes Claude. If the agent is missing, park still syncs.
+# Default: -p
+#VIBE_AGENT_HEADLESS_ARGS=-p
+
 # Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
 # Default: vibe
 #VIBE_TMUX_PREFIX=vibe

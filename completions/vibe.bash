@@ -48,18 +48,20 @@ _vibe() {
 
   # completing the subcommand itself
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start attach status list done sync resume where doctor help" "$cur"
+    _vibe_reply "start attach pickup park status list done sync resume where doctor help" "$cur"
     return
   fi
 
   case "$cmd" in
-    attach | done)
+    done)
       if [[ "$cur" == -* ]]; then
-        # only `done` takes an option, but offering it for attach is harmless
         _vibe_reply "--force" "$cur"
       else
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi
+      ;;
+    attach | pickup | park | sync | resume)
+      _vibe_reply "$(_vibe_tasks)" "$cur"
       ;;
     *)
       # `start` takes a new task name: free text, nothing useful to suggest

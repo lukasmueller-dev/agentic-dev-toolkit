@@ -34,42 +34,69 @@ and launches the agent — no tmux, because nothing needs to survive.
 
 ## Commands
 
-| Command                     | Does                                                        |
-| --------------------------- | ------------------------------------------------------------ |
-| `vibe start <task>`         | Branch + worktree + `HANDOFF.md`, then launch the agent      |
-| `vibe attach <task>`        | Re-enter an existing task's session or worktree              |
-| `vibe status`               | Environment, worktrees, tmux sessions, open PRs              |
-| `vibe list`                 | Task names for this repo                                     |
-| `vibe sync`                 | Commit handoff files separately, then the rest, then push    |
-| `vibe resume`               | Fast-forward pull only                                       |
-| `vibe done [--force] <task>`| Remove the worktree, keeping the branch                      |
-| `vibe where`                | Which environment was detected, and why                      |
-| `vibe doctor`               | Check tools, paths, config, upstream state                   |
+| Command                        | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
+| `vibe attach <task>`           | Re-enter an existing task's session or worktree            |
+| `vibe pickup <task>`           | Fast-forward the task's *own* worktree, then attach        |
+| `vibe park [<task>]`           | Refresh `HANDOFF.md` via the agent, then sync              |
+| `vibe status`                  | Environment, worktrees, tmux sessions, open PRs            |
+| `vibe list`                    | Task names for this repo                                   |
+| `vibe sync [<task>]`           | Commit handoff files separately, then the rest, then push  |
+| `vibe resume [<task>]`         | Fast-forward pull only                                     |
+| `vibe done [--force] [<task>]` | Remove the worktree, keeping the branch                    |
+| `vibe where`                   | Which environment was detected, and why                    |
+| `vibe doctor`                  | Check tools, paths, config, upstream state                 |
+
+`sync`, `resume`, `park` and `done` infer the task from your cwd when you run
+them inside its worktree, so no argument is needed there. Pass a task name to
+act on that worktree from anywhere else — the main checkout, or another task.
 
 ## Switching machines
 
-This is the whole point. On the machine you are leaving:
+This is the whole point, and it is two verbs — one to leave, one to arrive.
+
+On the machine you are **leaving**:
 
 ```bash
-# ask the agent to update HANDOFF.md first, then:
-vibe sync
+vibe park          # from inside the worktree
+vibe park <task>   # or from anywhere else
 ```
 
-On the machine you arrive at:
+`park` runs the agent once, headlessly, to refresh `HANDOFF.md`, then syncs.
+You no longer have to remember to ask the agent to write the handoff before you
+sync — that was the step that got skipped.
+
+On the machine you **arrive** at:
 
 ```bash
-cd <repo> && vibe resume && vibe attach <task>
+vibe pickup <task>   # works from anywhere, including the main checkout
 ```
+
+`pickup` fast-forwards the *task's own worktree* and drops you into it.
+
+> **Why `pickup` and not `resume`?** `vibe resume` fast-forwards *the branch you
+> are standing on*. Run from a task's worktree that is fine, but run from the
+> main checkout — the natural place to land after `cd <repo>` — it would
+> fast-forward `main`, not your task, and the earlier "`cd <repo> && vibe resume
+> && vibe attach`" advice walked you straight into that. `pickup` takes the task
+> name and `git -C`s into the right worktree, so where you are standing never
+> matters.
 
 **The handoff travels through git.** Nothing uncommitted crosses machines —
-which is exactly why `vibe sync` commits `HANDOFF.md` and `PROJECT_STATUS.md`
-as their own `chore: handoff` commit before committing anything else. The
-handoff is legible in the log instead of being buried in a "wip" commit.
+which is exactly why `vibe sync` (and therefore `park`) commits `HANDOFF.md`
+and `PROJECT_STATUS.md` as their own `chore: handoff` commit before committing
+anything else. The handoff is legible in the log instead of being buried in a
+"wip" commit.
 
-Both `sync` and `resume` refuse to guess. `sync` aborts if the remote has
-moved ahead or the branches have diverged; `resume` only ever fast-forwards,
-and refuses outright if the working tree is dirty. Divergence is a decision,
-not something a sync tool should resolve for you.
+If the agent is missing or its headless run fails, `park` warns and syncs the
+existing `HANDOFF.md` anyway — a flaky agent never strands your work locally.
+
+Everything here refuses to guess. `sync` aborts if the remote has moved ahead
+or the branches have diverged; `pickup` and `resume` only ever fast-forward,
+and refuse outright if the working tree is dirty. Divergence is a decision, not
+something a sync tool should resolve for you — `vibe resume --rebase` is the one
+explicit escape hatch when you have decided.
 
 ## Finishing a task
 
@@ -113,13 +140,14 @@ chmod 600 ~/.config/vibe/config
 vibe doctor        # validates the file and shows the resulting values
 ```
 
-| Variable                | Default            | Purpose                              |
-| ----------------------- | ------------------ | ------------------------------------ |
-| `VIBE_WORKTREE_ROOT`    | `~/git/worktrees`  | Where worktrees are created          |
-| `VIBE_AGENT_CMD`        | `claude`           | The agent to launch                  |
-| `VIBE_TMUX_PREFIX`      | `vibe`             | tmux session name prefix             |
-| `VIBE_SERVER_HOSTNAME`  | unset              | Fallback server detection            |
-| `VIBE_NTFY_TOPIC`       | unset              | Phone notifications (off when unset) |
+| Variable                   | Default           | Purpose                              |
+| -------------------------- | ----------------- | ------------------------------------ |
+| `VIBE_WORKTREE_ROOT`       | `~/git/worktrees` | Where worktrees are created          |
+| `VIBE_AGENT_CMD`           | `claude`          | The agent to launch                  |
+| `VIBE_AGENT_HEADLESS_ARGS` | `-p`              | Args that make the agent run one-shot (`vibe park`) |
+| `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |
+| `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection            |
+| `VIBE_NTFY_TOPIC`          | unset             | Phone notifications (off when unset) |
 
 `VIBE_AGENT_CMD` is why nothing here says "Claude". Point it at any command
 and the workflow is unchanged.
