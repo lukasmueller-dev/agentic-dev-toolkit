@@ -170,8 +170,9 @@ main_repo_root() {
   dirname "$common"
 }
 
-# sanitize a task name into a branch-safe / dir-safe slug
-slug() { echo "$1" | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9._-]//g'; }
+# sanitize a task name into a branch-safe / dir-safe slug. '/' becomes '-'
+# rather than vanishing, so 'docs/fix-x' and 'docsfix-x' stay distinct.
+slug() { echo "$1" | tr '[:upper:] /' '[:lower:]--' | sed 's/[^a-z0-9._-]//g'; }
 
 worktree_dir() {
   local repo="$1" branch="$2"
@@ -288,12 +289,25 @@ cmd_status() {
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
   printf '%sWorktrees%s\n' "$c_bld" "$c_off"
-  # list worktrees from git's perspective
-  git worktree list --porcelain 2>/dev/null | awk -v grn="$c_grn" -v off="$c_off" -v dim="$c_dim" '
-    /^worktree /  { wt=$2 }
-    /^branch /    { br=$2; sub("refs/heads/","",br)
-                    printf "  %s%s%s  %s%s%s\n", grn, br, off, dim, wt, off }
-  ' || echo "  (not in a repo)"
+  # git's list starts with the main checkout itself. Label anything that is
+  # not under $VIBE_WORKTREE_ROOT so this section never suggests a task that
+  # `vibe done` would not find. git prints physical paths, so resolve ours
+  # the same way before comparing (cd/pwd -P: no readlink -f on macOS).
+  local mainroot vroot
+  mainroot="$(main_repo_root 2>/dev/null || true)"
+  if [[ -d "$mainroot" ]]; then mainroot="$(cd "$mainroot" && pwd -P)"; fi
+  vroot="$VIBE_WORKTREE_ROOT"
+  if [[ -d "$vroot" ]]; then vroot="$(cd "$vroot" && pwd -P)"; fi
+  git worktree list --porcelain 2>/dev/null |
+    awk -v grn="$c_grn" -v off="$c_off" -v dim="$c_dim" \
+      -v main="$mainroot" -v root="$vroot/" '
+      /^worktree /  { wt=$2 }
+      /^branch /    { br=$2; sub("refs/heads/","",br)
+                      tag = ""
+                      if (wt == main)                tag = "  (main checkout, not a vibe task)"
+                      else if (index(wt, root) != 1) tag = "  (not managed by vibe)"
+                      printf "  %s%s%s  %s%s%s%s\n", grn, br, off, dim, wt, tag, off }
+    ' || echo "  (not in a repo)"
 
   # tmux sessions belonging to vibe
   if command -v tmux >/dev/null 2>&1 && tmux ls >/dev/null 2>&1; then

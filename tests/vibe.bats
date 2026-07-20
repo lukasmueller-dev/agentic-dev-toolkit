@@ -23,7 +23,11 @@ slug() {
 }
 
 @test "slug: strips characters that are illegal in a branch name" {
-  [ "$(slug 'feat/add (new) stuff!')" = "featadd-new-stuff" ]
+  [ "$(slug 'feat/add (new) stuff!')" = "feat-add-new-stuff" ]
+}
+
+@test "slug: maps slashes to hyphens instead of deleting them" {
+  [ "$(slug 'docs/fix-rmapi-config-path')" = "docs-fix-rmapi-config-path" ]
 }
 
 @test "slug: keeps dots, underscores and hyphens" {
@@ -226,6 +230,23 @@ slug() {
   echo "MY NOTES" >"$f"
   run_vibe start "keep me"
   [ "$(cat "$f")" = "MY NOTES" ]
+}
+
+# ---------------------------------------------------------------------------
+# status — the worktree listing must not present the main checkout as a task
+# ---------------------------------------------------------------------------
+@test "status: labels the main checkout so it is not mistaken for a task" {
+  cd "$(make_repo proj)"
+  run_vibe start "task one"
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  # git worktree list prints physical paths, so match against the resolved one
+  local main_phys main_line task_line
+  main_phys="$(cd "$BATS_TEST_TMPDIR/proj" && pwd -P)"
+  main_line="$(printf '%s\n' "$output" | grep -F "$main_phys ")"
+  task_line="$(printf '%s\n' "$output" | grep "worktrees/proj/task-one")"
+  [[ "$main_line" == *"(main checkout, not a vibe task)"* ]]
+  [[ "$task_line" != *"(main"* && "$task_line" != *"(not"* ]]
 }
 
 # ---------------------------------------------------------------------------
