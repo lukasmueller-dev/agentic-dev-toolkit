@@ -44,6 +44,7 @@ and launches the agent — no tmux, because nothing needs to survive.
 | `vibe list`                    | Task names for this repo                                   |
 | `vibe sync [<task>]`           | Commit handoff files separately, then the rest, then push  |
 | `vibe resume [<task>]`         | Fast-forward pull only                                     |
+| `vibe rc <task>`               | Enable Remote Control on a running task (server only)      |
 | `vibe done [--force] [<task>]` | Remove the worktree, keeping the branch                    |
 | `vibe where`                   | Which environment was detected, and why                    |
 | `vibe doctor`                  | Check tools, paths, config, upstream state                 |
@@ -120,9 +121,23 @@ removal leaves the commits reachable.
 
 The agent runs in tmux on the VPS, so it survives disconnects. Two ways in:
 
-**Claude Code Remote Control** — in the running session type `/rc`, then open
-the Claude app → Code tab and pick the session by name (or scan the QR shown
-on spacebar). The session stays on the VPS; the phone is a window into it.
+**Claude Code Remote Control** — makes a running session reachable from the
+Claude app → Code tab (pick it by name, or scan the QR shown on spacebar). The
+session stays on the VPS; the phone is just a window into it. Three ways to turn
+it on, in increasing remoteness:
+
+- In the session itself, type `/rc`.
+- From another shell on the server (or over SSH from anywhere):
+  ```bash
+  vibe rc <task>            # ssh <vps> vibe rc <task> from the Mac
+  ```
+  `vibe rc` finds the task's tmux session, waits for the agent to look idle
+  (polling the pane, not a blind sleep), then sends `/rc` for you. It is a
+  no-op on local — there is no persistent session to reach — and says so.
+- Have it on from the start: set `VIBE_RC_ON_START=1` (server only) and every
+  `vibe start` launches the agent with Remote Control already enabled, so you
+  never have to reach for `/rc` at all. This appends Claude Code's
+  `--remote-control` flag; leave it at `0` for an agent that lacks one.
 
 **Push notifications** — so you know *when* to look. See
 [notifications.md](notifications.md); it is a `Notification` hook that pushes
@@ -148,6 +163,7 @@ vibe doctor        # validates the file and shows the resulting values
 | `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |
 | `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection            |
 | `VIBE_NTFY_TOPIC`          | unset             | Phone notifications (off when unset) |
+| `VIBE_RC_ON_START`         | `0`               | Launch server sessions with Remote Control on |
 
 `VIBE_AGENT_CMD` is why nothing here says "Claude". Point it at any command
 and the workflow is unchanged.

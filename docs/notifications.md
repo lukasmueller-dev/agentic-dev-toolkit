@@ -96,6 +96,9 @@ point the `curl` URL in `notify-ntfy.sh` at your own instance and add an
 ## The other way in: Claude Code Remote Control
 
 Notifications tell you *that* a session needs you. To actually *drive* it from
-your phone, type `/rc` in the running session, then open the Claude app → Code
-tab and pick the session by name. The session stays on the VPS; the phone is
-just a window into it. See [vibe.md](vibe.md).
+your phone, enable Remote Control and pick the session by name in the Claude app
+→ Code tab. Type `/rc` in the running session, or — without touching the
+session — run `vibe rc <task>` on the server (`ssh <vps> vibe rc <task>` from
+the Mac), or set `VIBE_RC_ON_START=1` so every `vibe start` enables it up front.
+The session stays on the VPS; the phone is just a window into it. See
+[vibe.md](vibe.md).

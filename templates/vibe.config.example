@@ -43,6 +43,14 @@
 # Default: unset
 #VIBE_SERVER_HOSTNAME=your-vps-hostname
 
+# Launch server-side sessions with Claude Code Remote Control already enabled,
+# so a task is reachable from the Claude app without typing /rc first. Set to 1
+# to opt in. Server only (there is no persistent session to reach on local),
+# and it appends Claude Code's --remote-control flag — leave it 0 for an agent
+# that has no such option, and use `vibe rc <task>` on demand instead.
+# Default: 0
+#VIBE_RC_ON_START=0
+
 # ntfy.sh topic for phone notifications. Unset means notifications are off.
 #
 # On the public ntfy.sh instance the topic name IS the access control: anyone

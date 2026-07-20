@@ -417,8 +417,40 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# rc — Remote Control is a server concern
+# ---------------------------------------------------------------------------
+@test "rc: is a no-op on local, with an explanation" {
+  cd "$(make_repo proj)"
+  # no SSH_CONNECTION and no matching hostname => local
+  run env -u SSH_CONNECTION -u SSH_TTY \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" rc "some task"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no-op on local"* ]]
+}
+
+@test "rc: requires a task name" {
+  cd "$(make_repo proj)"
+  run run_vibe rc
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"usage"* ]]
+}
+
+# ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
+@test "doctor: rejects a non-boolean VIBE_RC_ON_START" {
+  cd "$(make_repo proj)"
+  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_RC_ON_START=maybe \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"VIBE_RC_ON_START must be 0 or 1"* ]]
+}
+
 @test "doctor: exits 0 in a healthy repo" {
   cd "$(make_repo proj)"
   run run_vibe doctor

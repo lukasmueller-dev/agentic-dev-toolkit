@@ -32,6 +32,9 @@
 #                         task argument targets that worktree from anywhere.
 #   vibe resume [<task>]  Pull remote (fast-forward only). Aborts if dirty or
 #                         diverged. Task argument as for sync.
+#   vibe rc <task>        Enable Remote Control on a running task by sending /rc
+#                         into its tmux session (server only), so it can be
+#                         driven from the Claude app on a phone.
 #   vibe where            Print detected environment (local|server) and why.
 #   vibe doctor           Check tools, paths, config and upstream state.
 #
@@ -64,6 +67,7 @@ _env_agent_headless_args="${VIBE_AGENT_HEADLESS_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
 _env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
+_env_rc_on_start="${VIBE_RC_ON_START:-}"
 
 if [[ -r "$VIBE_CONFIG_FILE" ]]; then
   # shellcheck source=/dev/null
@@ -80,8 +84,11 @@ VIBE_AGENT_HEADLESS_ARGS="${_env_agent_headless_args:-${VIBE_AGENT_HEADLESS_ARGS
 VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
 VIBE_SERVER_HOSTNAME="${_env_server_hostname:-${VIBE_SERVER_HOSTNAME:-}}"
 VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
+# Opt-in: launch the server-side agent with Remote Control already enabled, so
+# a task is reachable from the Claude app without typing /rc first. Server only.
+VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
-  _env_tmux_prefix _env_server_hostname _env_ntfy_topic
+  _env_tmux_prefix _env_server_hostname _env_ntfy_topic _env_rc_on_start
 
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
 VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
@@ -329,7 +336,13 @@ open_session() {
     else
       info "starting persistent tmux session: $sess"
       tmux new-session -d -s "$sess" -c "$dir"
-      tmux send-keys -t "$sess" "$VIBE_AGENT_CMD" C-m
+      # VIBE_RC_ON_START launches the agent with Remote Control already on, so
+      # the session is reachable from the phone without a later 'vibe rc'. This
+      # appends Claude Code's --remote-control flag; agents without it should
+      # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
+      local launch="$VIBE_AGENT_CMD"
+      [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
+      tmux send-keys -t "$sess" "$launch" C-m
     fi
     if [[ -n "${TMUX:-}" ]]; then
       tmux switch-client -t "$sess"
@@ -637,6 +650,58 @@ cmd_pickup() {
   open_session "$R_repo" "$R_branch" "$R_dir"
 }
 
+# wait_for_pane_idle SESS — poll the session's pane until the agent looks like
+# it is waiting for input, or a bounded timeout elapses. Returns 0 if an idle
+# prompt was seen, 1 on timeout. This is polling with a short per-iteration
+# wait, never a single blind sleep hoping the agent is ready.
+wait_for_pane_idle() {
+  local sess="$1" waited=0 max=20 tail
+  while ((waited < max)); do
+    # last few non-blank lines of the pane; an agent waiting for input ends in
+    # its prompt box ('│ >' / '❯' / a bare '>').
+    tail="$(tmux capture-pane -t "$sess" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 3)"
+    case "$tail" in
+      *'│ >'* | *'❯'* | *'> '*) return 0 ;;
+    esac
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# vibe rc <task> — turn on Remote Control for a running task by sending '/rc'
+# into its tmux session, so it can be driven from the Claude app on a phone.
+# Server only: there is no persistent session to reach on local. This is what
+# makes 'ssh <vps> vibe rc <task>' work from anywhere.
+cmd_rc() {
+  local task="${1:-}"
+  [[ -n "$task" ]] || die "usage: vibe rc <task>"
+
+  if [[ "$(detect_env)" != "server" ]]; then
+    warn "vibe rc is a no-op on local: Remote Control reaches a persistent tmux
+  session on the server, and there is none here. Run it on the server, e.g.
+  'ssh <vps> vibe rc $task'."
+    return 0
+  fi
+
+  need git
+  need tmux
+  local repo branch sess
+  repo="$(repo_name)"
+  branch="$(slug "$task")"
+  sess="$(tmux_session_name "$repo" "$branch")"
+  tmux has-session -t "$sess" 2>/dev/null ||
+    die "no tmux session '$sess' — is the task running? Try: vibe attach $task"
+
+  if wait_for_pane_idle "$sess"; then
+    info "agent looks idle — sending /rc"
+  else
+    warn "agent did not look idle in time — sending /rc anyway"
+  fi
+  tmux send-keys -t "$sess" "/rc" C-m
+  ok "sent /rc to $sess — open the Claude app → Code tab to connect"
+}
+
 # run_headless_handoff DIR — drive the agent once, headlessly, to refresh
 # HANDOFF.md. Returns non-zero (after warning) if the agent is missing or the
 # run fails, so 'vibe park' can degrade to a plain sync rather than block a
@@ -772,6 +837,20 @@ cmd_doctor() {
     d_wn "ntfy topic  unset — phone notifications are off (see docs/notifications.md)"
   fi
 
+  d_ok "headless    park runs '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'"
+
+  case "$VIBE_RC_ON_START" in
+    0) d_ok "rc launch   off (enable with VIBE_RC_ON_START=1 on the server)" ;;
+    1)
+      if [[ "$(detect_env)" == "server" ]]; then
+        d_ok "rc launch   on — new sessions start with Remote Control enabled"
+      else
+        d_wn "rc launch   VIBE_RC_ON_START=1 but this is local — it only applies on the server"
+      fi
+      ;;
+    *) d_no "rc launch   VIBE_RC_ON_START must be 0 or 1 (got '$VIBE_RC_ON_START')" ;;
+  esac
+
   printf '\n%sEnvironment%s\n' "$c_bld" "$c_off"
   d_ok "detected    $(detect_env) ($(env_reason))"
   if [[ "$(detect_env)" == "local" && -z "$VIBE_SERVER_HOSTNAME" ]]; then
@@ -834,6 +913,7 @@ main() {
     attach) cmd_attach "$@" ;;
     pickup) cmd_pickup "$@" ;;
     park) cmd_park "$@" ;;
+    rc) cmd_rc "$@" ;;
     status) cmd_status "$@" ;;
     list) cmd_list "$@" ;;
     done) cmd_done "$@" ;;
