@@ -16,16 +16,17 @@
 
 The `loop-brief` skill is implemented and green: `skills/loop-brief/`
 (SKILL.md + brief.sh), the `ensure_worktree` remote-branch fix in `bin/vibe`,
-tests (`tests/loop-brief.bats` plus adoption tests in vibe.bats /
-vibe-loop.bats), and doc updates. Full suite passes (114/115; the one
-"failure" is the skills/ guard flagging the then-uncommitted new files — green
-after commit). shellcheck, shfmt, and `install.sh doctor` clean.
+tests, and docs. Two follow-ups are also in: `vibe done` now refuses while
+`LOOP.md` is still on the branch (`--keep-brief` overrides, like
+`--discard-handoff`), and `vibe loop --no-attach` starts the tmux session and
+returns, so a loop can be started from a remote-controlled session (phone).
+Full suite passes (119/119); shellcheck, shfmt, `install.sh doctor` clean;
+`--no-attach` smoke-tested on the real server tmux path.
 
 ## Next action
 
-Review the two commits, then open a PR to main. After merge, run
-`./install.sh` in the main checkout so `~/.claude/skills/loop-brief` gets
-linked.
+Review the commits, then open a PR to main. After merge, run `./install.sh`
+in the main checkout so `~/.claude/skills/loop-brief` gets linked.
 
 ## Blockers
 
