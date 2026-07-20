@@ -309,6 +309,23 @@ slug() {
   [ "$(cat "$f")" = "MY NOTES" ]
 }
 
+@test "start: adopts a branch that exists only on origin" {
+  cd "$(make_repo proj)"
+  local other
+  other="$(clone_repo proj other)"
+  git -C "$other" checkout -q -b remote-start
+  echo marker >"$other/marker.txt"
+  git -C "$other" add marker.txt
+  git -C "$other" commit -q -m "marker"
+  git -C "$other" push -q origin remote-start
+
+  run run_vibe start "remote start"
+  [ "$status" -eq 0 ]
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/remote-start"
+  [ -f "$wt/marker.txt" ]
+  git -C "$wt" rev-parse '@{u}' >/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # status — the worktree listing must not present the main checkout as a task
 # ---------------------------------------------------------------------------

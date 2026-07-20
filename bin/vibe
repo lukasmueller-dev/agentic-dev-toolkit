@@ -22,23 +22,29 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [--stop] [--discard-handoff] [<task>]
+#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty, holds unpushed commits, has a loop
-#                         still running (--stop kills it first), or if
+#                         still running (--stop kills it first), if
 #                         HANDOFF.md still carries content — a finished task
 #                         hands nothing off, so promote or discard first
-#                         (--discard-handoff skips only the handoff check).
+#                         (--discard-handoff skips only the handoff check) —
+#                         or if LOOP.md is still on the branch, where it would
+#                         land in the PR diff; delete it and sync, or
+#                         --keep-brief to leave it there deliberately.
 #                         Infers the task from the cwd when run inside a
 #                         worktree.
 #
 # Unattended:
 #   vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push]
-#                     [--dangerously-allow-all]
+#                     [--no-attach] [--dangerously-allow-all]
 #                         Create branch+worktree like start, seed LOOP.md, then
 #                         run the agent headlessly round after round until the
 #                         --until check passes, --max rounds pass, or it stalls.
 #                         Re-running on an existing loop worktree resumes it.
+#                         --no-attach (server) starts the tmux session and
+#                         returns instead of attaching — for starting a loop
+#                         from a remote-controlled session or a script.
 #
 # Phone:
 #   vibe rc <task>        Enable Remote Control on a running task by sending /rc
@@ -232,6 +238,30 @@ slug() { echo "$1" | tr '[:upper:] /' '[:lower:]--' | sed 's/[^a-z0-9._-]//g'; }
 worktree_dir() {
   local repo="$1" branch="$2"
   echo "$VIBE_WORKTREE_ROOT/$repo/$branch"
+}
+
+# ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
+# Preference order: existing local branch; branch on origin (fetched when
+# needed, and tracked — so a branch pushed from the other machine is picked up
+# instead of silently shadowed by a fresh branch off HEAD); new branch off
+# HEAD. The fetch is best-effort: offline or remote-less repos fall through to
+# today's branch-off-HEAD behavior.
+# Kept in lockstep with skills/loop-brief/brief.sh.
+ensure_worktree() {
+  local main="$1" branch="$2" dir="$3"
+  mkdir -p "$(dirname "$dir")"
+  if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$main" worktree add "$dir" "$branch"
+  else
+    git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch" ||
+      git -C "$main" fetch -q origin "$branch" >/dev/null 2>&1 || true
+    if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+      git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
+    else
+      git -C "$main" worktree add -b "$branch" "$dir"
+    fi
+  fi
+  info "created worktree: $dir  (branch: $branch)"
 }
 
 tmux_session_name() {
@@ -626,7 +656,7 @@ run_loop() {
 
 cmd_loop() {
   need git
-  local task="" until_cmd="" max="" prompt="" push=0 permissive=0
+  local task="" until_cmd="" max="" prompt="" push=0 permissive=0 no_attach=0
   while (($#)); do
     case "$1" in
       --until)
@@ -657,11 +687,15 @@ cmd_loop() {
         push=1
         shift
         ;;
+      --no-attach)
+        no_attach=1
+        shift
+        ;;
       --dangerously-allow-all)
         permissive=1
         shift
         ;;
-      -*) die "unknown option '$1' (usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--dangerously-allow-all])" ;;
+      -*) die "unknown option '$1' (usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all])" ;;
       *)
         task="$1"
         shift
@@ -669,11 +703,17 @@ cmd_loop() {
     esac
   done
   [[ -n "$task" ]] ||
-    die "usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--dangerously-allow-all]"
+    die "usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
   [[ -z "$max" || "$max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$max'"
   [[ -z "$prompt" || -f "$prompt" ]] || die "--prompt file not found: $prompt"
   if [[ "$permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
     die "--dangerously-allow-all needs VIBE_LOOP_PERMISSIVE_ARGS set (see docs/vibe-loop.md)."
+  fi
+  # Checked before any scaffolding: locally the loop runs in the foreground,
+  # so a late refusal would leave a seeded worktree and a stale state file.
+  if [[ "$no_attach" == "1" && "$(detect_env)" != "server" ]]; then
+    die "--no-attach needs a server tmux session — locally the loop runs in
+  the foreground, so there is nothing to detach from. Start it on the server."
   fi
 
   local branch repo main dir
@@ -692,15 +732,7 @@ cmd_loop() {
     info "resuming loop for '$branch' from saved state (iter $(loop_get "$dir" ITER))"
   fi
 
-  if [[ ! -d "$dir" ]]; then
-    mkdir -p "$(dirname "$dir")"
-    if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-      git -C "$main" worktree add "$dir" "$branch"
-    else
-      git -C "$main" worktree add -b "$branch" "$dir"
-    fi
-    info "created worktree: $dir  (branch: $branch)"
-  fi
+  [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
 
   # Effective settings: new flags override; on resume, saved values carry
   # forward; otherwise defaults.
@@ -757,7 +789,12 @@ cmd_loop() {
       tmux send-keys -t "$sess" \
         "$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")" C-m
     fi
-    if [[ -n "${TMUX:-}" ]]; then
+    if [[ "$no_attach" == "1" ]]; then
+      # Started from a remote-controlled session or a script: attaching would
+      # nest or hang the caller. The session runs either way.
+      info "loop running detached in tmux session: $sess"
+      info "watch it: vibe attach $task   ·   check on it: vibe status"
+    elif [[ -n "${TMUX:-}" ]]; then
       tmux switch-client -t "$sess"
     else
       tmux attach-session -t "$sess"
@@ -832,14 +869,7 @@ cmd_start() {
   if [[ -d "$dir" ]]; then
     info "worktree already exists, attaching: $dir"
   else
-    mkdir -p "$(dirname "$dir")"
-    # create branch off current HEAD if it doesn't exist, else reuse it
-    if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-      git -C "$main" worktree add "$dir" "$branch"
-    else
-      git -C "$main" worktree add -b "$branch" "$dir"
-    fi
-    info "created worktree: $dir  (branch: $branch)"
+    ensure_worktree "$main" "$branch" "$dir"
   fi
 
   seed_handoff "$dir" "$repo" "$branch"
@@ -1114,13 +1144,14 @@ unpushed_commits() {
 
 cmd_done() {
   need git
-  local force=0 stop=0 discard_handoff=0 task=""
+  local force=0 stop=0 discard_handoff=0 keep_brief=0 task=""
   while (($#)); do
     case "$1" in
       -f | --force) force=1 ;;
       --stop) stop=1 ;;
       --discard-handoff) discard_handoff=1 ;;
-      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] <task>)" ;;
+      --keep-brief) keep_brief=1 ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] <task>)" ;;
       *) task="$1" ;;
     esac
     shift
@@ -1187,6 +1218,15 @@ cmd_done() {
   Promote what is durable, clear HANDOFF.md back to its headings, and
   'vibe sync' — or re-run with --discard-handoff if none of it is worth
   keeping."
+    fi
+
+    # The brief is start-of-task input, not deliverable. Left on the branch it
+    # lands verbatim in the PR diff, so a finished task deletes it — the same
+    # end-of-task discipline as the handoff, except deletion needs a commit.
+    if [[ "$keep_brief" != 1 && -f "$dir/LOOP.md" ]]; then
+      die "LOOP.md is still on branch '$branch' — merged, it lands in the PR diff.
+  Delete it ('git rm LOOP.md', then 'vibe sync') — or re-run with
+  --keep-brief to leave it on the branch deliberately."
     fi
   fi
 
