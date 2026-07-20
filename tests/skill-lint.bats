@@ -292,3 +292,98 @@ min_path() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"checked 0 skill(s)"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Per-repo extension: .skill-lint.conf
+#
+# The default $SKILLS lives at $BATS_TEST_TMPDIR/skills, which is not a git
+# repo, so find_config's ceiling is its parent — a .skill-lint.conf written to
+# $BATS_TEST_TMPDIR is discovered by walking up one level.
+# ---------------------------------------------------------------------------
+writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
+
+@test "forbid-pattern flags a match in the body" {
+  writeskill good good "$GOOD_DESC"
+  printf 'TODO: finish this\n' >>"$SKILLS/good/SKILL.md"
+  writeconf 'forbid-pattern TODO body still has a TODO marker'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"body still has a TODO marker (.skill-lint.conf)"* ]]
+}
+
+@test "forbid-pattern ignores a match that is only in the frontmatter" {
+  writeskill fm fm "Analyzes TODO items and reports them; use it when the user asks to review the todo list."
+  writeconf 'forbid-pattern TODO body still has a TODO marker'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+}
+
+@test "require-field flags a missing frontmatter key" {
+  writeskill good good "$GOOD_DESC"
+  writeconf 'require-field allowed-tools'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing required field 'allowed-tools' (.skill-lint.conf)"* ]]
+}
+
+@test "require-field passes when the key is present" {
+  local d="$SKILLS/withtools"
+  mkdir -p "$d"
+  printf -- '---\nname: withtools\ndescription: %s\nallowed-tools: Read\n---\n' "$GOOD_DESC" >"$d/SKILL.md"
+  writeconf 'require-field allowed-tools'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+}
+
+@test "ignore-warn silences a warning for the named skill" {
+  writeskill tiny tiny "Does a thing."
+  writeconf 'ignore-warn tiny SQ7'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"too thin to trigger"* ]]
+}
+
+@test "ignore-warn is scoped to the one skill it names" {
+  writeskill tiny tiny "Does a thing."
+  writeskill teeny teeny "Short one here."
+  writeconf 'ignore-warn tiny SQ7'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$SKILLS/teeny/SKILL.md: warn"* ]]
+  [[ "$output" != *"$SKILLS/tiny/SKILL.md: warn"* ]]
+}
+
+@test "ignore-warn cannot silence an error" {
+  writeskill mydir wrongname "$GOOD_DESC"
+  writeconf 'ignore-warn mydir SQ3'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[SQ3]"* ]]
+}
+
+@test "a silenced warning does not resurface under --strict" {
+  writeskill tiny tiny "Does a thing."
+  writeconf 'ignore-warn tiny SQ7'
+  run "$LINT" --strict "$SKILLS"
+  [ "$status" -eq 0 ]
+}
+
+@test "an unknown directive is noted but not fatal" {
+  writeskill good good "$GOOD_DESC"
+  writeconf 'bogus-directive whatever'
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"unknown directive 'bogus-directive'"* ]]
+}
+
+@test "the config is found by walking up to the git root" {
+  local proj="$BATS_TEST_TMPDIR/proj"
+  mkdir -p "$proj/skills/good"
+  git init -q "$proj"
+  printf -- '---\nname: good\ndescription: %s\n---\n\n# body\nTODO here\n' "$GOOD_DESC" \
+    >"$proj/skills/good/SKILL.md"
+  printf 'forbid-pattern TODO no TODO markers allowed\n' >"$proj/.skill-lint.conf"
+  run "$LINT" "$proj/skills"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no TODO markers allowed (.skill-lint.conf)"* ]]
+}

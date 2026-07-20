@@ -46,6 +46,22 @@ how the script files are discovered); if `shellcheck` is absent, formatting is
 still checked but correctness is not. Either way a note is written to stderr and
 the frontmatter rules still run.
 
+## Per-repo rules: `.skill-lint.conf`
+
+A repo can *add* rules by dropping a `.skill-lint.conf` at its root; `skill-lint`
+finds it by walking up from the skills directory to the git root. The file only
+ever strengthens the bar — it can never relax the baseline, and errors are never
+disablable. Directives are line-based and parsed in bash 3.2 (no YAML, no jq):
+
+| Directive | Effect |
+| --------- | ------ |
+| `forbid-pattern <ERE> <message>` | Error when the extended regex matches a `SKILL.md` body. The pattern is the first field (no spaces); the rest is the message. |
+| `require-field <key>` | Error when a skill's frontmatter lacks that key. |
+| `ignore-warn <skill> <check-id>` | Silence one **warning** for one skill, by SQ ID. Errors cannot be silenced — naming an error's ID is inert. |
+
+Config-driven errors are tagged `(.skill-lint.conf)` in the output.
+`templates/skill-lint.conf.example` is a copy-paste starting point.
+
 ## Where it runs
 
 - **CI on this repo** runs `./bin/skill-lint skills/ --strict` in the `validate`

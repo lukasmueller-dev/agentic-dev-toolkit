@@ -39,6 +39,14 @@ errors=0
 warns=0
 skills_checked=0
 
+# Per-repo extension rules loaded from .skill-lint.conf (see load_config).
+# bash 3.2 has no associative arrays, so these are parallel indexed arrays.
+FORBID_PAT=()
+FORBID_MSG=()
+REQUIRE_FIELD=()
+IGNORE=() # entries: "<skill-name> <check-id>"
+CUR_SKILL=""
+
 usage() {
   printf '%s\n' \
     'usage: skill-lint [--strict] [<skills-dir>...]' \
@@ -60,7 +68,24 @@ emit_error() {
   errors=$((errors + 1))
 }
 
+# warn_suppressed <message> — true when .skill-lint.conf silences this warning
+# for the current skill. The check-id is the leading "[SQxx]" of the message.
+# Only warnings can be silenced; errors route through emit_error and never call
+# this, so the baseline bar stays non-negotiable.
+warn_suppressed() {
+  local id="$1"
+  id="${id%%]*}"
+  id="${id#[}"
+  [ -n "$id" ] || return 1
+  local e
+  for e in "${IGNORE[@]+"${IGNORE[@]}"}"; do
+    [ "$e" = "$CUR_SKILL $id" ] && return 0
+  done
+  return 1
+}
+
 emit_warn() {
+  warn_suppressed "$2" && return 0
   if $STRICT; then
     printf '%s: error: %s\n' "$1" "$2"
     errors=$((errors + 1))
@@ -89,6 +114,77 @@ command -v shellcheck >/dev/null 2>&1 && HAVE_SHELLCHECK=true
 command -v shfmt >/dev/null 2>&1 && HAVE_SHFMT=true
 
 # --------------------------------------------------------------------------
+# Per-repo extension: .skill-lint.conf
+#
+# A repo may ADD rules, never weaken the baseline. The file is found by walking
+# up from the skills directory to the git root (its ceiling, so a stray config
+# in $HOME is never picked up). Directives are line-based and bash-3.2 parseable
+# — no YAML, no jq:
+#
+#   forbid-pattern <ERE> <message>   error if the ERE matches a SKILL.md body
+#   require-field <key>              error if frontmatter lacks that key
+#   ignore-warn <skill> <check-id>   silence one WARNING for one skill
+#
+# The ERE must not contain spaces (everything after it is the message); use
+# [[:space:]] if you need to match whitespace.
+# --------------------------------------------------------------------------
+find_config() {
+  local dir="$1" ceiling
+  dir="$(cd "$dir" 2>/dev/null && pwd)" || return 1
+  ceiling="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+  # Without git, bound the walk to one level up — enough for `skill-lint skills/`
+  # run from a repo root — so an unrelated ancestor config cannot leak in.
+  [ -n "$ceiling" ] || ceiling="$(cd "$dir/.." 2>/dev/null && pwd)"
+  while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+    if [ -f "$dir/.skill-lint.conf" ]; then
+      printf '%s' "$dir/.skill-lint.conf"
+      return 0
+    fi
+    [ "$dir" = "$ceiling" ] && break
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+load_config() {
+  local conf="$1" line directive rest a b
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Strip a leading comment or blank line.
+    case "$line" in '' | '#'*) continue ;; esac
+    directive="${line%%[[:space:]]*}"
+    rest="$(trim "${line#"$directive"}")"
+    case "$directive" in
+      forbid-pattern)
+        a="${rest%%[[:space:]]*}"  # the ERE (no spaces)
+        b="$(trim "${rest#"$a"}")" # the message
+        if [ -z "$a" ] || [ -z "$b" ]; then
+          note "ignoring malformed forbid-pattern in $conf"
+          continue
+        fi
+        FORBID_PAT+=("$a")
+        FORBID_MSG+=("$b")
+        ;;
+      require-field)
+        a="$(trim "$rest")"
+        [ -n "$a" ] && REQUIRE_FIELD+=("$a")
+        ;;
+      ignore-warn)
+        a="${rest%%[[:space:]]*}"  # skill name
+        b="$(trim "${rest#"$a"}")" # check-id
+        if [ -z "$a" ] || [ -z "$b" ]; then
+          note "ignoring malformed ignore-warn in $conf"
+          continue
+        fi
+        IGNORE+=("$a $b")
+        ;;
+      *)
+        note "unknown directive '$directive' in $conf"
+        ;;
+    esac
+  done <"$conf"
+}
+
+# --------------------------------------------------------------------------
 # check_skill <skill-dir> — run every rule against one skill.
 # --------------------------------------------------------------------------
 check_skill() {
@@ -96,6 +192,7 @@ check_skill() {
   local file="$dir/SKILL.md"
   local name
   name="$(basename "$dir")"
+  CUR_SKILL="$name" # consulted by warn_suppressed for ignore-warn
   skills_checked=$((skills_checked + 1))
 
   # Frontmatter must open the file and be closed by a second '---'.
@@ -153,8 +250,33 @@ check_skill() {
       emit_warn "$file" "[SQ7] description is only ${#desc} characters — likely too thin to trigger reliably"
   fi
 
+  # per-repo extra rules ----------------------------------------------------
+  check_config_rules "$file" "$fm"
+
   # bundled scripts ---------------------------------------------------------
   check_scripts "$dir"
+}
+
+# check_config_rules <file> <frontmatter> — apply the .skill-lint.conf rules.
+# These only ever ADD errors; the config can never relax the baseline.
+check_config_rules() {
+  local file="$1" fm="$2" key pat msg body i
+
+  for key in "${REQUIRE_FIELD[@]+"${REQUIRE_FIELD[@]}"}"; do
+    printf '%s\n' "$fm" | grep -Eq "^${key}:" ||
+      emit_error "$file" "frontmatter is missing required field '$key' (.skill-lint.conf)"
+  done
+
+  if [ "${#FORBID_PAT[@]}" -gt 0 ]; then
+    # The body is everything after the closing '---'.
+    body="$(awk 'seen>=2{print} /^---$/{seen++}' "$file")"
+    for i in "${!FORBID_PAT[@]}"; do
+      pat="${FORBID_PAT[$i]}"
+      msg="${FORBID_MSG[$i]}"
+      printf '%s\n' "$body" | grep -Eq -- "$pat" &&
+        emit_error "$file" "$msg (.skill-lint.conf)"
+    done
+  fi
 }
 
 # check_scripts <skill-dir> — shellcheck + shfmt over scripts/.
@@ -254,6 +376,14 @@ if [ "${#dirs[@]}" -eq 0 ]; then
     usage >&2
     exit 2
   fi
+fi
+
+# Load the per-repo extension once, resolved from the first target. All targets
+# are assumed to share a repo; a config only ever adds errors, never relaxes.
+conf="$(find_config "${dirs[0]}" 2>/dev/null || true)"
+if [ -n "$conf" ]; then
+  load_config "$conf"
+  note "loaded $conf"
 fi
 
 for d in "${dirs[@]}"; do

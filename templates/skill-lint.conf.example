@@ -1,0 +1,35 @@
+# .skill-lint.conf — per-repo extension for skill-lint.
+#
+#   cp templates/skill-lint.conf.example <your-repo>/.skill-lint.conf
+#
+# Place it at the repo root. skill-lint finds it by walking up from the skills
+# directory to the git root. A repo may only ADD rules with this file; it can
+# never relax the baseline bar (docs/skill-quality.md). Errors are never
+# disablable — only warnings, and only per skill.
+#
+# FORMAT: one directive per line. Blank lines and lines starting with '#' are
+# ignored. Parsed in bash 3.2 — no YAML, no quoting.
+
+# forbid-pattern <ERE> <message>
+#   Fail (error) when the extended regular expression matches a SKILL.md body
+#   (everything after the frontmatter). The pattern is the first field and must
+#   contain no spaces — everything after it is the message. Use [[:space:]] to
+#   match whitespace.
+#
+#   Ban a placeholder left in from the template:
+#forbid-pattern TODO:? body still contains a TODO marker
+#   Ban an absolute home path leaking into a skill:
+#forbid-pattern /home/[a-z]+/ hard-coded home path — read paths from the environment
+
+# require-field <frontmatter-key>
+#   Fail (error) when a skill's frontmatter lacks this key. Use it to make a
+#   Claude Code extension field mandatory in a repo that relies on it.
+#
+#require-field allowed-tools
+
+# ignore-warn <skill-name> <check-id>
+#   Silence one WARNING for one skill, by criterion ID (see docs/skill-quality.md).
+#   Errors can never be silenced this way; naming an error's ID here is inert.
+#
+#   Let one skill keep its deliberately terse description:
+#ignore-warn my-terse-skill SQ7
