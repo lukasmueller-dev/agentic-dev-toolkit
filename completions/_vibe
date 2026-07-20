@@ -36,7 +36,9 @@ _vibe() {
   local -a commands
   commands=(
     'start:Create branch + worktree for a task and open the agent'
-    'attach:Re-enter an existing task session or worktree'
+    'attach:Arrive at a task — fast-forward when safe, then attach'
+    'park:Refresh HANDOFF.md via the agent, then sync'
+    'rc:Enable Remote Control on a running task (server only)'
     'status:Show environment, worktrees, tmux sessions and open PRs'
     'list:List task worktrees for this repo'
     'done:Remove a task worktree (branch is kept)'
@@ -57,13 +59,21 @@ _vibe() {
       ;;
     args)
       case "${words[1]}" in
-        attach)
+        attach | park | rc | sync)
           _vibe_tasks
           ;;
         done)
           _arguments \
             '(-f --force)'{-f,--force}'[remove even if dirty or unpushed]' \
             '*:task:_vibe_tasks'
+          ;;
+        resume)
+          _arguments \
+            '--rebase[rebase onto upstream when diverged]' \
+            '*:task:_vibe_tasks'
+          ;;
+        status)
+          _arguments '--all[scan every repo under the worktree root]'
           ;;
         start)
           _message 'new task name'

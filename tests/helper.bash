@@ -28,6 +28,10 @@ make_repo() {
   local remote="$BATS_TEST_TMPDIR/$name.git"
   local work="$BATS_TEST_TMPDIR/$name"
   git init -q --bare "$remote"
+  # Pin the bare remote's HEAD to main. The suite disables system/global git
+  # config, so without this the built-in default (master) leaves HEAD pointing
+  # at a ref we never create — and `clone_repo` then checks out nothing.
+  git -C "$remote" symbolic-ref HEAD refs/heads/main
   git init -q -b main "$work"
   git -C "$work" commit -q --allow-empty -m "init"
   git -C "$work" remote add origin "$remote"

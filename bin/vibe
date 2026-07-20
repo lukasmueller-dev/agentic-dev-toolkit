@@ -10,20 +10,43 @@
 #   - On the MAC (local), no tmux is forced — you just get dropped into the worktree.
 #   - Every worktree gets a HANDOFF.md so the two machines can hand off cleanly.
 #
-# Commands:
+# Commands, in the order you reach for them:
+#
+# Daily loop:
 #   vibe start <task>     Create branch+worktree for <task>, seed HANDOFF.md,
 #                         then open a claude session (in tmux on server).
-#   vibe attach <task>    Re-attach to an existing task session (server) or cd into it.
-#   vibe status           Show all worktrees, their branches, tmux state, PRs.
-#   vibe list             Short list of tasks.
-#   vibe done [--force] <task>
+#   vibe attach [<task>]  Arrive at a task: fast-forward its worktree when that
+#                         is safe (clean + ff-only), then attach. Never refuses
+#                         — a dirty/diverged tree is reported and attached as-is.
+#                         With no task, pick from a menu.
+#   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
+#                         agent headlessly, then sync. Degrades to a plain sync
+#                         if the agent is missing or the headless call fails.
+#   vibe done [--force] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
-#                         worktree is dirty or holds unpushed commits.
-#   vibe sync             Commit handoff files (own commit) + the rest, then push.
-#                         Aborts on divergence.
-#   vibe resume           Pull remote (fast-forward only). Aborts if dirty/diverged.
-#   vibe where            Print detected environment (local|server) and why.
+#                         worktree is dirty or holds unpushed commits. Infers the
+#                         task from the cwd when run inside a worktree.
+#
+# Phone:
+#   vibe rc <task>        Enable Remote Control on a running task by sending /rc
+#                         into its tmux session (server only), so it can be
+#                         driven from the Claude app on a phone.
+#
+# Visibility:
+#   vibe status [--all]   Show worktrees with per-worktree sync state (dirty,
+#                         ahead/behind, HANDOFF.md age), tmux state, PRs. --all
+#                         scans every repo under $VIBE_WORKTREE_ROOT.
 #   vibe doctor           Check tools, paths, config and upstream state.
+#
+# Plumbing (attach/park use these; call directly when you need the git layer):
+#   vibe sync [<task>]    Commit handoff files (own commit) + the rest, then
+#                         push. Aborts on divergence. Infers the task from cwd;
+#                         a task argument targets that worktree from anywhere.
+#   vibe resume [--rebase] [<task>]
+#                         Pull remote, fast-forward only. Aborts if dirty or
+#                         diverged; --rebase opts into 'git pull --rebase'.
+#   vibe list             Short list of tasks.
+#   vibe where            Print detected environment (local|server) and why.
 #
 # Requires: git, tmux (server only for persistence), optionally gh (for PR info).
 #
@@ -50,9 +73,11 @@ VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
 # Capture what the environment set before the config file can shadow it.
 _env_worktree_root="${VIBE_WORKTREE_ROOT:-}"
 _env_agent_cmd="${VIBE_AGENT_CMD:-}"
+_env_agent_headless_args="${VIBE_AGENT_HEADLESS_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
 _env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
+_env_rc_on_start="${VIBE_RC_ON_START:-}"
 
 if [[ -r "$VIBE_CONFIG_FILE" ]]; then
   # shellcheck source=/dev/null
@@ -62,11 +87,18 @@ fi
 # env > config > default
 VIBE_WORKTREE_ROOT="${_env_worktree_root:-${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}}"
 VIBE_AGENT_CMD="${_env_agent_cmd:-${VIBE_AGENT_CMD:-claude}}"
+# Arguments that turn VIBE_AGENT_CMD into a one-shot headless run (used by
+# 'vibe park' to refresh HANDOFF.md). Default is Claude Code's '-p', but the
+# split lets any agent be driven headlessly without hardcoding one here.
+VIBE_AGENT_HEADLESS_ARGS="${_env_agent_headless_args:-${VIBE_AGENT_HEADLESS_ARGS:--p}}"
 VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
 VIBE_SERVER_HOSTNAME="${_env_server_hostname:-${VIBE_SERVER_HOSTNAME:-}}"
 VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
-unset _env_worktree_root _env_agent_cmd _env_tmux_prefix \
-  _env_server_hostname _env_ntfy_topic
+# Opt-in: launch the server-side agent with Remote Control already enabled, so
+# a task is reachable from the Claude app without typing /rc first. Server only.
+VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
+unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
+  _env_tmux_prefix _env_server_hostname _env_ntfy_topic _env_rc_on_start
 
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
 VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
@@ -185,6 +217,100 @@ tmux_session_name() {
 }
 
 # ---------------------------------------------------------------------------
+# Resolving which worktree a command should act on
+#
+# Two ways in, both filling R_repo / R_branch / R_dir:
+#   - a task argument, turned into <root>/<repo>/<branch> via repo_name+slug;
+#   - inference from the cwd, when we are standing inside a vibe worktree.
+# Both confirm with git that the target really is a worktree before trusting
+# it, so a stray directory that merely looks like the layout is never acted on.
+# ---------------------------------------------------------------------------
+
+# resolve_by_task TASK — fill R_repo/R_branch/R_dir from a task name, or die.
+# Needs a surrounding git repo (for repo_name); works from the main checkout
+# or from any of the repo's worktrees.
+resolve_by_task() {
+  local task="$1"
+  R_repo="$(repo_name)"
+  R_branch="$(slug "$task")"
+  R_dir="$(worktree_dir "$R_repo" "$R_branch")"
+  [[ -d "$R_dir" ]] || die "no worktree for '$R_branch' (looked in $R_dir). Run: vibe start $task"
+  git -C "$R_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    die "$R_dir exists but is not a git worktree."
+}
+
+# infer_from_cwd — fill R_repo/R_branch/R_dir when the cwd sits inside a vibe
+# worktree ($VIBE_WORKTREE_ROOT/<repo>/<branch>). Returns non-zero otherwise,
+# so callers can fall back or refuse. git prints physical paths, so resolve
+# ours the same way (cd/pwd -P: no readlink -f on macOS) before comparing.
+infer_from_cwd() {
+  local top vroot rest
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
+  top="$(cd "$top" && pwd -P)"
+  [[ -d "$VIBE_WORKTREE_ROOT" ]] || return 1
+  vroot="$(cd "$VIBE_WORKTREE_ROOT" && pwd -P)"
+  case "$top" in
+    "$vroot"/*/*) rest="${top#"$vroot"/}" ;;
+    *) return 1 ;;
+  esac
+  R_repo="${rest%%/*}"
+  R_branch="${rest#*/}"
+  # exactly <repo>/<branch>: a deeper path is not a task root
+  [[ -n "$R_repo" && -n "$R_branch" && "$R_branch" != */* ]] || return 1
+  # a real worktree, not just a matching path
+  git -C "$top" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  R_dir="$top"
+}
+
+# dir_for_optional_task [TASK] — echo the worktree dir a cwd-flexible command
+# (sync, resume, park) should act on. A task argument targets that worktree
+# from anywhere; with none we act on the current worktree, which is the cwd's
+# own toplevel whether that is a vibe task or an ordinary checkout.
+dir_for_optional_task() {
+  local task="${1:-}"
+  if [[ -n "$task" ]]; then
+    resolve_by_task "$task"
+    printf '%s\n' "$R_dir"
+  else
+    git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repository."
+  fi
+}
+
+# pick_task — let the user choose a task for the current repo, printing the
+# chosen name on stdout. Uses fzf when it is on PATH, otherwise a plain shell
+# 'select' menu. Returns non-zero (after a note) when there is nothing to pick
+# or the user cancels, so callers can fall back to a usage message.
+pick_task() {
+  need git
+  local repo base d tasks=()
+  repo="$(repo_name)"
+  base="$VIBE_WORKTREE_ROOT/$repo"
+  if [[ -d "$base" ]]; then
+    for d in "$base"/*/; do
+      [[ -d "$d" ]] && tasks+=("$(basename "$d")")
+    done
+  fi
+  if ((${#tasks[@]} == 0)); then
+    warn "no tasks yet for $repo — run: vibe start <task>" >&2
+    return 1
+  fi
+
+  if command -v fzf >/dev/null 2>&1; then
+    printf '%s\n' "${tasks[@]}" | fzf --prompt='vibe task> ' --height=40% --reverse
+  else
+    # 'select' draws its menu on stderr and reads the choice from the tty, so
+    # stdout stays clean for the chosen name that the caller captures.
+    local choice
+    select choice in "${tasks[@]}"; do
+      [[ -n "$choice" ]] && {
+        printf '%s\n' "$choice"
+        break
+      }
+    done </dev/tty
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # HANDOFF.md seeding — rendered from templates/, never embedded here.
 # ---------------------------------------------------------------------------
 seed_handoff() {
@@ -254,7 +380,13 @@ open_session() {
     else
       info "starting persistent tmux session: $sess"
       tmux new-session -d -s "$sess" -c "$dir"
-      tmux send-keys -t "$sess" "$VIBE_AGENT_CMD" C-m
+      # VIBE_RC_ON_START launches the agent with Remote Control already on, so
+      # the session is reachable from the phone without a later 'vibe rc'. This
+      # appends Claude Code's --remote-control flag; agents without it should
+      # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
+      local launch="$VIBE_AGENT_CMD"
+      [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
+      tmux send-keys -t "$sess" "$launch" C-m
     fi
     if [[ -n "${TMUX:-}" ]]; then
       tmux switch-client -t "$sess"
@@ -269,8 +401,57 @@ open_session() {
   fi
 }
 
+# attach_ff DIR — fast-forward DIR to its upstream when that is safe (clean
+# tree, ff-only), and print one line saying what happened either way. Unlike
+# ff_worktree (the plumbing behind 'vibe resume'), this NEVER refuses: attach
+# only declines to *guess about git*, never to attach. So a dirty or diverged
+# worktree is reported and left alone, and the caller attaches regardless.
+attach_ff() {
+  local dir="$1" branch
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+
+  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+    warn "not pulling: $branch has uncommitted changes — attaching as-is"
+    return 0
+  fi
+  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    info "no upstream for $branch — attaching without pulling"
+    return 0
+  fi
+  git -C "$dir" fetch -q 2>/dev/null || {
+    warn "fetch failed — attaching without pulling"
+    return 0
+  }
+
+  local local_rev remote_rev base n
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    info "$branch already up to date — attaching"
+  elif [[ "$local_rev" == "$base" ]]; then
+    n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+    git -C "$dir" merge -q --ff-only '@{u}'
+    if [[ "$n" == 1 ]]; then
+      ok "fast-forwarded $branch (1 commit) — attaching"
+    else
+      ok "fast-forwarded $branch ($n commits) — attaching"
+    fi
+  elif [[ "$remote_rev" == "$base" ]]; then
+    info "$branch is ahead of remote — attaching ('vibe park' to push)"
+  else
+    warn "not pulling: $branch has diverged from remote — attaching as-is
+  ('vibe resume --rebase' reconciles once you have decided)"
+  fi
+  return 0
+}
+
+# vibe attach [<task>] — the single "arrive at a machine" verb. Fast-forwards
+# the task's worktree when safe, then attaches; with no task, pick from a menu.
 cmd_attach() {
+  need git
   local task="${1:-}"
+  [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe attach <task>"
   local branch
   branch="$(slug "$task")"
@@ -279,35 +460,129 @@ cmd_attach() {
   local dir
   dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree for '$branch' (looked in $dir). Run: vibe start $task"
+  attach_ff "$dir"
   open_session "$repo" "$branch" "$dir"
+}
+
+# handoff_age DIR — a short human age for DIR/HANDOFF.md ("3h", "2d"), or
+# "none". stat differs between GNU and BSD, so try both spellings.
+handoff_age() {
+  local dir="$1"
+  local f="$dir/HANDOFF.md" mtime now delta
+  [[ -f "$f" ]] || {
+    echo "none"
+    return
+  }
+  mtime="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)" || {
+    echo "?"
+    return
+  }
+  now="$(date +%s)"
+  delta=$((now - mtime))
+  if ((delta < 3600)); then
+    echo "$((delta / 60))m"
+  elif ((delta < 86400)); then
+    echo "$((delta / 3600))h"
+  else
+    echo "$((delta / 86400))d"
+  fi
+}
+
+# sync_state_line DIR — one dim line summarising a worktree's state, entirely
+# from local refs. Like cmd_doctor, it never fetches: 'ahead'/'behind' are
+# measured against the last fetch so 'vibe status' stays read-only and offline.
+sync_state_line() {
+  local dir="$1" dirty ahead behind
+  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+    dirty="dirty"
+  else
+    dirty="clean"
+  fi
+  ahead="$(unpushed_commits "$dir")"
+  behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  printf '      %s%s · %s ahead · %s behind · handoff %s%s\n' \
+    "$c_dim" "$dirty" "$ahead" "$behind" "$(handoff_age "$dir")" "$c_off"
+}
+
+# print_worktrees — the current repo's worktrees, one per line, each with a
+# sync-state line. git's list starts with the main checkout itself; label
+# anything that is not a vibe task so this never suggests a task 'vibe done'
+# would not find. git prints physical paths, so resolve ours the same way
+# before comparing (cd/pwd -P: no readlink -f on macOS).
+print_worktrees() {
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "  (not in a repo — try 'vibe status --all')"
+    return
+  fi
+  local mainroot vroot wt="" br=""
+  mainroot="$(main_repo_root 2>/dev/null || true)"
+  [[ -d "$mainroot" ]] && mainroot="$(cd "$mainroot" && pwd -P)"
+  vroot="$VIBE_WORKTREE_ROOT"
+  [[ -d "$vroot" ]] && vroot="$(cd "$vroot" && pwd -P)"
+
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) wt="${line#worktree }" ;;
+      "branch "*)
+        br="${line#branch }"
+        br="${br#refs/heads/}"
+        print_one_worktree "$wt" "$br" "$mainroot" "$vroot"
+        ;;
+      "detached") print_one_worktree "$wt" "(detached)" "$mainroot" "$vroot" ;;
+    esac
+  done < <(git worktree list --porcelain 2>/dev/null)
+}
+
+print_one_worktree() {
+  local wt="$1" br="$2" mainroot="$3" vroot="$4" tag=""
+  if [[ -n "$mainroot" && "$wt" == "$mainroot" ]]; then
+    tag="  (main checkout, not a vibe task)"
+  elif [[ -n "$vroot" && "$wt" != "$vroot"/* ]]; then
+    tag="  (not managed by vibe)"
+  fi
+  printf '  %s%s%s  %s%s%s%s\n' "$c_grn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
+  sync_state_line "$wt"
+}
+
+# print_all_worktrees — every vibe worktree under $VIBE_WORKTREE_ROOT, across
+# all repos. Walks the directory tree rather than 'git worktree list', so it
+# works from outside any git repository.
+print_all_worktrees() {
+  local vroot repo_dir wt_dir repo br found=0
+  vroot="$VIBE_WORKTREE_ROOT"
+  if [[ ! -d "$vroot" ]]; then
+    echo "  (no worktree root at $vroot)"
+    return
+  fi
+  vroot="$(cd "$vroot" && pwd -P)"
+  for repo_dir in "$vroot"/*/; do
+    [[ -d "$repo_dir" ]] || continue
+    repo="$(basename "$repo_dir")"
+    for wt_dir in "$repo_dir"*/; do
+      [[ -d "$wt_dir" ]] || continue
+      git -C "$wt_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || continue
+      found=1
+      br="$(git -C "$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+      printf '  %s%s/%s%s  %s%s%s\n' \
+        "$c_grn" "$repo" "$br" "$c_off" "$c_dim" "${wt_dir%/}" "$c_off"
+      sync_state_line "${wt_dir%/}"
+    done
+  done
+  ((found)) || echo "  (no vibe worktrees under $vroot)"
 }
 
 cmd_status() {
   need git
-  local repo
-  repo="$(repo_name 2>/dev/null || echo '?')"
+  local all=0
+  case "${1:-}" in
+    --all) all=1 ;;
+    "") ;;
+    *) die "unknown option '$1' (usage: vibe status [--all])" ;;
+  esac
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
   printf '%sWorktrees%s\n' "$c_bld" "$c_off"
-  # git's list starts with the main checkout itself. Label anything that is
-  # not under $VIBE_WORKTREE_ROOT so this section never suggests a task that
-  # `vibe done` would not find. git prints physical paths, so resolve ours
-  # the same way before comparing (cd/pwd -P: no readlink -f on macOS).
-  local mainroot vroot
-  mainroot="$(main_repo_root 2>/dev/null || true)"
-  if [[ -d "$mainroot" ]]; then mainroot="$(cd "$mainroot" && pwd -P)"; fi
-  vroot="$VIBE_WORKTREE_ROOT"
-  if [[ -d "$vroot" ]]; then vroot="$(cd "$vroot" && pwd -P)"; fi
-  git worktree list --porcelain 2>/dev/null |
-    awk -v grn="$c_grn" -v off="$c_off" -v dim="$c_dim" \
-      -v main="$mainroot" -v root="$vroot/" '
-      /^worktree /  { wt=$2 }
-      /^branch /    { br=$2; sub("refs/heads/","",br)
-                      tag = ""
-                      if (wt == main)                tag = "  (main checkout, not a vibe task)"
-                      else if (index(wt, root) != 1) tag = "  (not managed by vibe)"
-                      printf "  %s%s%s  %s%s%s%s\n", grn, br, off, dim, wt, tag, off }
-    ' || echo "  (not in a repo)"
+  if ((all)); then print_all_worktrees; else print_worktrees; fi
 
   # tmux sessions belonging to vibe
   if command -v tmux >/dev/null 2>&1 && tmux ls >/dev/null 2>&1; then
@@ -315,8 +590,8 @@ cmd_status() {
     tmux ls 2>/dev/null | grep "^${VIBE_TMUX_PREFIX}-" | sed 's/^/  /' || echo "  (none)"
   fi
 
-  # open PRs via gh, if available
-  if command -v gh >/dev/null 2>&1; then
+  # open PRs via gh, if available and we are inside a repo
+  if git rev-parse --show-toplevel >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
     printf '\n%sOpen PRs%s\n' "$c_bld" "$c_off"
     gh pr list --state open 2>/dev/null | sed 's/^/  /' || echo "  (gh not authenticated)"
   fi
@@ -359,13 +634,21 @@ cmd_done() {
     esac
     shift
   done
-  [[ -n "$task" ]] || die "usage: vibe done [--force] <task>"
-
   local branch repo main dir
-  branch="$(slug "$task")"
-  repo="$(repo_name)"
+  if [[ -n "$task" ]]; then
+    branch="$(slug "$task")"
+    repo="$(repo_name)"
+    dir="$(worktree_dir "$repo" "$branch")"
+  else
+    # no task given — only safe from inside a vibe worktree, where the task is
+    # unambiguous. Anywhere else, refuse rather than guess a branch to destroy.
+    infer_from_cwd ||
+      die "not inside a vibe worktree — name the task: vibe done [--force] <task>"
+    repo="$R_repo"
+    branch="$R_branch"
+    dir="$R_dir"
+  fi
   main="$(main_repo_root)"
-  dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree at $dir"
 
   # Refuse to destroy work. This used to be an unconditional
@@ -399,6 +682,11 @@ cmd_done() {
     info "killed tmux session $sess"
   fi
 
+  # Step out of the target first: 'vibe done' with no argument is run from
+  # inside the worktree it is about to remove, and git refuses to remove the
+  # worktree that is the current directory.
+  cd "$main" 2>/dev/null || cd / || true
+
   # --force only when explicitly asked: otherwise let git apply its own checks
   # as a second line of defence.
   if [[ "$force" == 1 ]]; then
@@ -409,100 +697,219 @@ cmd_done() {
   info "removed worktree $dir (branch '$branch' kept)"
 }
 
-# vibe sync — commit handoff files first (own commit), then the rest, then push.
-# Refuses to push over divergence.
-cmd_sync() {
-  need git
-  git rev-parse --show-toplevel >/dev/null 2>&1 || die "not inside a git repository."
-  local branch
-  branch="$(git rev-parse --abbrev-ref HEAD)"
+# sync_dir DIR — commit handoff files first (own commit), then the rest, then
+# push, refusing over divergence. All git runs through 'git -C "$dir"' so this
+# works on a worktree other than the cwd (e.g. 'vibe sync <task>').
+sync_dir() {
+  local dir="$1"
+  git -C "$dir" rev-parse --show-toplevel >/dev/null 2>&1 || die "not inside a git repository."
+  local branch root
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
   [[ "$branch" != "HEAD" ]] || die "detached HEAD — checkout a branch first."
-  local root
-  root="$(git rev-parse --show-toplevel)"
+  root="$(git -C "$dir" rev-parse --show-toplevel)"
 
   # 1. handoff/status files first, as their own commit
   local handoff_paths=() f
   for f in "${VIBE_HANDOFF_FILES[@]}"; do
     [[ -e "$root/$f" ]] || continue
-    if ! git ls-files --error-unmatch "$f" >/dev/null 2>&1 ||
-      ! git diff --quiet -- "$f" 2>/dev/null ||
-      ! git diff --cached --quiet -- "$f" 2>/dev/null; then
+    if ! git -C "$dir" ls-files --error-unmatch "$f" >/dev/null 2>&1 ||
+      ! git -C "$dir" diff --quiet -- "$f" 2>/dev/null ||
+      ! git -C "$dir" diff --cached --quiet -- "$f" 2>/dev/null; then
       handoff_paths+=("$f")
     fi
   done
   if ((${#handoff_paths[@]})); then
-    git add -- "${handoff_paths[@]}"
-    git commit -q -m "chore: handoff ($branch @ $(date '+%Y-%m-%d %H:%M'))" \
+    git -C "$dir" add -- "${handoff_paths[@]}"
+    git -C "$dir" commit -q -m "chore: handoff ($branch @ $(date '+%Y-%m-%d %H:%M'))" \
       -- "${handoff_paths[@]}"
     info "committed handoff files: ${handoff_paths[*]}"
   fi
 
   # 2. the rest of the work
-  if [[ -n "$(git status --porcelain)" ]]; then
-    git add -A
-    git commit -q -m "vibe sync: $branch @ $(date '+%Y-%m-%d %H:%M')"
+  if [[ -n "$(git -C "$dir" status --porcelain)" ]]; then
+    git -C "$dir" add -A
+    git -C "$dir" commit -q -m "vibe sync: $branch @ $(date '+%Y-%m-%d %H:%M')"
     info "committed remaining changes on $branch"
   else
     ((${#handoff_paths[@]})) || info "nothing to commit"
   fi
 
   # 3. push with divergence guard
-  if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
     warn "no upstream set — pushing with -u"
-    git push -u origin "$branch"
+    git -C "$dir" push -u origin "$branch"
     ok "pushed $branch (new upstream)"
     return
   fi
 
-  git fetch -q
+  git -C "$dir" fetch -q
   local local_rev remote_rev base
-  local_rev="$(git rev-parse @)"
-  remote_rev="$(git rev-parse '@{u}')"
-  base="$(git merge-base @ '@{u}')"
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
 
   if [[ "$local_rev" == "$remote_rev" ]]; then
     ok "already in sync"
   elif [[ "$local_rev" == "$base" ]]; then
     die "remote is ahead. Run 'vibe resume' here first, then sync."
   elif [[ "$remote_rev" == "$base" ]]; then
-    git push -q origin "$branch"
+    git -C "$dir" push -q origin "$branch"
     ok "pushed $branch"
   else
     die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync."
   fi
 }
 
-# vibe resume — fast-forward pull only. Refuses if working tree is dirty or diverged.
-cmd_resume() {
+# vibe sync [<task>] — sync the cwd's worktree, or the named task's worktree.
+cmd_sync() {
   need git
-  git rev-parse --show-toplevel >/dev/null 2>&1 || die "not inside a git repository."
-  local branch
-  branch="$(git rev-parse --abbrev-ref HEAD)"
+  local dir
+  dir="$(dir_for_optional_task "${1:-}")"
+  sync_dir "$dir"
+}
 
-  [[ -z "$(git status --porcelain)" ]] ||
+# ff_worktree DIR [REBASE] — fast-forward DIR to its upstream, refusing if the
+# working tree is dirty or the branch has diverged. This is the plumbing behind
+# 'vibe resume'; it refuses to guess, unlike attach_ff which never blocks the
+# attach. REBASE=1 opts into 'git pull --rebase' for the diverged case.
+ff_worktree() {
+  local dir="$1" rebase="${2:-0}" branch
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+
+  [[ -z "$(git -C "$dir" status --porcelain)" ]] ||
     die "working tree has uncommitted changes. Commit or 'vibe sync' first."
 
-  if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
     warn "no upstream for $branch — nothing to pull"
     return
   fi
 
-  git fetch -q
+  git -C "$dir" fetch -q
   local local_rev remote_rev base
-  local_rev="$(git rev-parse @)"
-  remote_rev="$(git rev-parse '@{u}')"
-  base="$(git merge-base @ '@{u}')"
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
 
   if [[ "$local_rev" == "$remote_rev" ]]; then
     ok "already up to date"
   elif [[ "$local_rev" == "$base" ]]; then
-    git merge -q --ff-only '@{u}'
+    git -C "$dir" merge -q --ff-only '@{u}'
     ok "fast-forwarded $branch to remote"
   elif [[ "$remote_rev" == "$base" ]]; then
     warn "you are ahead of remote — nothing to pull. Run 'vibe sync' to push."
+  elif [[ "$rebase" == 1 ]]; then
+    warn "branch and remote have diverged — rebasing onto @{u} (--rebase)."
+    git -C "$dir" pull --rebase
+    ok "rebased $branch onto remote"
   else
-    die "branch and remote have DIVERGED. Resolve manually, then resume."
+    die "branch and remote have DIVERGED. Resolve manually, then resume
+  (or opt into 'vibe resume --rebase' once you have decided)."
   fi
+}
+
+# vibe resume [--rebase] [<task>] — fast-forward pull only, unless --rebase.
+cmd_resume() {
+  need git
+  local rebase=0 task=""
+  while (($#)); do
+    case "$1" in
+      --rebase) rebase=1 ;;
+      -*) die "unknown option '$1' (usage: vibe resume [--rebase] [<task>])" ;;
+      *) task="$1" ;;
+    esac
+    shift
+  done
+  local dir
+  dir="$(dir_for_optional_task "$task")"
+  ff_worktree "$dir" "$rebase"
+}
+
+# wait_for_pane_idle SESS — poll the session's pane until the agent looks like
+# it is waiting for input, or a bounded timeout elapses. Returns 0 if an idle
+# prompt was seen, 1 on timeout. This is polling with a short per-iteration
+# wait, never a single blind sleep hoping the agent is ready.
+wait_for_pane_idle() {
+  local sess="$1" waited=0 max=20 tail
+  while ((waited < max)); do
+    # last few non-blank lines of the pane; an agent waiting for input ends in
+    # its prompt box ('│ >' / '❯' / a bare '>').
+    tail="$(tmux capture-pane -t "$sess" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 3)"
+    case "$tail" in
+      *'│ >'* | *'❯'* | *'> '*) return 0 ;;
+    esac
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
+}
+
+# vibe rc <task> — turn on Remote Control for a running task by sending '/rc'
+# into its tmux session, so it can be driven from the Claude app on a phone.
+# Server only: there is no persistent session to reach on local. This is what
+# makes 'ssh <vps> vibe rc <task>' work from anywhere.
+cmd_rc() {
+  local task="${1:-}"
+  [[ -n "$task" ]] || die "usage: vibe rc <task>"
+
+  if [[ "$(detect_env)" != "server" ]]; then
+    warn "vibe rc is a no-op on local: Remote Control reaches a persistent tmux
+  session on the server, and there is none here. Run it on the server, e.g.
+  'ssh <vps> vibe rc $task'."
+    return 0
+  fi
+
+  need git
+  need tmux
+  local repo branch sess
+  repo="$(repo_name)"
+  branch="$(slug "$task")"
+  sess="$(tmux_session_name "$repo" "$branch")"
+  tmux has-session -t "$sess" 2>/dev/null ||
+    die "no tmux session '$sess' — is the task running? Try: vibe attach $task"
+
+  if wait_for_pane_idle "$sess"; then
+    info "agent looks idle — sending /rc"
+  else
+    warn "agent did not look idle in time — sending /rc anyway"
+  fi
+  tmux send-keys -t "$sess" "/rc" C-m
+  ok "sent /rc to $sess — open the Claude app → Code tab to connect"
+}
+
+# run_headless_handoff DIR — drive the agent once, headlessly, to refresh
+# HANDOFF.md. Returns non-zero (after warning) if the agent is missing or the
+# run fails, so 'vibe park' can degrade to a plain sync rather than block a
+# handoff on a flaky agent.
+run_headless_handoff() {
+  local dir="$1" bin="${VIBE_AGENT_CMD%% *}"
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    warn "agent '$bin' not found — skipping HANDOFF.md refresh, syncing as-is."
+    return 1
+  fi
+  local prompt
+  prompt="Update HANDOFF.md in this worktree so another machine can pick up \
+where I left off: what changed, what works, what is in progress, and the next \
+concrete step. Keep it concise, and edit only HANDOFF.md."
+  info "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…"
+  # The headless args are meant to be word-split into separate arguments.
+  # shellcheck disable=SC2086
+  if (cd "$dir" && $VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "$prompt"); then
+    ok "HANDOFF.md refreshed"
+  else
+    warn "headless agent run failed — syncing current HANDOFF.md as-is."
+    return 1
+  fi
+}
+
+# vibe park [<task>] — the leaving-machine verb. Refresh HANDOFF.md via the
+# agent, then sync. The refresh is best-effort: a missing or failing agent
+# still leaves the existing handoff synced rather than stranding the work.
+cmd_park() {
+  need git
+  local dir
+  dir="$(dir_for_optional_task "${1:-}")"
+  run_headless_handoff "$dir" || true
+  sync_dir "$dir"
 }
 
 cmd_where() {
@@ -604,6 +1011,20 @@ cmd_doctor() {
     d_wn "ntfy topic  unset — phone notifications are off (see docs/notifications.md)"
   fi
 
+  d_ok "headless    park runs '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'"
+
+  case "$VIBE_RC_ON_START" in
+    0) d_ok "rc launch   off (enable with VIBE_RC_ON_START=1 on the server)" ;;
+    1)
+      if [[ "$(detect_env)" == "server" ]]; then
+        d_ok "rc launch   on — new sessions start with Remote Control enabled"
+      else
+        d_wn "rc launch   VIBE_RC_ON_START=1 but this is local — it only applies on the server"
+      fi
+      ;;
+    *) d_no "rc launch   VIBE_RC_ON_START must be 0 or 1 (got '$VIBE_RC_ON_START')" ;;
+  esac
+
   printf '\n%sEnvironment%s\n' "$c_bld" "$c_off"
   d_ok "detected    $(detect_env) ($(env_reason))"
   if [[ "$(detect_env)" == "local" && -z "$VIBE_SERVER_HOSTNAME" ]]; then
@@ -664,6 +1085,8 @@ main() {
   case "$cmd" in
     start) cmd_start "$@" ;;
     attach) cmd_attach "$@" ;;
+    park) cmd_park "$@" ;;
+    rc) cmd_rc "$@" ;;
     status) cmd_status "$@" ;;
     list) cmd_list "$@" ;;
     done) cmd_done "$@" ;;
