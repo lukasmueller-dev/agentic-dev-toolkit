@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+#
+# skill-lint — mechanical quality checks for Agent Skills.
+#
+# Every rule here is machine-checkable: it needs no reader's judgment, only a
+# regex or a length. The judgment calls — does the description say *what and
+# when*, does the body open with boundaries — live in the skill-audit skill,
+# not here. Keep that line sharp: a check that needs an opinion does not belong
+# in this file.
+#
+# SKILL.md is an open standard (the Agent Skills spec), so checking one is not
+# specific to any single agent. That is why this lives in bin/, gets symlinked
+# into ~/bin, and runs in every repo — not in claude/.
+#
+# Usage:
+#   skill-lint [--strict] [<skills-dir>...]
+#
+#   With no directory argument it uses ./.claude/skills if that exists, else
+#   ./skills. A <skills-dir> is the *parent* of skill directories, each of
+#   which holds a SKILL.md (skills/<name>/SKILL.md). Directories whose name
+#   starts with '_' are skipped, matching the installer.
+#
+#   --strict promotes warnings to errors (used by CI on this repo's own skills).
+#
+# Output: one finding per line, "<path>: error|warn: <message>", then a summary
+# line. Exit 1 if any error, 0 otherwise.
+#
+# Degrades, never breaks: if shellcheck or shfmt is absent the bundled-script
+# checks are skipped with a note on stderr, so the linter stays useful on a
+# machine that has nothing but bash.
+set -uo pipefail
+
+STRICT=false
+errors=0
+warns=0
+skills_checked=0
+
+usage() {
+  printf '%s\n' \
+    'usage: skill-lint [--strict] [<skills-dir>...]' \
+    '' \
+    '  Checks every skills/<name>/SKILL.md under each <skills-dir> against the' \
+    '  mechanical criteria. With no directory it uses ./.claude/skills if that' \
+    "  exists, else ./skills. Directories named '_*' are skipped." \
+    '' \
+    '  --strict  promote warnings to errors' \
+    '  -h,--help show this message'
+}
+
+# --------------------------------------------------------------------------
+# Finding emitters. A warning becomes an error under --strict — that is the
+# whole meaning of the flag, so the promotion happens here in one place.
+# --------------------------------------------------------------------------
+emit_error() {
+  printf '%s: error: %s\n' "$1" "$2"
+  errors=$((errors + 1))
+}
+
+emit_warn() {
+  if $STRICT; then
+    printf '%s: error: %s\n' "$1" "$2"
+    errors=$((errors + 1))
+  else
+    printf '%s: warn: %s\n' "$1" "$2"
+    warns=$((warns + 1))
+  fi
+}
+
+note() { printf 'skill-lint: %s\n' "$1" >&2; }
+
+# trim leading/trailing whitespace — pure bash, no external process.
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+# --------------------------------------------------------------------------
+# Tool detection. Done once; the bundled-script checks consult these flags.
+# --------------------------------------------------------------------------
+HAVE_SHELLCHECK=false
+HAVE_SHFMT=false
+command -v shellcheck >/dev/null 2>&1 && HAVE_SHELLCHECK=true
+command -v shfmt >/dev/null 2>&1 && HAVE_SHFMT=true
+
+# --------------------------------------------------------------------------
+# check_skill <skill-dir> — run every rule against one skill.
+# --------------------------------------------------------------------------
+check_skill() {
+  local dir="$1"
+  local file="$dir/SKILL.md"
+  local name
+  name="$(basename "$dir")"
+  skills_checked=$((skills_checked + 1))
+
+  # Frontmatter must open the file and be closed by a second '---'.
+  if [ "$(head -1 "$file")" != "---" ]; then
+    emit_error "$file" "must start with YAML frontmatter ('---' on line 1)"
+    return
+  fi
+  if ! sed -n '2,$p' "$file" | grep -qx -- '---'; then
+    emit_error "$file" "frontmatter is not closed by a second '---'"
+    return
+  fi
+
+  local fm
+  fm="$(sed -n '2,/^---$/p' "$file")"
+
+  # name --------------------------------------------------------------------
+  local nm
+  nm="$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)"
+  nm="$(trim "$nm")"
+  nm="${nm%\"}"
+  nm="${nm#\"}"
+  if [ -z "$nm" ]; then
+    emit_error "$file" "frontmatter is missing 'name:'"
+  else
+    [ "$nm" = "$name" ] ||
+      emit_error "$file" "name '$nm' does not match directory '$name'"
+    printf '%s' "$nm" | grep -Eqx '[a-z0-9]+(-[a-z0-9]+)*' ||
+      emit_error "$file" "name '$nm' must be lowercase letters, digits and single hyphens"
+    [ "${#nm}" -le 64 ] ||
+      emit_error "$file" "name '$nm' exceeds 64 characters"
+    case "$nm" in
+      *claude* | *anthropic*)
+        emit_error "$file" "name '$nm' must not contain 'claude' or 'anthropic'"
+        ;;
+    esac
+  fi
+
+  # description -------------------------------------------------------------
+  local desc
+  desc="$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -1)"
+  desc="$(trim "$desc")"
+  desc="${desc%\"}"
+  desc="${desc#\"}"
+  if [ -z "$desc" ]; then
+    emit_error "$file" "frontmatter is missing 'description:'"
+  else
+    [ "${#desc}" -le 1024 ] ||
+      emit_error "$file" "description is ${#desc} characters, over the 1024 limit"
+    case "$desc" in
+      "I "* | "You "* | "We "*)
+        emit_warn "$file" "description reads first-person; write it in third person"
+        ;;
+    esac
+    [ "${#desc}" -ge 50 ] ||
+      emit_warn "$file" "description is only ${#desc} characters — likely too thin to trigger reliably"
+  fi
+
+  # bundled scripts ---------------------------------------------------------
+  check_scripts "$dir"
+}
+
+# check_scripts <skill-dir> — shellcheck + shfmt over scripts/.
+# Discovery uses `shfmt -f`, which is how the rest of the repo finds shell
+# files (by shebang, not just extension). No shfmt means no discovery, so the
+# whole step is skipped with a note rather than half-run.
+check_scripts() {
+  local dir="$1"
+  local scriptsdir="$dir/scripts"
+  [ -d "$scriptsdir" ] || return 0
+
+  if ! $HAVE_SHFMT; then
+    note "shfmt not found; skipping bundled-script checks in $scriptsdir"
+    return 0
+  fi
+
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if $HAVE_SHELLCHECK; then
+      shellcheck "$f" >/dev/null 2>&1 ||
+        emit_error "$f" "fails shellcheck (run: shellcheck '$f')"
+    fi
+    shfmt -d -i 2 -ci "$f" >/dev/null 2>&1 ||
+      emit_error "$f" "not formatted with shfmt -i 2 -ci (run: shfmt -w -i 2 -ci '$f')"
+  done < <(shfmt -f "$scriptsdir" 2>/dev/null)
+
+  $HAVE_SHELLCHECK ||
+    note "shellcheck not found; checked formatting but not correctness in $scriptsdir"
+}
+
+# --------------------------------------------------------------------------
+# lint_dir <skills-dir> — every non-'_' skill subdirectory with a SKILL.md.
+# --------------------------------------------------------------------------
+lint_dir() {
+  local root="$1"
+  if [ ! -d "$root" ]; then
+    emit_error "$root" "no such directory"
+    return
+  fi
+  local d name
+  for d in "$root"/*/; do
+    [ -d "$d" ] || continue # no subdirectories: the glob stayed literal
+    d="${d%/}"
+    name="$(basename "$d")"
+    case "$name" in _*) continue ;; esac
+    [ -f "$d/SKILL.md" ] || continue # not a skill directory
+    check_skill "$d"
+  done
+}
+
+# --------------------------------------------------------------------------
+# Arguments
+# --------------------------------------------------------------------------
+dirs=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --strict) STRICT=true ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      note "unknown option: $1"
+      usage >&2
+      exit 2
+      ;;
+    *) dirs+=("$1") ;;
+  esac
+  shift
+done
+# Anything after '--' is a directory.
+while [ $# -gt 0 ]; do
+  dirs+=("$1")
+  shift
+done
+
+if [ "${#dirs[@]}" -eq 0 ]; then
+  if [ -d ./.claude/skills ]; then
+    dirs=(./.claude/skills)
+  elif [ -d ./skills ]; then
+    dirs=(./skills)
+  else
+    note "no skills directory given and neither ./.claude/skills nor ./skills exists"
+    usage >&2
+    exit 2
+  fi
+fi
+
+for d in "${dirs[@]}"; do
+  lint_dir "$d"
+done
+
+printf 'checked %d skill(s): %d error(s), %d warning(s)\n' \
+  "$skills_checked" "$errors" "$warns"
+
+[ "$errors" -eq 0 ]
