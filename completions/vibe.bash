@@ -48,14 +48,22 @@ _vibe() {
 
   # completing the subcommand itself
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start attach park rc status list done sync resume where doctor help" "$cur"
+    _vibe_reply "start loop attach park rc status list done sync resume where doctor help" "$cur"
     return
   fi
 
   case "$cmd" in
+    loop)
+      if [[ "$cur" == -* ]]; then
+        _vibe_reply "--until --max --prompt --push --dangerously-allow-all" "$cur"
+      else
+        # loop usually names a new task, but resuming completes an existing one
+        _vibe_reply "$(_vibe_tasks)" "$cur"
+      fi
+      ;;
     done)
       if [[ "$cur" == -* ]]; then
-        _vibe_reply "--force" "$cur"
+        _vibe_reply "--force --stop" "$cur"
       else
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi

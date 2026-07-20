@@ -36,6 +36,7 @@ _vibe() {
   local -a commands
   commands=(
     'start:Create branch + worktree for a task and open the agent'
+    'loop:Create branch + worktree and run the agent unattended'
     'attach:Arrive at a task — fast-forward when safe, then attach'
     'park:Refresh HANDOFF.md via the agent, then sync'
     'rc:Enable Remote Control on a running task (server only)'
@@ -65,6 +66,16 @@ _vibe() {
         done)
           _arguments \
             '(-f --force)'{-f,--force}'[remove even if dirty or unpushed]' \
+            '--stop[stop a running loop first, then remove]' \
+            '*:task:_vibe_tasks'
+          ;;
+        loop)
+          _arguments \
+            '--until[shell command that ends the loop when it exits 0]:command:' \
+            '--max[stop after this many iterations]:count:' \
+            '--prompt[custom brief instead of the LOOP.md template]:file:_files' \
+            '--push[push each iteration, guarding against divergence]' \
+            '--dangerously-allow-all[skip the agent permission prompts (see docs)]' \
             '*:task:_vibe_tasks'
           ;;
         resume)

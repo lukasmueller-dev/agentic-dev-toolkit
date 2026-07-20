@@ -1,0 +1,147 @@
+# Unattended loops
+
+`vibe loop` runs a task without you sitting in front of it. It sets up a branch
+and worktree exactly like `vibe start`, but instead of dropping you into an
+interactive agent it runs a loop: each round invokes the agent headlessly
+against a prompt, commits whatever changed, then checks whether the task is
+done. On the server the whole loop lives in a tmux session, so it keeps going
+after you disconnect — which is the entire point.
+
+```bash
+cd ~/git/myproject
+vibe loop "port the config parser to the new schema" \
+  --until 'npm test' --max 20
+```
+
+That creates the `port-the-config-parser-to-the-new-schema` branch and
+worktree, seeds `LOOP.md`, and starts iterating: agent, commit, `npm test`.
+When the tests pass it stops.
+
+## The three ways it stops
+
+Every loop is bounded. It ends the moment any of these is true:
+
+| Stop        | Trigger                                                        |
+| ----------- | ------------------------------------------------------------- |
+| **success** | the `--until` command exits `0`                               |
+| **max**     | `--max` iterations have run (default 10)                       |
+| **stall**   | two rounds in a row produced no new commit and no diff        |
+
+`--until` is optional; without it a loop runs until it maxes out or stalls.
+Stall detection is what saves you from watching an agent spin uselessly: if it
+stops making changes, the loop notices and quits rather than burning the full
+`--max`.
+
+The result of every run is a phone push (below), so you learn *how* it ended
+without checking.
+
+## What each round does
+
+1. Run the agent once, headless, handing it `LOOP.md` as the prompt — the same
+   `VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"` shape `vibe park` uses.
+2. Stage everything and commit it as `vibe loop: iteration N` — but only if the
+   round produced real work. A round that changed nothing but the loop's own
+   log is not progress and makes no commit.
+3. With `--push`, push that commit, using the same divergence guard as
+   `vibe sync`: never a force-push, and it stops the loop if the remote moved
+   in a way a human has to resolve.
+4. Run `--until`. Exit `0` and the loop is done.
+
+Because every round commits, `vibe status` and the `vibe done` guard see the
+work like any other branch — nothing is stranded in an uncommitted state.
+
+## The prompt: `LOOP.md`
+
+The agent's brief for every round is `LOOP.md` in the worktree, rendered from
+[`templates/LOOP.md`](../templates/LOOP.md) on the first run. It carries the
+goal, the done-criteria, the constraints, and an iteration log the loop appends
+to. Keep the goal and done-criteria precise — they are the only instructions
+the agent gets each round, with no one there to clarify.
+
+Substitute your own with `--prompt <file>`; it is rendered through the same
+placeholder contract, so `<branch>`, `<goal>` and the rest still fill in.
+
+## Resuming
+
+The loop's source of truth is git history plus a small state file
+(`.vibe-loop.state`) in the worktree — iteration count, last result,
+timestamps. That file is **gitignored, never committed**: it is machine-local
+runtime state (it even holds the runner's PID), not part of the branch's work.
+The deliverable travels in the commits; the state file only tracks where the
+loop is.
+
+So if the runner is killed mid-round — you close the session, the box reboots —
+just run the same command again:
+
+```bash
+vibe loop "port the config parser to the new schema"
+```
+
+It reads the state file and git history and picks up from the next iteration.
+It does not start over. Re-running while a loop is genuinely still live is
+refused, so you cannot accidentally run two.
+
+## Permissions and blast radius
+
+A headless agent cannot answer a permission prompt — there is no one to answer
+it. By default `vibe loop` runs the agent with its own default permission
+behaviour, which means a round can block on a prompt it cannot satisfy.
+
+To let a loop actually run unattended you can opt into a permissive mode:
+
+```bash
+vibe loop "..." --dangerously-allow-all
+```
+
+This appends `VIBE_LOOP_PERMISSIVE_ARGS` to the agent invocation — your agent's
+"skip every permission prompt" flag. The name is blunt on purpose. **Understand
+the blast radius before you use it:** the worktree is isolated from your other
+checkouts, but the agent runs as *you*, with your `$HOME`, your credentials,
+and your network. A permissive agent can touch anything your account can, not
+just the files in the worktree. `--dangerously-allow-all` refuses to start
+unless `VIBE_LOOP_PERMISSIVE_ARGS` is set, so it can never be a silent default.
+
+## Where it runs
+
+- **Server** — the loop runs in a tmux session named like any other task, so it
+  survives disconnect. `vibe attach <task>` drops you into it to watch;
+  attaching never fast-forwards under a live loop (the loop owns the branch).
+- **Local (Mac)** — there is no persistent session to detach into, so the loop
+  runs in the **foreground**. It does not silently fork into the background;
+  you either watch it or start it on the server instead. `vibe loop` says so
+  when it takes the foreground path.
+
+## Finishing
+
+`vibe done` refuses to remove a worktree while its loop is still running —
+removing it out from under the runner would corrupt the loop. Stop it first, or
+let `done` do it:
+
+```bash
+vibe done --stop "port the config parser to the new schema"
+```
+
+`--stop` kills the loop's session, marks the state stopped, then applies the
+usual `done` guards (it still refuses to discard uncommitted or unpushed work
+unless you add `--force`).
+
+## Notifications
+
+Loop endings reuse the same ntfy.sh mechanism as the
+[phone notifications](notifications.md): set `VIBE_NTFY_TOPIC` and a finished,
+stalled, or maxed-out loop pushes to your phone — high priority for the two
+that need your attention. Unset, it is silent. See
+[notifications.md](notifications.md) for the topic.
+
+## Configuration
+
+| Variable                     | Default | Purpose                                    |
+| ---------------------------- | ------- | ------------------------------------------ |
+| `VIBE_AGENT_HEADLESS_ARGS`   | `-p`    | Args that make the agent run one-shot      |
+| `VIBE_LOOP_PERMISSIVE_ARGS`  | unset   | Args for `--dangerously-allow-all`         |
+
+`VIBE_AGENT_HEADLESS_ARGS` is shared with `vibe park` — it is the flag set that
+turns your agent into a one-shot, non-interactive run, with the prompt appended
+as the final argument. It defaults to Claude Code's `-p`; point it at whatever
+your agent uses if it is something else, or the loop will hang on the first
+round waiting for an interactive prompt.

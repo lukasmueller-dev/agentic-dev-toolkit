@@ -22,10 +22,19 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [<task>]
+#   vibe done [--force] [--stop] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
-#                         worktree is dirty or holds unpushed commits. Infers the
+#                         worktree is dirty, holds unpushed commits, or has a
+#                         loop still running (--stop kills it first). Infers the
 #                         task from the cwd when run inside a worktree.
+#
+# Unattended:
+#   vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push]
+#                     [--dangerously-allow-all]
+#                         Create branch+worktree like start, seed LOOP.md, then
+#                         run the agent headlessly round after round until the
+#                         --until check passes, --max rounds pass, or it stalls.
+#                         Re-running on an existing loop worktree resumes it.
 #
 # Phone:
 #   vibe rc <task>        Enable Remote Control on a running task by sending /rc
@@ -74,6 +83,7 @@ VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
 _env_worktree_root="${VIBE_WORKTREE_ROOT:-}"
 _env_agent_cmd="${VIBE_AGENT_CMD:-}"
 _env_agent_headless_args="${VIBE_AGENT_HEADLESS_ARGS:-}"
+_env_loop_permissive_args="${VIBE_LOOP_PERMISSIVE_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
 _env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
@@ -91,6 +101,10 @@ VIBE_AGENT_CMD="${_env_agent_cmd:-${VIBE_AGENT_CMD:-claude}}"
 # 'vibe park' to refresh HANDOFF.md). Default is Claude Code's '-p', but the
 # split lets any agent be driven headlessly without hardcoding one here.
 VIBE_AGENT_HEADLESS_ARGS="${_env_agent_headless_args:-${VIBE_AGENT_HEADLESS_ARGS:--p}}"
+# Extra args appended to a loop's agent invocation ONLY when it is started with
+# --dangerously-allow-all: the agent's "skip every permission prompt" mode.
+# Empty by default; see docs/vibe-loop.md for the blast radius before setting it.
+VIBE_LOOP_PERMISSIVE_ARGS="${_env_loop_permissive_args:-${VIBE_LOOP_PERMISSIVE_ARGS:-}}"
 VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
 VIBE_SERVER_HOSTNAME="${_env_server_hostname:-${VIBE_SERVER_HOSTNAME:-}}"
 VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
@@ -98,10 +112,15 @@ VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
 # a task is reachable from the Claude app without typing /rc first. Server only.
 VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
-  _env_tmux_prefix _env_server_hostname _env_ntfy_topic _env_rc_on_start
+  _env_loop_permissive_args _env_tmux_prefix _env_server_hostname \
+  _env_ntfy_topic _env_rc_on_start
 
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
 VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
+
+# The loop's per-worktree runtime state file. Gitignored (see loop_ignore_state),
+# never committed: it holds machine-local counters and a PID, not deliverable work.
+VIBE_LOOP_STATE=".vibe-loop.state"
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -333,6 +352,453 @@ seed_handoff() {
   info "seeded HANDOFF.md"
 }
 
+# LOOP.md seeding — rendered from templates/ (or a --prompt file), never
+# embedded here. Skips an existing file, so a resumed loop keeps its log.
+seed_loop() {
+  local dir="$1" repo="$2" branch="$3" goal="$4" until_cmd="$5" max="$6" custom="$7"
+  local f="$dir/LOOP.md"
+  [[ -f "$f" ]] && return 0
+
+  local tpl="$TEMPLATE_DIR/LOOP.md"
+  [[ -n "$custom" ]] && tpl="$custom"
+  [[ -f "$tpl" ]] || die "no LOOP template at $tpl"
+
+  render_template "$tpl" \
+    '<repo>' "$repo" \
+    '<branch>' "$branch" \
+    '<worktree>' "$dir" \
+    '<goal>' "$goal" \
+    '<until>' "${until_cmd:-—}" \
+    '<max>' "$max" \
+    '<date>' "$(date '+%Y-%m-%d %H:%M %Z')" \
+    '<machine>' "$(detect_env) ($(hostname))" >"$f"
+  info "seeded LOOP.md"
+}
+
+# ---------------------------------------------------------------------------
+# ntfy — phone push, reusing the conventions of claude/hooks/notify-ntfy.sh:
+# title "repo · branch", high priority for anything that needs attention.
+# Silent no-op when the topic is unset or curl is missing — never disrupts.
+# ---------------------------------------------------------------------------
+ntfy_push() {
+  local title="$1" prio="$2" tags="$3" body="$4"
+  [[ -n "$VIBE_NTFY_TOPIC" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  curl -fsS --max-time 10 \
+    -H "Title: $title" \
+    -H "Priority: $prio" \
+    -H "Tags: $tags" \
+    -d "$body" \
+    "https://ntfy.sh/$VIBE_NTFY_TOPIC" >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------
+# Loop state — a per-worktree KEY=VALUE file ($VIBE_LOOP_STATE). Written
+# atomically (temp + mv) so a kill mid-write leaves the previous state intact.
+# Parsed, never sourced: it may hold an arbitrary --until command as a value.
+# ---------------------------------------------------------------------------
+loop_state_path() { echo "$1/$VIBE_LOOP_STATE"; }
+
+# loop_get DIR KEY — echo the value for KEY, or empty. Last assignment wins.
+loop_get() {
+  local sf
+  sf="$(loop_state_path "$1")"
+  [[ -f "$sf" ]] || return 0
+  sed -n "s/^$2=//p" "$sf" | tail -1
+}
+
+# loop_active DIR — true only if a runner is genuinely running: STATUS=running
+# AND its recorded PID is still alive. A running status with a dead PID is a
+# killed loop, which is resumable, not active.
+loop_active() {
+  local dir="$1" status pid
+  status="$(loop_get "$dir" STATUS)"
+  [[ "$status" == "running" ]] || return 1
+  pid="$(loop_get "$dir" PID)"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null
+}
+
+# loop_summary DIR — one-line "iter N/M · last R · status" for vibe status.
+loop_summary() {
+  local dir="$1" it mx la st
+  it="$(loop_get "$dir" ITER)"
+  mx="$(loop_get "$dir" MAX)"
+  la="$(loop_get "$dir" LAST)"
+  st="$(loop_get "$dir" STATUS)"
+  printf 'iter %s/%s · last %s · %s' "${it:-0}" "${mx:-?}" "${la:-none}" "${st:-?}"
+}
+
+# loop_ignore_state DIR — make git ignore the runtime state file, so it never
+# shows up as an untracked change (which would break `vibe done`/`sync`) and is
+# never committed. The common info/exclude is the file git actually consults
+# for a linked worktree, so target that rather than --git-path (per-worktree).
+loop_ignore_state() {
+  local dir="$1" common excl
+  common="$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [[ "$common" == /* ]] || common="$dir/$common"
+  excl="$common/info/exclude"
+  mkdir -p "$(dirname "$excl")"
+  grep -qxF "$VIBE_LOOP_STATE" "$excl" 2>/dev/null ||
+    printf '%s\n' "$VIBE_LOOP_STATE" >>"$excl"
+}
+
+# loop_write_state DIR STATUS PHASE ITER MAX LAST UNTIL PUSH PERMISSIVE PID STARTED
+# Atomic: write a temp then rename, so a kill mid-write cannot truncate it.
+loop_write_state() {
+  local sf tmp
+  sf="$(loop_state_path "$1")"
+  tmp="$sf.tmp.$$"
+  {
+    printf 'STATUS=%s\n' "$2"
+    printf 'PHASE=%s\n' "$3"
+    printf 'ITER=%s\n' "$4"
+    printf 'MAX=%s\n' "$5"
+    printf 'LAST=%s\n' "$6"
+    printf 'UNTIL=%s\n' "$7"
+    printf 'PUSH=%s\n' "$8"
+    printf 'PERMISSIVE=%s\n' "$9"
+    printf 'PID=%s\n' "${10}"
+    printf 'STARTED=%s\n' "${11}"
+    printf 'UPDATED=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } >"$tmp"
+  mv -f "$tmp" "$sf"
+}
+
+# loop_log_round DIR ITER NOTE — append one line to LOOP.md's iteration log.
+loop_log_round() {
+  printf -- '- iter %s (%s): %s\n' "$2" "$(date '+%Y-%m-%d %H:%M')" "$3" >>"$1/LOOP.md"
+}
+
+# loop_push DIR BRANCH — push with the same divergence guard as vibe sync.
+# Returns non-zero only when the remote moved in a way a human must resolve
+# (diverged, or remote ahead); a transient fetch failure is not fatal.
+loop_push() {
+  local dir="$1" branch="$2"
+  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    git -C "$dir" push -q -u origin "$branch"
+    return
+  fi
+  git -C "$dir" fetch -q || return 0
+  local local_rev remote_rev base
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    return 0
+  elif [[ "$remote_rev" == "$base" ]]; then
+    git -C "$dir" push -q origin "$branch"
+    return 0
+  else
+    # remote ahead or diverged: never merge or force under an unattended loop.
+    return 1
+  fi
+}
+
+# The loop itself. Everything it needs is in the state file, so this is the
+# single entry point for both a fresh start and a resume-after-kill.
+run_loop() {
+  local dir="$1" repo="$2" branch="$3"
+  local status phase iter max last until_cmd push permissive started pid
+  status="running"
+  phase="starting"
+  iter="$(loop_get "$dir" ITER)"
+  iter="${iter:-0}"
+  max="$(loop_get "$dir" MAX)"
+  max="${max:-10}"
+  last="$(loop_get "$dir" LAST)"
+  last="${last:-none}"
+  until_cmd="$(loop_get "$dir" UNTIL)"
+  push="$(loop_get "$dir" PUSH)"
+  push="${push:-0}"
+  permissive="$(loop_get "$dir" PERMISSIVE)"
+  permissive="${permissive:-0}"
+  started="$(loop_get "$dir" STARTED)"
+  started="${started:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  pid="$$"
+
+  local title="$repo · $branch"
+
+  # Build the headless argv once, the same shape 'vibe park' uses. Word-
+  # splitting is intentional: these are argument strings the user configured.
+  # shellcheck disable=SC2206
+  local -a argv=($VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS)
+  if [[ "$permissive" == "1" ]]; then
+    # shellcheck disable=SC2206
+    argv+=($VIBE_LOOP_PERMISSIVE_ARGS)
+  fi
+
+  local no_progress=0
+  ok "loop starting on $branch (max $max)${until_cmd:+, until: $until_cmd}"
+
+  while :; do
+    iter=$((iter + 1))
+    phase="iterating"
+    loop_write_state "$dir" running "$phase" "$iter" "$max" "$last" \
+      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+    info "iteration $iter/$max"
+
+    local before after
+    before="$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo none)"
+
+    # One headless round. LOOP.md is passed as the prompt argument, the same way
+    # run_headless_handoff drives the agent, so no agent-specific flag is baked
+    # in here. A crashing agent must not kill the loop.
+    (cd "$dir" && "${argv[@]}" "$(cat "$dir/LOOP.md")") ||
+      warn "agent exited non-zero on iteration $iter (continuing)"
+
+    # Commit whatever the round produced, so vibe done/status account for it.
+    # A change to nothing but our own LOOP.md log is not progress: undo it and
+    # leave the tree clean, so "no new commit and no diff" stays true.
+    git -C "$dir" add -A
+    local substantive
+    substantive="$(git -C "$dir" diff --cached --name-only | grep -vx 'LOOP.md' || true)"
+    if [[ -n "$substantive" ]]; then
+      loop_log_round "$dir" "$iter" "changed"
+      git -C "$dir" add -A
+      git -C "$dir" commit -q -m "vibe loop: iteration $iter on $branch"
+    else
+      git -C "$dir" reset -q
+      git -C "$dir" checkout -q -- LOOP.md 2>/dev/null || true
+    fi
+    after="$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo none)"
+    if [[ "$after" == "$before" ]]; then
+      no_progress=$((no_progress + 1))
+    else
+      no_progress=0
+    fi
+
+    # Push this round's work before deciding to stop, so the final iteration is
+    # never left unpushed. Same divergence guard vibe sync uses; never forces.
+    if [[ "$push" == "1" ]]; then
+      if ! loop_push "$dir" "$branch"; then
+        status="stopped"
+        warn "loop stopped: remote diverged — resolve manually, then re-run vibe loop"
+        ntfy_push "$title" high warning \
+          "loop stopped — remote diverged from $branch"
+        break
+      fi
+    fi
+
+    # Stop check.
+    phase="checking"
+    if [[ -n "$until_cmd" ]]; then
+      if (cd "$dir" && bash -c "$until_cmd") >/dev/null 2>&1; then
+        last="pass"
+        status="success"
+      else
+        last="fail"
+      fi
+    fi
+    loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
+      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+
+    if [[ "$status" == "success" ]]; then
+      ok "loop done: stop check passed on iteration $iter"
+      ntfy_push "$title" default heavy_check_mark \
+        "loop finished — stop check passed on iteration $iter"
+      break
+    fi
+    if ((iter >= max)); then
+      status="maxed"
+      warn "loop stopped: hit max $max iterations without the stop check passing"
+      ntfy_push "$title" high warning \
+        "loop hit its max of $max iterations without passing"
+      break
+    fi
+    if ((no_progress >= 2)); then
+      status="stalled"
+      warn "loop stopped: stalled (2 rounds with no new commit and no diff)"
+      ntfy_push "$title" high warning \
+        "loop stalled — 2 rounds produced no change"
+      break
+    fi
+  done
+
+  phase="idle"
+  loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
+    "$until_cmd" "$push" "$permissive" "$pid" "$started"
+}
+
+cmd_loop() {
+  need git
+  local task="" until_cmd="" max="" prompt="" push=0 permissive=0
+  while (($#)); do
+    case "$1" in
+      --until)
+        until_cmd="${2-}"
+        shift 2 || die "--until needs a command"
+        ;;
+      --until=*)
+        until_cmd="${1#--until=}"
+        shift
+        ;;
+      --max)
+        max="${2-}"
+        shift 2 || die "--max needs a number"
+        ;;
+      --max=*)
+        max="${1#--max=}"
+        shift
+        ;;
+      --prompt)
+        prompt="${2-}"
+        shift 2 || die "--prompt needs a file"
+        ;;
+      --prompt=*)
+        prompt="${1#--prompt=}"
+        shift
+        ;;
+      --push)
+        push=1
+        shift
+        ;;
+      --dangerously-allow-all)
+        permissive=1
+        shift
+        ;;
+      -*) die "unknown option '$1' (usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--dangerously-allow-all])" ;;
+      *)
+        task="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$task" ]] ||
+    die "usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--dangerously-allow-all]"
+  [[ -z "$max" || "$max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$max'"
+  [[ -z "$prompt" || -f "$prompt" ]] || die "--prompt file not found: $prompt"
+  if [[ "$permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
+    die "--dangerously-allow-all needs VIBE_LOOP_PERMISSIVE_ARGS set (see docs/vibe-loop.md)."
+  fi
+
+  local branch repo main dir
+  branch="$(slug "$task")"
+  repo="$(repo_name)"
+  main="$(main_repo_root)"
+  dir="$(worktree_dir "$repo" "$branch")"
+
+  # Resume vs fresh. A live runner must not be started twice.
+  local resuming=0
+  if [[ -d "$dir" && -f "$(loop_state_path "$dir")" ]]; then
+    if loop_active "$dir"; then
+      die "a loop is already running for '$branch'. Watch it: vibe attach $task"
+    fi
+    resuming=1
+    info "resuming loop for '$branch' from saved state (iter $(loop_get "$dir" ITER))"
+  fi
+
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p "$(dirname "$dir")"
+    if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
+      git -C "$main" worktree add "$dir" "$branch"
+    else
+      git -C "$main" worktree add -b "$branch" "$dir"
+    fi
+    info "created worktree: $dir  (branch: $branch)"
+  fi
+
+  # Effective settings: new flags override; on resume, saved values carry
+  # forward; otherwise defaults.
+  local eff_max eff_until eff_push eff_perm eff_iter eff_started eff_last
+  if ((resuming)); then
+    eff_iter="$(loop_get "$dir" ITER)"
+    eff_started="$(loop_get "$dir" STARTED)"
+    eff_last="$(loop_get "$dir" LAST)"
+    eff_max="${max:-$(loop_get "$dir" MAX)}"
+    eff_until="${until_cmd:-$(loop_get "$dir" UNTIL)}"
+    if [[ "$push" == "1" ]]; then eff_push=1; else eff_push="$(loop_get "$dir" PUSH)"; fi
+    if [[ "$permissive" == "1" ]]; then eff_perm=1; else eff_perm="$(loop_get "$dir" PERMISSIVE)"; fi
+  else
+    eff_iter=0
+    eff_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    eff_last="none"
+    eff_max="${max:-10}"
+    eff_until="$until_cmd"
+    eff_push="$push"
+    eff_perm="$permissive"
+  fi
+  eff_max="${eff_max:-10}"
+  eff_push="${eff_push:-0}"
+  eff_perm="${eff_perm:-0}"
+  eff_last="${eff_last:-none}"
+  eff_iter="${eff_iter:-0}"
+
+  # First-run scaffolding (seed_loop and the commit skip cleanly on resume).
+  seed_loop "$dir" "$repo" "$branch" "$task" "$eff_until" "$eff_max" "$prompt"
+  loop_ignore_state "$dir"
+  # Commit LOOP.md so a no-progress round can restore it, and so the brief and
+  # its log travel between machines. The runtime state file stays gitignored.
+  if [[ -n "$(git -C "$dir" status --porcelain -- LOOP.md 2>/dev/null)" ]]; then
+    git -C "$dir" add LOOP.md
+    git -C "$dir" commit -q -m "vibe loop: start '$branch'"
+  fi
+
+  loop_write_state "$dir" running starting "$eff_iter" "$eff_max" "$eff_last" \
+    "$eff_until" "$eff_push" "$eff_perm" "" "$eff_started"
+
+  local env
+  env="$(detect_env)"
+  if [[ "$env" == "server" ]]; then
+    need tmux
+    local sess
+    sess="$(tmux_session_name "$repo" "$branch")"
+    if tmux has-session -t "$sess" 2>/dev/null; then
+      info "loop session already exists: $sess"
+    else
+      info "starting loop in tmux session: $sess"
+      tmux new-session -d -s "$sess" -c "$dir"
+      # Run the loop inside tmux so it survives disconnect. __loop-run resolves
+      # everything from the state file just written.
+      tmux send-keys -t "$sess" \
+        "$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")" C-m
+    fi
+    if [[ -n "${TMUX:-}" ]]; then
+      tmux switch-client -t "$sess"
+    else
+      tmux attach-session -t "$sess"
+    fi
+  else
+    warn "local environment — running the loop in the foreground (Ctrl-C to stop)."
+    warn "run it on the server for a detached session that survives disconnect."
+    run_loop "$dir" "$repo" "$branch"
+  fi
+}
+
+# Internal: run the loop for an existing worktree. Invoked inside tmux by
+# cmd_loop; not part of the public command surface.
+cmd_loop_run() {
+  need git
+  local dir="${1:-}"
+  [[ -n "$dir" ]] || die "usage: vibe __loop-run <worktree-dir>"
+  [[ -d "$dir" ]] || die "no worktree at $dir"
+  [[ -f "$(loop_state_path "$dir")" ]] || die "no loop state at $dir"
+  local repo branch
+  repo="$(basename "$(dirname "$dir")")"
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+  run_loop "$dir" "$repo" "$branch"
+}
+
+# loop_stop DIR REPO BRANCH — kill the loop's session/process and mark the
+# state stopped, so vibe done can proceed and status reads clean.
+loop_stop() {
+  local dir="$1" repo="$2" branch="$3" sess pid
+  sess="$(tmux_session_name "$repo" "$branch")"
+  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
+    tmux kill-session -t "$sess"
+    info "killed loop session $sess"
+  fi
+  pid="$(loop_get "$dir" PID)"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  loop_write_state "$dir" stopped idle \
+    "$(loop_get "$dir" ITER)" "$(loop_get "$dir" MAX)" "$(loop_get "$dir" LAST)" \
+    "$(loop_get "$dir" UNTIL)" "$(loop_get "$dir" PUSH)" "$(loop_get "$dir" PERMISSIVE)" \
+    "" "$(loop_get "$dir" STARTED)"
+  info "loop marked stopped"
+}
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -409,6 +875,13 @@ open_session() {
 attach_ff() {
   local dir="$1" branch
   branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+
+  # A live loop owns this branch — advancing it out from under the runner is a
+  # race. Attach to watch, but leave the branch to the loop.
+  if loop_active "$dir"; then
+    info "loop is active here — not fast-forwarding under it; attaching to watch."
+    return 0
+  fi
 
   if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
     warn "not pulling: $branch has uncommitted changes — attaching as-is"
@@ -500,8 +973,10 @@ sync_state_line() {
   fi
   ahead="$(unpushed_commits "$dir")"
   behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
-  printf '      %s%s · %s ahead · %s behind · handoff %s%s\n' \
-    "$c_dim" "$dirty" "$ahead" "$behind" "$(handoff_age "$dir")" "$c_off"
+  local loop=""
+  [[ -f "$(loop_state_path "$dir")" ]] && loop=" · loop $(loop_summary "$dir")"
+  printf '      %s%s · %s ahead · %s behind · handoff %s%s%s\n' \
+    "$c_dim" "$dirty" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
 }
 
 # print_worktrees — the current repo's worktrees, one per line, each with a
@@ -625,11 +1100,12 @@ unpushed_commits() {
 
 cmd_done() {
   need git
-  local force=0 task=""
+  local force=0 stop=0 task=""
   while (($#)); do
     case "$1" in
       -f | --force) force=1 ;;
-      -*) die "unknown option '$1' (usage: vibe done [--force] <task>)" ;;
+      --stop) stop=1 ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] <task>)" ;;
       *) task="$1" ;;
     esac
     shift
@@ -650,6 +1126,17 @@ cmd_done() {
   fi
   main="$(main_repo_root)"
   [[ -d "$dir" ]] || die "no worktree at $dir"
+
+  # A running loop owns this worktree; removing it out from under the runner
+  # would corrupt the loop. Refuse unless --stop was given to kill it first.
+  if loop_active "$dir"; then
+    if [[ "$stop" == "1" ]]; then
+      loop_stop "$dir" "$repo" "$branch"
+    else
+      die "a loop is still running for '$branch'. Stop it first:
+  vibe done --stop $task   (kills the loop session, then removes the worktree)"
+    fi
+  fi
 
   # Refuse to destroy work. This used to be an unconditional
   # `git worktree remove --force`, which silently threw away uncommitted
@@ -860,12 +1347,20 @@ cmd_rc() {
 
   need git
   need tmux
-  local repo branch sess
+  local repo branch sess dir
   repo="$(repo_name)"
   branch="$(slug "$task")"
   sess="$(tmux_session_name "$repo" "$branch")"
+  dir="$(worktree_dir "$repo" "$branch")"
   tmux has-session -t "$sess" 2>/dev/null ||
     die "no tmux session '$sess' — is the task running? Try: vibe attach $task"
+
+  # A loop session runs the runner, not an interactive agent at a prompt.
+  # Sending /rc into it would land mid-iteration on the runner, not the agent.
+  if loop_active "$dir"; then
+    die "'$sess' is running a loop, not an interactive agent — there is no prompt
+  to send /rc to. Watch it with 'vibe attach $task' instead."
+  fi
 
   if wait_for_pane_idle "$sess"; then
     info "agent looks idle — sending /rc"
@@ -908,6 +1403,12 @@ cmd_park() {
   need git
   local dir
   dir="$(dir_for_optional_task "${1:-}")"
+  # A loop parks itself by design — it commits and (with --push) syncs each
+  # round. Parking on top of a live loop would race its HANDOFF refresh.
+  if loop_active "$dir"; then
+    die "a loop is running here — it handles its own commits. Watch it with
+  'vibe attach', or stop it with 'vibe done --stop <task>' first."
+  fi
   run_headless_handoff "$dir" || true
   sync_dir "$dir"
 }
@@ -1011,7 +1512,11 @@ cmd_doctor() {
     d_wn "ntfy topic  unset — phone notifications are off (see docs/notifications.md)"
   fi
 
-  d_ok "headless    park runs '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'"
+  d_ok "headless    park/loop run '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'"
+
+  if [[ -n "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
+    d_wn "loop perms  VIBE_LOOP_PERMISSIVE_ARGS set — 'vibe loop --dangerously-allow-all' will skip the agent's permission prompts"
+  fi
 
   case "$VIBE_RC_ON_START" in
     0) d_ok "rc launch   off (enable with VIBE_RC_ON_START=1 on the server)" ;;
@@ -1084,6 +1589,8 @@ main() {
   shift || true
   case "$cmd" in
     start) cmd_start "$@" ;;
+    loop) cmd_loop "$@" ;;
+    __loop-run) cmd_loop_run "$@" ;;
     attach) cmd_attach "$@" ;;
     park) cmd_park "$@" ;;
     rc) cmd_rc "$@" ;;
