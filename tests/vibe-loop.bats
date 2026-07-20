@@ -288,6 +288,29 @@ set_state() {
   grep -q "Custom brief for custom-task" "$f"
 }
 
+@test "loop: adopts a branch that exists only on origin instead of shadowing it" {
+  cd "$(make_repo proj)"
+  stub_agent
+  # the "other machine": pushes a branch carrying a hand-written brief
+  local other
+  other="$(clone_repo proj other)"
+  git -C "$other" checkout -q -b remote-task
+  printf '# my brief\n\n## Goal\n\nDo the pushed thing.\n' >"$other/LOOP.md"
+  git -C "$other" add LOOP.md
+  git -C "$other" commit -q -m "brief"
+  git -C "$other" push -q origin remote-task
+
+  # this machine has neither a local 'remote-task' branch nor a fetched ref
+  run loop_vibe loop "remote task" --until true --max 1
+  [ "$status" -eq 0 ]
+  # seed_loop skipped the pushed brief instead of overwriting it
+  grep -q "Do the pushed thing" "$(wt remote-task)/LOOP.md"
+  # the worktree's branch tracks origin and contains the pushed commit
+  git -C "$(wt remote-task)" rev-parse '@{u}' >/dev/null
+  run git -C "$(wt remote-task)" log --oneline
+  [[ "$output" == *"brief"* ]]
+}
+
 @test "loop: --dangerously-allow-all refuses without permissive args configured" {
   cd "$(make_repo proj)"
   stub_agent

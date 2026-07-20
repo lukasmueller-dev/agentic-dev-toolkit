@@ -234,6 +234,30 @@ worktree_dir() {
   echo "$VIBE_WORKTREE_ROOT/$repo/$branch"
 }
 
+# ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
+# Preference order: existing local branch; branch on origin (fetched when
+# needed, and tracked — so a branch pushed from the other machine is picked up
+# instead of silently shadowed by a fresh branch off HEAD); new branch off
+# HEAD. The fetch is best-effort: offline or remote-less repos fall through to
+# today's branch-off-HEAD behavior.
+# Kept in lockstep with skills/loop-brief/brief.sh.
+ensure_worktree() {
+  local main="$1" branch="$2" dir="$3"
+  mkdir -p "$(dirname "$dir")"
+  if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$main" worktree add "$dir" "$branch"
+  else
+    git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch" ||
+      git -C "$main" fetch -q origin "$branch" >/dev/null 2>&1 || true
+    if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+      git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
+    else
+      git -C "$main" worktree add -b "$branch" "$dir"
+    fi
+  fi
+  info "created worktree: $dir  (branch: $branch)"
+}
+
 tmux_session_name() {
   # vibe-<repo>-<branch>, tmux disallows dots in session names
   echo "${VIBE_TMUX_PREFIX}-$1-$2" | tr '.' '-'
@@ -692,15 +716,7 @@ cmd_loop() {
     info "resuming loop for '$branch' from saved state (iter $(loop_get "$dir" ITER))"
   fi
 
-  if [[ ! -d "$dir" ]]; then
-    mkdir -p "$(dirname "$dir")"
-    if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-      git -C "$main" worktree add "$dir" "$branch"
-    else
-      git -C "$main" worktree add -b "$branch" "$dir"
-    fi
-    info "created worktree: $dir  (branch: $branch)"
-  fi
+  [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
 
   # Effective settings: new flags override; on resume, saved values carry
   # forward; otherwise defaults.
@@ -832,14 +848,7 @@ cmd_start() {
   if [[ -d "$dir" ]]; then
     info "worktree already exists, attaching: $dir"
   else
-    mkdir -p "$(dirname "$dir")"
-    # create branch off current HEAD if it doesn't exist, else reuse it
-    if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-      git -C "$main" worktree add "$dir" "$branch"
-    else
-      git -C "$main" worktree add -b "$branch" "$dir"
-    fi
-    info "created worktree: $dir  (branch: $branch)"
+    ensure_worktree "$main" "$branch" "$dir"
   fi
 
   seed_handoff "$dir" "$repo" "$branch"
