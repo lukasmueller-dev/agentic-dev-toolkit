@@ -61,6 +61,13 @@ the agent gets each round, with no one there to clarify.
 Substitute your own with `--prompt <file>`; it is rendered through the same
 placeholder contract, so `<branch>`, `<goal>` and the rest still fill in.
 
+The better way to author a brief is the `loop-brief` skill
+([`skills/loop-brief/`](../skills/loop-brief/)): it refines a rough idea
+interactively, stages the finished `LOOP.md` on the task branch, and pushes.
+Since `vibe loop` never overwrites an existing `LOOP.md` — and, when the
+branch exists only on origin, creates the worktree tracking it — a brief
+pushed from one machine is exactly what the loop runs on the other.
+
 ## Resuming
 
 The loop's source of truth is git history plus a small state file
