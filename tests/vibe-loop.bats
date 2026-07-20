@@ -232,6 +232,47 @@ set_state() {
   [ ! -d "$(wt stopme-task)" ]
 }
 
+@test "done: refuses while LOOP.md is still on the branch" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "brief task" --until false --max 1 --push
+  run loop_vibe "done" "brief task"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"LOOP.md"* ]]
+  [ -d "$(wt brief-task)" ]
+}
+
+@test "done: --keep-brief removes the worktree, brief stays in history" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "keep brief" --until false --max 1 --push
+  run loop_vibe "done" --keep-brief "keep brief"
+  [ "$status" -eq 0 ]
+  [ ! -d "$(wt keep-brief)" ]
+  git show keep-brief:LOOP.md >/dev/null
+}
+
+@test "done: passes once the brief is deleted and synced" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "del brief" --until false --max 1 --push
+  git -C "$(wt del-brief)" rm -q LOOP.md
+  git -C "$(wt del-brief)" commit -q -m "chore: drop loop brief"
+  git -C "$(wt del-brief)" push -q
+  run loop_vibe "done" "del brief"
+  [ "$status" -eq 0 ]
+  [ ! -d "$(wt del-brief)" ]
+}
+
+@test "loop: --no-attach refuses on local before creating anything" {
+  cd "$(make_repo proj)"
+  stub_agent
+  run loop_vibe loop "det task" --no-attach --max 1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"server"* ]]
+  [ ! -d "$(wt det-task)" ]
+}
+
 @test "loop: attach notes an active loop instead of touching the branch" {
   cd "$(make_repo proj)"
   stub_agent

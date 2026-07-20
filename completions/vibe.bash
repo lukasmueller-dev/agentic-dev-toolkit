@@ -55,7 +55,7 @@ _vibe() {
   case "$cmd" in
     loop)
       if [[ "$cur" == -* ]]; then
-        _vibe_reply "--until --max --prompt --push --dangerously-allow-all" "$cur"
+        _vibe_reply "--until --max --prompt --push --no-attach --dangerously-allow-all" "$cur"
       else
         # loop usually names a new task, but resuming completes an existing one
         _vibe_reply "$(_vibe_tasks)" "$cur"
@@ -63,7 +63,7 @@ _vibe() {
       ;;
     done)
       if [[ "$cur" == -* ]]; then
-        _vibe_reply "--force --stop" "$cur"
+        _vibe_reply "--force --stop --discard-handoff --keep-brief" "$cur"
       else
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi

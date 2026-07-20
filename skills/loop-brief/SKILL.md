@@ -104,9 +104,12 @@ Then print the exact start command and stop:
 vibe loop <branch> --until '<cmd>' --max <n> [--push]
 ```
 
-with two notes: run it **on the server** for a tmux-detached session that
-survives disconnect (locally it runs in the foreground); and if the stop
-check contains single quotes, re-quote it for the shell before running.
+with three notes: run it **on the server** for a tmux-detached session that
+survives disconnect (locally it runs in the foreground); when starting it
+from inside another agent session (remote-controlled from a phone, or any
+script), append `--no-attach` so the command returns instead of attaching;
+and if the stop check contains single quotes, re-quote it for the shell
+before running.
 
 **Done means:** the brief is pushed and the command is printed. Do not start
 the loop, and do not keep refining after approval.

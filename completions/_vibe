@@ -67,6 +67,8 @@ _vibe() {
           _arguments \
             '(-f --force)'{-f,--force}'[remove even if dirty or unpushed]' \
             '--stop[stop a running loop first, then remove]' \
+            '--discard-handoff[skip the HANDOFF.md content guard]' \
+            '--keep-brief[leave LOOP.md on the branch instead of requiring its deletion]' \
             '*:task:_vibe_tasks'
           ;;
         loop)
@@ -75,6 +77,7 @@ _vibe() {
             '--max[stop after this many iterations]:count:' \
             '--prompt[custom brief instead of the LOOP.md template]:file:_files' \
             '--push[push each iteration, guarding against divergence]' \
+            '--no-attach[start the tmux session and return instead of attaching (server)]' \
             '--dangerously-allow-all[skip the agent permission prompts (see docs)]' \
             '*:task:_vibe_tasks'
           ;;
