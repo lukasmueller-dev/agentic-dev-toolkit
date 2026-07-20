@@ -41,6 +41,7 @@ else is retrievable.
 | ----- | -------------------- | --------------------------------- | ----------------------------- |
 | 0     | Chat                 | dies with the session             | you, right now                |
 | 1     | `HANDOFF.md`         | dies when the task ends           | the next session on this task |
+| 1     | `LOOP.md`            | dies when the loop's task ends    | the loop agent, every round   |
 | 1     | PR description       | read until merge, then history    | the reviewer                  |
 | 2     | Diff                 | permanent                         | anyone, forever               |
 | 2     | Commit body          | permanent (`git log` / `blame`)   | future maintainer             |
@@ -79,6 +80,16 @@ whose `HANDOFF.md` still carries content beyond its own headings. Promote
 what is durable (see below), clear the file back to its headings, sync, then
 finish. `--discard-handoff` is the explicit override meaning "I looked;
 nothing in it is worth keeping."
+
+### `LOOP.md` (layer 1)
+
+The brief handed to an unattended loop's agent every round (`vibe loop`),
+plus its iteration log. Task-scoped like the handoff, but it needs no
+end-of-task guard: the brief and log are committed each round, so nothing in
+it can be silently orphaned, and its content (goal, constraints, one-line
+round notes) is not the kind that gets promoted. When a loop's agent learns
+something durable, the promotion paths below apply exactly as in an attended
+session.
 
 ### PR description (layer 1)
 
