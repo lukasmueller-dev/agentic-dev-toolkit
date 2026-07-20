@@ -10,6 +10,35 @@ When explaining concepts or answering my questions:
 
 This applies to explanations. Progress updates while coding and change summaries can stay terse and technical.
 
+# Where information goes
+
+Route everything you write by lifetime. Write it once at the lowest layer
+whose lifetime fits; higher layers point down, never restate. Full
+architecture: `~/git/agentic-dev-toolkit/docs/artifact-architecture.md`.
+
+| Information                                            | Home                                     |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Progress notes, end-of-task summary                    | chat (evaporates — nothing lives *only* here) |
+| Current task state, next action, blockers, gotchas     | `HANDOFF.md` — overwrite, never append   |
+| Why a change was made, alternatives rejected           | commit body (be verbose here)            |
+| Task intent, what to verify, risks                     | PR description (detail in `<details>`)   |
+| Durable picture: goal, architecture, decisions, TODOs  | `PROJECT_STATUS.md` (snapshot, not a log) |
+| Decision rationale referenced from PROJECT_STATUS      | commit/PR body — status holds one line + pointer |
+| Rules that should change agent behavior                | the repo's `CLAUDE.md`                   |
+| Deep narrative on one topic                            | `docs/`                                  |
+
+**End-of-task summaries are ≤6 lines**: what changed, what to verify, and a
+mandatory `Decisions/risks:` line ("none" if none) — surprises, judgment
+calls made on my behalf, anything hard to reverse. Each line says where the
+detail lives instead of restating it. If a summary wants to be longer, the
+overflow belongs in an artifact, not in chat.
+
+**Before a task ends, the handoff must be empty.** Promote what is durable —
+recurring gotcha → repo `CLAUDE.md`; decision → commit/PR body plus a
+one-liner in `PROJECT_STATUS.md` — then clear `HANDOFF.md` back to its
+headings and sync. `vibe done` refuses while the handoff still carries
+content.
+
 # My setup
 
 I work across two machines on the same repos, and this shapes what "done" means

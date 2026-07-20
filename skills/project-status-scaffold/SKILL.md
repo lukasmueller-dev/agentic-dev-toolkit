@@ -12,12 +12,16 @@ without re-reading the whole diff to work out where things stand.
 ## The two files (different lifespans)
 
 - **PROJECT_STATUS.md** — lives at the **repo root**, long-lived. The durable
-  picture of the project: goal, architecture, key decisions, TODOs, open
-  questions. Survives across all tasks and branches. Committed to git.
-- **HANDOFF.md** — lives at the **worktree root**, short-lived. "Where am I
-  right now, and what should the next session do first?" One per
-  worktree/branch. Usually git-ignored or committed per taste — commit it if
-  the handoff has to reach another machine.
+  *current* picture of the project: goal, architecture, key decisions, TODOs,
+  open questions. A snapshot, not a log — git history is the log. Key
+  decisions are one dated line each with a pointer (commit or PR) to the full
+  rationale; the reasoning itself lives in the commit/PR body, never here.
+  Survives across all tasks and branches. Committed to git.
+- **HANDOFF.md** — lives at the **worktree root**, short-lived: the baton
+  between sessions on one task. Strictly present tense — current state, next
+  concrete action, blockers, unresolved gotchas. **Overwrite it each session,
+  never append**; history and rationale belong in git, not the baton. One per
+  worktree/branch, committed so it reaches other machines.
 
 ## When to act
 
@@ -27,9 +31,18 @@ without re-reading the whole diff to work out where things stand.
 2. **On request** — user asks to scaffold, set up, or update these files.
 3. **At the end of a work session (proactive)** — before wrapping up, update
    both files so the next session can pick up:
-   - Update `HANDOFF.md`: current status, next steps, open PRs, gotchas.
+   - Rewrite `HANDOFF.md` (don't append): current state, next action,
+     blockers, unresolved gotchas.
    - Update `PROJECT_STATUS.md` **only** when something durable changed: a new
-     decision, an architecture change, a TODO completed or added.
+     decision (one line + pointer), an architecture change, a TODO completed
+     or added.
+4. **When a task finishes (branch merged or abandoned)** — the baton dies.
+   Promote what is durable out of `HANDOFF.md` first: a gotcha that will bite
+   again goes to the repo's agent-instructions file, a decision goes to the
+   commit/PR body with a one-liner in `PROJECT_STATUS.md`. Then clear
+   `HANDOFF.md` back to its headings and sync. A finished task hands nothing
+   off — tooling may refuse to tear the worktree down while the handoff still
+   carries content.
 
 ## How to create them
 
@@ -54,8 +67,10 @@ exists, read it and update the relevant sections instead.
 
 ## Updating vs. creating
 
-- If a file already exists, **read it first**, then edit the specific sections
-  that changed. Do not regenerate it from scratch — you would lose history.
-- Keep entries terse and factual. Prefer bullet points. Date decisions.
-- In `PROJECT_STATUS.md`, move finished TODOs to the "Done" section rather
-  than deleting them, so the trail is visible.
+- If `PROJECT_STATUS.md` already exists, **read it first**, then edit the
+  specific sections that changed. `HANDOFF.md` is the exception: rewrite its
+  section contents each time — stale baton text is worse than none.
+- Keep entries terse and factual. Prefer bullet points. Date decisions and
+  point each one at the commit or PR that carries the full reasoning.
+- In `PROJECT_STATUS.md`, delete finished TODOs — the trail lives in git
+  history and merged PRs, not in the snapshot.

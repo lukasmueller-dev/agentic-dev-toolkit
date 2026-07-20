@@ -1,8 +1,9 @@
 # Project Status — <repo>
 
-> Long-lived, one per repo. The durable picture of the project: what it is for,
-> how it is built, what was decided, and what is still open. Survives every
-> branch and task.
+> Long-lived, one per repo. The durable *current* picture of the project:
+> what it is for, how it is built, what was decided, what is open. A
+> snapshot, not a log — git history is the log, so finished work is removed
+> rather than archived here.
 
 _Last updated: <date> · <machine>_
 
@@ -12,23 +13,17 @@ _What is this project trying to achieve? One or two sentences._
 
 ## Architecture
 
-_The key components and how they fit together. Update when the structure
-changes, not when a file changes._
+_The key components and how they fit together. Update when the structure changes, not when a file changes._
 
 ## Key decisions
 
-_One line each, dated. Record why X was chosen over Y — the reasoning is the
-part that gets lost._
+_One line each, dated, with a pointer (commit or PR) to the full rationale. The reasoning lives in the commit or PR body — this list stays skimmable._
 
 - <date>: (initial scaffold)
 
 ## TODOs
 
 - [ ] ...
-
-## Done
-
-_Finished TODOs move here instead of being deleted, so the trail stays visible._
 
 ## Open questions
 

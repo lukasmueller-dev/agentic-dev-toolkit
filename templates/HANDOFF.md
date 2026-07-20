@@ -1,26 +1,29 @@
 # Handoff — <repo> / <branch>
 
-> Short-lived, one per worktree. Update it at the end of every session so the
-> next session — on any machine, with any agent — can pick up without guessing.
+> The baton. Present tense only: where the work stands *now* and what the
+> next session should do. Overwrite it each session — never append. History
+> lives in git and rationale in commit bodies, not here. Before the task
+> ends, promote anything durable (project status, repo instructions, commit
+> body) and clear this file back to its headings: a finished task hands
+> nothing off.
 
 - **Repo:** <repo>
 - **Branch:** `<branch>`
-- **Worktree:** `<worktree>`
+- **Worktree:** <worktree>
 - **Last updated:** <date> · <machine>
 
-## Current status
+## State
 
-_What state is the work in right now? What works, what is half-finished?_
+_What works, what is half-finished, what is broken — right now._
 
-## Next steps
+## Next action
 
-_What should the next session do first? Specific enough to act on without
-re-reading the diff._
+_The first concrete thing the next session should do, specific enough to act on without re-reading the diff._
 
-## Open PRs / branches
+## Blockers
 
-_Numbers or links, and what each one is waiting on._
+_What is stopping progress, and what would unblock it._
 
-## Notes / gotchas
+## Gotchas (unpromoted)
 
-_Anything that would cost the next session time to rediscover._
+_Surprises discovered but not yet resolved. If one will still bite after this task, promote it to the repo's instructions before finishing._

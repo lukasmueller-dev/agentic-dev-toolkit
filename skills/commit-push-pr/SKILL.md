@@ -50,7 +50,11 @@ Conventional Commits rules:
 - Types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`.
 - Subject ≤ 72 chars, imperative mood, no trailing period.
 - Add `!` after type/scope for breaking changes and a `BREAKING CHANGE:` footer.
-- Body (optional) explains *why*, wrapped at ~72 cols.
+- The body is the **canonical home of the rationale** — why the change was
+  made, alternatives considered and rejected, the failure the change
+  prevents. Be thorough here (wrapped at ~72 cols): this is what `git blame`
+  surfaces in two years, and detail placed here is detail the chat summary
+  and PR body only need to point at, not restate.
 - If changes are logically distinct, make multiple commits by staging paths selectively (`git add <paths>`).
 
 ### 4. Push
@@ -68,8 +72,26 @@ gh pr create --fill --base <default-branch>
 ```
 
 - `--fill` auto-generates title/body from the commits. Resolve `<default-branch>` via `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`.
-- If commits are messy or a single squashed narrative is clearer, replace `--fill` with explicit `--title`/`--body` synthesized from the diff (title = Conventional Commit summary; body = **Summary** / **Changes** / **Test plan** sections).
+- If commits are messy or a single squashed narrative is clearer, replace `--fill` with explicit `--title`/`--body` synthesized from the diff (title = Conventional Commit summary).
 - If a PR already exists for the branch, skip creation and report its URL (`gh pr view --json url -q .url`).
+
+PR body rules — the body says only what the diff *cannot*:
+
+- **Summary**: ≤5 bullets on intent and approach — why, not what. Never
+  narrate the diff; the diff is right there.
+- **Decisions/risks**: mandatory, even when the content is "none" —
+  judgment calls, tradeoffs, anything a reviewer would want flagged.
+- **What to verify**: how to exercise the change, what could plausibly break.
+- An exhaustive file-by-file account, if worth generating at all, goes in a
+  collapsed block at the end so it costs nothing to skim past:
+
+  ```markdown
+  <details><summary>Full changes</summary>
+
+  ...
+
+  </details>
+  ```
 
 Return the PR URL as the final output.
 
