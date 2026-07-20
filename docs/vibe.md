@@ -43,7 +43,13 @@ The verbs are layered by how often you reach for them.
 | `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
 | `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
 | `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
-| `vibe done [--force] [<task>]` | Remove the worktree, keeping the branch                    |
+| `vibe done [--force] [--stop] [<task>]` | Remove the worktree, keeping the branch           |
+
+**Unattended:**
+
+| Command                        | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `vibe loop <task> [--until <cmd>] [--max <n>]` | Run the agent round after round until done — see [loops](vibe-loop.md) |
 
 **Phone:**
 
@@ -80,6 +86,10 @@ ahead and behind upstream, and the age of its `HANDOFF.md` — read from local
 refs only, so it never touches the network. `vibe status --all` widens the scan
 to every repo under `$VIBE_WORKTREE_ROOT` and works from outside any repo, which
 is the one-glance "what is in flight everywhere" view.
+
+`vibe start` and `vibe loop` are the two ways in: `start` for interactive work
+you drive, `loop` for a bounded task the agent runs on its own. See
+[the unattended loop](vibe-loop.md).
 
 ## Switching machines
 
@@ -141,6 +151,16 @@ vibe: branch 'fix-login-bug' has 2 commit(s) that are on no remote.
 `--force` overrides both checks. The branch is always kept, so even a forced
 removal leaves the commits reachable.
 
+## Running a task unattended
+
+`vibe loop <task>` is `start`'s hands-off sibling: same branch and worktree, but
+instead of an interactive agent it runs bounded rounds — agent, commit, check —
+until an `--until` command passes, `--max` rounds pass, or it stalls. On the
+server it lives in a tmux session, so it keeps going after you disconnect and
+pushes to your phone when it ends. The full contract — stop conditions, resume,
+the `--dangerously-allow-all` blast radius — is in
+[the unattended loop](vibe-loop.md).
+
 ## Seeing sessions from your phone
 
 The agent runs in tmux on the VPS, so it survives disconnects. Two ways in:
@@ -183,7 +203,8 @@ vibe doctor        # validates the file and shows the resulting values
 | -------------------------- | ----------------- | ------------------------------------ |
 | `VIBE_WORKTREE_ROOT`       | `~/git/worktrees` | Where worktrees are created          |
 | `VIBE_AGENT_CMD`           | `claude`          | The agent to launch                  |
-| `VIBE_AGENT_HEADLESS_ARGS` | `-p`              | Args that make the agent run one-shot (`vibe park`) |
+| `VIBE_AGENT_HEADLESS_ARGS` | `-p`              | Args that make the agent run one-shot (`vibe park`, `vibe loop`) |
+| `VIBE_LOOP_PERMISSIVE_ARGS` | unset            | Args for `loop --dangerously-allow-all` |
 | `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |
 | `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection            |
 | `VIBE_NTFY_TOPIC`          | unset             | Phone notifications (off when unset) |

@@ -141,7 +141,8 @@ jobs:
         run: |
           # A template that names a specific CLI re-couples the document to one
           # workflow, which is the drift this layout exists to prevent.
-          if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' templates/HANDOFF.md templates/PROJECT_STATUS.md; then
+          if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' \
+            templates/HANDOFF.md templates/LOOP.md templates/PROJECT_STATUS.md; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi

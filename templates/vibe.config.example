@@ -25,12 +25,21 @@
 #VIBE_AGENT_CMD=claude
 
 # Arguments that turn VIBE_AGENT_CMD into a one-shot, headless run. `vibe park`
-# uses these to have the agent refresh HANDOFF.md before syncing, appending the
-# prompt as the final argument: `$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"`.
-# The default is Claude Code's `-p`; point it at whatever your agent uses so
-# nothing here assumes Claude. If the agent is missing, park still syncs.
+# uses these to have the agent refresh HANDOFF.md before syncing, and `vibe
+# loop` uses them for each unattended round, appending the prompt as the final
+# argument: `$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"`. The default
+# is Claude Code's `-p`; point it at whatever your agent uses so nothing here
+# assumes Claude. If the agent is missing, park still syncs.
 # Default: -p
 #VIBE_AGENT_HEADLESS_ARGS=-p
+
+# Extra args appended ONLY when a loop is started with --dangerously-allow-all:
+# the agent's "skip every permission prompt" mode. A loop runs unattended, so
+# it cannot answer a prompt — but skipping all of them lets the agent take any
+# action your account can, inside the (isolated, but same-$HOME) worktree. Leave
+# unset unless you have read docs/vibe-loop.md and accept that blast radius.
+# Default: unset
+#VIBE_LOOP_PERMISSIVE_ARGS=--dangerously-skip-permissions
 
 # Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
 # Default: vibe

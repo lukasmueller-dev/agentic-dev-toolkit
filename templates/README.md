@@ -7,6 +7,7 @@ copy.
 | File                 | Lives at        | Lifespan                        |
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch |
+| `LOOP.md`            | worktree root   | Short — one per unattended loop  |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
 
@@ -31,6 +32,9 @@ render still produces a readable file.
 | `<worktree>`  | Absolute path to the worktree root                   |
 | `<date>`      | Render date, `YYYY-MM-DD`                            |
 | `<machine>`   | Where it was rendered — `local` or `server`          |
+| `<goal>`      | The task a loop is working toward (`LOOP.md` only)   |
+| `<until>`     | The loop's stop-check command, or `—` (`LOOP.md`)    |
+| `<max>`       | The loop's max round count (`LOOP.md` only)          |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -49,7 +53,8 @@ tokens in.
 
 ## Consumers
 
-- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`)
+- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`), and
+  `LOOP.md` into an unattended-loop worktree (`vibe loop`)
 - `skills/project-status-scaffold/scaffold.sh` — scaffolds both files
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 
