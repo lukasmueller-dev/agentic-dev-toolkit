@@ -81,6 +81,88 @@ setup() {
 }
 
 # ---------------------------------------------------------------------------
+# skill-lint-on-edit.sh
+#
+# It shells out to `skill-lint`, so the tests put this repo's bin/ on PATH.
+# ---------------------------------------------------------------------------
+sl_env() {
+  PATH="$REPO_ROOT/bin:$PATH"
+  export PATH
+}
+
+# a skill under <root>/skills/<name> with the given name field.
+mk_edit_skill() {
+  local root="$1" name="$2" namefield="$3"
+  mkdir -p "$root/skills/$name"
+  printf -- '---\nname: %s\ndescription: %s\n---\n\n# body\n' "$namefield" \
+    "Analyzes the thing and reports findings; use it when the user asks to check the thing." \
+    >"$root/skills/$name/SKILL.md"
+}
+
+@test "on-edit: no-ops when jq is unavailable" {
+  run env PATH= /bin/bash "$HOOKS/skill-lint-on-edit.sh" </dev/null
+  [ "$status" -eq 0 ]
+}
+
+@test "on-edit: no-ops when skill-lint is not on PATH" {
+  # jq present, skill-lint absent: a minimal PATH with jq but not bin/.
+  local jqdir="$BATS_TEST_TMPDIR/jqonly"
+  mkdir -p "$jqdir"
+  ln -sf "$(command -v jq)" "$jqdir/jq"
+  ln -sf "$(command -v bash)" "$jqdir/bash"
+  run env PATH="$jqdir" bash -c "echo '{\"tool_input\":{\"file_path\":\"/x/skills/a/SKILL.md\"}}' | '$HOOKS/skill-lint-on-edit.sh'"
+  [ "$status" -eq 0 ]
+}
+
+@test "on-edit: silent on a path that is not inside a skill" {
+  sl_env
+  run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/README.md\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "on-edit: silent when the touched skill is clean" {
+  sl_env
+  mk_edit_skill "$BATS_TEST_TMPDIR" good good
+  run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/skills/good/SKILL.md\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "on-edit: surfaces findings on a bad skill and exits 2" {
+  sl_env
+  mk_edit_skill "$BATS_TEST_TMPDIR" bad Wrong
+  run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/skills/bad/SKILL.md\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"[SQ3]"* ]]
+}
+
+@test "on-edit: triggers when a sibling file in the skill is edited" {
+  sl_env
+  mk_edit_skill "$BATS_TEST_TMPDIR" bad Wrong
+  mkdir -p "$BATS_TEST_TMPDIR/skills/bad/scripts"
+  printf '#!/usr/bin/env bash\n' >"$BATS_TEST_TMPDIR/skills/bad/scripts/run.sh"
+  run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/skills/bad/scripts/run.sh\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"[SQ3]"* ]]
+}
+
+@test "on-edit: resolves a relative file_path against cwd" {
+  sl_env
+  mk_edit_skill "$BATS_TEST_TMPDIR" bad Wrong
+  run bash -c "echo '{\"tool_input\":{\"file_path\":\"skills/bad/SKILL.md\"},\"cwd\":\"$BATS_TEST_TMPDIR\"}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"[SQ3]"* ]]
+}
+
+@test "on-edit: never exits with a code other than 0 or 2" {
+  sl_env
+  # Malformed stdin must not crash it.
+  run bash -c "echo 'not json' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
 # notify-ntfy.sh
 # ---------------------------------------------------------------------------
 @test "ntfy: does nothing when no topic is configured" {

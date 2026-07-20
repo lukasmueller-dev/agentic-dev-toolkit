@@ -264,3 +264,31 @@ min_path() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"no such directory"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# Single-skill targeting — a directory that is itself a skill (used by the hook)
+# ---------------------------------------------------------------------------
+@test "a single skill directory lints just that skill" {
+  writeskill one one "$GOOD_DESC"
+  writeskill two two "You should use this when you want to do the second thing in full."
+  run "$LINT" "$SKILLS/one"
+  [ "$status" -eq 0 ]
+  # Only 'one' was checked; 'two' (which has a warning) was not.
+  [[ "$output" == *"checked 1 skill(s)"* ]]
+  [[ "$output" != *"first-person"* ]]
+}
+
+@test "a single skill directory reports its own findings" {
+  writeskill bad Wrong "$GOOD_DESC"
+  run "$LINT" "$SKILLS/bad"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"does not match directory"* ]]
+}
+
+@test "pointing at an underscore skill directory checks nothing" {
+  mkdir -p "$SKILLS/_template"
+  printf 'broken\n' >"$SKILLS/_template/SKILL.md"
+  run "$LINT" "$SKILLS/_template"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"checked 0 skill(s)"* ]]
+}

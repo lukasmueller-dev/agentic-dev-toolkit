@@ -187,12 +187,20 @@ check_scripts() {
 }
 
 # --------------------------------------------------------------------------
-# lint_dir <skills-dir> — every non-'_' skill subdirectory with a SKILL.md.
+# lint_dir <dir> — lint the skills under <dir>. A <dir> that is itself a skill
+# (it holds a SKILL.md) is linted as that one skill, which is how the on-edit
+# hook checks just the skill that changed; otherwise <dir> is a skills-dir and
+# every non-'_' subdirectory with a SKILL.md is linted.
 # --------------------------------------------------------------------------
 lint_dir() {
   local root="$1"
   if [ ! -d "$root" ]; then
     emit_error "$root" "no such directory"
+    return
+  fi
+  if [ -f "$root/SKILL.md" ]; then
+    case "$(basename "$root")" in _*) return ;; esac # honour the installer's skip
+    check_skill "$root"
     return
   fi
   local d name
