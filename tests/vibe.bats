@@ -88,6 +88,62 @@ slug() {
   [ ! -d "$wt" ]
 }
 
+@test "done: refuses while HANDOFF.md still carries content" {
+  cd "$(make_repo proj)"
+  run_vibe start "task h"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-h"
+  echo "- migration half done, resume at step 3" >>"$wt/HANDOFF.md"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work"
+  git -C "$wt" push -q -u origin task-h
+
+  run run_vibe "done" "task h"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HANDOFF.md still carries content"* ]]
+  [[ "$output" == *"resume at step 3"* ]]
+  [ -d "$wt" ]
+}
+
+@test "done: a handoff cleared back to its headings passes the guard" {
+  cd "$(make_repo proj)"
+  run_vibe start "task hc"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hc"
+  # the seeded template is scaffolding only (headings, quotes, metadata,
+  # single-line placeholders) — exactly what a cleared handoff looks like
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work"
+  git -C "$wt" push -q -u origin task-hc
+
+  run run_vibe "done" "task hc"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+}
+
+@test "done: --discard-handoff removes despite handoff content" {
+  cd "$(make_repo proj)"
+  run_vibe start "task hd"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hd"
+  echo "- leftover note" >>"$wt/HANDOFF.md"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work"
+  git -C "$wt" push -q -u origin task-hd
+
+  run run_vibe "done" --discard-handoff "task hd"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+}
+
+@test "done: --force skips the handoff guard too" {
+  cd "$(make_repo proj)"
+  run_vibe start "task hf"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hf"
+  echo "- leftover note" >>"$wt/HANDOFF.md"
+
+  run run_vibe "done" --force "task hf"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+}
+
 @test "done: keeps the branch after removing the worktree" {
   cd "$(make_repo proj)"
   run_vibe start "task three"

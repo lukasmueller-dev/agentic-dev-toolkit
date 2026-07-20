@@ -6,10 +6,16 @@ copy.
 
 | File                 | Lives at        | Lifespan                        |
 | -------------------- | --------------- | ------------------------------- |
-| `HANDOFF.md`         | worktree root   | Short — one per worktree/branch |
+| `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
 | `LOOP.md`            | worktree root   | Short — one per unattended loop  |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
+
+How the documents divide information between them — and why the handoff must
+end a task empty — is `docs/artifact-architecture.md`. The templates encode
+that contract structurally: `HANDOFF.md` keeps every placeholder on a single
+`_italic_` line so tooling can tell scaffolding from content by filtering
+lines.
 
 ## Why these live here
 

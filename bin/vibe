@@ -22,11 +22,15 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [--stop] [<task>]
+#   vibe done [--force] [--stop] [--discard-handoff] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
-#                         worktree is dirty, holds unpushed commits, or has a
-#                         loop still running (--stop kills it first). Infers the
-#                         task from the cwd when run inside a worktree.
+#                         worktree is dirty, holds unpushed commits, has a loop
+#                         still running (--stop kills it first), or if
+#                         HANDOFF.md still carries content — a finished task
+#                         hands nothing off, so promote or discard first
+#                         (--discard-handoff skips only the handoff check).
+#                         Infers the task from the cwd when run inside a
+#                         worktree.
 #
 # Unattended:
 #   vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push]
@@ -799,6 +803,16 @@ loop_stop() {
   info "loop marked stopped"
 }
 
+# handoff_carries_content FILE — true when FILE holds anything beyond the
+# template's own scaffolding: blank lines, headings, '>' guidance quotes,
+# '- **Field:**' metadata, and single-line _placeholders_. The template keeps
+# every placeholder on one line precisely so this stays a line filter.
+handoff_carries_content() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
+}
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -1100,12 +1114,13 @@ unpushed_commits() {
 
 cmd_done() {
   need git
-  local force=0 stop=0 task=""
+  local force=0 stop=0 discard_handoff=0 task=""
   while (($#)); do
     case "$1" in
       -f | --force) force=1 ;;
       --stop) stop=1 ;;
-      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] <task>)" ;;
+      --discard-handoff) discard_handoff=1 ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] <task>)" ;;
       *) task="$1" ;;
     esac
     shift
@@ -1158,6 +1173,20 @@ cmd_done() {
       die "branch '$branch' has $ahead commit(s) that are on no remote.
   Run 'vibe sync' to push them, or re-run with --force to remove the
   worktree anyway (the branch is kept, so the commits stay reachable)."
+    fi
+
+    # A finished task hands nothing off. Content still in the baton is
+    # information about to be orphaned on a branch nobody will look at again —
+    # promote it (PROJECT_STATUS.md, repo instructions, commit body) or
+    # discard it deliberately, but never silently.
+    if [[ "$discard_handoff" != 1 ]] && handoff_carries_content "$dir/HANDOFF.md"; then
+      warn "HANDOFF.md still carries content:"
+      grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$dir/HANDOFF.md" |
+        sed 's/^/    /' >&2
+      die "refusing to remove $dir
+  Promote what is durable, clear HANDOFF.md back to its headings, and
+  'vibe sync' — or re-run with --discard-handoff if none of it is worth
+  keeping."
     fi
   fi
 
@@ -1382,9 +1411,11 @@ run_headless_handoff() {
     return 1
   fi
   local prompt
-  prompt="Update HANDOFF.md in this worktree so another machine can pick up \
-where I left off: what changed, what works, what is in progress, and the next \
-concrete step. Keep it concise, and edit only HANDOFF.md."
+  prompt="Refresh HANDOFF.md in this worktree as the baton for the next \
+session: current state, next concrete action, blockers, and unresolved \
+gotchas. Present tense only — rewrite the sections rather than appending, \
+keep it under one screen, and edit only HANDOFF.md. History belongs in git, \
+not here."
   info "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…"
   # The headless args are meant to be word-split into separate arguments.
   # shellcheck disable=SC2086
