@@ -303,33 +303,65 @@ slug() {
 }
 
 # ---------------------------------------------------------------------------
-# pickup — arriving-machine verb: fast-forward the task's own worktree
+# attach — the single "arrive" verb: fast-forward when safe, never refuse
 # ---------------------------------------------------------------------------
-@test "pickup: refuses when the worktree is dirty" {
+
+# remote_ahead WT BRANCH — push BRANCH, then advance origin/BRANCH by one
+# commit from a second clone, leaving WT one commit behind its upstream.
+remote_ahead() {
+  local wt="$1" branch="$2" other
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "seed handoff"
+  git -C "$wt" push -q -u origin "$branch"
+  other="$(clone_repo proj other)"
+  git -C "$other" fetch -q origin "$branch"
+  git -C "$other" checkout -q "$branch"
+  echo "theirs" >"$other/theirs.txt"
+  git -C "$other" add -A
+  git -C "$other" commit -q -m "theirs"
+  git -C "$other" push -q origin "$branch"
+}
+
+@test "attach: fast-forwards a clean worktree before attaching" {
+  cd "$(make_repo proj)"
+  run_vibe start "task f"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-f"
+  remote_ahead "$wt" task-f
+
+  # from the main checkout; VIBE_AGENT_CMD=true makes the attach itself a no-op
+  run run_vibe attach "task f"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"fast-forwarded"* ]]
+  [[ "$output" == *"1 commit"* ]]
+  [ -f "$wt/theirs.txt" ]
+}
+
+@test "attach: warns but attaches anyway when the worktree is dirty" {
   cd "$(make_repo proj)"
   run_vibe start "task p"
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-p"
-  git -C "$wt" push -q -u origin task-p
+  remote_ahead "$wt" task-p
   echo "wip" >"$wt/wip.txt"
 
-  # run from the main checkout: pickup must target the task's worktree
-  run run_vibe pickup "task p"
-  [ "$status" -eq 1 ]
+  run run_vibe attach "task p"
+  [ "$status" -eq 0 ]
   [[ "$output" == *"uncommitted changes"* ]]
+  # pulling was unsafe, so the remote commit was not merged
+  [ ! -f "$wt/theirs.txt" ]
 }
 
-@test "pickup: refuses on divergence rather than attaching" {
+@test "attach: warns but attaches anyway when the branch has diverged" {
   cd "$(make_repo proj)"
   run_vibe start "task d"
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-d"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "seed handoff"
   git -C "$wt" push -q -u origin task-d
 
-  # local advances one way
+  # local and remote advance independently
   echo "mine" >"$wt/mine.txt"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "mine"
-
-  # remote advances another, via a second clone of the same branch
   local other
   other="$(clone_repo proj other)"
   git -C "$other" fetch -q origin task-d
@@ -339,40 +371,17 @@ slug() {
   git -C "$other" commit -q -m "theirs"
   git -C "$other" push -q origin task-d
 
-  run run_vibe pickup "task d"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"DIVERGED"* ]]
-  [ -d "$wt" ]
-}
-
-@test "pickup: fast-forwards the task worktree from the main checkout" {
-  cd "$(make_repo proj)"
-  run_vibe start "task f"
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-f"
-  # clean worktree so the ff guard has nothing to refuse
-  git -C "$wt" add -A
-  git -C "$wt" commit -q -m "seed handoff"
-  git -C "$wt" push -q -u origin task-f
-
-  # remote gets one commit ahead
-  local other
-  other="$(clone_repo proj other)"
-  git -C "$other" fetch -q origin task-f
-  git -C "$other" checkout -q task-f
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q origin task-f
-
-  # from the main checkout — VIBE_AGENT_CMD=true makes the attach a no-op exit 0
-  run run_vibe pickup "task f"
+  run run_vibe attach "task d"
   [ "$status" -eq 0 ]
-  [ -f "$wt/theirs.txt" ]
+  [[ "$output" == *"diverged"* ]]
+  # local work intact, remote not merged
+  [ -f "$wt/mine.txt" ]
+  [ ! -f "$wt/theirs.txt" ]
 }
 
-@test "pickup: refuses a task with no worktree" {
+@test "attach: refuses a task with no worktree" {
   cd "$(make_repo proj)"
-  run run_vibe pickup "never-started"
+  run run_vibe attach "never-started"
   [ "$status" -eq 1 ]
   [[ "$output" == *"no worktree"* ]]
 }

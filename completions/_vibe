@@ -36,8 +36,7 @@ _vibe() {
   local -a commands
   commands=(
     'start:Create branch + worktree for a task and open the agent'
-    'attach:Re-enter an existing task session or worktree'
-    'pickup:Fast-forward the task'\''s own worktree, then attach'
+    'attach:Arrive at a task — fast-forward when safe, then attach'
     'park:Refresh HANDOFF.md via the agent, then sync'
     'rc:Enable Remote Control on a running task (server only)'
     'status:Show environment, worktrees, tmux sessions and open PRs'
@@ -60,7 +59,7 @@ _vibe() {
       ;;
     args)
       case "${words[1]}" in
-        attach | pickup | park | rc | sync)
+        attach | park | rc | sync)
           _vibe_tasks
           ;;
         done)

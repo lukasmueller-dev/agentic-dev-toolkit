@@ -10,37 +10,43 @@
 #   - On the MAC (local), no tmux is forced — you just get dropped into the worktree.
 #   - Every worktree gets a HANDOFF.md so the two machines can hand off cleanly.
 #
-# Commands:
+# Commands, in the order you reach for them:
+#
+# Daily loop:
 #   vibe start <task>     Create branch+worktree for <task>, seed HANDOFF.md,
 #                         then open a claude session (in tmux on server).
-#   vibe attach [<task>]  Re-attach to an existing task session (server) or cd
-#                         into it. With no task, pick from a menu.
-#   vibe pickup [<task>]  Arriving-machine verb: fast-forward the task's own
-#                         worktree, then attach. Works from anywhere, including
-#                         the main checkout. With no task, pick from a menu.
-#   vibe park [<task>]    Leaving-machine verb: refresh HANDOFF.md by running the
+#   vibe attach [<task>]  Arrive at a task: fast-forward its worktree when that
+#                         is safe (clean + ff-only), then attach. Never refuses
+#                         — a dirty/diverged tree is reported and attached as-is.
+#                         With no task, pick from a menu.
+#   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe status [--all]   Show worktrees with per-worktree sync state (dirty,
-#                         ahead/behind, HANDOFF.md age), tmux state, PRs. --all
-#                         scans every repo under $VIBE_WORKTREE_ROOT.
-#   vibe list             Short list of tasks.
 #   vibe done [--force] [<task>]
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty or holds unpushed commits. Infers the
 #                         task from the cwd when run inside a worktree.
-#   vibe sync [<task>]    Commit handoff files (own commit) + the rest, then push.
-#                         Aborts on divergence. Infers the task from the cwd; a
-#                         task argument targets that worktree from anywhere.
-#   vibe resume [--rebase] [<task>]
-#                         Pull remote (fast-forward only). Aborts if dirty or
-#                         diverged; --rebase opts into 'git pull --rebase' for
-#                         the diverged case. Task argument as for sync.
+#
+# Phone:
 #   vibe rc <task>        Enable Remote Control on a running task by sending /rc
 #                         into its tmux session (server only), so it can be
 #                         driven from the Claude app on a phone.
-#   vibe where            Print detected environment (local|server) and why.
+#
+# Visibility:
+#   vibe status [--all]   Show worktrees with per-worktree sync state (dirty,
+#                         ahead/behind, HANDOFF.md age), tmux state, PRs. --all
+#                         scans every repo under $VIBE_WORKTREE_ROOT.
 #   vibe doctor           Check tools, paths, config and upstream state.
+#
+# Plumbing (attach/park use these; call directly when you need the git layer):
+#   vibe sync [<task>]    Commit handoff files (own commit) + the rest, then
+#                         push. Aborts on divergence. Infers the task from cwd;
+#                         a task argument targets that worktree from anywhere.
+#   vibe resume [--rebase] [<task>]
+#                         Pull remote, fast-forward only. Aborts if dirty or
+#                         diverged; --rebase opts into 'git pull --rebase'.
+#   vibe list             Short list of tasks.
+#   vibe where            Print detected environment (local|server) and why.
 #
 # Requires: git, tmux (server only for persistence), optionally gh (for PR info).
 #
@@ -395,7 +401,55 @@ open_session() {
   fi
 }
 
+# attach_ff DIR — fast-forward DIR to its upstream when that is safe (clean
+# tree, ff-only), and print one line saying what happened either way. Unlike
+# ff_worktree (the plumbing behind 'vibe resume'), this NEVER refuses: attach
+# only declines to *guess about git*, never to attach. So a dirty or diverged
+# worktree is reported and left alone, and the caller attaches regardless.
+attach_ff() {
+  local dir="$1" branch
+  branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+
+  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
+    warn "not pulling: $branch has uncommitted changes — attaching as-is"
+    return 0
+  fi
+  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+    info "no upstream for $branch — attaching without pulling"
+    return 0
+  fi
+  git -C "$dir" fetch -q 2>/dev/null || {
+    warn "fetch failed — attaching without pulling"
+    return 0
+  }
+
+  local local_rev remote_rev base n
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    info "$branch already up to date — attaching"
+  elif [[ "$local_rev" == "$base" ]]; then
+    n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+    git -C "$dir" merge -q --ff-only '@{u}'
+    if [[ "$n" == 1 ]]; then
+      ok "fast-forwarded $branch (1 commit) — attaching"
+    else
+      ok "fast-forwarded $branch ($n commits) — attaching"
+    fi
+  elif [[ "$remote_rev" == "$base" ]]; then
+    info "$branch is ahead of remote — attaching ('vibe park' to push)"
+  else
+    warn "not pulling: $branch has diverged from remote — attaching as-is
+  ('vibe resume --rebase' reconciles once you have decided)"
+  fi
+  return 0
+}
+
+# vibe attach [<task>] — the single "arrive at a machine" verb. Fast-forwards
+# the task's worktree when safe, then attaches; with no task, pick from a menu.
 cmd_attach() {
+  need git
   local task="${1:-}"
   [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe attach <task>"
@@ -406,6 +460,7 @@ cmd_attach() {
   local dir
   dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree for '$branch' (looked in $dir). Run: vibe start $task"
+  attach_ff "$dir"
   open_session "$repo" "$branch" "$dir"
 }
 
@@ -714,9 +769,9 @@ cmd_sync() {
 }
 
 # ff_worktree DIR [REBASE] — fast-forward DIR to its upstream, refusing if the
-# working tree is dirty or the branch has diverged. Shared by 'vibe resume' and
-# 'vibe pickup' so both refuse to guess in exactly the same way. REBASE=1 opts
-# into 'git pull --rebase' for the diverged case instead of refusing.
+# working tree is dirty or the branch has diverged. This is the plumbing behind
+# 'vibe resume'; it refuses to guess, unlike attach_ff which never blocks the
+# attach. REBASE=1 opts into 'git pull --rebase' for the diverged case.
 ff_worktree() {
   local dir="$1" rebase="${2:-0}" branch
   branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
@@ -748,7 +803,7 @@ ff_worktree() {
     ok "rebased $branch onto remote"
   else
     die "branch and remote have DIVERGED. Resolve manually, then resume
-  (or opt into 'vibe resume --rebase' / drive it from 'vibe pickup')."
+  (or opt into 'vibe resume --rebase' once you have decided)."
   fi
 }
 
@@ -767,20 +822,6 @@ cmd_resume() {
   local dir
   dir="$(dir_for_optional_task "$task")"
   ff_worktree "$dir" "$rebase"
-}
-
-# vibe pickup [<task>] — the arriving-machine verb. Fast-forward the task's own
-# worktree (never the cwd's branch, which is the footgun 'vibe resume' from the
-# main checkout used to be), then attach. Works from anywhere in the repo.
-cmd_pickup() {
-  need git
-  local task="${1:-}"
-  [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
-  [[ -n "$task" ]] || die "usage: vibe pickup <task>"
-  resolve_by_task "$task"
-  info "picking up '$R_branch' in $R_dir"
-  ff_worktree "$R_dir" 0
-  open_session "$R_repo" "$R_branch" "$R_dir"
 }
 
 # wait_for_pane_idle SESS — poll the session's pane until the agent looks like
@@ -1044,7 +1085,6 @@ main() {
   case "$cmd" in
     start) cmd_start "$@" ;;
     attach) cmd_attach "$@" ;;
-    pickup) cmd_pickup "$@" ;;
     park) cmd_park "$@" ;;
     rc) cmd_rc "$@" ;;
     status) cmd_status "$@" ;;

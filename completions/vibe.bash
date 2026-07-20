@@ -48,7 +48,7 @@ _vibe() {
 
   # completing the subcommand itself
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start attach pickup park rc status list done sync resume where doctor help" "$cur"
+    _vibe_reply "start attach park rc status list done sync resume where doctor help" "$cur"
     return
   fi
 
@@ -70,7 +70,7 @@ _vibe() {
     status)
       [[ "$cur" == -* ]] && _vibe_reply "--all" "$cur"
       ;;
-    attach | pickup | park | rc | sync)
+    attach | park | rc | sync)
       _vibe_reply "$(_vibe_tasks)" "$cur"
       ;;
     *)

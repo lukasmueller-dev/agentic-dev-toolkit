@@ -17,7 +17,7 @@ Then `./install.sh doctor` to check it landed.
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with `park`/`pickup` handoff between machines over git. [Docs](docs/vibe.md) |
+| [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with `park`/`attach` handoff between machines over git. [Docs](docs/vibe.md) |
 | [`skills/`](skills/) | Agent Skills — portable `SKILL.md`, not Claude Code-specific |
 | [`templates/`](templates/) | `HANDOFF.md` and `PROJECT_STATUS.md`, the single source of truth for both |
 | [`claude/`](claude/) | Claude Code config: permissions, hooks, statusline, global memory |

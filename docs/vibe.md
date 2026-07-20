@@ -34,27 +34,46 @@ and launches the agent — no tmux, because nothing needs to survive.
 
 ## Commands
 
+The verbs are layered by how often you reach for them.
+
+**Daily loop** — the four you actually live in:
+
 | Command                        | Does                                                       |
 | ------------------------------ | ---------------------------------------------------------- |
 | `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
-| `vibe attach [<task>]`         | Re-enter an existing task's session or worktree            |
-| `vibe pickup [<task>]`         | Fast-forward the task's *own* worktree, then attach        |
-| `vibe park [<task>]`           | Refresh `HANDOFF.md` via the agent, then sync              |
-| `vibe status [--all]`          | Worktrees + sync state, tmux sessions, PRs                 |
-| `vibe list`                    | Task names for this repo                                   |
-| `vibe sync [<task>]`           | Commit handoff files separately, then the rest, then push  |
-| `vibe resume [--rebase] [<task>]` | Fast-forward pull only (`--rebase` for the diverged case) |
-| `vibe rc <task>`               | Enable Remote Control on a running task (server only)      |
+| `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
+| `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
 | `vibe done [--force] [<task>]` | Remove the worktree, keeping the branch                    |
-| `vibe where`                   | Which environment was detected, and why                    |
+
+**Phone:**
+
+| Command                        | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `vibe rc <task>`               | Enable Remote Control on a running task (server only)      |
+
+**Visibility:**
+
+| Command                        | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `vibe status [--all]`          | Worktrees + sync state, tmux sessions, PRs                 |
 | `vibe doctor`                  | Check tools, paths, config, upstream state                 |
 
-`sync`, `resume`, `park` and `done` infer the task from your cwd when you run
-them inside its worktree, so no argument is needed there. Pass a task name to
-act on that worktree from anywhere else — the main checkout, or another task.
+**Plumbing** — the git layer `attach` and `park` sit on; reach for it directly
+only when you want the raw operation:
 
-`attach` and `pickup` with no task drop you into a picker over this repo's tasks
-(fzf when it is on `PATH`, a plain numbered menu otherwise).
+| Command                        | Does                                                       |
+| ------------------------------ | ---------------------------------------------------------- |
+| `vibe sync [<task>]`           | Commit handoff files separately, then the rest, then push  |
+| `vibe resume [--rebase] [<task>]` | Fast-forward pull only (`--rebase` for the diverged case) |
+| `vibe list`                    | Task names for this repo                                   |
+| `vibe where`                   | Which environment was detected, and why                    |
+
+`sync`, `park` and `done` infer the task from your cwd when you run them inside
+its worktree, so no argument is needed there. Pass a task name to act on that
+worktree from anywhere else — the main checkout, or another task.
+
+`attach` with no task drops you into a picker over this repo's tasks (fzf when
+it is on `PATH`, a plain numbered menu otherwise).
 
 `vibe status` annotates each worktree with its state — `dirty`/`clean`, commits
 ahead and behind upstream, and the age of its `HANDOFF.md` — read from local
@@ -66,32 +85,31 @@ is the one-glance "what is in flight everywhere" view.
 
 This is the whole point, and it is two verbs — one to leave, one to arrive.
 
-On the machine you are **leaving**:
+**Leave** with `vibe park`:
 
 ```bash
 vibe park          # from inside the worktree
 vibe park <task>   # or from anywhere else
 ```
 
-`park` runs the agent once, headlessly, to refresh `HANDOFF.md`, then syncs.
-You no longer have to remember to ask the agent to write the handoff before you
-sync — that was the step that got skipped.
+`park` runs the agent once, headlessly, to refresh `HANDOFF.md`, then syncs. You
+no longer have to remember to ask the agent to write the handoff before you sync
+— that was the step that got skipped. If the agent is missing or its headless
+run fails, `park` warns and syncs the existing `HANDOFF.md` anyway, so a flaky
+agent never strands your work locally.
 
-On the machine you **arrive** at:
+**Arrive** with `vibe attach`:
 
 ```bash
-vibe pickup <task>   # works from anywhere, including the main checkout
+vibe attach <task>   # or just `vibe attach` and pick from the menu
 ```
 
-`pickup` fast-forwards the *task's own worktree* and drops you into it.
-
-> **Why `pickup` and not `resume`?** `vibe resume` fast-forwards *the branch you
-> are standing on*. Run from a task's worktree that is fine, but run from the
-> main checkout — the natural place to land after `cd <repo>` — it would
-> fast-forward `main`, not your task, and the earlier "`cd <repo> && vibe resume
-> && vibe attach`" advice walked you straight into that. `pickup` takes the task
-> name and `git -C`s into the right worktree, so where you are standing never
-> matters.
+`attach` fast-forwards the task's worktree when that is safe — a clean tree that
+only needs to move forward — and prints one line saying what it did. When
+pulling would not be safe (dirty tree, diverged, no upstream) it says why in one
+line and attaches anyway. **`attach` never refuses:** arriving at a machine has
+exactly one answer, and it is this. It declines to *guess about git*, never to
+attach.
 
 **The handoff travels through git.** Nothing uncommitted crosses machines —
 which is exactly why `vibe sync` (and therefore `park`) commits `HANDOFF.md`
@@ -99,14 +117,11 @@ and `PROJECT_STATUS.md` as their own `chore: handoff` commit before committing
 anything else. The handoff is legible in the log instead of being buried in a
 "wip" commit.
 
-If the agent is missing or its headless run fails, `park` warns and syncs the
-existing `HANDOFF.md` anyway — a flaky agent never strands your work locally.
-
-Everything here refuses to guess. `sync` aborts if the remote has moved ahead
-or the branches have diverged; `pickup` and `resume` only ever fast-forward,
-and refuse outright if the working tree is dirty. Divergence is a decision, not
-something a sync tool should resolve for you — `vibe resume --rebase` is the one
-explicit escape hatch when you have decided.
+When you *do* want to reconcile a divergence by hand, that is the plumbing
+layer: `vibe resume` fast-forwards and otherwise refuses, and `vibe resume
+--rebase` is the one explicit escape hatch (`git pull --rebase`) once you have
+decided. `attach` uses `resume`'s machinery internally, but you rarely call it
+yourself.
 
 ## Finishing a task
 
