@@ -26,20 +26,14 @@ Exit status is 1 if any error was found, 0 otherwise.
 
 ## What it checks
 
-**Errors** (the non-negotiable bar):
+The rules are the **lint**-tagged rows of [`skill-quality.md`](skill-quality.md),
+which is their single home — this doc does not restate them. Every finding cites
+that row's ID (e.g. `[SQ4] name '…' must be lowercase…`), so a message points
+straight back to the rationale.
 
-- frontmatter opens the file (`---` on line 1) and is closed by a second `---`
-- `name:` and `description:` are both present
-- `name` matches the skill's directory name
-- `name` is lowercase letters, digits and single hyphens, ≤64 chars, and
-  contains neither "claude" nor "anthropic"
-- `description` is ≤1024 characters
-- any bundled `scripts/*` pass `shellcheck` and `shfmt -i 2 -ci`
-
-**Warnings** (promoted to errors under `--strict`):
-
-- `description` reads first-person (starts with `I `/`You `/`We `)
-- `description` is under ~50 characters, likely too thin to trigger reliably
+In short: the frontmatter rows (SQ1–SQ6) are hard errors; the two description
+heuristics (SQ7 short, SQ8 first-person) are warnings that `--strict` promotes;
+bundled-script cleanliness is SQ14.
 
 The `description:` value is read from its single line; a YAML block scalar is
 measured only by its first line, which is enough for the length heuristics.

@@ -121,17 +121,11 @@ somewhere useless. Copy the `script_dir()` helper from `bin/vibe`.
 
 ## Authoring a skill
 
-Start from `skills/_template/SKILL.md`; it carries the frontmatter rules and a
-pre-commit checklist. The essentials:
-
-- `name` must match the directory, lowercase with single hyphens. CI checks it.
-- `description` is the only thing the model sees when choosing a skill: third
-  person, what *and* when, most important trigger first.
-- Keep the workflow in `SKILL.md` and put everything ecosystem-specific in
-  `references/<language>.md`, so adding a language is adding a file. When a
-  skill supports one language and its sibling supports two, that is a gap
-  worth closing.
-- `disable-model-invocation: true` for anything with side effects.
+Start from `skills/_template/SKILL.md`. The quality bar every skill is held to —
+each rule with a stable ID and its rationale — lives in `docs/skill-quality.md`;
+that is the one file to edit when a criterion changes. `bin/skill-lint` enforces
+the mechanical rules (run it, or let CI's `--strict` pass catch you); the
+`skill-audit` skill grades the judgment ones.
 
 ## Claude Code config
 
