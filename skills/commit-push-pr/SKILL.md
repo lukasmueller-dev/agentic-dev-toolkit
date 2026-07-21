@@ -131,5 +131,6 @@ Return the PR URL as the final output.
 ## Notes
 
 - Respect `.gitignore`; if large/binary artifacts are about to be staged, flag before `git add -A`.
+- If the opened PR reports merge conflicts with the base branch (a parallel PR merged first), that is the `sync-with-main` skill's job — invoke it rather than resolving ad hoc here.
 - Don't amend or rewrite already-pushed commits.
 - Keep output terse: report branch, commit subject(s), and the PR URL.

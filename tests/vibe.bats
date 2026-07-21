@@ -79,6 +79,8 @@ slug() {
   cd "$(make_repo proj)"
   run_vibe start "task two"
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-two"
+  rm "$wt/HANDOFF.md" # a finished task hands nothing off
+  echo "done" >"$wt/work.txt"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "work"
   git -C "$wt" push -q -u origin task-two
@@ -104,19 +106,50 @@ slug() {
   [ -d "$wt" ]
 }
 
-@test "done: a handoff cleared back to its headings passes the guard" {
+@test "done: refuses while a cleared HANDOFF.md is still on the branch" {
   cd "$(make_repo proj)"
   run_vibe start "task hc"
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hc"
   # the seeded template is scaffolding only (headings, quotes, metadata,
-  # single-line placeholders) — exactly what a cleared handoff looks like
+  # single-line placeholders) — exactly what a cleared handoff looks like.
+  # Committed, it would merge into the default branch as a stray file.
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "work"
   git -C "$wt" push -q -u origin task-hc
 
   run run_vibe "done" "task hc"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HANDOFF.md is still on branch"* ]]
+  [ -d "$wt" ]
+}
+
+@test "done: passes once HANDOFF.md is deleted and synced" {
+  cd "$(make_repo proj)"
+  run_vibe start "task hg"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hg"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work"
+  git -C "$wt" rm -q HANDOFF.md
+  git -C "$wt" commit -q -m "chore: drop handoff"
+  git -C "$wt" push -q -u origin task-hg
+
+  run run_vibe "done" "task hg"
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
+}
+
+@test "done: --discard-handoff leaves the handoff on the branch deliberately" {
+  cd "$(make_repo proj)"
+  run_vibe start "task hk"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-hk"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work"
+  git -C "$wt" push -q -u origin task-hk
+
+  run run_vibe "done" --discard-handoff "task hk"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  git show task-hk:HANDOFF.md >/dev/null
 }
 
 @test "done: --discard-handoff removes despite handoff content" {
@@ -496,9 +529,11 @@ remote_ahead() {
   cd "$(make_repo proj)"
   run_vibe start "task inf"
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-inf"
-  # clean and pushed, so the data-loss guard has nothing to object to
+  # clean, pushed, and handoff-free, so the guards have nothing to object to
+  rm "$wt/HANDOFF.md"
+  echo "done" >"$wt/work.txt"
   git -C "$wt" add -A
-  git -C "$wt" commit -q -m "seed handoff"
+  git -C "$wt" commit -q -m "work"
   git -C "$wt" push -q -u origin task-inf
   cd "$wt"
 

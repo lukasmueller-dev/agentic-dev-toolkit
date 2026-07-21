@@ -6,6 +6,7 @@ directory at `~/.claude/hooks`, and wired up by `../settings.json`.
 | Script                    | Invoked as             | Does                                            |
 | ------------------------- | ---------------------- | ----------------------------------------------- |
 | `skill-lint-on-edit.sh`   | `PostToolUse(Write\|Edit)` hook | Lints just the skill an edit touched, feeds findings back |
+| `session-start-handoff.sh`| `SessionStart` hook    | Injects `HANDOFF.md` as context on `startup`/`clear` |
 | `session-end-handoff.sh`  | `SessionEnd` hook      | Warns when `HANDOFF.md` / `PROJECT_STATUS.md` are stale |
 | `notify-ntfy.sh`          | `Notification` hook    | Pushes to my phone via ntfy.sh                  |
 | `statusline.sh`           | `statusLine` command   | Renders `repo · branch · task`                  |
@@ -46,6 +47,17 @@ the handoff is stale; it cannot make the agent go and fix it. Making the agent
 act would need a `Stop` hook returning `decision: block` — but `Stop` fires
 every time the agent finishes a response, which is far too often for this.
 
+`SessionStart` is the asymmetric case: it *can* inject context, but not via
+stdout text or exit codes — print a JSON object to stdout and exit 0:
+
+```json
+{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "..."}}
+```
+
+`additionalContext` is added to the session before the first prompt.
+`session-start-handoff.sh` uses this to hand a fresh session `HANDOFF.md`
+without me having to say "read HANDOFF.md" first.
+
 ## Adding a hook
 
 Drop the script in, `chmod +x` it (the installer does this too), and add it to
@@ -63,7 +75,11 @@ Omit `matcher` to fire on every occurrence. `matcher` filters by tool name for
 `PreToolUse`/`PostToolUse`, and by reason for `SessionEnd` (`clear`, `resume`,
 `logout`, `prompt_input_exit`, `bypass_permissions_disabled`, `other`) and by
 type for `Notification` (`permission_prompt`, `idle_prompt`, `agent_completed`,
-…). Events like `Stop` and `UserPromptSubmit` take no matcher at all.
+…). `SessionStart` matchers filter by `source` (`startup`, `resume`, `clear`,
+`compact`, `fork`) — `session-start-handoff.sh` omits the matcher and checks
+`source` itself in-script instead, so the one script stays the single place
+that decision is made. Events like `Stop` and `UserPromptSubmit` take no
+matcher at all.
 
 Paths use `$HOME` rather than `${CLAUDE_PROJECT_DIR}`: these are user-level
 hooks that must resolve identically in every repo, and `CLAUDE_PROJECT_DIR`

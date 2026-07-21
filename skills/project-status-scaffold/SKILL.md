@@ -39,10 +39,11 @@ without re-reading the whole diff to work out where things stand.
 4. **When a task finishes (branch merged or abandoned)** — the baton dies.
    Promote what is durable out of `HANDOFF.md` first: a gotcha that will bite
    again goes to the repo's agent-instructions file, a decision goes to the
-   commit/PR body with a one-liner in `PROJECT_STATUS.md`. Then clear
-   `HANDOFF.md` back to its headings and sync. A finished task hands nothing
-   off — tooling may refuse to tear the worktree down while the handoff still
-   carries content.
+   commit/PR body with a one-liner in `PROJECT_STATUS.md`. Then delete
+   `HANDOFF.md` and sync. A finished task hands nothing off — left on the
+   branch, even a cleared handoff merges into the default branch as a stray
+   file, so tooling may refuse to tear the worktree down while the file is
+   still there.
 
 ## How to create them
 
