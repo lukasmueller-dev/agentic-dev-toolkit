@@ -9,10 +9,10 @@ _Last updated: 2026-07-21 · server_
 
 ## Goal
 
-Personal tooling for agentic development across a local Mac and a remote
-Linux VPS: one repo, installed by symlink on both machines, holding the
-CLIs, skills, templates, and agent config that every other repo's work runs
-on.
+Personal tooling for agentic development across any number of machines —
+those you sit at and those you reach over SSH: one repo, installed by
+symlink on each machine, holding the CLIs, skills, templates, and agent
+config that every other repo's work runs on.
 
 ## Architecture
 
@@ -22,6 +22,13 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-07-21: `local` and `server` are **roles a session plays**, not two
+  named machines or two operating systems — the same box is local when you
+  sit at it and a server when you SSH in, and any number of machines can
+  play either role. `VIBE_SERVER_HOSTNAME` is per-machine (each names
+  itself), so nothing in the code counts machines. The vocabulary was kept
+  rather than renamed, to avoid breaking existing configs. Rationale in the
+  PR for `harden-repo`.
 - 2026-07-21: Adopted a two-track roadmap from the mid-2026 agentic-trends
   review — sandbox-first unattended execution, then cross-agent
   portability. Rationale in the PR for `claude/agentic-dev-trends-3dws2i`.

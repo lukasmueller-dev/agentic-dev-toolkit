@@ -103,7 +103,7 @@ want() {
 # Path helpers
 #
 # No `readlink -f`: macOS shipped BSD readlink without it for years, and this
-# script has to behave identically on both machines.
+# script has to behave identically on every machine it installs to.
 # ---------------------------------------------------------------------------
 
 # link_target LINK — absolute path a symlink points at (one hop, resolved).
@@ -306,7 +306,7 @@ do_unlink() {
 # Claude Code writes to ~/.claude/settings.json itself: /model rewrites `model`,
 # "yes, don't ask again" appends to permissions.allow, and feature flags appear
 # on their own. Symlinking it into the repo would turn every one of those into
-# a git diff in the toolkit, and push them to the other machine.
+# a git diff in the toolkit, and push them to every other machine.
 #
 # So the repo holds a BASELINE of the settings worth versioning — permissions,
 # hooks, statusLine — and this merges it into whatever is already there.
@@ -422,11 +422,15 @@ vscode_target_file() {
   fi
 }
 
+# Which snippet, unlike which target file, follows the OS and nothing else:
+# VS Code keys terminal profiles by platform (`profiles.osx` vs
+# `profiles.linux`). Picking by "is this a remote session" got that wrong for a
+# macOS machine reached over SSH, which is a server *and* needs the osx keys.
 vscode_snippet() {
-  if [[ -d "$HOME/.vscode-server" || "$(uname -s)" != "Darwin" ]]; then
-    printf '%s' "$REPO/vscode/vscode-server.jsonc"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    printf '%s' "$REPO/vscode/vscode-darwin.jsonc"
   else
-    printf '%s' "$REPO/vscode/vscode-mac.jsonc"
+    printf '%s' "$REPO/vscode/vscode-linux.jsonc"
   fi
 }
 
@@ -723,7 +727,7 @@ if ((DRY == 0)); then
     *":$HOME/bin:"*) ;;
     *)
       hdr "PATH"
-      warn "  $HOME/bin is not on your PATH. Add to ~/.zshrc (mac) or ~/.bashrc (server):"
+      warn "  $HOME/bin is not on your PATH. Add to ~/.zshrc (zsh) or ~/.bashrc (bash):"
       warn "    export PATH=\"\$HOME/bin:\$PATH\""
       ;;
   esac

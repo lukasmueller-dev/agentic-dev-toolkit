@@ -1,0 +1,12 @@
+// Linux — add to VS Code Settings (JSON):
+//   User Settings when you are sitting at the machine, or *Remote* Settings
+//   (the window showing "[SSH: <your-host>]") when you reach it over SSH, in
+//   which case it lands in ~/.vscode-server/data/Machine/settings.json and
+//   covers ALL repos on that machine.
+// Makes every new terminal open with `vibe status`.
+{
+  "terminal.integrated.profiles.linux": {
+    "vibe": { "path": "bash", "args": ["-lic", "vibe status; exec bash"] }
+  },
+  "terminal.integrated.defaultProfile.linux": "vibe"
+}

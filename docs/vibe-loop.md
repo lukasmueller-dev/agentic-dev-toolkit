@@ -187,7 +187,7 @@ flag.
   `--no-attach` starts the session and returns instead of attaching — for
   starting a loop from a remote-controlled agent session (say, from the phone)
   or a script, where attaching would nest or hang the caller.
-- **Local (Mac)** — there is no persistent session to detach into, so the loop
+- **Local** — there is no persistent session to detach into, so the loop
   runs in the **foreground**. It does not silently fork into the background;
   you either watch it or start it on the server instead. `vibe loop` says so
   when it takes the foreground path.

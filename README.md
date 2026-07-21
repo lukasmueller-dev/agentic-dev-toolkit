@@ -1,7 +1,9 @@
 # agentic-dev-toolkit
 
-Personal tooling for agentic development across a local Mac and a remote Linux
-VPS. One repo, one `install.sh`, kept in sync on both machines with `git pull`.
+Personal tooling for agentic development across as many machines as you work
+on — the one in front of you, and any you reach over SSH and want to keep
+working after you disconnect. One repo, one `install.sh`, kept in sync on every
+machine with `git pull`.
 
 Installed by symlink, so updating is just pulling — nothing is ever copied into
 place and left to drift.
@@ -49,8 +51,8 @@ not tied to Claude Code. Start a new one from
 
 [`memory/GLOBAL.md`](memory/GLOBAL.md) is the standing instruction set every
 agent gets in every repo: where each kind of information is written, the
-two-machine setup, the handoff discipline. One file, installed to each agent's
-global instruction path — `~/.claude/global-memory.md` (imported by
+local/server split across machines, the handoff discipline. One file, installed
+to each agent's global instruction path — `~/.claude/global-memory.md` (imported by
 `~/.claude/CLAUDE.md`), `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`. It names
 no agent, which is what lets one file serve all three; see
 [`memory/README.md`](memory/README.md).
@@ -102,14 +104,17 @@ arrays are unioned rather than replaced.
 Put `~/bin` on your PATH:
 
 ```bash
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc    # ~/.bashrc on the server
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc    # ~/.bashrc under bash
 ```
 
-On the **server**, help environment detection along:
+On any machine that should count as a **server** — one you reach over SSH,
+where tasks run detached in tmux — help environment detection along:
 
 ```bash
 echo 'export VIBE_SERVER_HOSTNAME="$(hostname)"' >> ~/.bashrc
 ```
+
+Each machine names *itself* here, so this scales to any number of them.
 
 For zsh completions, add this above `compinit` in `~/.zshrc`:
 

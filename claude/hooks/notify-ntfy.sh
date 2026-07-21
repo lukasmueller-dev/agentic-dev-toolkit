@@ -3,7 +3,7 @@
 # Notification hook — push to my phone via ntfy.sh.
 #
 # Claude Code fires Notification when it wants attention: a permission prompt,
-# an idle prompt, a finished agent. On a VPS session that I am not looking at,
+# an idle prompt, a finished agent. On a remote session I am not looking at,
 # that is exactly the moment a phone push is useful.
 #
 # The topic is never hardcoded. It is read from, in order:
@@ -26,7 +26,7 @@ if [[ -z "$topic" && -r "$CONFIG_FILE" ]]; then
   # Read without sourcing: this file is config, not code.
   # `sed -E`, not a BRE with \|: BSD sed (macOS) does not support alternation
   # in basic regexes and silently matches nothing, which would leave
-  # notifications quietly switched off on the Mac.
+  # notifications quietly switched off on macOS.
   topic="$(sed -E -n 's/^[[:space:]]*VIBE_NTFY_TOPIC[[:space:]]*=[[:space:]]*//p' \
     "$CONFIG_FILE" | tail -1 | tr -d '"'\''' | tr -d '[:space:]')"
 fi
