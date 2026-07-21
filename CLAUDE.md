@@ -141,6 +141,16 @@ Two constraints that are not optional:
   by slicing a literal constant (`"${bank:0:n}"`) instead of piping through
   `tr`.
 
+The version skew cuts the other way too: `${var//pat/rep}` is not literal
+about `&` on bash ≥ 5.2, where the default-on `patsub_replacement` expands an
+unescaped `&` in *rep* to whatever *pat* matched. Escaping is not portable —
+under 3.2 the backslash survives into the output — so unset the option around
+the substitution instead, guarding both halves
+(`shopt -u patsub_replacement 2>/dev/null || true`) because 3.2 exits non-zero
+on an option it does not know. `render_template` in `bin/vibe` and
+`skills/_lib/vibe-lib.sh` does this; note that CI's macOS leg cannot catch the
+bug, only the Linux one.
+
 Both of these have already caused real bugs. The bats suite runs on macOS in
 CI for exactly this reason.
 

@@ -246,16 +246,25 @@ TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$VIBE_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
 # Pure bash: no sed, so a value containing the delimiter (worktree paths hold
-# slashes) cannot corrupt the substitution.
+# slashes) needs no escaping. The one character bash itself is not literal
+# about is '&': from 5.2 the patsub_replacement option — on by default —
+# expands an unescaped '&' in the replacement half of ${var//pat/rep} to
+# whatever the pattern matched, so an --until command chain would render as
+# '<until><until>'. Unset it around the loop and restore it after; shopt is
+# shell-global, and bash 3.2 (macOS) has no such option, hence the guards.
 render_template() {
   local tpl="$1"
   shift
+  local patsub_was_set=0
+  if shopt -q patsub_replacement 2>/dev/null; then patsub_was_set=1; fi
+  shopt -u patsub_replacement 2>/dev/null || true
   local content
   content="$(cat "$tpl")"
   while (($# >= 2)); do
     content="${content//$1/$2}"
     shift 2
   done
+  if ((patsub_was_set)); then shopt -s patsub_replacement 2>/dev/null || true; fi
   printf '%s\n' "$content"
 }
 
