@@ -316,6 +316,33 @@ tmux_session_name() {
   echo "${VIBE_TMUX_PREFIX}-$1-$2" | tr '.' '-'
 }
 
+# tmux_ensure_session SESS DIR CMD — make sure a detached session SESS exists
+# with working directory DIR, running CMD in its first (and only) pane when it
+# has to be created. Idempotent: an existing session is left running untouched.
+# Returns 0 when the session was already there, 1 when it was just created, so
+# the caller can word its own "already exists" vs "starting" line.
+tmux_ensure_session() {
+  local sess="$1" dir="$2" cmd="$3"
+  if tmux has-session -t "$sess" 2>/dev/null; then
+    return 0
+  fi
+  tmux new-session -d -s "$sess" -c "$dir"
+  tmux send-keys -t "$sess" "$cmd" C-m
+  return 1
+}
+
+# tmux_attach_or_switch SESS — bring SESS to the foreground. Inside an existing
+# tmux client, attach would nest a session; switch the client instead. Outside
+# tmux, attach.
+tmux_attach_or_switch() {
+  local sess="$1"
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux switch-client -t "$sess"
+  else
+    tmux attach-session -t "$sess"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Resolving which worktree a command should act on
 #
@@ -835,27 +862,23 @@ cmd_loop() {
   env="$(detect_env)"
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess
+    local sess run_cmd
     sess="$(tmux_session_name "$repo" "$branch")"
-    if tmux has-session -t "$sess" 2>/dev/null; then
+    # Run the loop inside tmux so it survives disconnect. __loop-run resolves
+    # everything from the state file just written.
+    run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    if tmux_ensure_session "$sess" "$dir" "$run_cmd"; then
       info "loop session already exists: $sess"
     else
       info "starting loop in tmux session: $sess"
-      tmux new-session -d -s "$sess" -c "$dir"
-      # Run the loop inside tmux so it survives disconnect. __loop-run resolves
-      # everything from the state file just written.
-      tmux send-keys -t "$sess" \
-        "$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")" C-m
     fi
     if [[ "$no_attach" == "1" ]]; then
       # Started from a remote-controlled session or a script: attaching would
       # nest or hang the caller. The session runs either way.
       info "loop running detached in tmux session: $sess"
       info "watch it: vibe attach $task   ·   check on it: vibe status"
-    elif [[ -n "${TMUX:-}" ]]; then
-      tmux switch-client -t "$sess"
     else
-      tmux attach-session -t "$sess"
+      tmux_attach_or_switch "$sess"
     fi
   else
     warn "local environment — running the loop in the foreground (Ctrl-C to stop)."
@@ -945,26 +968,20 @@ open_session() {
 
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess
+    local sess launch
     sess="$(tmux_session_name "$repo" "$branch")"
-    if tmux has-session -t "$sess" 2>/dev/null; then
+    # VIBE_RC_ON_START launches the agent with Remote Control already on, so
+    # the session is reachable from the phone without a later 'vibe rc'. This
+    # appends Claude Code's --remote-control flag; agents without it should
+    # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
+    launch="$VIBE_AGENT_CMD"
+    [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
+    if tmux_ensure_session "$sess" "$dir" "$launch"; then
       info "attaching to existing tmux session: $sess"
     else
       info "starting persistent tmux session: $sess"
-      tmux new-session -d -s "$sess" -c "$dir"
-      # VIBE_RC_ON_START launches the agent with Remote Control already on, so
-      # the session is reachable from the phone without a later 'vibe rc'. This
-      # appends Claude Code's --remote-control flag; agents without it should
-      # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
-      local launch="$VIBE_AGENT_CMD"
-      [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
-      tmux send-keys -t "$sess" "$launch" C-m
     fi
-    if [[ -n "${TMUX:-}" ]]; then
-      tmux switch-client -t "$sess"
-    else
-      tmux attach-session -t "$sess"
-    fi
+    tmux_attach_or_switch "$sess"
   else
     # local (Mac): no forced tmux, just move into the worktree and launch agent
     info "local environment — entering worktree (no tmux)."
