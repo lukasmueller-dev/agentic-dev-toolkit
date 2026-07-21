@@ -69,6 +69,28 @@ min_path() {
   [[ "$output" == *"not closed by a second"* ]]
 }
 
+# A large body after the closing '---' used to false-positive as unclosed:
+# `sed ... | grep -qx -- '---'` lets grep exit the moment it matches, and on
+# a big enough file sed is still writing when that happens - SIGPIPE kills
+# sed, and `set -o pipefail` turns that into the pipeline's exit status
+# instead of grep's success.
+@test "a large body after the closing --- is not a false-positive unclosed error" {
+  local d="$SKILLS/big"
+  mkdir -p "$d"
+  {
+    printf -- '---\n'
+    printf 'name: big\n'
+    printf 'description: %s\n' "$GOOD_DESC"
+    printf -- '---\n\n'
+    for _ in $(seq 1 20000); do
+      printf 'padding line to force a large write through the frontmatter check\n'
+    done
+  } >"$d/SKILL.md"
+  run "$LINT" "$SKILLS"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"not closed by a second"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # name field
 # ---------------------------------------------------------------------------

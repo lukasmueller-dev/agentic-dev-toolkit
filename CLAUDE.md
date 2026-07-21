@@ -23,6 +23,7 @@ This file is only about changing the toolkit itself.
 | `tmux/`       | tmux snippet for server sessions                    | Yes            |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
 | `tests/`      | bats suites                                         | —              |
+| `.githooks/`  | Git hooks for developing *this* repo (not installed)| —              |
 
 **The top-level split is the point.** Anything portable stays at the top
 level; anything that only makes sense for one agent goes in that agent's
@@ -150,6 +151,26 @@ worktree root.
 Add a test when you add a guard. The `vibe done` guard, the installer's
 ownership check, and every hook's degrade-to-no-op path each have one, because
 each protects against silent data loss.
+
+## Protecting main
+
+This repo is private on GitHub Free, which has no branch protection or
+rulesets for private repos — `gh api repos/.../branches/main/protection`
+returns 403 "Upgrade to GitHub Pro". `.githooks/pre-push` is the local
+substitute: it refuses `git push` targeting `refs/heads/main` (or `master`),
+so a direct push has to go through a PR instead. It is real friction, not a
+guarantee — `--no-verify`, or a clone that skipped the step below, bypasses
+it entirely.
+
+New clone, one time:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`.git/hooks` is never tracked by git, so this does not happen automatically
+on `git clone` or `git pull` — every clone (this machine, the other one, a
+fresh checkout) needs it run once.
 
 ## Before committing
 
