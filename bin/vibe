@@ -135,20 +135,35 @@ VIBE_LOOP_STATE=".vibe-loop.state"
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
-c_red=$'\033[31m'
-c_grn=$'\033[32m'
-c_yel=$'\033[33m'
-c_dim=$'\033[2m'
-c_bld=$'\033[1m'
-c_off=$'\033[0m'
+# Color is resolved once, here, so every command inherits the same decision:
+# off when stdout isn't a terminal or NO_COLOR is set, forced on by
+# CLICOLOR_FORCE even over a pipe. Getting this wrong leaks raw escapes into
+# logs, files and pagers.
+if [[ -n "${CLICOLOR_FORCE:-}" ]] || { [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; }; then
+  c_red=$'\033[31m'
+  c_grn=$'\033[32m'
+  c_yel=$'\033[33m'
+  c_dim=$'\033[2m'
+  c_bld=$'\033[1m'
+  c_off=$'\033[0m'
+else
+  c_red=""
+  c_grn=""
+  c_yel=""
+  c_dim=""
+  c_bld=""
+  c_off=""
+fi
 
+# One symbol per severity, used everywhere from top-level messages to the
+# doctor report: ✓ ok, ⚠ warn, ✗ die/fail.
 die() {
-  printf '%svibe: %s%s\n' "$c_red" "$*" "$c_off" >&2
+  printf '%s✗%s vibe: %s\n' "$c_red" "$c_off" "$*" >&2
   exit 1
 }
 info() { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
-warn() { printf '%s%s%s\n' "$c_yel" "$*" "$c_off"; }
-ok() { printf '%s%s%s\n' "$c_grn" "$*" "$c_off"; }
+warn() { printf '%s⚠%s %s\n' "$c_yel" "$c_off" "$*"; }
+ok() { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
 
 # ---------------------------------------------------------------------------
@@ -1020,18 +1035,20 @@ handoff_age() {
 # from local refs. Like cmd_doctor, it never fetches: 'ahead'/'behind' are
 # measured against the last fetch so 'vibe status' stays read-only and offline.
 sync_state_line() {
-  local dir="$1" dirty ahead behind
+  local dir="$1" dirty ahead behind dirty_c
   if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
     dirty="dirty"
+    dirty_c="$c_yel"
   else
     dirty="clean"
+    dirty_c="$c_grn"
   fi
   ahead="$(unpushed_commits "$dir")"
   behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
   local loop=""
   [[ -f "$(loop_state_path "$dir")" ]] && loop=" · loop $(loop_summary "$dir")"
-  printf '      %s%s · %s ahead · %s behind · handoff %s%s%s\n' \
-    "$c_dim" "$dirty" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
+  printf '      %s%s%s%s · %s ahead · %s behind · handoff %s%s%s\n' \
+    "$dirty_c" "$dirty" "$c_off" "$c_dim" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
 }
 
 # print_worktrees — the current repo's worktrees, one per line, each with a
@@ -1505,15 +1522,15 @@ cmd_where() {
 # ---------------------------------------------------------------------------
 cmd_doctor() {
   local fail=0 warned=0
-  local pass="  ${c_grn}ok${c_off}  " bad="  ${c_red}FAIL${c_off}" wrn="  ${c_yel}warn${c_off}"
+  local pass="  ${c_grn}✓${c_off}  " bad="  ${c_red}✗${c_off}  " wrn="  ${c_yel}⚠${c_off}  "
 
-  d_ok() { printf '%s %s\n' "$pass" "$*"; }
+  d_ok() { printf '%s%s\n' "$pass" "$*"; }
   d_no() {
-    printf '%s %s\n' "$bad" "$*"
+    printf '%s%s\n' "$bad" "$*"
     fail=1
   }
   d_wn() {
-    printf '%s %s\n' "$wrn" "$*"
+    printf '%s%s\n' "$wrn" "$*"
     warned=1
   }
 
@@ -1654,13 +1671,109 @@ cmd_doctor() {
 
   printf '\n'
   if ((fail)); then
-    printf '%svibe doctor: problems found%s\n' "$c_red" "$c_off"
+    printf '%s✗%s vibe doctor: problems found\n' "$c_red" "$c_off"
     return 1
   elif ((warned)); then
-    printf '%svibe doctor: healthy, with warnings%s\n' "$c_yel" "$c_off"
+    printf '%s⚠%s vibe doctor: healthy, with warnings\n' "$c_yel" "$c_off"
   else
-    printf '%svibe doctor: healthy%s\n' "$c_grn" "$c_off"
+    printf '%s✓%s vibe doctor: healthy\n' "$c_grn" "$c_off"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Help
+# ---------------------------------------------------------------------------
+cmd_help() {
+  printf '%svibe%s — remote-first coding workflow across Mac (local) and Linux server.\n\n' "$c_bld" "$c_off"
+  printf "Each TASK gets its own git branch + git worktree under \$VIBE_WORKTREE_ROOT/<repo>/<branch>\n"
+  printf '(default ~/git/worktrees). On the SERVER every task runs inside its own persistent tmux\n'
+  printf 'session, so the agent keeps working after you disconnect SSH; on the MAC (local), no tmux\n'
+  printf 'is forced — you just get dropped into the worktree. Every worktree gets a HANDOFF.md so\n'
+  printf 'the two machines can hand off cleanly.\n\n'
+  printf 'Commands, in the order you reach for them:\n\n'
+
+  help_section() { printf '%s%s%s\n' "$c_bld" "$*" "$c_off"; }
+  # help_cmd NAME DESC...  — NAME colored and left-padded to a fixed column;
+  # each further arg is a continuation line indented to the same column, so
+  # multi-line entries stay aligned with single-line ones.
+  help_cmd() {
+    local name="$1"
+    shift
+    printf '  %s%-28s%s %s\n' "$c_grn" "$name" "$c_off" "$1"
+    shift
+    local line
+    for line in "$@"; do
+      printf '  %-28s %s\n' "" "$line"
+    done
+  }
+
+  help_section "Daily loop:"
+  help_cmd "start <task>" \
+    "Create branch+worktree for <task>, seed HANDOFF.md," \
+    "then open a claude session (in tmux on server)."
+  help_cmd "attach [<task>]" \
+    "Arrive at a task: fast-forward its worktree when that" \
+    "is safe (clean + ff-only), then attach. Never refuses" \
+    "— a dirty/diverged tree is reported and attached as-is." \
+    "With no task, pick from a menu."
+  help_cmd "park [<task>]" \
+    "Leave a machine: refresh HANDOFF.md by running the" \
+    "agent headlessly, then sync. Degrades to a plain sync" \
+    "if the agent is missing or the headless call fails."
+  help_cmd "done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]" \
+    "Remove the worktree (branch is kept). Refuses if the" \
+    "worktree is dirty, holds unpushed commits, has a loop" \
+    "still running (--stop kills it first), if HANDOFF.md" \
+    "still carries content — a finished task hands nothing" \
+    "off, so promote or discard first (--discard-handoff" \
+    "skips only the handoff check) — or if LOOP.md is still" \
+    "on the branch, where it would land in the PR diff;" \
+    "delete it and sync, or --keep-brief to leave it there" \
+    "deliberately. Infers the task from the cwd when run" \
+    "inside a worktree."
+  printf '\n'
+
+  help_section "Unattended:"
+  help_cmd "loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]" \
+    "Create branch+worktree like start, seed LOOP.md, then" \
+    "run the agent headlessly round after round until the" \
+    "--until check passes, --max rounds pass, or it stalls." \
+    "Re-running on an existing loop worktree resumes it." \
+    "--no-attach (server) starts the tmux session and" \
+    "returns instead of attaching — for starting a loop" \
+    "from a remote-controlled session or a script."
+  printf '\n'
+
+  help_section "Phone:"
+  help_cmd "rc <task>" \
+    "Enable Remote Control on a running task by sending /rc" \
+    "into its tmux session (server only), so it can be" \
+    "driven from the Claude app on a phone."
+  printf '\n'
+
+  help_section "Visibility:"
+  help_cmd "status [--all]" \
+    "Show worktrees with per-worktree sync state (dirty," \
+    "ahead/behind, HANDOFF.md age), tmux state, PRs. --all" \
+    "scans every repo under \$VIBE_WORKTREE_ROOT."
+  help_cmd "doctor" "Check tools, paths, config and upstream state."
+  printf '\n'
+
+  help_section "Plumbing (attach/park use these; call directly when you need the git layer):"
+  help_cmd "sync [<task>]" \
+    "Commit handoff files (own commit) + the rest, then" \
+    "push. Aborts on divergence. Infers the task from cwd;" \
+    "a task argument targets that worktree from anywhere."
+  help_cmd "resume [--rebase] [<task>]" \
+    "Pull remote, fast-forward only. Aborts if dirty or" \
+    "diverged; --rebase opts into 'git pull --rebase'."
+  help_cmd "list" "Short list of tasks."
+  help_cmd "where" "Print detected environment (local|server) and why."
+  printf '\n'
+
+  printf 'Requires: git, tmux (server only for persistence), optionally gh (for PR info).\n\n'
+  printf 'Config: ~/.config/vibe/config (KEY=VALUE). Environment variables win over it.\n'
+  printf "        See templates/vibe.config.example. Run 'vibe doctor' to validate.\n"
 }
 
 # ---------------------------------------------------------------------------
@@ -1683,9 +1796,7 @@ main() {
     resume) cmd_resume "$@" ;;
     where) cmd_where "$@" ;;
     doctor) cmd_doctor "$@" ;;
-    -h | --help | help)
-      grep '^#' "$0" | sed 's/^# \{0,1\}//' | sed '/^!/d'
-      ;;
+    -h | --help | help) cmd_help ;;
     *) die "unknown command '$cmd' (try: vibe help)" ;;
   esac
 }
