@@ -34,10 +34,10 @@ root="$(git -C "$cwd" rev-parse --show-toplevel)"
 handoff="$root/HANDOFF.md"
 [[ -f "$handoff" ]] || exit 0
 
-# Same line filter as handoff_carries_content() in bin/vibe (bin/vibe:873)
-# and its inline copy in cmd_done (bin/vibe:1243) — kept in lockstep by
-# comment, not by sourcing: this hook runs on machines that may not have
-# bin/vibe on PATH, and hooks must not depend on other repo scripts.
+# Same line filter as VIBE_HANDOFF_SCAFFOLD_RE in bin/vibe, which
+# handoff_carries_content() and the 'vibe done' guard both apply — kept in
+# lockstep by comment, not by sourcing: this hook runs on machines that may
+# not have bin/vibe on PATH, and hooks must not depend on other repo scripts.
 grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$handoff" || exit 0
 
 content="$(cat "$handoff")"
