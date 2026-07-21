@@ -111,10 +111,23 @@ Two constraints that are not optional:
   `"${arr[@]+"${arr[@]}"}"`.
 - **BSD *and* GNU userland.** `sed -E`, never `\|` alternation in a BRE — BSD
   sed silently matches nothing. No `readlink -f`. `stat` needs both
-  `stat -c %Y` and `stat -f %m`.
+  `stat -c %Y` and `stat -f %m`. `tr` is in the same bucket: replacing an
+  ASCII character with a multi-byte one (e.g. `tr ' ' '─'`) has been observed
+  producing mangled bytes even under `LANG=C.UTF-8` — build strings like that
+  by slicing a literal constant (`"${bank:0:n}"`) instead of piping through
+  `tr`.
 
 Both of these have already caused real bugs. The bats suite runs on macOS in
 CI for exactly this reason.
+
+**A `set -e` trap that isn't bash-3.2-specific but bites in this style of
+script:** `[[ cond ]] && cmd` and `((cond)) && cmd` are safe as bare
+statements or as the last line of a `for`/`while` body — the `&&`-list
+exemption covers them. They stop being safe the moment they're the *last
+statement of a function*, because the function's own exit status becomes
+that command's, and the function call itself (`myfunc`) is an ordinary
+simple command with no exemption. Use `if cond; then cmd; fi` for anything
+that can end up as a function's tail statement.
 
 Scripts invoked through a symlink (`bin/*`, skill scripts, hooks) must resolve
 their own location by walking the symlink chain — `$0` and `$PWD` both point

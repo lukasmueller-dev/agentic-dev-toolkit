@@ -152,16 +152,20 @@ if [[ -n "${CLICOLOR_FORCE:-}" ]] || { [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; }
   c_red=$'\033[31m'
   c_grn=$'\033[32m'
   c_yel=$'\033[33m'
+  c_cyn=$'\033[36m'
   c_dim=$'\033[2m'
   c_bld=$'\033[1m'
   c_off=$'\033[0m'
+  vibe_ui_fancy=1
 else
   c_red=""
   c_grn=""
   c_yel=""
+  c_cyn=""
   c_dim=""
   c_bld=""
   c_off=""
+  vibe_ui_fancy=0
 fi
 
 # One symbol per severity, used everywhere from top-level messages to the
@@ -174,6 +178,43 @@ info() { printf '%s%s%s\n' "$c_dim" "$*" "$c_off"; }
 warn() { printf '%s⚠%s %s\n' "$c_yel" "$c_off" "$*"; }
 ok() { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
+
+# rule TITLE — a dim horizontal-rule section header ('── Title ────…'),
+# used wherever a bold standalone header used to stand alone: help, status,
+# doctor. One shared implementation so section headers read consistently.
+# The dash run is sliced from a constant rather than built with 'tr', which
+# mangles the multi-byte '─' glyph into junk bytes on this system's tr.
+rule() {
+  local title="$1" width=64 prefix pad
+  local dash_bank='────────────────────────────────────────────────────────────────'
+  prefix="── ${title} "
+  pad=$((width - ${#prefix}))
+  if ((pad < 4)); then pad=4; fi
+  printf '%s%s%s%s\n' "$c_dim" "$prefix" "${dash_bank:0:pad}" "$c_off"
+}
+
+# spin PID MESSAGE — braille spinner shown while PID runs in the background.
+# Gated on the same tty/color check as the rest of the UI (vibe_ui_fancy):
+# piped output or NO_COLOR gets the plain "MESSAGE" line instead, so logs and
+# captured output never see \r control sequences or a half-drawn frame.
+spin() {
+  local pid="$1" msg="$2"
+  if [[ "$vibe_ui_fancy" != 1 ]]; then
+    info "$msg"
+    wait "$pid"
+    return $?
+  fi
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏') i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\r%s%s%s %s' "$c_cyn" "${frames[$i]}" "$c_off" "$msg" >&2
+    i=$(((i + 1) % ${#frames[@]}))
+    sleep 0.1
+  done
+  local status=0
+  wait "$pid" || status=$?
+  printf '\r%*s\r' "$((${#msg} + 4))" '' >&2
+  return "$status"
+}
 
 # ---------------------------------------------------------------------------
 # Locating our own files
@@ -657,7 +698,8 @@ run_loop() {
     # One headless round. LOOP.md is passed as the prompt argument, the same way
     # run_headless_handoff drives the agent, so no agent-specific flag is baked
     # in here. A crashing agent must not kill the loop.
-    (cd "$dir" && "${argv[@]}" "$(cat "$dir/LOOP.md")") ||
+    (cd "$dir" && "${argv[@]}" "$(cat "$dir/LOOP.md")") &
+    spin "$!" "iteration $iter running…" ||
       warn "agent exited non-zero on iteration $iter (continuing)"
 
     # Commit whatever the round produced, so vibe done/status account for it.
@@ -1098,24 +1140,63 @@ handoff_age() {
   fi
 }
 
-# sync_state_line DIR — one dim line summarising a worktree's state, entirely
-# from local refs. Like cmd_doctor, it never fetches: 'ahead'/'behind' are
-# measured against the last fetch so 'vibe status' stays read-only and offline.
-sync_state_line() {
-  local dir="$1" dirty ahead behind dirty_c
-  if [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]; then
-    dirty="dirty"
-    dirty_c="$c_yel"
-  else
-    dirty="clean"
-    dirty_c="$c_grn"
-  fi
+# git_sync_state DIR — echo "DIRTY AHEAD BEHIND" (DIRTY is 1/0) for DIR. The
+# one place that computes this, so the status dot and its detail line can
+# never disagree about what state a worktree is in. Like cmd_doctor, it never
+# fetches: 'ahead'/'behind' are measured against the last fetch so 'vibe
+# status' stays read-only and offline.
+git_sync_state() {
+  local dir="$1" dirty=0 ahead behind
+  [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]] && dirty=1
   ahead="$(unpushed_commits "$dir")"
   behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  printf '%s %s %s\n' "$dirty" "$ahead" "$behind"
+}
+
+# worktree_state_dot DIR REPO BRANCH — a colored ● summarizing one worktree
+# for 'vibe status': dim ○ when tmux is installed but no session is running
+# for this task; otherwise green clean+synced, yellow dirty or ahead/behind,
+# red diverged (ahead and behind at once). Locally, where tmux is never
+# forced, a missing tmux binary just falls through to the git-only states.
+worktree_state_dot() {
+  local dir="$1" repo="$2" branch="$3"
+  if command -v tmux >/dev/null 2>&1; then
+    local sess
+    sess="$(tmux_session_name "$repo" "$branch")"
+    if ! tmux has-session -t "$sess" 2>/dev/null; then
+      printf '%s○%s' "$c_dim" "$c_off"
+      return
+    fi
+  fi
+  local dirty ahead behind
+  read -r dirty ahead behind <<<"$(git_sync_state "$dir")"
+  if [[ "$dirty" == "1" ]]; then
+    printf '%s●%s' "$c_yel" "$c_off"
+  elif ((ahead > 0 && behind > 0)); then
+    printf '%s●%s' "$c_red" "$c_off"
+  elif ((ahead > 0 || behind > 0)); then
+    printf '%s●%s' "$c_yel" "$c_off"
+  else
+    printf '%s●%s' "$c_grn" "$c_off"
+  fi
+}
+
+# sync_state_line DIR — one dim detail line under a worktree's entry, joined
+# to it with a '└─' connector.
+sync_state_line() {
+  local dir="$1" dirty ahead behind dirty_word dirty_c
+  read -r dirty ahead behind <<<"$(git_sync_state "$dir")"
+  if [[ "$dirty" == "1" ]]; then
+    dirty_word="dirty"
+    dirty_c="$c_yel"
+  else
+    dirty_word="clean"
+    dirty_c="$c_grn"
+  fi
   local loop=""
   [[ -f "$(loop_state_path "$dir")" ]] && loop=" · loop $(loop_summary "$dir")"
-  printf '      %s%s%s%s · %s ahead · %s behind · handoff %s%s%s\n' \
-    "$dirty_c" "$dirty" "$c_off" "$c_dim" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
+  printf '    %s└─%s %s%s%s%s · %s ahead · %s behind · handoff %s%s%s\n' \
+    "$c_dim" "$c_off" "$dirty_c" "$dirty_word" "$c_off" "$c_dim" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
 }
 
 # print_worktrees — the current repo's worktrees, one per line, each with a
@@ -1128,11 +1209,12 @@ print_worktrees() {
     echo "  (not in a repo — try 'vibe status --all')"
     return
   fi
-  local mainroot vroot wt="" br=""
+  local mainroot vroot wt="" br="" repo
   mainroot="$(main_repo_root 2>/dev/null || true)"
   [[ -d "$mainroot" ]] && mainroot="$(cd "$mainroot" && pwd -P)"
   vroot="$VIBE_WORKTREE_ROOT"
   [[ -d "$vroot" ]] && vroot="$(cd "$vroot" && pwd -P)"
+  repo="$(repo_name)"
 
   while IFS= read -r line; do
     case "$line" in
@@ -1140,21 +1222,22 @@ print_worktrees() {
       "branch "*)
         br="${line#branch }"
         br="${br#refs/heads/}"
-        print_one_worktree "$wt" "$br" "$mainroot" "$vroot"
+        print_one_worktree "$wt" "$br" "$mainroot" "$vroot" "$repo"
         ;;
-      "detached") print_one_worktree "$wt" "(detached)" "$mainroot" "$vroot" ;;
+      "detached") print_one_worktree "$wt" "(detached)" "$mainroot" "$vroot" "$repo" ;;
     esac
   done < <(git worktree list --porcelain 2>/dev/null)
 }
 
 print_one_worktree() {
-  local wt="$1" br="$2" mainroot="$3" vroot="$4" tag=""
+  local wt="$1" br="$2" mainroot="$3" vroot="$4" repo="$5" tag="" dot
   if [[ -n "$mainroot" && "$wt" == "$mainroot" ]]; then
     tag="  (main checkout, not a vibe task)"
   elif [[ -n "$vroot" && "$wt" != "$vroot"/* ]]; then
     tag="  (not managed by vibe)"
   fi
-  printf '  %s%s%s  %s%s%s%s\n' "$c_grn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
+  dot="$(worktree_state_dot "$wt" "$repo" "$br")"
+  printf '  %s %s%s%s  %s%s%s%s\n' "$dot" "$c_cyn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
   sync_state_line "$wt"
 }
 
@@ -1162,7 +1245,7 @@ print_one_worktree() {
 # all repos. Walks the directory tree rather than 'git worktree list', so it
 # works from outside any git repository.
 print_all_worktrees() {
-  local vroot repo_dir wt_dir repo br found=0
+  local vroot repo_dir wt_dir repo br found=0 dot
   vroot="$VIBE_WORKTREE_ROOT"
   if [[ ! -d "$vroot" ]]; then
     echo "  (no worktree root at $vroot)"
@@ -1177,8 +1260,9 @@ print_all_worktrees() {
       git -C "$wt_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || continue
       found=1
       br="$(git -C "$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-      printf '  %s%s/%s%s  %s%s%s\n' \
-        "$c_grn" "$repo" "$br" "$c_off" "$c_dim" "${wt_dir%/}" "$c_off"
+      dot="$(worktree_state_dot "${wt_dir%/}" "$repo" "$br")"
+      printf '  %s %s%s/%s%s  %s%s%s\n' \
+        "$dot" "$c_cyn" "$repo" "$br" "$c_off" "$c_dim" "${wt_dir%/}" "$c_off"
       sync_state_line "${wt_dir%/}"
     done
   done
@@ -1195,18 +1279,20 @@ cmd_status() {
   esac
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
-  printf '%sWorktrees%s\n' "$c_bld" "$c_off"
+  rule "Worktrees"
   if ((all)); then print_all_worktrees; else print_worktrees; fi
 
   # tmux sessions belonging to vibe
   if command -v tmux >/dev/null 2>&1 && tmux ls >/dev/null 2>&1; then
-    printf '\n%sActive tmux sessions%s\n' "$c_bld" "$c_off"
+    printf '\n'
+    rule "Active tmux sessions"
     tmux ls 2>/dev/null | grep "^${VIBE_TMUX_PREFIX}-" | sed 's/^/  /' || echo "  (none)"
   fi
 
   # open PRs via gh, if available and we are inside a repo
   if git rev-parse --show-toplevel >/dev/null 2>&1 && command -v gh >/dev/null 2>&1; then
-    printf '\n%sOpen PRs%s\n' "$c_bld" "$c_off"
+    printf '\n'
+    rule "Open PRs"
     gh pr list --state open 2>/dev/null | sed 's/^/  /' || echo "  (gh not authenticated)"
   fi
 }
@@ -1221,7 +1307,7 @@ cmd_list() {
     return
   }
   for d in "$base"/*/; do
-    [[ -d "$d" ]] && printf '  %s\n' "$(basename "$d")"
+    [[ -d "$d" ]] && printf '  %s%s%s\n' "$c_cyn" "$(basename "$d")" "$c_off"
   done
 }
 
@@ -1556,10 +1642,10 @@ session: current state, next concrete action, blockers, and unresolved \
 gotchas. Present tense only — rewrite the sections rather than appending, \
 keep it under one screen, and edit only HANDOFF.md. History belongs in git, \
 not here."
-  info "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…"
   # The headless args are meant to be word-split into separate arguments.
   # shellcheck disable=SC2086
-  if (cd "$dir" && $VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "$prompt"); then
+  (cd "$dir" && $VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "$prompt") &
+  if spin "$!" "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…"; then
     ok "HANDOFF.md refreshed"
   else
     warn "headless agent run failed — syncing current HANDOFF.md as-is."
@@ -1593,20 +1679,25 @@ cmd_where() {
 # Exit 1 if anything is genuinely broken; warnings alone still exit 0.
 # ---------------------------------------------------------------------------
 cmd_doctor() {
-  local fail=0 warned=0
+  local fail=0 warned=0 n_ok=0 n_warn=0 n_fail=0
   local pass="  ${c_grn}✓${c_off}  " bad="  ${c_red}✗${c_off}  " wrn="  ${c_yel}⚠${c_off}  "
 
-  d_ok() { printf '%s%s\n' "$pass" "$*"; }
+  d_ok() {
+    printf '%s%s\n' "$pass" "$*"
+    n_ok=$((n_ok + 1))
+  }
   d_no() {
     printf '%s%s\n' "$bad" "$*"
     fail=1
+    n_fail=$((n_fail + 1))
   }
   d_wn() {
     printf '%s%s\n' "$wrn" "$*"
     warned=1
+    n_warn=$((n_warn + 1))
   }
 
-  printf '%sTools%s\n' "$c_bld" "$c_off"
+  rule "Tools"
   if command -v git >/dev/null 2>&1; then
     d_ok "git         $(git --version | awk '{print $3}')"
   else
@@ -1639,7 +1730,8 @@ cmd_doctor() {
     d_wn "agent       '$VIBE_AGENT_CMD' not on PATH (set VIBE_AGENT_CMD)"
   fi
 
-  printf '\n%sPaths%s\n' "$c_bld" "$c_off"
+  printf '\n'
+  rule "Paths"
   if [[ -d "$VIBE_WORKTREE_ROOT" ]]; then
     d_ok "worktrees   $VIBE_WORKTREE_ROOT"
   elif [[ -e "$VIBE_WORKTREE_ROOT" ]]; then
@@ -1654,7 +1746,8 @@ cmd_doctor() {
     d_no "templates   no HANDOFF.md under $TEMPLATE_DIR — new worktrees will not be seeded"
   fi
 
-  printf '\n%sConfig%s\n' "$c_bld" "$c_off"
+  printf '\n'
+  rule "Config"
   if [[ ! -e "$VIBE_CONFIG_FILE" ]]; then
     d_wn "config      $VIBE_CONFIG_FILE not present (using env vars and defaults)"
   elif [[ ! -r "$VIBE_CONFIG_FILE" ]]; then
@@ -1701,19 +1794,21 @@ cmd_doctor() {
     *) d_no "rc launch   VIBE_RC_ON_START must be 0 or 1 (got '$VIBE_RC_ON_START')" ;;
   esac
 
-  printf '\n%sEnvironment%s\n' "$c_bld" "$c_off"
+  printf '\n'
+  rule "Environment"
   d_ok "detected    $(detect_env) ($(env_reason))"
   if [[ "$(detect_env)" == "local" && -z "$VIBE_SERVER_HOSTNAME" ]]; then
     d_wn "hostname    VIBE_SERVER_HOSTNAME unset — server detection relies on SSH vars alone"
   fi
 
-  printf '\n%sRepository%s\n' "$c_bld" "$c_off"
+  printf '\n'
+  rule "Repository"
   if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
     d_wn "repo        not inside a git repository (run doctor from a repo for more)"
   else
     local branch
     branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-    d_ok "repo        $(repo_name) on '$branch'"
+    d_ok "repo        $(repo_name) on '${c_cyn}${branch}${c_off}'"
 
     if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
       d_wn "tree        uncommitted changes present"
@@ -1741,14 +1836,18 @@ cmd_doctor() {
     fi
   fi
 
+  local summary="${c_grn}✓${c_off} ${n_ok} ok"
+  ((n_warn > 0)) && summary="${summary}  ${c_dim}·${c_off}  ${c_yel}⚠${c_off} ${n_warn} warnings"
+  ((n_fail > 0)) && summary="${summary}  ${c_dim}·${c_off}  ${c_red}✗${c_off} ${n_fail} problems"
+
   printf '\n'
   if ((fail)); then
-    printf '%s✗%s vibe doctor: problems found\n' "$c_red" "$c_off"
+    printf '%s✗%s vibe doctor: problems found  —  %s\n' "$c_red" "$c_off" "$summary"
     return 1
   elif ((warned)); then
-    printf '%s⚠%s vibe doctor: healthy, with warnings\n' "$c_yel" "$c_off"
+    printf '%s⚠%s vibe doctor: healthy, with warnings  —  %s\n' "$c_yel" "$c_off" "$summary"
   else
-    printf '%s✓%s vibe doctor: healthy\n' "$c_grn" "$c_off"
+    printf '%s✓%s vibe doctor: healthy  —  %s\n' "$c_grn" "$c_off" "$summary"
   fi
 }
 
@@ -1756,43 +1855,78 @@ cmd_doctor() {
 # Help
 # ---------------------------------------------------------------------------
 cmd_help() {
-  printf '%svibe%s — remote-first coding workflow across Mac (local) and Linux server.\n\n' "$c_bld" "$c_off"
-  printf "Each TASK gets its own git branch + git worktree under \$VIBE_WORKTREE_ROOT/<repo>/<branch>\n"
-  printf '(default ~/git/worktrees). On the SERVER every task runs inside its own persistent tmux\n'
-  printf 'session, so the agent keeps working after you disconnect SSH; on the MAC (local), no tmux\n'
-  printf 'is forced — you just get dropped into the worktree. Every worktree gets a HANDOFF.md so\n'
-  printf 'the two machines can hand off cleanly.\n\n'
-  printf 'Commands, in the order you reach for them:\n\n'
+  # With a command name given, print just that command's full usage (name +
+  # every flag) and description, sourced from the very same help_cmd calls
+  # below rather than a second copy of the text — see help_cmd's target
+  # branch. Keeps the top-level listing scannable while the per-command
+  # detail (e.g. 'done's four flags) still lives somewhere.
+  local target="${1:-}"
+  local help_found=0
 
-  help_section() { printf '%s%s%s\n' "$c_bld" "$*" "$c_off"; }
-  # help_cmd NAME DESC...  — NAME colored and left-padded to a fixed column;
-  # each further arg is a continuation line indented to the same column, so
-  # multi-line entries stay aligned with single-line ones.
+  # blank — a section-separating blank line, suppressed in target mode so a
+  # single-command lookup isn't surrounded by stray empty lines.
+  blank() { [[ -n "$target" ]] || printf '\n'; }
+
+  if [[ -z "$target" ]]; then
+    printf '%svibe%s — remote-first coding workflow across Mac (local) and Linux server.\n\n' "$c_bld" "$c_off"
+    printf "Each TASK gets its own git branch + git worktree under \$VIBE_WORKTREE_ROOT/<repo>/<branch>\n"
+    printf '(default ~/git/worktrees). On the SERVER every task runs inside its own persistent tmux\n'
+    printf 'session, so the agent keeps working after you disconnect SSH; on the MAC (local), no tmux\n'
+    printf 'is forced — you just get dropped into the worktree. Every worktree gets a HANDOFF.md so\n'
+    printf 'the two machines can hand off cleanly.\n\n'
+    printf 'Commands, in the order you reach for them:\n\n'
+  fi
+
+  help_section() {
+    [[ -z "$target" ]] || return 0
+    rule "$*"
+  }
+  # help_cmd NAME FLAGS DESC...  — NAME (its base form, no flags) colored and
+  # left-padded to a fixed column; each further arg is a continuation line
+  # indented to the same column, so multi-line entries stay aligned with
+  # single-line ones. FLAGS (may be "") renders as one dim continuation line
+  # so a flag-heavy command like 'done' doesn't blow past the column — full
+  # detail lives behind 'vibe help <cmd>', driven by this same call in target
+  # mode instead of the column listing.
   help_cmd() {
-    local name="$1"
-    shift
+    local name="$1" flags="$2"
+    shift 2
+    local bare="${name%% *}"
+    if [[ -n "$target" ]]; then
+      [[ "$bare" == "$target" ]] || return 0
+      help_found=1
+      printf '%svibe %s%s' "$c_bld" "$name" "$c_off"
+      if [[ -n "$flags" ]]; then printf ' %s%s%s' "$c_dim" "$flags" "$c_off"; fi
+      printf '\n\n'
+      local line
+      for line in "$@"; do
+        printf '  %s\n' "$line"
+      done
+      return 0
+    fi
     printf '  %s%-28s%s %s\n' "$c_grn" "$name" "$c_off" "$1"
     shift
     local line
     for line in "$@"; do
       printf '  %-28s %s\n' "" "$line"
     done
+    if [[ -n "$flags" ]]; then printf '  %-28s %s%s%s\n' "" "$c_dim" "$flags" "$c_off"; fi
   }
 
   help_section "Daily loop:"
-  help_cmd "start <task>" \
+  help_cmd "start <task>" "" \
     "Create branch+worktree for <task>, seed HANDOFF.md," \
     "then open a claude session (in tmux on server)."
-  help_cmd "attach [<task>]" \
+  help_cmd "attach [<task>]" "" \
     "Arrive at a task: fast-forward its worktree when that" \
     "is safe (clean + ff-only), then attach. Never refuses" \
     "— a dirty/diverged tree is reported and attached as-is." \
     "With no task, pick from a menu."
-  help_cmd "park [<task>]" \
+  help_cmd "park [<task>]" "" \
     "Leave a machine: refresh HANDOFF.md by running the" \
     "agent headlessly, then sync. Degrades to a plain sync" \
     "if the agent is missing or the headless call fails."
-  help_cmd "done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]" \
+  help_cmd "done [<task>]" "[--force] [--stop] [--discard-handoff] [--keep-brief]" \
     "Remove the worktree (branch is kept). Refuses if the" \
     "worktree is dirty, holds unpushed commits, has a loop" \
     "still running (--stop kills it first), if HANDOFF.md" \
@@ -1803,10 +1937,10 @@ cmd_help() {
     "delete it and sync, or --keep-brief to leave it there" \
     "deliberately. Infers the task from the cwd when run" \
     "inside a worktree."
-  printf '\n'
+  blank
 
   help_section "Unattended:"
-  help_cmd "loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]" \
+  help_cmd "loop <task>" "[--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]" \
     "Create branch+worktree like start, seed LOOP.md, then" \
     "run the agent headlessly round after round until the" \
     "--until check passes, --max rounds pass, or it stalls." \
@@ -1814,34 +1948,39 @@ cmd_help() {
     "--no-attach (server) starts the tmux session and" \
     "returns instead of attaching — for starting a loop" \
     "from a remote-controlled session or a script."
-  printf '\n'
+  blank
 
   help_section "Phone:"
-  help_cmd "rc <task>" \
+  help_cmd "rc <task>" "" \
     "Enable Remote Control on a running task by sending /rc" \
     "into its tmux session (server only), so it can be" \
     "driven from the Claude app on a phone."
-  printf '\n'
+  blank
 
   help_section "Visibility:"
-  help_cmd "status [--all]" \
+  help_cmd "status [--all]" "" \
     "Show worktrees with per-worktree sync state (dirty," \
     "ahead/behind, HANDOFF.md age), tmux state, PRs. --all" \
     "scans every repo under \$VIBE_WORKTREE_ROOT."
-  help_cmd "doctor" "Check tools, paths, config and upstream state."
-  printf '\n'
+  help_cmd "doctor" "" "Check tools, paths, config and upstream state."
+  blank
 
   help_section "Plumbing (attach/park use these; call directly when you need the git layer):"
-  help_cmd "sync [<task>]" \
+  help_cmd "sync [<task>]" "" \
     "Commit handoff files (own commit) + the rest, then" \
     "push. Aborts on divergence. Infers the task from cwd;" \
     "a task argument targets that worktree from anywhere."
-  help_cmd "resume [--rebase] [<task>]" \
+  help_cmd "resume [--rebase] [<task>]" "" \
     "Pull remote, fast-forward only. Aborts if dirty or" \
     "diverged; --rebase opts into 'git pull --rebase'."
-  help_cmd "list" "Short list of tasks."
-  help_cmd "where" "Print detected environment (local|server) and why."
-  printf '\n'
+  help_cmd "list" "" "Short list of tasks."
+  help_cmd "where" "" "Print detected environment (local|server) and why."
+  blank
+
+  if [[ -n "$target" ]]; then
+    ((help_found)) || die "no help for '$target' (try: vibe help)"
+    return 0
+  fi
 
   printf 'Requires: git, tmux (server only for persistence), optionally gh (for PR info).\n\n'
   printf 'Config: ~/.config/vibe/config (KEY=VALUE). Environment variables win over it.\n'
@@ -1868,7 +2007,7 @@ main() {
     resume) cmd_resume "$@" ;;
     where) cmd_where "$@" ;;
     doctor) cmd_doctor "$@" ;;
-    -h | --help | help) cmd_help ;;
+    -h | --help | help) cmd_help "$@" ;;
     *) die "unknown command '$cmd' (try: vibe help)" ;;
   esac
 }
