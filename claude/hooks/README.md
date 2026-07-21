@@ -5,6 +5,7 @@ directory at `~/.claude/hooks`, and wired up by `../settings.json`.
 
 | Script                    | Invoked as             | Does                                            |
 | ------------------------- | ---------------------- | ----------------------------------------------- |
+| `skill-lint-on-edit.sh`   | `PostToolUse(Write\|Edit)` hook | Lints just the skill an edit touched, feeds findings back |
 | `session-end-handoff.sh`  | `SessionEnd` hook      | Warns when `HANDOFF.md` / `PROJECT_STATUS.md` are stale |
 | `notify-ntfy.sh`          | `Notification` hook    | Pushes to my phone via ntfy.sh                  |
 | `statusline.sh`           | `statusLine` command   | Renders `repo · branch · task`                  |

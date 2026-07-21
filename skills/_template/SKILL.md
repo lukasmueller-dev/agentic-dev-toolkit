@@ -16,21 +16,23 @@ disable-model-invocation: true
 Copy this directory, rename it, and rewrite everything below. Delete this
 blockquote and the checklist at the bottom when you do.
 
-## Frontmatter rules
+## The quality bar lives in one place
 
-Only `name` and `description` are required.
+Every rule a skill is held to — with a stable ID and its rationale — is in
+[`docs/skill-quality.md`](../../docs/skill-quality.md). Read it once; this
+template will not restate it. The **lint**-tagged rules are enforced
+mechanically by `bin/skill-lint` (run it before you commit); the
+**judgment**-tagged rules are what the `skill-audit` skill grades.
 
-- **`name`** must match the directory name, be 1–64 characters, and contain
-  only lowercase letters, digits and single hyphens. No leading or trailing
-  hyphen, no consecutive hyphens, and it may not contain "claude" or
-  "anthropic". CI enforces the name/directory match.
-- **`description`** is the discovery surface, max 1024 characters. Write it in
-  **third person** ("Analyzes…", not "I can help you…"), state both *what* it
-  does and *when* to use it, and put the most important trigger first — long
-  descriptions get truncated from the tail when the listing budget is tight.
+## Frontmatter
+
+Only `name` and `description` are required (SQ2–SQ6). In short: `name` matches
+the directory; `description` is third person, says *what* and *when*, trigger
+first (SQ8, SQ9).
+
 - **`disable-model-invocation: true`** removes the skill from the model's
-  context entirely, so it can only be run as `/<name>`. Use it for anything
-  with side effects you want to time yourself — deploys, commits, sends.
+  context entirely, so it can only be run as `/<name>`. Set it for anything
+  with side effects you want to time yourself — deploys, commits, sends (SQ13).
   Leave it off for skills the model should reach for on its own.
 
 Keep to those fields unless you need more. `name`/`description` are the only
@@ -79,12 +81,14 @@ copy.
 
 ## Before you commit
 
-- [ ] `name` matches the directory and the charset rules
-- [ ] `description` is third person, says what *and* when, trigger words first
-- [ ] Body opens with boundaries, then numbered phases
-- [ ] Any bundled script is shellcheck-clean and `shfmt -i 2 -ci` formatted
-- [ ] Any script resolves its own path instead of trusting `$PWD`
-- [ ] Emitted documents come from `templates/`, not from a heredoc
-- [ ] No reference to a specific machine, hostname, or personal workflow —
-      that context belongs in `claude/CLAUDE.md`
+Run `skill-lint skills/` — it clears the mechanical rows (SQ1–SQ8, SQ14). Then
+eyeball the judgment rows it cannot:
+
+- [ ] `description` says *what* and *when*, trigger words first (SQ9)
+- [ ] Body opens with boundaries, then numbered phases, then "done" (SQ10–SQ12)
+- [ ] `disable-model-invocation: true` if the skill has side effects (SQ13)
+- [ ] Any script resolves its own path instead of trusting `$PWD` (SQ15)
+- [ ] Emitted documents come from `templates/`, not a heredoc (SQ16)
+- [ ] Shared workflow in `SKILL.md`, ecosystem-specific in `references/` (SQ17)
+- [ ] No reference to a specific machine, hostname, or workflow (SQ18)
 - [ ] `bats tests/` and `./install.sh doctor` still pass

@@ -76,10 +76,28 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install bats-core jq
 
+      # skill-lint.bats exercises the real shellcheck/shfmt paths (not just
+      # the degrade-when-absent ones), so this job needs both tools too —
+      # installing them only in the lint job above doesn't cover this runner.
+      - name: Install shellcheck and shfmt (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL -o /usr/local/bin/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64
+          chmod +x /usr/local/bin/shfmt
+
+      - name: Install shellcheck and shfmt (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck shfmt
+
       - name: Show shell versions
         run: |
           bash --version | head -1
           bats --version
+          shellcheck --version
+          shfmt --version
           git --version
 
       - name: Run tests
@@ -103,39 +121,13 @@ jobs:
             }
           done
 
-      - name: every skill has frontmatter with name and description
-        run: |
-          status=0
-          for f in skills/*/SKILL.md; do
-            case "$f" in skills/_*) continue ;; esac
-            head -1 "$f" | grep -qx -- '---' || {
-              echo "::error file=$f::must start with YAML frontmatter"
-              status=1
-              continue
-            }
-            fm="$(sed -n '2,/^---$/p' "$f")"
-            printf '%s' "$fm" | grep -q '^name:' || {
-              echo "::error file=$f::frontmatter is missing 'name:'"
-              status=1
-            }
-            printf '%s' "$fm" | grep -q '^description:' || {
-              echo "::error file=$f::frontmatter is missing 'description:'"
-              status=1
-            }
-            # The open Agent Skills spec requires name to match the directory
-            # and to be lowercase alphanumerics plus hyphens.
-            dir="$(basename "$(dirname "$f")")"
-            name="$(printf '%s' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)"
-            [ "$name" = "$dir" ] || {
-              echo "::error file=$f::name '$name' does not match directory '$dir'"
-              status=1
-            }
-            printf '%s' "$name" | grep -Eqx '[a-z0-9]+(-[a-z0-9]+)*' || {
-              echo "::error file=$f::name '$name' is not lowercase-hyphenated"
-              status=1
-            }
-          done
-          exit "$status"
+      # The single source of truth for the mechanical skill rules is
+      # bin/skill-lint; CI just runs it. --strict so a warning fails the build
+      # on this repo's own skills. Bundled-script correctness is already
+      # covered repo-wide by the lint job above, so skill-lint's shellcheck/
+      # shfmt steps degrade to a note here rather than reinstalling the tools.
+      - name: skills pass skill-lint
+        run: ./bin/skill-lint skills/ --strict
 
       - name: templates stay tool-neutral
         run: |
