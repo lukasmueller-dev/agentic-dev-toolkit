@@ -735,67 +735,106 @@ run_loop() {
     UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
 }
 
-cmd_loop() {
-  need git
-  local task="" until_cmd="" max="" prompt="" push=0 permissive=0 no_attach=0
+# loop_parse_args ARGS... — parse the 'vibe loop' flag surface into LP_*
+# globals and validate it, so cmd_loop reads as a sequence of steps rather than
+# opening with a hundred-line getopts. Sets: LP_task LP_until LP_max LP_prompt
+# LP_push LP_permissive LP_no_attach. Dies on a bad flag or combination.
+loop_parse_args() {
+  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
+  LP_task="" LP_until="" LP_max="" LP_prompt="" LP_push=0 LP_permissive=0 LP_no_attach=0
   while (($#)); do
     case "$1" in
       --until)
-        until_cmd="${2-}"
+        LP_until="${2-}"
         shift 2 || die "--until needs a command"
         ;;
       --until=*)
-        until_cmd="${1#--until=}"
+        LP_until="${1#--until=}"
         shift
         ;;
       --max)
-        max="${2-}"
+        LP_max="${2-}"
         shift 2 || die "--max needs a number"
         ;;
       --max=*)
-        max="${1#--max=}"
+        LP_max="${1#--max=}"
         shift
         ;;
       --prompt)
-        prompt="${2-}"
+        LP_prompt="${2-}"
         shift 2 || die "--prompt needs a file"
         ;;
       --prompt=*)
-        prompt="${1#--prompt=}"
+        LP_prompt="${1#--prompt=}"
         shift
         ;;
       --push)
-        push=1
+        LP_push=1
         shift
         ;;
       --no-attach)
-        no_attach=1
+        LP_no_attach=1
         shift
         ;;
       --dangerously-allow-all)
-        permissive=1
+        LP_permissive=1
         shift
         ;;
-      -*) die "unknown option '$1' (usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all])" ;;
+      -*) die "unknown option '$1' ($usage)" ;;
       *)
-        task="$1"
+        LP_task="$1"
         shift
         ;;
     esac
   done
-  [[ -n "$task" ]] ||
-    die "usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
-  [[ -z "$max" || "$max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$max'"
-  [[ -z "$prompt" || -f "$prompt" ]] || die "--prompt file not found: $prompt"
-  if [[ "$permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
+  [[ -n "$LP_task" ]] || die "$usage"
+  [[ -z "$LP_max" || "$LP_max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$LP_max'"
+  [[ -z "$LP_prompt" || -f "$LP_prompt" ]] || die "--prompt file not found: $LP_prompt"
+  if [[ "$LP_permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
     die "--dangerously-allow-all needs VIBE_LOOP_PERMISSIVE_ARGS set (see docs/vibe-loop.md)."
   fi
   # Checked before any scaffolding: locally the loop runs in the foreground,
   # so a late refusal would leave a seeded worktree and a stale state file.
-  if [[ "$no_attach" == "1" && "$(detect_env)" != "server" ]]; then
+  if [[ "$LP_no_attach" == "1" && "$(detect_env)" != "server" ]]; then
     die "--no-attach needs a server tmux session — locally the loop runs in
   the foreground, so there is nothing to detach from. Start it on the server."
   fi
+}
+
+# loop_effective_settings DIR RESUMING — resolve the settings a loop actually
+# runs with into LE_* globals: a new flag (LP_*) overrides, a resume carries the
+# saved value forward, otherwise a default fills in. Sets: LE_iter LE_started
+# LE_last LE_max LE_until LE_push LE_perm.
+loop_effective_settings() {
+  local dir="$1" resuming="$2"
+  if ((resuming)); then
+    LE_iter="$(loop_get "$dir" ITER)"
+    LE_started="$(loop_get "$dir" STARTED)"
+    LE_last="$(loop_get "$dir" LAST)"
+    LE_max="${LP_max:-$(loop_get "$dir" MAX)}"
+    LE_until="${LP_until:-$(loop_get "$dir" UNTIL)}"
+    if [[ "$LP_push" == "1" ]]; then LE_push=1; else LE_push="$(loop_get "$dir" PUSH)"; fi
+    if [[ "$LP_permissive" == "1" ]]; then LE_perm=1; else LE_perm="$(loop_get "$dir" PERMISSIVE)"; fi
+  else
+    LE_iter=0
+    LE_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    LE_last="none"
+    LE_max="${LP_max:-10}"
+    LE_until="$LP_until"
+    LE_push="$LP_push"
+    LE_perm="$LP_permissive"
+  fi
+  LE_max="${LE_max:-10}"
+  LE_push="${LE_push:-0}"
+  LE_perm="${LE_perm:-0}"
+  LE_last="${LE_last:-none}"
+  LE_iter="${LE_iter:-0}"
+}
+
+cmd_loop() {
+  need git
+  loop_parse_args "$@"
+  local task="$LP_task"
 
   local branch repo main dir
   branch="$(slug "$task")"
@@ -815,31 +854,7 @@ cmd_loop() {
 
   [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
 
-  # Effective settings: new flags override; on resume, saved values carry
-  # forward; otherwise defaults.
-  local eff_max eff_until eff_push eff_perm eff_iter eff_started eff_last
-  if ((resuming)); then
-    eff_iter="$(loop_get "$dir" ITER)"
-    eff_started="$(loop_get "$dir" STARTED)"
-    eff_last="$(loop_get "$dir" LAST)"
-    eff_max="${max:-$(loop_get "$dir" MAX)}"
-    eff_until="${until_cmd:-$(loop_get "$dir" UNTIL)}"
-    if [[ "$push" == "1" ]]; then eff_push=1; else eff_push="$(loop_get "$dir" PUSH)"; fi
-    if [[ "$permissive" == "1" ]]; then eff_perm=1; else eff_perm="$(loop_get "$dir" PERMISSIVE)"; fi
-  else
-    eff_iter=0
-    eff_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    eff_last="none"
-    eff_max="${max:-10}"
-    eff_until="$until_cmd"
-    eff_push="$push"
-    eff_perm="$permissive"
-  fi
-  eff_max="${eff_max:-10}"
-  eff_push="${eff_push:-0}"
-  eff_perm="${eff_perm:-0}"
-  eff_last="${eff_last:-none}"
-  eff_iter="${eff_iter:-0}"
+  loop_effective_settings "$dir" "$resuming"
 
   # A fresh, non-permissive loop can't answer its own permission prompts —
   # nobody is there to. It will stall (see loop_run's stall detector) rather
@@ -847,13 +862,13 @@ cmd_loop() {
   # until you check back. Warn once, at start, instead of blocking: the
   # unattended case (scripts, agents, --no-attach) must never be asked to
   # answer a prompt no one is watching for.
-  if ((!resuming)) && [[ "$eff_perm" != "1" ]]; then
+  if ((!resuming)) && [[ "$LE_perm" != "1" ]]; then
     warn "starting without --dangerously-allow-all: the agent keeps its normal permission prompts."
     warn "unattended, nobody can answer them — any edit or gated command the brief needs will stall the loop after 2 rounds, not run it. See docs/vibe-loop.md#permissions-and-blast-radius."
   fi
 
   # First-run scaffolding (seed_loop and the commit skip cleanly on resume).
-  seed_loop "$dir" "$repo" "$branch" "$task" "$eff_until" "$eff_max" "$prompt"
+  seed_loop "$dir" "$repo" "$branch" "$task" "$LE_until" "$LE_max" "$LP_prompt"
   loop_ignore_state "$dir"
   # Commit LOOP.md so a no-progress round can restore it, and so the brief and
   # its log travel between machines. The runtime state file stays gitignored.
@@ -863,8 +878,8 @@ cmd_loop() {
   fi
 
   loop_write_state "$dir" \
-    STATUS running PHASE starting ITER "$eff_iter" MAX "$eff_max" LAST "$eff_last" \
-    UNTIL "$eff_until" PUSH "$eff_push" PERMISSIVE "$eff_perm" PID "" STARTED "$eff_started"
+    STATUS running PHASE starting ITER "$LE_iter" MAX "$LE_max" LAST "$LE_last" \
+    UNTIL "$LE_until" PUSH "$LE_push" PERMISSIVE "$LE_perm" PID "" STARTED "$LE_started"
 
   local env
   env="$(detect_env)"
@@ -880,7 +895,7 @@ cmd_loop() {
     else
       info "starting loop in tmux session: $sess"
     fi
-    if [[ "$no_attach" == "1" ]]; then
+    if [[ "$LP_no_attach" == "1" ]]; then
       # Started from a remote-controlled session or a script: attaching would
       # nest or hang the caller. The session runs either way.
       info "loop running detached in tmux session: $sess"
