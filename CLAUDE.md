@@ -6,8 +6,8 @@ shapes every convention below: a mistake here does not fail a test suite, it
 quietly changes how every other repo behaves.
 
 For the *personal workflow* this toolkit serves — the Mac/VPS split, handoffs,
-`vibe` — see `claude/CLAUDE.md`, which is the global memory this repo installs.
-This file is only about changing the toolkit itself.
+`vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
+every agent. This file is only about changing the toolkit itself.
 
 ## Layout contract
 
@@ -17,8 +17,9 @@ This file is only about changing the toolkit itself.
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
 | `completions/`| Shell completions for `bin/` tools                  | No             |
-| `claude/`     | Claude Code config: settings, hooks, agents, memory | Yes            |
-| `codex/`, `gemini/` | Same idea, other agents (placeholders)        | Yes            |
+| `memory/`     | Global memory installed into every agent            | No             |
+| `claude/`     | Claude Code config: settings, hooks, agents, response style | Yes     |
+| `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |
 | `vscode/`     | VS Code settings fragments                          | Yes            |
 | `tmux/`       | tmux snippet for server sessions                    | Yes            |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
@@ -46,6 +47,20 @@ came about. If a tool needs to emit a document, it reads `templates/`.
 Templates must not name a specific CLI, machine, or agent. CI fails the build
 if `templates/HANDOFF.md` or `templates/PROJECT_STATUS.md` mentions one.
 
+## Global memory lives in `memory/`
+
+`memory/GLOBAL.md` is installed to three different paths, one per agent, so it
+must not name any of them — CI and `tests/install.bats` both check. Anything
+agent-coupled (response style, model choice, tool-use habits) goes in that
+agent's directory instead.
+
+Claude Code reads one global memory file, so `claude/CLAUDE.md` is what gets
+symlinked to `~/.claude/CLAUDE.md` and reaches the shared half through an
+`@~/.claude/global-memory.md` import on its first line. Delete that line and
+Claude Code silently loses the workflow memory while every symlink still
+reports `ok`; `./install.sh doctor` fails on it for that reason. The other two
+agents symlink `memory/GLOBAL.md` directly.
+
 ## Installer auto-discovery contract
 
 `install.sh` rebuilds its link map from the repo on every run. Adding
@@ -57,6 +72,13 @@ something should never require editing the installer:
 | a directory in `skills/`   | `~/.claude/skills/<name>`               |
 | a file in `claude/`        | `~/.claude/<name>`                      |
 | a script in `claude/hooks/`| nothing new — the directory is linked   |
+| a file in `codex/`, `gemini/` | `~/.codex/<name>`, `~/.gemini/<name>` |
+
+`memory/GLOBAL.md` is the one exception: each agent reads its global
+instructions from a different hard-coded path, so that fan-out is spelled out
+in `build_map` rather than derived from a naming convention. A config file the
+agent's own CLI writes to (`codex/config.toml`, `gemini/settings.json`) is
+skipped for the same reason `claude/settings.json` is — see below.
 
 Rules the installer keeps, which any change must preserve:
 

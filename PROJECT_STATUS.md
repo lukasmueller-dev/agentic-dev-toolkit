@@ -33,6 +33,11 @@ the installer's auto-discovery rules.
   just by instruction — an agent that can edit can make its own findings
   disappear. `test-hardener` is the one exception and may write tests
   only. See `claude/agents/README.md`.
+- 2026-07-21: Global memory is one portable file, `memory/GLOBAL.md`,
+  installed to each agent's own instruction path; Claude Code reaches it
+  through an `@` import in `claude/CLAUDE.md`, which keeps the
+  response-style rules agent-local. Rationale in the PR for
+  `portable-global-memory-per-the-project_status.md-roadmap-item`.
 
 ## TODOs
 
@@ -66,25 +71,17 @@ Track A — unattended execution:
 
 Track B — portability and team:
 
-- [ ] Portable global memory: split `claude/CLAUDE.md` into the
-      agent-agnostic workflow memory (routing table, two-machine setup,
-      handoff rules) at a portable top-level home, and the genuinely
-      Claude-specific remainder (response style) staying in `claude/`.
-      The installer links the portable file to `~/.claude/CLAUDE.md`,
-      `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` — turning `codex/` and
-      `gemini/` from placeholders into one-symlink targets. Must land
-      before the plugin PR, which snapshots the layout.
-- [ ] `.claude-plugin/` manifest bundling skills, agents, and hooks so the
-      toolkit installs in web/cloud sessions with no `$HOME` symlinks.
-      Pure addition beside `install.sh`, which stays the install path on
-      real machines.
+- [ ] `.claude-plugin/` manifest bundling skills, agents, hooks, and
+      `memory/GLOBAL.md` so the toolkit installs in web/cloud sessions
+      with no `$HOME` symlinks. Pure addition beside `install.sh`, which
+      stays the install path on real machines. Note the `@` import in
+      `claude/CLAUDE.md` resolves against `~/.claude`, which a plugin does
+      not populate.
 - [ ] Curated MCP server list in `docs/` (docs-first; `~/.claude.json` is
       Claude-written and stays unmanaged — same file class as
       `settings.json`'s runtime keys)
 
 ## Open questions
 
-- Where the portable global memory lives (`memory/`? top level?) — decide
-  in its own PR; the layout contract in `CLAUDE.md` is the tiebreaker.
 - Agent Teams is still experimental in Claude Code; `team-up` targets
   subagents now and adopts teams once the experiment stabilises.

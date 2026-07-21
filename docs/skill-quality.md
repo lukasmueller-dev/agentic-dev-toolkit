@@ -51,7 +51,7 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 | SQ15 | judgment | Scripts resolve their own location and never trust `$PWD`. | A skill is reached through a symlink in `~/.claude/skills`, so `$PWD` is the user's repo, not the skill's; see `project-status-scaffold/scaffold.sh`. |
 | SQ16 | judgment | Emitted documents are rendered from `templates/`, never embedded in a heredoc or pasted into `SKILL.md`. | One copy cannot drift; three copies of `HANDOFF.md` already did. |
 | SQ17 | judgment | The shared workflow stays in `SKILL.md`; everything ecosystem-specific lives in `references/<language>.md`, and sibling references keep parity. | Adding a language should be adding a file, not editing the workflow; a skill covering one language where its sibling covers two has a gap. |
-| SQ18 | judgment | No reference to a specific machine, hostname, or personal workflow. | That context belongs in `claude/CLAUDE.md`; a skill naming it will not port to another setup. |
+| SQ18 | judgment | No reference to a specific machine, hostname, or personal workflow. | That context belongs in `memory/GLOBAL.md`; a skill naming it will not port to another setup. |
 
 ## The two enforcers
 

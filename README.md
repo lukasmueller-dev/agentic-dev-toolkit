@@ -42,16 +42,27 @@ Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from
 [`skills/_template/`](skills/_template/SKILL.md).
 
+### Global memory
+
+[`memory/GLOBAL.md`](memory/GLOBAL.md) is the standing instruction set every
+agent gets in every repo: where each kind of information is written, the
+two-machine setup, the handoff discipline. One file, installed to each agent's
+global instruction path — `~/.claude/global-memory.md` (imported by
+`~/.claude/CLAUDE.md`), `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`. It names
+no agent, which is what lets one file serve all three; see
+[`memory/README.md`](memory/README.md).
+
 ### Claude Code config
 
 | File | Does |
 | --- | --- |
 | [`claude/settings.json`](claude/settings.json) | Baseline permissions, hook wiring, statusline — *merged* into your real settings, not symlinked |
-| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Global memory — response style and the two-machine workflow |
+| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Imports the global memory, then adds the Claude-only response-style rules |
 | [`claude/hooks/`](claude/hooks/) | Session-end handoff reminder, [phone notifications](docs/notifications.md), `repo · branch · task` statusline |
 | [`claude/agents/`](claude/agents/) | Global subagents: `diff-reviewer`, `test-hardener`, `docs-drift`, `security-sweep` |
 
-`codex/` and `gemini/` are placeholders — the layout keeps portable things at
+`codex/` and `gemini/` hold no config yet — each is a one-symlink target,
+taking the shared memory and nothing else. The layout keeps portable things at
 the top level so adding a second agent is a directory, not a rewrite.
 
 ## Installing
@@ -64,7 +75,8 @@ the top level so adding a second agent is a directory, not a rewrite.
 ./install.sh --uninstall     # remove only the symlinks this repo owns
 ```
 
-Targets: `all` (default), `bin`, `skills`, `claude`, `vscode`.
+Targets: `all` (default), `bin`, `skills`, `claude`, `codex`, `gemini`,
+`vscode`.
 
 Adding a tool means dropping a file in `bin/`, or a directory in `skills/`.
 The installer rebuilds its link map every run — no edits needed.

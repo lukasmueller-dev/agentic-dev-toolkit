@@ -129,6 +129,27 @@ jobs:
       - name: skills pass skill-lint
         run: ./bin/skill-lint skills/ --strict
 
+      - name: global memory stays agent-neutral
+        run: |
+          # memory/GLOBAL.md is installed to ~/.claude, ~/.codex and ~/.gemini
+          # alike, so a sentence about one agent is wrong in the other two.
+          # CLAUDE.md / AGENTS.md / GEMINI.md as filenames are fine — those are
+          # the open conventions each agent reads.
+          if grep -rnE 'Claude Code|Anthropic|OpenAI|Codex|Gemini CLI' memory/GLOBAL.md; then
+            echo "::error::memory/GLOBAL.md must not name a specific agent or vendor"
+            exit 1
+          fi
+
+      - name: the Claude memory imports the portable half
+        run: |
+          # Claude Code loads exactly one global memory file. Without this line
+          # the workflow memory silently vanishes while install.sh still links
+          # everything correctly.
+          grep -q '^@~/.claude/global-memory.md' claude/CLAUDE.md || {
+            echo "::error file=claude/CLAUDE.md::missing the @~/.claude/global-memory.md import"
+            exit 1
+          }
+
       - name: templates stay tool-neutral
         run: |
           # A template that names a specific CLI re-couples the document to one
