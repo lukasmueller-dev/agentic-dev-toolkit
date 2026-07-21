@@ -1366,7 +1366,7 @@ sync_dir() {
   fi
 
   # 3. push with divergence guard
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     warn "no upstream set — pushing with -u"
     git -C "$dir" push -u origin "$branch"
     ok "pushed $branch (new upstream)"
@@ -1374,21 +1374,15 @@ sync_dir() {
   fi
 
   git -C "$dir" fetch -q
-  local local_rev remote_rev base
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    ok "already in sync"
-  elif [[ "$local_rev" == "$base" ]]; then
-    die "remote is ahead. Run 'vibe resume' here first, then sync."
-  elif [[ "$remote_rev" == "$base" ]]; then
-    git -C "$dir" push -q origin "$branch"
-    ok "pushed $branch"
-  else
-    die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync."
-  fi
+  case "$(upstream_state "$dir")" in
+    insync) ok "already in sync" ;;
+    behind) die "remote is ahead. Run 'vibe resume' here first, then sync." ;;
+    ahead)
+      git -C "$dir" push -q origin "$branch"
+      ok "pushed $branch"
+      ;;
+    diverged) die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync." ;;
+  esac
 }
 
 # vibe sync [<task>] — sync the cwd's worktree, or the named task's worktree.
