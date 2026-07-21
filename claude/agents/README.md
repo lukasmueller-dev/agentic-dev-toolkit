@@ -1,7 +1,23 @@
 # claude/agents/
 
 Claude Code [subagent](https://docs.claude.com/en/docs/claude-code/sub-agents)
-definitions. Empty for now.
+definitions, installed globally so every repo gets the same roster.
+
+| Agent | Does | Writes? |
+| --- | --- | --- |
+| [`diff-reviewer`](diff-reviewer.md) | Adversarial review of the working diff, ranked with `file:line` | no |
+| [`test-hardener`](test-hardener.md) | Tests aimed at the failure modes the diff just introduced | tests only |
+| [`docs-drift`](docs-drift.md) | Finds documentation contradicted by the code beside it | no |
+| [`security-sweep`](security-sweep.md) | Secrets, injection shapes, permission widening — and vets third-party skills, agents and hooks before install | no |
+
+Three of the four are read-only by tool allowlist, not just by instruction:
+the point of a reviewing subagent is a verdict you can trust, and an agent
+that can edit can also make its own findings disappear.
+
+The roster is composed, not imported. `skills/team-up` reads this directory
+and the repo's `.claude/agents` at the start of a task and drafts who owns
+what; nothing is ever copied between the two, so a repo-local agent stays the
+repo's business.
 
 ## What belongs here
 

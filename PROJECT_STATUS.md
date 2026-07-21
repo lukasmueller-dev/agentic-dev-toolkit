@@ -25,6 +25,14 @@ the installer's auto-discovery rules.
 - 2026-07-21: Adopted a two-track roadmap from the mid-2026 agentic-trends
   review — sandbox-first unattended execution, then cross-agent
   portability. Rationale in the PR for `claude/agentic-dev-trends-3dws2i`.
+- 2026-07-21: The global agent roster is *composed*, never imported —
+  `skills/team-up` reads `~/.claude/agents` and a repo's `.claude/agents`
+  and assigns work; nothing is copied between them. Rationale in the PR
+  for `global-agents-per-project-status-md`.
+- 2026-07-21: Reviewing subagents are read-only by tool allowlist, not
+  just by instruction — an agent that can edit can make its own findings
+  disappear. `test-hardener` is the one exception and may write tests
+  only. See `claude/agents/README.md`.
 
 ## TODOs
 
@@ -66,18 +74,6 @@ Track B — portability and team:
       `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md` — turning `codex/` and
       `gemini/` from placeholders into one-symlink targets. Must land
       before the plugin PR, which snapshots the layout.
-- [ ] Global agents in `claude/agents/` (installer auto-links once the
-      directory holds more than its README): `diff-reviewer`
-      (adversarial review of the working diff), `test-hardener` (writes
-      tests biased toward the diff's new failure modes), `docs-drift`
-      (do README/docs/CLAUDE.md still match the code — report with
-      file:line), `security-sweep` (secrets, injection shapes, permission
-      widening; also vets third-party skills before install). Plus
-      `skills/team-up`: a *composer*, not an importer — at session start
-      it scans `~/.claude/agents` and the repo's `.claude/agents` and
-      drafts who owns what; nothing is copied. Decided against promoting
-      repo agents into the global roster (drift/sync burden) — revisit
-      only if composition proves insufficient.
 - [ ] `.claude-plugin/` manifest bundling skills, agents, and hooks so the
       toolkit installs in web/cloud sessions with no `$HOME` symlinks.
       Pure addition beside `install.sh`, which stays the install path on
