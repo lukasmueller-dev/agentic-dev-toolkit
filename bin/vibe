@@ -870,6 +870,9 @@ loop_stop() {
 # template's own scaffolding: blank lines, headings, '>' guidance quotes,
 # '- **Field:**' metadata, and single-line _placeholders_. The template keeps
 # every placeholder on one line precisely so this stays a line filter.
+# claude/hooks/session-start-handoff.sh applies the same filter to decide
+# whether to inject HANDOFF.md as session context — kept in lockstep by
+# comment, since the hook cannot source this file.
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1
@@ -1238,6 +1241,9 @@ cmd_done() {
     # information about to be orphaned on a branch nobody will look at again —
     # promote it (PROJECT_STATUS.md, repo instructions, commit body) or
     # discard it deliberately, but never silently.
+    # Same filter as handoff_carries_content() above and
+    # claude/hooks/session-start-handoff.sh — three copies kept in lockstep
+    # by comment; see the note on handoff_carries_content().
     if [[ "$discard_handoff" != 1 ]] && handoff_carries_content "$dir/HANDOFF.md"; then
       warn "HANDOFF.md still carries content:"
       grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$dir/HANDOFF.md" |
