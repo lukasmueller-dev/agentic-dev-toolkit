@@ -19,7 +19,7 @@ Then `./install.sh doctor` to check it landed.
 | --- | --- |
 | [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with `park`/`attach` handoff between machines over git — and `vibe loop` to run a task unattended. [Docs](docs/vibe.md) · [Loops](docs/vibe-loop.md) |
 | [`skills/`](skills/) | Agent Skills — portable `SKILL.md`, not Claude Code-specific |
-| [`templates/`](templates/) | `HANDOFF.md` and `PROJECT_STATUS.md`, the single source of truth for both |
+| [`templates/`](templates/) | The documents the tools emit — handoff, loop brief, loop PR body, project status — single source of truth for each |
 | [`claude/`](claude/) | Claude Code config: permissions, hooks, statusline, global memory |
 | [`completions/`](completions/) | zsh and bash completions for `vibe` |
 | [`vscode/`](vscode/) | Terminal profile that opens every window with `vibe status` |
@@ -38,6 +38,8 @@ Then `./install.sh doctor` to check it landed.
 | [`babysit-pr`](skills/babysit-pr/) | Stages an unattended-loop brief that drives a pull request to mergeable — green checks, no unresolved threads. [Docs](docs/babysit-pr.md) |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
 | [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
+| [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved, resolving textual and semantic conflicts |
+| [`skill-audit`](skills/skill-audit/) | Grades a repo's skills against the quality criteria in [`docs/skill-quality.md`](docs/skill-quality.md), read-only until fixes are approved |
 
 Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from
