@@ -76,10 +76,28 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install bats-core jq
 
+      # skill-lint.bats exercises the real shellcheck/shfmt paths (not just
+      # the degrade-when-absent ones), so this job needs both tools too —
+      # installing them only in the lint job above doesn't cover this runner.
+      - name: Install shellcheck and shfmt (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck
+          curl -fsSL -o /usr/local/bin/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64
+          chmod +x /usr/local/bin/shfmt
+
+      - name: Install shellcheck and shfmt (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck shfmt
+
       - name: Show shell versions
         run: |
           bash --version | head -1
           bats --version
+          shellcheck --version
+          shfmt --version
           git --version
 
       - name: Run tests
