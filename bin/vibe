@@ -1030,15 +1030,9 @@ cmd_attach() {
   local task="${1:-}"
   [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe attach <task>"
-  local branch
-  branch="$(slug "$task")"
-  local repo
-  repo="$(repo_name)"
-  local dir
-  dir="$(worktree_dir "$repo" "$branch")"
-  [[ -d "$dir" ]] || die "no worktree for '$branch' (looked in $dir). Run: vibe start $task"
-  attach_ff "$dir"
-  open_session "$repo" "$branch" "$dir"
+  resolve_by_task "$task"
+  attach_ff "$R_dir"
+  open_session "$R_repo" "$R_branch" "$R_dir"
 }
 
 # handoff_age DIR — a short human age for DIR/HANDOFF.md ("3h", "2d"), or
@@ -1484,17 +1478,17 @@ cmd_rc() {
 
   need git
   need tmux
-  local repo branch sess dir
-  repo="$(repo_name)"
-  branch="$(slug "$task")"
-  sess="$(tmux_session_name "$repo" "$branch")"
-  dir="$(worktree_dir "$repo" "$branch")"
+  # resolve_by_task confirms the worktree really exists before we try to reach
+  # its session — cmd_rc used to derive the names by hand and skip that check.
+  resolve_by_task "$task"
+  local sess
+  sess="$(tmux_session_name "$R_repo" "$R_branch")"
   tmux has-session -t "$sess" 2>/dev/null ||
     die "no tmux session '$sess' — is the task running? Try: vibe attach $task"
 
   # A loop session runs the runner, not an interactive agent at a prompt.
   # Sending /rc into it would land mid-iteration on the runner, not the agent.
-  if loop_active "$dir"; then
+  if loop_active "$R_dir"; then
     die "'$sess' is running a loop, not an interactive agent — there is no prompt
   to send /rc to. Watch it with 'vibe attach $task' instead."
   fi
