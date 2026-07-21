@@ -374,6 +374,52 @@ slug() {
   [[ "$output" == *"handoff"* ]]
 }
 
+# The three upstream states a task can be in are what tells you whether it
+# still has somewhere to push: never pushed, pushed, or pushed and since
+# deleted on the remote (a merged PR — the signal that 'vibe done' can run).
+@test "status: reports a task that was never pushed as having no upstream" {
+  cd "$(make_repo proj)"
+  run_vibe start "task nu"
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  local line
+  line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-nu" | tail -1)"
+  [[ "$line" == *"no upstream"* ]]
+  [[ "$line" != *"behind"* ]]
+}
+
+@test "status: reports ahead/behind once the branch tracks a remote" {
+  cd "$(make_repo proj)"
+  run_vibe start "task up"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
+  git -C "$wt" push -q -u origin task-up
+
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  local line
+  line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-up" | tail -1)"
+  [[ "$line" == *"0 ahead"* ]]
+  [[ "$line" == *"0 behind"* ]]
+  [[ "$line" != *"upstream"* ]]
+}
+
+@test "status: reports a deleted remote branch as 'upstream gone'" {
+  cd "$(make_repo proj)"
+  run_vibe start "task gone"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-gone"
+  git -C "$wt" push -q -u origin task-gone
+  # what a merged PR leaves behind: the remote branch deleted, then pruned
+  git -C "$wt" push -q origin --delete task-gone
+  git -C "$wt" fetch -q --prune
+
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  local line
+  line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-gone" | tail -1)"
+  [[ "$line" == *"upstream gone"* ]]
+  [[ "$line" != *"behind"* ]]
+}
+
 @test "status --all: works from outside any git repository" {
   cd "$(make_repo proj)"
   run_vibe start "task a"
