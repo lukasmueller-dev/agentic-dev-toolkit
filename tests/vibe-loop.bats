@@ -65,6 +65,47 @@ set_state() {
 # ---------------------------------------------------------------------------
 # Stop conditions
 # ---------------------------------------------------------------------------
+# --for: the wall-clock bound. A deadline of 0s is already spent by the time
+# the first round's stop check runs, so one iteration is enough to exercise it
+# without making the suite wait on a clock.
+@test "loop: --for rejects a duration it cannot parse" {
+  cd "$(make_repo proj)"
+  stub_agent
+  run ! loop_vibe loop "bad for" --for 90x --max 1
+  [[ "$output" == *"--for must be a duration"* ]]
+}
+
+@test "loop: --for= stops the loop once its time budget is spent" {
+  cd "$(make_repo proj)"
+  stub_agent
+  run loop_vibe loop "timed task" --until false --for=0s --max 10
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"time budget spent"* ]]
+  [ "$(loop_state timed-task STATUS)" = timeup ]
+  [ "$(loop_state timed-task ITER)" = 1 ]
+}
+
+@test "loop: a resumed loop keeps the original --for deadline" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "keep deadline" --until false --for 6h --max 1
+  local first
+  first="$(loop_state keep-deadline DEADLINE)"
+  [ -n "$first" ]
+  run loop_vibe loop "keep deadline" --until false --max 2
+  [ "$status" -eq 0 ]
+  [ "$(loop_state keep-deadline DEADLINE)" = "$first" ]
+}
+
+@test "loop: --for pushes the final round before stopping" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "timed push" --until false --for=0s --max 10 --push
+  [ "$(loop_state timed-push STATUS)" = timeup ]
+  run git -C "$(wt timed-push)" status -sb
+  [[ "$output" != *"ahead"* ]]
+}
+
 @test "loop: stops when --until passes" {
   cd "$(make_repo proj)"
   stub_agent

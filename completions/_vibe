@@ -75,9 +75,11 @@ _vibe() {
           _arguments \
             '--until[shell command that ends the loop when it exits 0]:command:' \
             '--max[stop after this many iterations]:count:' \
+            '--for[stop once this much wall-clock time has passed, e.g. 90m]:duration:' \
             '--prompt[custom brief instead of the LOOP.md template]:file:_files' \
             '--push[push each iteration, guarding against divergence]' \
             '--no-attach[start the tmux session and return instead of attaching (server)]' \
+            '--sandbox[confine the agent with the configured sandbox args (see docs)]' \
             '--dangerously-allow-all[skip the agent permission prompts (see docs)]' \
             '*:task:_vibe_tasks'
           ;;
