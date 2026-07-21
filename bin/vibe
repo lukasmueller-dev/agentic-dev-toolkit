@@ -524,23 +524,21 @@ loop_ignore_state() {
     printf '%s\n' "$VIBE_LOOP_STATE" >>"$excl"
 }
 
-# loop_write_state DIR STATUS PHASE ITER MAX LAST UNTIL PUSH PERMISSIVE PID STARTED
+# loop_write_state DIR KEY VALUE [KEY VALUE]... — write the loop state file as
+# the given KEY=VALUE lines, stamping UPDATED automatically. Same KEY VALUE
+# shape as render_template, so a caller reads as a labelled field list rather
+# than eleven positional arguments whose order had to be counted twice.
 # Atomic: write a temp then rename, so a kill mid-write cannot truncate it.
 loop_write_state() {
-  local sf tmp
-  sf="$(loop_state_path "$1")"
+  local sf tmp dir="$1"
+  shift
+  sf="$(loop_state_path "$dir")"
   tmp="$sf.tmp.$$"
   {
-    printf 'STATUS=%s\n' "$2"
-    printf 'PHASE=%s\n' "$3"
-    printf 'ITER=%s\n' "$4"
-    printf 'MAX=%s\n' "$5"
-    printf 'LAST=%s\n' "$6"
-    printf 'UNTIL=%s\n' "$7"
-    printf 'PUSH=%s\n' "$8"
-    printf 'PERMISSIVE=%s\n' "$9"
-    printf 'PID=%s\n' "${10}"
-    printf 'STARTED=%s\n' "${11}"
+    while (($# >= 2)); do
+      printf '%s=%s\n' "$1" "$2"
+      shift 2
+    done
     printf 'UPDATED=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$tmp"
   mv -f "$tmp" "$sf"
@@ -613,8 +611,9 @@ run_loop() {
   while :; do
     iter=$((iter + 1))
     phase="iterating"
-    loop_write_state "$dir" running "$phase" "$iter" "$max" "$last" \
-      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+    loop_write_state "$dir" \
+      STATUS running PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
     info "iteration $iter/$max"
 
     local before after
@@ -669,8 +668,9 @@ run_loop() {
         last="fail"
       fi
     fi
-    loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
-      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+    loop_write_state "$dir" \
+      STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
 
     if [[ "$status" == "success" ]]; then
       ok "loop done: stop check passed on iteration $iter"
@@ -695,8 +695,9 @@ run_loop() {
   done
 
   phase="idle"
-  loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
-    "$until_cmd" "$push" "$permissive" "$pid" "$started"
+  loop_write_state "$dir" \
+    STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+    UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
 }
 
 cmd_loop() {
@@ -826,8 +827,9 @@ cmd_loop() {
     git -C "$dir" commit -q -m "vibe loop: start '$branch'"
   fi
 
-  loop_write_state "$dir" running starting "$eff_iter" "$eff_max" "$eff_last" \
-    "$eff_until" "$eff_push" "$eff_perm" "" "$eff_started"
+  loop_write_state "$dir" \
+    STATUS running PHASE starting ITER "$eff_iter" MAX "$eff_max" LAST "$eff_last" \
+    UNTIL "$eff_until" PUSH "$eff_push" PERMISSIVE "$eff_perm" PID "" STARTED "$eff_started"
 
   local env
   env="$(detect_env)"
@@ -889,10 +891,11 @@ loop_stop() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
   fi
-  loop_write_state "$dir" stopped idle \
-    "$(loop_get "$dir" ITER)" "$(loop_get "$dir" MAX)" "$(loop_get "$dir" LAST)" \
-    "$(loop_get "$dir" UNTIL)" "$(loop_get "$dir" PUSH)" "$(loop_get "$dir" PERMISSIVE)" \
-    "" "$(loop_get "$dir" STARTED)"
+  loop_write_state "$dir" \
+    STATUS stopped PHASE idle \
+    ITER "$(loop_get "$dir" ITER)" MAX "$(loop_get "$dir" MAX)" LAST "$(loop_get "$dir" LAST)" \
+    UNTIL "$(loop_get "$dir" UNTIL)" PUSH "$(loop_get "$dir" PUSH)" PERMISSIVE "$(loop_get "$dir" PERMISSIVE)" \
+    PID "" STARTED "$(loop_get "$dir" STARTED)"
   info "loop marked stopped"
 }
 
