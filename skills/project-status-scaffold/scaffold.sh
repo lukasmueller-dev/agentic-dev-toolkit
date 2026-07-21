@@ -10,12 +10,13 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Locating the templates
+# Locating ourselves
 #
 # This skill is normally installed as a symlinked directory
 # (~/.claude/skills/project-status-scaffold -> <repo>/skills/project-status-scaffold),
 # so $PWD is the user's repo, not ours. Resolve our own location instead, then
-# read templates/ relative to the toolkit root two levels up.
+# source the shared lib beside us — which is what sets TEMPLATE_DIR and defines
+# render_template. script_dir has to stay here: it is what *finds* the lib.
 # `readlink -f` is avoided: macOS shipped BSD readlink without it for years.
 # ---------------------------------------------------------------------------
 script_dir() {
@@ -31,22 +32,10 @@ script_dir() {
 }
 
 SKILL_DIR="$(script_dir)"
-TOOLKIT_HOME="$(dirname "$(dirname "$SKILL_DIR")")" # skills/<name>/ -> repo root
-TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
-
-# render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
-# Pure bash: no sed, so a value containing slashes cannot corrupt the result.
-render_template() {
-  local tpl="$1"
-  shift
-  local content
-  content="$(cat "$tpl")"
-  while (($# >= 2)); do
-    content="${content//$1/$2}"
-    shift 2
-  done
-  printf '%s\n' "$content"
-}
+# shellcheck disable=SC2034  # read by the lib's die/info message prefix
+LIB_PROG=scaffold
+# shellcheck disable=SC1091  # path only exists at runtime, resolved above
+. "$(dirname "$SKILL_DIR")/_lib/vibe-lib.sh"
 
 # ---------------------------------------------------------------------------
 # Where the files go
