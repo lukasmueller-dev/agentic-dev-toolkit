@@ -112,7 +112,7 @@ Then print the start commands and stop:
 
 ```
 vibe start <task>     # here — on the server this is a tmux session that survives disconnect
-vibe attach <task>    # from the other machine, after a git fetch happens automatically
+vibe attach <task>    # from another machine, after a git fetch happens automatically
 ```
 
 with one note: the session that picks this up must promote what is durable

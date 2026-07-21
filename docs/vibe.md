@@ -1,13 +1,18 @@
 # The vibe workflow
 
-`vibe` exists to solve one problem: **I work on the same repos from two
-machines, and I want an agent to keep working when I close the laptop.**
+`vibe` exists to solve one problem: **I work on the same repos from more than
+one machine, and I want an agent to keep working when I close the lid.**
 
-- **Mac (local)** — where I usually start. Interactive, no tmux forced.
-- **Linux VPS (server)** — reached over SSH. Every task runs in its own
+However many machines there are, each one plays one of two roles in a given
+session:
+
+- **local** — a machine I am sitting at. Interactive, no tmux forced.
+- **server** — a machine I reach over SSH. Every task runs in its own
   persistent tmux session, so the agent survives a disconnect.
 
-Everything below follows from that.
+The role is a property of the session, not of the hardware: the same box is
+local when you sit at it and a server when you SSH into it, and its operating
+system has nothing to do with which. Everything below follows from that.
 
 ## One task, one branch, one worktree
 
@@ -28,9 +33,9 @@ under a running agent is how you corrupt a session. The task name is slugged
 into a branch-safe form, so `"Fix Login Bug"` and `fix-login-bug` are the same
 task.
 
-On the **server** this opens a tmux session named `vibe-<repo>-<branch>` and
-starts the agent inside it. On the **Mac** it just drops you into the worktree
-and launches the agent — no tmux, because nothing needs to survive.
+On a **server** this opens a tmux session named `vibe-<repo>-<branch>` and
+starts the agent inside it. On a **local** machine it just drops you into the
+worktree and launches the agent — no tmux, because nothing needs to survive.
 
 When the task grew out of a discussion in another agent session, the
 `handoff-brief` skill ([`skills/handoff-brief/`](../skills/handoff-brief/))
@@ -177,17 +182,17 @@ the `--dangerously-allow-all` blast radius — is in
 
 ## Seeing sessions from your phone
 
-The agent runs in tmux on the VPS, so it survives disconnects. Two ways in:
+The agent runs in tmux on the server, so it survives disconnects. Two ways in:
 
 **Claude Code Remote Control** — makes a running session reachable from the
 Claude app → Code tab (pick it by name, or scan the QR shown on spacebar). The
-session stays on the VPS; the phone is just a window into it. Three ways to turn
+session stays on the server; the phone is just a window into it. Three ways to turn
 it on, in increasing remoteness:
 
 - In the session itself, type `/rc`.
 - From another shell on the server (or over SSH from anywhere):
   ```bash
-  vibe rc <task>            # ssh <vps> vibe rc <task> from the Mac
+  vibe rc <task>            # ssh <host> vibe rc <task> from anywhere
   ```
   `vibe rc` finds the task's tmux session, waits for the agent to look idle
   (polling the pane, not a blind sleep), then sends `/rc` for you. It is a
@@ -221,7 +226,7 @@ vibe doctor        # validates the file and shows the resulting values
 | `VIBE_LOOP_PERMISSIVE_ARGS` | unset            | Args for `loop --dangerously-allow-all` |
 | `VIBE_LOOP_SANDBOX_ARGS`   | unset             | Args for `loop --sandbox`            |
 | `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |
-| `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection            |
+| `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection (this machine's own hostname) |
 | `VIBE_NTFY_TOPIC`          | unset             | Phone notifications (off when unset) |
 | `VIBE_RC_ON_START`         | `0`               | Launch server sessions with Remote Control on |
 
@@ -230,12 +235,14 @@ and the workflow is unchanged.
 
 ## Environment detection
 
-`vibe` treats an SSH session as the server (`$SSH_CONNECTION` or `$SSH_TTY`),
-falling back to comparing the hostname against `$VIBE_SERVER_HOSTNAME`.
+`vibe` decides the role per machine: an SSH session counts as a server
+(`$SSH_CONNECTION` or `$SSH_TTY`), falling back to comparing the hostname
+against `$VIBE_SERVER_HOSTNAME`.
 
-Set the hostname fallback on the server. Without it, a shell that is *on* the
-VPS but not *over SSH* — a cron job, a tmux session started at boot — looks
-local, and you get no persistent session:
+Set the hostname fallback on each machine that should count as a server — to
+*its own* hostname, which is why any number of them can do this. Without it, a
+shell that is *on* that machine but not *over SSH* — a cron job, a tmux session
+started at boot — looks local, and you get no persistent session:
 
 ```bash
 echo 'export VIBE_SERVER_HOSTNAME="$(hostname)"' >> ~/.bashrc
@@ -260,5 +267,7 @@ echo 'source-file ~/git/agentic-dev-toolkit/tmux/tmux.conf' >> ~/.tmux.conf
 
 `vscode/` makes every new integrated terminal open with `vibe status`, so
 opening a window tells you what is in flight. `./install.sh vscode` merges it
-into your real settings with `jq`, backing the file up first — Mac User
-settings, or `~/.vscode-server/data/Machine/settings.json` over SSH.
+into your real settings with `jq`, backing the file up first: User settings
+locally, or `~/.vscode-server/data/Machine/settings.json` over SSH. The snippet
+itself is chosen by operating system, since the terminal-profile key differs
+between macOS and Linux.

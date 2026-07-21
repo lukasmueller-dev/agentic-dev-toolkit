@@ -30,15 +30,21 @@ content, and again while the file is still on the branch.
 
 # My setup
 
-I work across two machines on the same repos, and this shapes what "done" means
-for a work session.
+I work across several machines on the same repos, and this shapes what "done"
+means for a work session. How many there are does not matter; what matters is
+the role each one plays in a given session:
 
-- **Mac (local)** — where I usually start. Interactive work, no tmux forced.
-- **Linux VPS (server)** — reached over SSH. Every task runs in its own
-  persistent `tmux` session, so an agent keeps working after I disconnect. I
-  reattach later from the laptop or from my phone.
+- **local** — a machine I am sitting at. Interactive work, no tmux forced.
+- **server** — a machine I reach over SSH, where work has to outlive the
+  connection. Every task runs in its own persistent `tmux` session, so an agent
+  keeps working after I disconnect. I reattach later from any other machine, or
+  from my phone.
 
-Both machines run the same toolkit from `~/git/agentic-dev-toolkit`, installed
+The role is per-session, not a fixed label on a box: the same machine is
+"local" when I sit at it and "server" when I SSH into it, and the operating
+system is irrelevant to the split.
+
+Every machine runs the same toolkit from `~/git/agentic-dev-toolkit`, installed
 by symlink, so `git pull` updates the installed tools in place.
 
 `vibe` is the CLI that drives this: one git branch + one git worktree per task,
@@ -59,8 +65,8 @@ the session ends. Concretely:
 - The `project-status-scaffold` skill handles both. Let it.
 
 **Nothing uncommitted crosses machines.** The handoff travels through git.
-Uncommitted work on the Mac is invisible on the VPS. If a session ends with
-work worth keeping, it needs to be committed and pushed (`vibe sync`).
+Uncommitted work on one machine is invisible everywhere else. If a session ends
+with work worth keeping, it needs to be committed and pushed (`vibe sync`).
 
 **Prefer commands that survive a disconnect.** On the server, long-running work
 belongs in the task's tmux session, not in a foreground process attached to my
@@ -68,9 +74,10 @@ SSH connection.
 
 ## Environment detection
 
-`vibe` decides local-vs-server from `$SSH_CONNECTION` / `$SSH_TTY`, falling
-back to comparing the hostname against `$VIBE_SERVER_HOSTNAME`. If a command
-behaves as though it is on the wrong machine, that is the thing to check —
+`vibe` decides local-vs-server per machine, from `$SSH_CONNECTION` / `$SSH_TTY`,
+falling back to comparing the hostname against `$VIBE_SERVER_HOSTNAME` — which
+each machine sets to *its own* hostname when it should count as a server. If a
+command behaves as though it is on the wrong machine, that is the thing to check —
 `vibe where` prints the verdict and the reason for it.
 
 # Working on the toolkit itself

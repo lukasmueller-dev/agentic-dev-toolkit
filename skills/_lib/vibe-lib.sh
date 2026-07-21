@@ -92,7 +92,7 @@ worktree_dir() { echo "$VIBE_WORKTREE_ROOT/$1/$2"; }
 
 # ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
-# needed, and tracked — so a brief pushed from the other machine is picked up
+# needed, and tracked — so a brief pushed from another machine is picked up
 # instead of shadowed by a fresh branch off HEAD); new branch off HEAD.
 ensure_worktree() {
   local main="$1" branch="$2" dir="$3"

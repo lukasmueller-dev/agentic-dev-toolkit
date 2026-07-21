@@ -1,5 +1,6 @@
-// Mac (local) — add to VS Code *User* Settings (JSON):
-//   Cmd+Shift+P → "Preferences: Open User Settings (JSON)"
+// macOS — add to VS Code Settings (JSON):
+//   User Settings when you are sitting at the machine, or *Remote* Settings
+//   (the window showing "[SSH: <your-host>]") when you reach it over SSH.
 // Makes every new terminal open with `vibe status`.
 {
   "terminal.integrated.profiles.osx": {

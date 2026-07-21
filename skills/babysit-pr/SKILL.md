@@ -61,7 +61,7 @@ this brief, with no one watching.
    change the PR's base branch; stay inside the PR's own scope rather than
    opening new work. Add anything repo-specific.
 3. **Budget** — max rounds (default 10), and whether each round should push
-   (`--push`, recommended so progress is visible from the other machine).
+   (`--push`, recommended so progress is visible from another machine).
 
 Show the three answers together as the draft brief and **wait for explicit
 approval before Phase 3**.

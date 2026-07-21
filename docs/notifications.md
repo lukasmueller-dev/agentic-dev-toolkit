@@ -1,6 +1,6 @@
 # Phone notifications via ntfy.sh
 
-When an agent runs unattended in a tmux session on the VPS, the thing you
+When an agent runs unattended in a tmux session on a server, the thing you
 actually want to know is *"has it stopped and started waiting for me?"*
 `claude/hooks/notify-ntfy.sh` answers that with a push to your phone.
 
@@ -30,8 +30,8 @@ then **Subscribe to topic** and enter the same string. No account needed.
 Either an environment variable:
 
 ```bash
-echo 'export VIBE_NTFY_TOPIC="claude-xxxxxxxxxxxxxxxx"' >> ~/.zshrc   # Mac
-echo 'export VIBE_NTFY_TOPIC="claude-xxxxxxxxxxxxxxxx"' >> ~/.bashrc  # server
+echo 'export VIBE_NTFY_TOPIC="claude-xxxxxxxxxxxxxxxx"' >> ~/.zshrc   # zsh
+echo 'export VIBE_NTFY_TOPIC="claude-xxxxxxxxxxxxxxxx"' >> ~/.bashrc  # bash
 ```
 
 …or the vibe config file, which is the better choice on the server because it
@@ -98,7 +98,7 @@ point the `curl` URL in `notify-ntfy.sh` at your own instance and add an
 Notifications tell you *that* a session needs you. To actually *drive* it from
 your phone, enable Remote Control and pick the session by name in the Claude app
 → Code tab. Type `/rc` in the running session, or — without touching the
-session — run `vibe rc <task>` on the server (`ssh <vps> vibe rc <task>` from
-the Mac), or set `VIBE_RC_ON_START=1` so every `vibe start` enables it up front.
-The session stays on the VPS; the phone is just a window into it. See
+session — run `vibe rc <task>` on the server (`ssh <host> vibe rc <task>` from
+anywhere), or set `VIBE_RC_ON_START=1` so every `vibe start` enables it up
+front. The session stays on the server; the phone is just a window into it. See
 [vibe.md](vibe.md).

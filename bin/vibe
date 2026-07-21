@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 #
-# vibe — remote-first coding workflow across Mac (local) and Linux server.
+# vibe — remote-first coding workflow across any number of machines.
 #
 # Core idea:
 #   - Each TASK gets its own git branch + git worktree under
 #     $VIBE_WORKTREE_ROOT/<repo>/<branch> (default ~/git/worktrees).
-#   - On the SERVER, every task runs inside its own persistent tmux session, so
-#     the agent keeps working when you disconnect SSH.
-#   - On the MAC (local), no tmux is forced — you just get dropped into the worktree.
-#   - Every worktree gets a HANDOFF.md so the two machines can hand off cleanly.
+#   - On a SERVER — any machine reached over SSH — every task runs inside its
+#     own persistent tmux session, so the agent keeps working when you
+#     disconnect SSH.
+#   - On a LOCAL machine — one you are sitting at — no tmux is forced; you just
+#     get dropped into the worktree.
+#   - Every worktree gets a HANDOFF.md so machines can hand off cleanly.
 #
 # Commands, in the order you reach for them:
 #
@@ -289,9 +291,13 @@ render_template() {
 }
 
 # ---------------------------------------------------------------------------
-# Environment detection: local (Mac) vs server (Linux VPS)
-#   Primary signal:  $SSH_CONNECTION is set => we are on the server via SSH.
-#   Fallback signal: hostname matches VIBE_SERVER_HOSTNAME.
+# Environment detection: local vs server — a role of the current session, not
+# a fixed label on a machine or an operating system. The same box is local when
+# you sit at it and a server when you SSH into it, and any number of machines
+# can play either role.
+#   Primary signal:  $SSH_CONNECTION is set => reached over SSH => server.
+#   Fallback signal: hostname matches VIBE_SERVER_HOSTNAME (each machine sets
+#                    this to its *own* hostname when it should count as one).
 #   Anything else    => treated as local.
 # ---------------------------------------------------------------------------
 detect_env() {
@@ -372,7 +378,7 @@ worktree_dir() {
 
 # ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
-# needed, and tracked — so a branch pushed from the other machine is picked up
+# needed, and tracked — so a branch pushed from another machine is picked up
 # instead of silently shadowed by a fresh branch off HEAD); new branch off
 # HEAD. The fetch is best-effort: offline or remote-less repos fall through to
 # today's branch-off-HEAD behavior.
@@ -1364,7 +1370,7 @@ open_session() {
     fi
     tmux_attach_or_switch "$sess"
   else
-    # local (Mac): no forced tmux, just move into the worktree and launch agent
+    # local: no forced tmux, just move into the worktree and launch agent
     info "local environment — entering worktree (no tmux)."
     cd "$dir"
     exec "$VIBE_AGENT_CMD"
@@ -2237,12 +2243,12 @@ cmd_help() {
   blank() { [[ -n "$target" ]] || printf '\n'; }
 
   if [[ -z "$target" ]]; then
-    printf '%svibe%s — remote-first coding workflow across Mac (local) and Linux server.\n\n' "$c_bld" "$c_off"
+    printf '%svibe%s — remote-first coding workflow across any number of machines.\n\n' "$c_bld" "$c_off"
     printf "Each TASK gets its own git branch + git worktree under \$VIBE_WORKTREE_ROOT/<repo>/<branch>\n"
-    printf '(default ~/git/worktrees). On the SERVER every task runs inside its own persistent tmux\n'
-    printf 'session, so the agent keeps working after you disconnect SSH; on the MAC (local), no tmux\n'
-    printf 'is forced — you just get dropped into the worktree. Every worktree gets a HANDOFF.md so\n'
-    printf 'the two machines can hand off cleanly.\n\n'
+    printf '(default ~/git/worktrees). On a SERVER — any machine you reach over SSH — every task runs\n'
+    printf 'inside its own persistent tmux session, so the agent keeps working after you disconnect;\n'
+    printf 'on a LOCAL machine no tmux is forced — you just get dropped into the worktree. Every\n'
+    printf 'worktree gets a HANDOFF.md so machines can hand off cleanly.\n\n'
     printf 'Commands, in the order you reach for them:\n\n'
   fi
 

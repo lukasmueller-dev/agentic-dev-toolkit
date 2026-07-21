@@ -1,7 +1,7 @@
 # memory/
 
 Global memory: the standing instructions every agent gets in every repo, on
-both machines. One file, `GLOBAL.md`, installed to each agent's global
+every machine. One file, `GLOBAL.md`, installed to each agent's global
 instruction path.
 
 | Agent       | Installed to               |
@@ -21,7 +21,8 @@ silently loses the workflow memory while everything still looks installed —
 ## What belongs here
 
 Instructions that are true of *my workflow*, not of one agent: where each kind
-of information is written, the two-machine setup, the handoff discipline, how
+of information is written, the local/server split across machines, the
+handoff discipline, how
 `vibe` structures a task.
 
 ## What does *not* belong here

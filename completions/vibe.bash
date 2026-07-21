@@ -7,7 +7,7 @@
 #   source ~/git/agentic-dev-toolkit/completions/vibe.bash
 #
 # Avoids `mapfile`, which is bash 4+: macOS still ships bash 3.2, and this
-# file should behave the same on both machines.
+# file should behave the same on every machine.
 
 _vibe_tasks() {
   # Task names are the directory names under <worktree root>/<repo>/. Derived

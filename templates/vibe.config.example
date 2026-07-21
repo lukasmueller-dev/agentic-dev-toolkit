@@ -55,12 +55,14 @@
 # Default: vibe
 #VIBE_TMUX_PREFIX=vibe
 
-# Your VPS hostname, as `hostname` reports it there.
-# Only a fallback: vibe treats any SSH session as the server first. Set this
-# so detection still works in a local shell on the VPS (a cron job, a tmux
+# This machine's own hostname, as `hostname` reports it here — set it only on
+# a machine that should count as a server. Each machine names itself, so any
+# number of them can.
+# Only a fallback: vibe treats any SSH session as the server first. Set this so
+# detection still works in a local shell on that machine (a cron job, a tmux
 # session started at boot) where SSH_CONNECTION is not set.
 # Default: unset
-#VIBE_SERVER_HOSTNAME=your-vps-hostname
+#VIBE_SERVER_HOSTNAME=this-machines-hostname
 
 # Launch server-side sessions with Claude Code Remote Control already enabled,
 # so a task is reachable from the Claude app without typing /rc first. Set to 1

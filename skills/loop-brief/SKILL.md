@@ -52,7 +52,7 @@ the agent running the loop gets *only* this brief, with no one watching.
    alone, scope limits, commands that are off-limits. Anything not ruled out
    here is permitted.
 4. **Budget** — max rounds (default 10), and whether each round should push
-   (`--push`, recommended so progress is visible from the other machine).
+   (`--push`, recommended so progress is visible from another machine).
 
 Show the four answers together as the draft brief and **wait for explicit
 approval before Phase 3**.

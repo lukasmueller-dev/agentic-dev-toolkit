@@ -1,12 +1,12 @@
 # Working on this repo
 
-This is a toolkit, not an application. Its users are agents and a human on two
-machines, and everything in it is installed by symlink into `$HOME`. That
+This is a toolkit, not an application. Its users are agents and a human across
+several machines, and everything in it is installed by symlink into `$HOME`. That
 shapes every convention below: a mistake here does not fail a test suite, it
 quietly changes how every other repo behaves.
 
-For the *personal workflow* this toolkit serves — the Mac/VPS split, handoffs,
-`vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
+For the *personal workflow* this toolkit serves — the local/server split across
+machines, handoffs, `vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
 every agent. This file is only about changing the toolkit itself.
 
 ## Layout contract
@@ -104,7 +104,7 @@ files you already have, because symlinking either one would be wrong:
 - **`claude/settings.json`** is written by Claude Code itself. `/model`
   rewrites `model`, "yes, don't ask again" appends to `permissions.allow`, and
   feature flags appear unprompted. As a symlink, every one of those becomes a
-  git diff in this repo and syncs to the other machine.
+  git diff in this repo and syncs to every other machine.
 
 So the repo holds a **baseline** — permissions, sandbox policy, hooks,
 statusLine — and the installer merges it into the live file. Two rules

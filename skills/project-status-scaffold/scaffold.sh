@@ -55,7 +55,9 @@ repo_root="$(dirname "$common")"
 repo="$(basename "$repo_root")"
 branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
 today="$(date '+%Y-%m-%d')"
-machine="$([[ -n "${SSH_CONNECTION:-}" ]] && echo server || echo local)"
+# The lib's verdict, plus the hostname: with more than two machines in play,
+# "server" alone does not say *which* one wrote the file.
+machine="$(detect_env) ($(hostname))"
 
 status_file="$repo_root/PROJECT_STATUS.md"
 handoff_file="$worktree_root/HANDOFF.md"

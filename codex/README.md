@@ -32,5 +32,5 @@ the only step required.
 
 `config.toml` is deliberately skipped: the Codex CLI writes to it, and a
 symlink into this repo would turn every setting it rewrites into a git diff
-here that syncs to the other machine. `claude/settings.json` hits the same
+here that syncs to every other machine. `claude/settings.json` hits the same
 problem and is merged instead — do that here too when the file appears.
