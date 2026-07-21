@@ -13,6 +13,11 @@ setup() {
   # real script, so resolution walks up to *this* root, not the real repo's.
   TK="$BATS_TEST_TMPDIR/toolkit"
   mkdir -p "$TK/docs" "$TK/skills/skill-audit/scripts"
+  # criteria-path.sh resolves through cd -P, so it returns the physical path.
+  # $BATS_TEST_TMPDIR itself sits under a symlink on macOS (/var ->
+  # /private/var), so TK must be resolved the same way or every comparison
+  # below mismatches on that platform only.
+  TK="$(cd "$TK" && pwd -P)"
   printf '# criteria\n' >"$TK/docs/skill-quality.md"
   cp "$SRC" "$TK/skills/skill-audit/scripts/criteria-path.sh"
 }
