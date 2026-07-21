@@ -39,6 +39,13 @@ without checking.
 
 1. Run the agent once, headless, handing it `LOOP.md` as the prompt — the same
    `VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"` shape `vibe park` uses.
+   The agent's own chatter goes to a log rather than the terminal (the loop
+   prints its path at startup): `<git-dir>/vibe-agent.log`, inside the
+   worktree's git dir, so it never dirties the tree or reaches a commit. On the
+   terminal you get the spinner and the loop's own lines only — an agent
+   writing straight to the tty would collide with the spinner, and a CLI agent
+   that finds a tty also probes it for colours, whose replies the terminal
+   echoes back as visible escape-sequence garbage.
 2. Stage everything and commit it as `vibe loop: iteration N` — but only if the
    round produced real work. A round that changed nothing but the loop's own
    log is not progress and makes no commit.

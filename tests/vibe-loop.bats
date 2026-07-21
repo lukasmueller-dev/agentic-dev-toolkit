@@ -102,6 +102,36 @@ set_state() {
 }
 
 # ---------------------------------------------------------------------------
+# The agent's own output goes to a log, never onto the loop's terminal, where
+# it would collide with the spinner (and, from a real CLI agent, arrive as
+# echoed terminal-colour replies rather than text).
+# ---------------------------------------------------------------------------
+@test "loop: captures the agent's output in a log instead of the terminal" {
+  cd "$(make_repo proj)"
+  local path="$BATS_TEST_TMPDIR/agent.sh"
+  cat >"$path" <<'EOF'
+#!/usr/bin/env bash
+echo "AGENT-CHATTER-STDOUT"
+echo "AGENT-CHATTER-STDERR" >&2
+echo work >>progress.txt
+exit 0
+EOF
+  chmod +x "$path"
+
+  run loop_vibe loop "quiet task" --until false --max 1
+  [ "$status" -eq 0 ]
+  [[ "$output" != *AGENT-CHATTER* ]]
+
+  local log
+  log="$(git -C "$(wt quiet-task)" rev-parse --absolute-git-dir)/vibe-agent.log"
+  [ -f "$log" ]
+  grep -q AGENT-CHATTER-STDOUT "$log"
+  grep -q AGENT-CHATTER-STDERR "$log"
+  # the log lives outside the working tree, so it cannot dirty it
+  [ -z "$(git -C "$(wt quiet-task)" status --porcelain)" ]
+}
+
+# ---------------------------------------------------------------------------
 # Resume: a killed runner picks up from the state file, not from zero
 # ---------------------------------------------------------------------------
 @test "loop: resumes from saved state after a kill" {
