@@ -1,4 +1,4 @@
-# Handoff — agentic-dev-toolkit / loop-permission-warning
+# Handoff — agentic-dev-toolkit / handoff-clear-before-pr
 
 > The baton. Present tense only: where the work stands *now* and what the
 > next session should do. Overwrite it each session — never append. History
@@ -8,8 +8,8 @@
 > nothing off.
 
 - **Repo:** agentic-dev-toolkit
-- **Branch:** `loop-permission-warning`
-- **Worktree:** /root/git/worktrees/agentic-dev-toolkit/loop-permission-warning
+- **Branch:** `handoff-clear-before-pr`
+- **Worktree:** /root/git/worktrees/agentic-dev-toolkit/handoff-clear-before-pr
 - **Last updated:** 2026-07-21 · server (srv1841294)
 
 ## State
