@@ -992,7 +992,7 @@ attach_ff() {
     warn "not pulling: $branch has uncommitted changes — attaching as-is"
     return 0
   fi
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     info "no upstream for $branch — attaching without pulling"
     return 0
   fi
@@ -1001,26 +1001,24 @@ attach_ff() {
     return 0
   }
 
-  local local_rev remote_rev base n
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    info "$branch already up to date — attaching"
-  elif [[ "$local_rev" == "$base" ]]; then
-    n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
-    git -C "$dir" merge -q --ff-only '@{u}'
-    if [[ "$n" == 1 ]]; then
-      ok "fast-forwarded $branch (1 commit) — attaching"
-    else
-      ok "fast-forwarded $branch ($n commits) — attaching"
-    fi
-  elif [[ "$remote_rev" == "$base" ]]; then
-    info "$branch is ahead of remote — attaching ('vibe park' to push)"
-  else
-    warn "not pulling: $branch has diverged from remote — attaching as-is
+  local n
+  case "$(upstream_state "$dir")" in
+    insync) info "$branch already up to date — attaching" ;;
+    behind)
+      n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+      git -C "$dir" merge -q --ff-only '@{u}'
+      if [[ "$n" == 1 ]]; then
+        ok "fast-forwarded $branch (1 commit) — attaching"
+      else
+        ok "fast-forwarded $branch ($n commits) — attaching"
+      fi
+      ;;
+    ahead) info "$branch is ahead of remote — attaching ('vibe park' to push)" ;;
+    diverged)
+      warn "not pulling: $branch has diverged from remote — attaching as-is
   ('vibe resume --rebase' reconciles once you have decided)"
-  fi
+      ;;
+  esac
   return 0
 }
 
