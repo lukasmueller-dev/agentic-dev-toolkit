@@ -38,12 +38,14 @@
 #
 # Unattended:
 #   vibe loop <task> [--until <cmd>] [--max <n>] [--for <duration>]
-#                     [--prompt <file>] [--push]
+#                     [--prompt <file>] [--push] [--pr]
 #                     [--no-attach] [--sandbox] [--dangerously-allow-all]
 #                         Create branch+worktree like start, seed LOOP.md, then
 #                         run the agent headlessly round after round until the
 #                         --until check passes, --max rounds pass, the --for
 #                         time budget is spent, or it stalls.
+#                         --pr opens the pull request when it ends (implies
+#                         --push); a run that did not pass opens a draft.
 #                         Re-running on an existing loop worktree resumes it.
 #                         --no-attach (server) starts the tmux session and
 #                         returns instead of attaching — for starting a loop
@@ -148,6 +150,13 @@ VIBE_LOOP_STATE=".vibe-loop.state"
 # worktree's git dir, not the working tree, so it needs no gitignore entry and
 # 'git add -A' can never sweep it into a commit.
 VIBE_AGENT_LOG="vibe-agent.log"
+
+# Where the brief is kept once --pr strips it off the branch. Same git-dir
+# reasoning as the agent log, plus one of its own: a loop resumed after its PR
+# was opened has to be handed the brief it was actually running, not a fresh
+# render of the raw task string, which would silently drop everything a refined
+# brief spelled out.
+VIBE_LOOP_BRIEF_ARCHIVE="vibe-loop-brief.md"
 
 # A line matches this iff it is nothing but HANDOFF.md template scaffolding:
 # blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
@@ -534,12 +543,32 @@ seed_handoff() {
   info "seeded HANDOFF.md"
 }
 
+# loop_brief_archive DIR — absolute path to where DIR's brief is parked once
+# --pr strips it off the branch. Inside the worktree's git dir, for the same
+# reasons as agent_log_path: per-worktree, and outside anything git tracks.
+loop_brief_archive() {
+  local dir="$1" gd
+  gd="$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null)" || gd="$dir"
+  printf '%s/%s\n' "$gd" "$VIBE_LOOP_BRIEF_ARCHIVE"
+}
+
 # LOOP.md seeding — rendered from templates/ (or a --prompt file), never
 # embedded here. Skips an existing file, so a resumed loop keeps its log.
 seed_loop() {
   local dir="$1" repo="$2" branch="$3" goal="$4" until_cmd="$5" max="$6" custom="$7"
   local f="$dir/LOOP.md"
   [[ -f "$f" ]] && return 0
+
+  # Resuming a loop whose PR already stripped the brief: restore the exact one
+  # it was running. Re-rendering here would hand the next round the raw task
+  # string in place of a brief someone refined, and nothing would report it.
+  local archive
+  archive="$(loop_brief_archive "$dir")"
+  if [[ -f "$archive" ]]; then
+    cp "$archive" "$f"
+    info "restored LOOP.md from the archived brief"
+    return 0
+  fi
 
   local tpl="$TEMPLATE_DIR/LOOP.md"
   [[ -n "$custom" ]] && tpl="$custom"
@@ -690,6 +719,147 @@ loop_push() {
   esac
 }
 
+# loop_goal DIR — echo the Goal section of DIR's LOOP.md, for the PR body.
+# Read before loop_strip_brief removes the file, so the PR still says what the
+# loop was asked to do.
+loop_goal() {
+  local f="$1/LOOP.md" goal=""
+  if [[ -f "$f" ]]; then
+    goal="$(awk '/^## Goal[[:space:]]*$/ { g = 1; next } /^## / { g = 0 } g' "$f")"
+  fi
+  # Blank when the brief came from a --prompt file with no Goal heading.
+  printf '%s\n' "${goal:-—}"
+}
+
+# loop_pr_title DIR BRANCH — the PR title. The newest commit subject the agent
+# wrote itself, which says what the work was; the loop's own bookkeeping
+# subjects ("vibe loop: iteration 3 on x") never do. Bounded at the loop's
+# start commit so a branch cut from the default branch cannot reach past its
+# own history and title the PR with someone else's commit.
+loop_pr_title() {
+  local dir="$1" branch="$2" subj
+  subj="$(git -C "$dir" log --format=%s 2>/dev/null |
+    awk '/^vibe loop: start /{ exit } { print }' |
+    grep -v '^vibe loop: ' | head -1)"
+  printf '%s\n' "${subj:-vibe loop: $branch}"
+}
+
+# loop_strip_brief DIR BRANCH — remove the brief and the handoff from the
+# branch as their own commit, archiving the brief first.
+#
+# Both are start-of-task input, not deliverable. Left on the branch they land
+# verbatim in the PR diff and stray onto the default branch on merge — exactly
+# the leak cmd_done refuses to let through, and exactly how this repo's own
+# main grew a stray HANDOFF.md (PR #14) and LOOP.md (PR #11). A loop that opens
+# its own PR is the one path where no human is there to catch it.
+loop_strip_brief() {
+  local dir="$1" branch="$2" tracked
+  tracked="$(git -C "$dir" ls-files -- LOOP.md HANDOFF.md 2>/dev/null)"
+  [[ -n "$tracked" ]] || return 0
+  if [[ -f "$dir/LOOP.md" ]]; then
+    cp "$dir/LOOP.md" "$(loop_brief_archive "$dir")" 2>/dev/null || true
+  fi
+  git -C "$dir" rm -q --ignore-unmatch -- LOOP.md HANDOFF.md >/dev/null 2>&1 || return 1
+  git -C "$dir" commit -q -m "chore: drop the loop brief and handoff before review" || return 1
+  info "dropped the brief from '$branch' — it is input, not deliverable"
+}
+
+# loop_pr_outcome STATUS ITER MAX — the one-line "how this ended" sentence for
+# the PR body, so a reader sees why it is a draft without decoding a status
+# word. Every non-success arm says draft, because every one of them opens one.
+loop_pr_outcome() {
+  case "$1" in
+    success) printf 'The stop check passed on round %s, so this is opened ready for review.\n' "$2" ;;
+    maxed) printf 'Opened as a draft: the loop used all %s rounds without the stop check passing.\n' "$3" ;;
+    timeup) printf 'Opened as a draft: the time budget ran out after %s rounds, with the stop check still failing.\n' "$2" ;;
+    stalled) printf 'Opened as a draft: the loop stalled — two consecutive rounds produced no change.\n' ;;
+    *) printf 'Opened as a draft: the loop ended as "%s" after %s rounds.\n' "$1" "$2" ;;
+  esac
+}
+
+# loop_open_pr DIR REPO BRANCH — open the pull request for a finished loop.
+# Reads the outcome from the state file, which run_loop has already written, so
+# this takes three arguments rather than the eight it reports on.
+#
+# Best effort throughout. This is the last act of a run nobody watched, often
+# hours long: every failure warns and returns 0, because turning a finished
+# loop into a non-zero exit would lose the work's only summary. An existing
+# open PR is left alone, so resuming a loop never opens a second one, and a
+# run that did not pass its stop check opens a draft — the work stays visible
+# and reviewable without ever looking like a merge candidate.
+loop_open_pr() {
+  local dir="$1" repo="$2" branch="$3"
+  local status iter max last until_cmd goal title body url existing
+
+  if ! command -v gh >/dev/null 2>&1; then
+    warn "no PR opened: 'gh' is not installed. Open it by hand from $branch."
+    return 0
+  fi
+
+  # --json/--jq are gh's own, so this adds no jq dependency. A failure here is
+  # gh unauthenticated, offline, or the repo having no GitHub remote; none of
+  # them should read as "no PR exists" and push a second one.
+  if ! existing="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url' 2>/dev/null)"; then
+    warn "no PR opened: 'gh' could not reach GitHub (not authenticated?). Open it by hand from $branch."
+    return 0
+  fi
+  if [[ -n "$existing" ]]; then
+    info "PR already open for '$branch': $existing"
+    return 0
+  fi
+
+  status="$(loop_get "$dir" STATUS)"
+  iter="$(loop_get "$dir" ITER)"
+  max="$(loop_get "$dir" MAX)"
+  last="$(loop_get "$dir" LAST)"
+  until_cmd="$(loop_get "$dir" UNTIL)"
+  goal="$(loop_goal "$dir")"
+
+  if ! loop_strip_brief "$dir" "$branch"; then
+    warn "no PR opened: could not drop the brief from '$branch'."
+    return 0
+  fi
+  if ! loop_push "$dir" "$branch"; then
+    warn "no PR opened: remote diverged from $branch — resolve it, then open the PR by hand."
+    return 0
+  fi
+
+  local tpl="$TEMPLATE_DIR/LOOP_PR.md"
+  if [[ ! -f "$tpl" ]]; then
+    warn "no PR opened: no PR template at $tpl."
+    return 0
+  fi
+  body="$(render_template "$tpl" \
+    '<goal>' "$goal" \
+    '<outcome>' "$(loop_pr_outcome "$status" "${iter:-0}" "${max:-?}")" \
+    '<status>' "${status:-?}" \
+    '<iter>' "${iter:-0}" \
+    '<max>' "${max:-?}" \
+    '<last>' "${last:-none}" \
+    '<until>' "${until_cmd:-—}")"
+
+  title="$(loop_pr_title "$dir" "$branch")"
+  local -a create=(pr create --head "$branch" --title "$title" --body "$body")
+  if [[ "$status" != "success" ]]; then
+    create+=(--draft)
+  fi
+
+  if ! url="$( (cd "$dir" && gh "${create[@]}") 2>&1)"; then
+    warn "no PR opened: gh pr create failed."
+    printf '%s\n' "$url" | sed 's/^/    /' >&2
+    return 0
+  fi
+  # gh prints the URL on the last line; anything before it is progress noise.
+  url="$(printf '%s\n' "$url" | grep -o 'https://[^[:space:]]*' | tail -1)"
+  if [[ "$status" == "success" ]]; then
+    ok "opened PR: $url"
+    ntfy_push "$repo · $branch" default heavy_check_mark "loop finished — PR opened: $url"
+  else
+    ok "opened draft PR: $url"
+    ntfy_push "$repo · $branch" high warning "loop ended as '$status' — draft PR opened: $url"
+  fi
+}
+
 # agent_log_path DIR — absolute path to DIR's headless-agent log. Inside the
 # worktree's git dir (for a linked worktree that is .git/worktrees/<name>), so
 # it is per-worktree and outside anything git tracks.
@@ -722,7 +892,7 @@ run_agent_headless() {
 # single entry point for both a fresh start and a resume-after-kill.
 run_loop() {
   local dir="$1" repo="$2" branch="$3"
-  local status phase iter max last until_cmd push permissive sandbox started pid deadline
+  local status phase iter max last until_cmd push pr permissive sandbox started pid deadline
   status="running"
   phase="starting"
   iter="$(loop_get "$dir" ITER)"
@@ -734,6 +904,8 @@ run_loop() {
   until_cmd="$(loop_get "$dir" UNTIL)"
   push="$(loop_get "$dir" PUSH)"
   push="${push:-0}"
+  pr="$(loop_get "$dir" PR)"
+  pr="${pr:-0}"
   permissive="$(loop_get "$dir" PERMISSIVE)"
   permissive="${permissive:-0}"
   sandbox="$(loop_get "$dir" SANDBOX)"
@@ -768,7 +940,7 @@ run_loop() {
     phase="iterating"
     loop_write_state "$dir" \
       STATUS running PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+      UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
     info "iteration $iter/$max"
 
     local before after
@@ -826,7 +998,7 @@ run_loop() {
     fi
     loop_write_state "$dir" \
       STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+      UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
 
     if [[ "$status" == "success" ]]; then
       ok "loop done: stop check passed on iteration $iter"
@@ -860,17 +1032,25 @@ run_loop() {
   phase="idle"
   loop_write_state "$dir" \
     STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-    UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+    UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+
+  # Last act of the run, after the final state write, because loop_open_pr
+  # reports the outcome by reading that state back. Never fatal: see the
+  # function's own comment for why a finished loop must not exit non-zero
+  # over a PR that could not be opened.
+  if [[ "$pr" == "1" ]]; then
+    loop_open_pr "$dir" "$repo" "$branch"
+  fi
 }
 
 # loop_parse_args ARGS... — parse the 'vibe loop' flag surface into LP_*
 # globals and validate it, so cmd_loop reads as a sequence of steps rather than
 # opening with a hundred-line getopts. Sets: LP_task LP_until LP_max LP_prompt
-# LP_push LP_permissive LP_sandbox LP_no_attach. Dies on a bad flag or
+# LP_push LP_pr LP_permissive LP_sandbox LP_no_attach. Dies on a bad flag or
 # combination.
 loop_parse_args() {
-  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--for <duration>] [--prompt <file>] [--push] [--no-attach] [--sandbox] [--dangerously-allow-all]"
-  LP_task="" LP_until="" LP_max="" LP_for="" LP_prompt="" LP_push=0 LP_permissive=0 LP_sandbox=0 LP_no_attach=0
+  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--for <duration>] [--prompt <file>] [--push] [--pr] [--no-attach] [--sandbox] [--dangerously-allow-all]"
+  LP_task="" LP_until="" LP_max="" LP_for="" LP_prompt="" LP_push=0 LP_pr=0 LP_permissive=0 LP_sandbox=0 LP_no_attach=0
   while (($#)); do
     case "$1" in
       --until)
@@ -906,6 +1086,14 @@ loop_parse_args() {
         shift
         ;;
       --push)
+        LP_push=1
+        shift
+        ;;
+      # --pr implies --push: the PR is opened from the pushed branch, and a
+      # loop that only pushed at the end would leave every intermediate round
+      # on one machine until then.
+      --pr)
+        LP_pr=1
         LP_push=1
         shift
         ;;
@@ -950,7 +1138,7 @@ loop_parse_args() {
 # loop_effective_settings DIR RESUMING — resolve the settings a loop actually
 # runs with into LE_* globals: a new flag (LP_*) overrides, a resume carries the
 # saved value forward, otherwise a default fills in. Sets: LE_iter LE_started
-# LE_last LE_max LE_until LE_push LE_perm LE_sandbox LE_deadline.
+# LE_last LE_max LE_until LE_push LE_pr LE_perm LE_sandbox LE_deadline.
 #
 # LE_deadline is an absolute epoch second, resolved once from --for. A resume
 # without a new --for keeps the original deadline rather than restarting the
@@ -968,6 +1156,7 @@ loop_effective_settings() {
     LE_max="${LP_max:-$(loop_get "$dir" MAX)}"
     LE_until="${LP_until:-$(loop_get "$dir" UNTIL)}"
     if [[ "$LP_push" == "1" ]]; then LE_push=1; else LE_push="$(loop_get "$dir" PUSH)"; fi
+    if [[ "$LP_pr" == "1" ]]; then LE_pr=1; else LE_pr="$(loop_get "$dir" PR)"; fi
     if [[ "$LP_permissive" == "1" ]]; then LE_perm=1; else LE_perm="$(loop_get "$dir" PERMISSIVE)"; fi
     if [[ "$LP_sandbox" == "1" ]]; then LE_sandbox=1; else LE_sandbox="$(loop_get "$dir" SANDBOX)"; fi
     LE_deadline="${LE_deadline:-$(loop_get "$dir" DEADLINE)}"
@@ -978,11 +1167,16 @@ loop_effective_settings() {
     LE_max="${LP_max:-10}"
     LE_until="$LP_until"
     LE_push="$LP_push"
+    LE_pr="$LP_pr"
     LE_perm="$LP_permissive"
     LE_sandbox="$LP_sandbox"
   fi
   LE_max="${LE_max:-10}"
   LE_push="${LE_push:-0}"
+  LE_pr="${LE_pr:-0}"
+  # A resume that carried PR=1 forward must push too, even without --push on
+  # the command line: PR implies push wherever the flag came from.
+  if [[ "$LE_pr" == "1" ]]; then LE_push=1; fi
   LE_perm="${LE_perm:-0}"
   LE_sandbox="${LE_sandbox:-0}"
   LE_last="${LE_last:-none}"
@@ -1038,7 +1232,7 @@ cmd_loop() {
 
   loop_write_state "$dir" \
     STATUS running PHASE starting ITER "$LE_iter" MAX "$LE_max" LAST "$LE_last" \
-    UNTIL "$LE_until" PUSH "$LE_push" PERMISSIVE "$LE_perm" SANDBOX "$LE_sandbox" \
+    UNTIL "$LE_until" PUSH "$LE_push" PR "$LE_pr" PERMISSIVE "$LE_perm" SANDBOX "$LE_sandbox" \
     DEADLINE "$LE_deadline" PID "" STARTED "$LE_started"
 
   local env
@@ -2113,11 +2307,13 @@ cmd_help() {
   blank
 
   help_section "Unattended:"
-  help_cmd "loop <task>" "[--until <cmd>] [--max <n>] [--for <duration>] [--prompt <file>] [--push] [--no-attach] [--sandbox] [--dangerously-allow-all]" \
+  help_cmd "loop <task>" "[--until <cmd>] [--max <n>] [--for <duration>] [--prompt <file>] [--push] [--pr] [--no-attach] [--sandbox] [--dangerously-allow-all]" \
     "Create branch+worktree like start, seed LOOP.md, then" \
     "run the agent headlessly round after round until the" \
     "--until check passes, --max rounds pass, the --for time" \
     "budget is spent, or it stalls." \
+    "--pr opens the pull request when it ends (implies" \
+    "--push); a run that did not pass opens a draft." \
     "Re-running on an existing loop worktree resumes it." \
     "--no-attach (server) starts the tmux session and" \
     "returns instead of attaching — for starting a loop" \

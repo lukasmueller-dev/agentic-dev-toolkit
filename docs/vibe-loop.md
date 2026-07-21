@@ -66,6 +66,35 @@ without checking.
 Because every round commits, `vibe status` and the `vibe done` guard see the
 work like any other branch — nothing is stranded in an uncommitted state.
 
+## Ending in a pull request: `--pr`
+
+`--pr` makes the loop open its own PR once it stops, so an overnight run is
+waiting as something reviewable rather than as a branch you have to remember
+to look at. It implies `--push`.
+
+What it does when the loop ends:
+
+- **Drops `LOOP.md` and `HANDOFF.md` from the branch** as their own commit,
+  archiving the brief in the worktree's git dir first. Both are start-of-task
+  input, not deliverable; left on the branch they land in the PR diff and stray
+  onto the default branch on merge — the same leak `vibe done` refuses to let
+  through. A resumed loop is re-seeded from that archive, so the exact brief it
+  was running comes back rather than a fresh render of the raw task string.
+- **Titles the PR from the newest commit the agent wrote itself**, skipping the
+  loop's own `vibe loop:` bookkeeping subjects, bounded at the loop's start
+  commit.
+- **Opens a draft unless the stop check passed.** `maxed`, `timeup` and
+  `stalled` all produce a draft whose body says which one it was, so unfinished
+  work stays visible without ever looking like a merge candidate.
+- **Never fails the run.** No `gh`, no auth, a diverged remote, a rejected
+  `gh pr create` — each warns and leaves the branch pushed for you to open by
+  hand. An already-open PR for the branch is left alone, so resuming a loop
+  never opens a second one.
+
+The body is rendered from [`templates/LOOP_PR.md`](../templates/LOOP_PR.md):
+the goal, how the run ended, the round count, the stop check as it was actually
+measured, and a note to the reviewer that no human saw the intermediate states.
+
 ## The prompt: `LOOP.md`
 
 The agent's brief for every round is `LOOP.md` in the worktree, rendered from
