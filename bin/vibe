@@ -133,6 +133,14 @@ VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 # never committed: it holds machine-local counters and a PID, not deliverable work.
 VIBE_LOOP_STATE=".vibe-loop.state"
 
+# A line matches this iff it is nothing but HANDOFF.md template scaffolding:
+# blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
+# single-line _italic placeholders_. 'grep -v' this to surface only real,
+# handed-off content. Written once here so handoff_carries_content and cmd_done
+# cannot drift; claude/hooks/session-start-handoff.sh keeps a literal copy of
+# the same pattern (it cannot source this script) — update both together.
+VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
+
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
@@ -247,6 +255,37 @@ main_repo_root() {
   dirname "$common"
 }
 
+# upstream_state DIR — classify DIR's HEAD against its upstream from local refs
+# only (never fetches), echoing one of:
+#   no-upstream  no @{u} tracking branch configured
+#   insync       HEAD == @{u}
+#   behind       @{u} is ahead of HEAD (a fast-forward pulls it in)
+#   ahead        HEAD is ahead of @{u} (a plain push publishes it)
+#   diverged     both moved since their merge-base
+# The ahead/behind labels are measured against the last fetch, so a caller that
+# wants a fresh answer fetches first — each keeps its own fetch and refusal
+# policy (attach never blocks, sync/resume die, the loop stops) and only the
+# comparison itself lives here, where it was written out four times.
+upstream_state() {
+  local dir="$1" local_rev remote_rev base
+  git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || {
+    echo no-upstream
+    return
+  }
+  local_rev="$(git -C "$dir" rev-parse @)"
+  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
+  base="$(git -C "$dir" merge-base @ '@{u}')"
+  if [[ "$local_rev" == "$remote_rev" ]]; then
+    echo insync
+  elif [[ "$local_rev" == "$base" ]]; then
+    echo behind
+  elif [[ "$remote_rev" == "$base" ]]; then
+    echo ahead
+  else
+    echo diverged
+  fi
+}
+
 # sanitize a task name into a branch-safe / dir-safe slug. '/' becomes '-'
 # rather than vanishing, so 'docs/fix-x' and 'docsfix-x' stay distinct.
 slug() { echo "$1" | tr '[:upper:] /' '[:lower:]--' | sed 's/[^a-z0-9._-]//g'; }
@@ -283,6 +322,33 @@ ensure_worktree() {
 tmux_session_name() {
   # vibe-<repo>-<branch>, tmux disallows dots in session names
   echo "${VIBE_TMUX_PREFIX}-$1-$2" | tr '.' '-'
+}
+
+# tmux_ensure_session SESS DIR CMD — make sure a detached session SESS exists
+# with working directory DIR, running CMD in its first (and only) pane when it
+# has to be created. Idempotent: an existing session is left running untouched.
+# Returns 0 when the session was already there, 1 when it was just created, so
+# the caller can word its own "already exists" vs "starting" line.
+tmux_ensure_session() {
+  local sess="$1" dir="$2" cmd="$3"
+  if tmux has-session -t "$sess" 2>/dev/null; then
+    return 0
+  fi
+  tmux new-session -d -s "$sess" -c "$dir"
+  tmux send-keys -t "$sess" "$cmd" C-m
+  return 1
+}
+
+# tmux_attach_or_switch SESS — bring SESS to the foreground. Inside an existing
+# tmux client, attach would nest a session; switch the client instead. Outside
+# tmux, attach.
+tmux_attach_or_switch() {
+  local sess="$1"
+  if [[ -n "${TMUX:-}" ]]; then
+    tmux switch-client -t "$sess"
+  else
+    tmux attach-session -t "$sess"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -493,23 +559,21 @@ loop_ignore_state() {
     printf '%s\n' "$VIBE_LOOP_STATE" >>"$excl"
 }
 
-# loop_write_state DIR STATUS PHASE ITER MAX LAST UNTIL PUSH PERMISSIVE PID STARTED
+# loop_write_state DIR KEY VALUE [KEY VALUE]... — write the loop state file as
+# the given KEY=VALUE lines, stamping UPDATED automatically. Same KEY VALUE
+# shape as render_template, so a caller reads as a labelled field list rather
+# than eleven positional arguments whose order had to be counted twice.
 # Atomic: write a temp then rename, so a kill mid-write cannot truncate it.
 loop_write_state() {
-  local sf tmp
-  sf="$(loop_state_path "$1")"
+  local sf tmp dir="$1"
+  shift
+  sf="$(loop_state_path "$dir")"
   tmp="$sf.tmp.$$"
   {
-    printf 'STATUS=%s\n' "$2"
-    printf 'PHASE=%s\n' "$3"
-    printf 'ITER=%s\n' "$4"
-    printf 'MAX=%s\n' "$5"
-    printf 'LAST=%s\n' "$6"
-    printf 'UNTIL=%s\n' "$7"
-    printf 'PUSH=%s\n' "$8"
-    printf 'PERMISSIVE=%s\n' "$9"
-    printf 'PID=%s\n' "${10}"
-    printf 'STARTED=%s\n' "${11}"
+    while (($# >= 2)); do
+      printf '%s=%s\n' "$1" "$2"
+      shift 2
+    done
     printf 'UPDATED=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } >"$tmp"
   mv -f "$tmp" "$sf"
@@ -525,24 +589,22 @@ loop_log_round() {
 # (diverged, or remote ahead); a transient fetch failure is not fatal.
 loop_push() {
   local dir="$1" branch="$2"
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     git -C "$dir" push -q -u origin "$branch"
     return
   fi
   git -C "$dir" fetch -q || return 0
-  local local_rev remote_rev base
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    return 0
-  elif [[ "$remote_rev" == "$base" ]]; then
-    git -C "$dir" push -q origin "$branch"
-    return 0
-  else
-    # remote ahead or diverged: never merge or force under an unattended loop.
-    return 1
-  fi
+  case "$(upstream_state "$dir")" in
+    insync) return 0 ;;
+    ahead)
+      git -C "$dir" push -q origin "$branch"
+      return 0
+      ;;
+    *)
+      # behind or diverged: never merge or force under an unattended loop.
+      return 1
+      ;;
+  esac
 }
 
 # The loop itself. Everything it needs is in the state file, so this is the
@@ -584,8 +646,9 @@ run_loop() {
   while :; do
     iter=$((iter + 1))
     phase="iterating"
-    loop_write_state "$dir" running "$phase" "$iter" "$max" "$last" \
-      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+    loop_write_state "$dir" \
+      STATUS running PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
     info "iteration $iter/$max"
 
     local before after
@@ -640,8 +703,9 @@ run_loop() {
         last="fail"
       fi
     fi
-    loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
-      "$until_cmd" "$push" "$permissive" "$pid" "$started"
+    loop_write_state "$dir" \
+      STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
 
     if [[ "$status" == "success" ]]; then
       ok "loop done: stop check passed on iteration $iter"
@@ -666,71 +730,111 @@ run_loop() {
   done
 
   phase="idle"
-  loop_write_state "$dir" "$status" "$phase" "$iter" "$max" "$last" \
-    "$until_cmd" "$push" "$permissive" "$pid" "$started"
+  loop_write_state "$dir" \
+    STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
+    UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
 }
 
-cmd_loop() {
-  need git
-  local task="" until_cmd="" max="" prompt="" push=0 permissive=0 no_attach=0
+# loop_parse_args ARGS... — parse the 'vibe loop' flag surface into LP_*
+# globals and validate it, so cmd_loop reads as a sequence of steps rather than
+# opening with a hundred-line getopts. Sets: LP_task LP_until LP_max LP_prompt
+# LP_push LP_permissive LP_no_attach. Dies on a bad flag or combination.
+loop_parse_args() {
+  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
+  LP_task="" LP_until="" LP_max="" LP_prompt="" LP_push=0 LP_permissive=0 LP_no_attach=0
   while (($#)); do
     case "$1" in
       --until)
-        until_cmd="${2-}"
+        LP_until="${2-}"
         shift 2 || die "--until needs a command"
         ;;
       --until=*)
-        until_cmd="${1#--until=}"
+        LP_until="${1#--until=}"
         shift
         ;;
       --max)
-        max="${2-}"
+        LP_max="${2-}"
         shift 2 || die "--max needs a number"
         ;;
       --max=*)
-        max="${1#--max=}"
+        LP_max="${1#--max=}"
         shift
         ;;
       --prompt)
-        prompt="${2-}"
+        LP_prompt="${2-}"
         shift 2 || die "--prompt needs a file"
         ;;
       --prompt=*)
-        prompt="${1#--prompt=}"
+        LP_prompt="${1#--prompt=}"
         shift
         ;;
       --push)
-        push=1
+        LP_push=1
         shift
         ;;
       --no-attach)
-        no_attach=1
+        LP_no_attach=1
         shift
         ;;
       --dangerously-allow-all)
-        permissive=1
+        LP_permissive=1
         shift
         ;;
-      -*) die "unknown option '$1' (usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all])" ;;
+      -*) die "unknown option '$1' ($usage)" ;;
       *)
-        task="$1"
+        LP_task="$1"
         shift
         ;;
     esac
   done
-  [[ -n "$task" ]] ||
-    die "usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
-  [[ -z "$max" || "$max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$max'"
-  [[ -z "$prompt" || -f "$prompt" ]] || die "--prompt file not found: $prompt"
-  if [[ "$permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
+  [[ -n "$LP_task" ]] || die "$usage"
+  [[ -z "$LP_max" || "$LP_max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$LP_max'"
+  [[ -z "$LP_prompt" || -f "$LP_prompt" ]] || die "--prompt file not found: $LP_prompt"
+  if [[ "$LP_permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
     die "--dangerously-allow-all needs VIBE_LOOP_PERMISSIVE_ARGS set (see docs/vibe-loop.md)."
   fi
   # Checked before any scaffolding: locally the loop runs in the foreground,
   # so a late refusal would leave a seeded worktree and a stale state file.
-  if [[ "$no_attach" == "1" && "$(detect_env)" != "server" ]]; then
+  if [[ "$LP_no_attach" == "1" && "$(detect_env)" != "server" ]]; then
     die "--no-attach needs a server tmux session — locally the loop runs in
   the foreground, so there is nothing to detach from. Start it on the server."
   fi
+}
+
+# loop_effective_settings DIR RESUMING — resolve the settings a loop actually
+# runs with into LE_* globals: a new flag (LP_*) overrides, a resume carries the
+# saved value forward, otherwise a default fills in. Sets: LE_iter LE_started
+# LE_last LE_max LE_until LE_push LE_perm.
+loop_effective_settings() {
+  local dir="$1" resuming="$2"
+  if ((resuming)); then
+    LE_iter="$(loop_get "$dir" ITER)"
+    LE_started="$(loop_get "$dir" STARTED)"
+    LE_last="$(loop_get "$dir" LAST)"
+    LE_max="${LP_max:-$(loop_get "$dir" MAX)}"
+    LE_until="${LP_until:-$(loop_get "$dir" UNTIL)}"
+    if [[ "$LP_push" == "1" ]]; then LE_push=1; else LE_push="$(loop_get "$dir" PUSH)"; fi
+    if [[ "$LP_permissive" == "1" ]]; then LE_perm=1; else LE_perm="$(loop_get "$dir" PERMISSIVE)"; fi
+  else
+    LE_iter=0
+    LE_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    LE_last="none"
+    LE_max="${LP_max:-10}"
+    LE_until="$LP_until"
+    LE_push="$LP_push"
+    LE_perm="$LP_permissive"
+  fi
+  LE_max="${LE_max:-10}"
+  LE_push="${LE_push:-0}"
+  LE_perm="${LE_perm:-0}"
+  LE_last="${LE_last:-none}"
+  LE_iter="${LE_iter:-0}"
+}
+
+cmd_loop() {
+  need git
+  loop_parse_args "$@"
+  local task="$LP_task"
 
   local branch repo main dir
   branch="$(slug "$task")"
@@ -750,31 +854,7 @@ cmd_loop() {
 
   [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
 
-  # Effective settings: new flags override; on resume, saved values carry
-  # forward; otherwise defaults.
-  local eff_max eff_until eff_push eff_perm eff_iter eff_started eff_last
-  if ((resuming)); then
-    eff_iter="$(loop_get "$dir" ITER)"
-    eff_started="$(loop_get "$dir" STARTED)"
-    eff_last="$(loop_get "$dir" LAST)"
-    eff_max="${max:-$(loop_get "$dir" MAX)}"
-    eff_until="${until_cmd:-$(loop_get "$dir" UNTIL)}"
-    if [[ "$push" == "1" ]]; then eff_push=1; else eff_push="$(loop_get "$dir" PUSH)"; fi
-    if [[ "$permissive" == "1" ]]; then eff_perm=1; else eff_perm="$(loop_get "$dir" PERMISSIVE)"; fi
-  else
-    eff_iter=0
-    eff_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    eff_last="none"
-    eff_max="${max:-10}"
-    eff_until="$until_cmd"
-    eff_push="$push"
-    eff_perm="$permissive"
-  fi
-  eff_max="${eff_max:-10}"
-  eff_push="${eff_push:-0}"
-  eff_perm="${eff_perm:-0}"
-  eff_last="${eff_last:-none}"
-  eff_iter="${eff_iter:-0}"
+  loop_effective_settings "$dir" "$resuming"
 
   # A fresh, non-permissive loop can't answer its own permission prompts —
   # nobody is there to. It will stall (see loop_run's stall detector) rather
@@ -782,13 +862,13 @@ cmd_loop() {
   # until you check back. Warn once, at start, instead of blocking: the
   # unattended case (scripts, agents, --no-attach) must never be asked to
   # answer a prompt no one is watching for.
-  if ((!resuming)) && [[ "$eff_perm" != "1" ]]; then
+  if ((!resuming)) && [[ "$LE_perm" != "1" ]]; then
     warn "starting without --dangerously-allow-all: the agent keeps its normal permission prompts."
     warn "unattended, nobody can answer them — any edit or gated command the brief needs will stall the loop after 2 rounds, not run it. See docs/vibe-loop.md#permissions-and-blast-radius."
   fi
 
   # First-run scaffolding (seed_loop and the commit skip cleanly on resume).
-  seed_loop "$dir" "$repo" "$branch" "$task" "$eff_until" "$eff_max" "$prompt"
+  seed_loop "$dir" "$repo" "$branch" "$task" "$LE_until" "$LE_max" "$LP_prompt"
   loop_ignore_state "$dir"
   # Commit LOOP.md so a no-progress round can restore it, and so the brief and
   # its log travel between machines. The runtime state file stays gitignored.
@@ -797,34 +877,31 @@ cmd_loop() {
     git -C "$dir" commit -q -m "vibe loop: start '$branch'"
   fi
 
-  loop_write_state "$dir" running starting "$eff_iter" "$eff_max" "$eff_last" \
-    "$eff_until" "$eff_push" "$eff_perm" "" "$eff_started"
+  loop_write_state "$dir" \
+    STATUS running PHASE starting ITER "$LE_iter" MAX "$LE_max" LAST "$LE_last" \
+    UNTIL "$LE_until" PUSH "$LE_push" PERMISSIVE "$LE_perm" PID "" STARTED "$LE_started"
 
   local env
   env="$(detect_env)"
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess
+    local sess run_cmd
     sess="$(tmux_session_name "$repo" "$branch")"
-    if tmux has-session -t "$sess" 2>/dev/null; then
+    # Run the loop inside tmux so it survives disconnect. __loop-run resolves
+    # everything from the state file just written.
+    run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    if tmux_ensure_session "$sess" "$dir" "$run_cmd"; then
       info "loop session already exists: $sess"
     else
       info "starting loop in tmux session: $sess"
-      tmux new-session -d -s "$sess" -c "$dir"
-      # Run the loop inside tmux so it survives disconnect. __loop-run resolves
-      # everything from the state file just written.
-      tmux send-keys -t "$sess" \
-        "$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")" C-m
     fi
-    if [[ "$no_attach" == "1" ]]; then
+    if [[ "$LP_no_attach" == "1" ]]; then
       # Started from a remote-controlled session or a script: attaching would
       # nest or hang the caller. The session runs either way.
       info "loop running detached in tmux session: $sess"
       info "watch it: vibe attach $task   ·   check on it: vibe status"
-    elif [[ -n "${TMUX:-}" ]]; then
-      tmux switch-client -t "$sess"
     else
-      tmux attach-session -t "$sess"
+      tmux_attach_or_switch "$sess"
     fi
   else
     warn "local environment — running the loop in the foreground (Ctrl-C to stop)."
@@ -860,16 +937,16 @@ loop_stop() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
   fi
-  loop_write_state "$dir" stopped idle \
-    "$(loop_get "$dir" ITER)" "$(loop_get "$dir" MAX)" "$(loop_get "$dir" LAST)" \
-    "$(loop_get "$dir" UNTIL)" "$(loop_get "$dir" PUSH)" "$(loop_get "$dir" PERMISSIVE)" \
-    "" "$(loop_get "$dir" STARTED)"
+  loop_write_state "$dir" \
+    STATUS stopped PHASE idle \
+    ITER "$(loop_get "$dir" ITER)" MAX "$(loop_get "$dir" MAX)" LAST "$(loop_get "$dir" LAST)" \
+    UNTIL "$(loop_get "$dir" UNTIL)" PUSH "$(loop_get "$dir" PUSH)" PERMISSIVE "$(loop_get "$dir" PERMISSIVE)" \
+    PID "" STARTED "$(loop_get "$dir" STARTED)"
   info "loop marked stopped"
 }
 
 # handoff_carries_content FILE — true when FILE holds anything beyond the
-# template's own scaffolding: blank lines, headings, '>' guidance quotes,
-# '- **Field:**' metadata, and single-line _placeholders_. The template keeps
+# template's own scaffolding (see VIBE_HANDOFF_SCAFFOLD_RE). The template keeps
 # every placeholder on one line precisely so this stays a line filter.
 # claude/hooks/session-start-handoff.sh applies the same filter to decide
 # whether to inject HANDOFF.md as session context — kept in lockstep by
@@ -877,7 +954,7 @@ loop_stop() {
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1
-  grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
+  grep -qvE "$VIBE_HANDOFF_SCAFFOLD_RE" "$f"
 }
 
 # ---------------------------------------------------------------------------
@@ -913,26 +990,20 @@ open_session() {
 
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess
+    local sess launch
     sess="$(tmux_session_name "$repo" "$branch")"
-    if tmux has-session -t "$sess" 2>/dev/null; then
+    # VIBE_RC_ON_START launches the agent with Remote Control already on, so
+    # the session is reachable from the phone without a later 'vibe rc'. This
+    # appends Claude Code's --remote-control flag; agents without it should
+    # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
+    launch="$VIBE_AGENT_CMD"
+    [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
+    if tmux_ensure_session "$sess" "$dir" "$launch"; then
       info "attaching to existing tmux session: $sess"
     else
       info "starting persistent tmux session: $sess"
-      tmux new-session -d -s "$sess" -c "$dir"
-      # VIBE_RC_ON_START launches the agent with Remote Control already on, so
-      # the session is reachable from the phone without a later 'vibe rc'. This
-      # appends Claude Code's --remote-control flag; agents without it should
-      # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
-      local launch="$VIBE_AGENT_CMD"
-      [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
-      tmux send-keys -t "$sess" "$launch" C-m
     fi
-    if [[ -n "${TMUX:-}" ]]; then
-      tmux switch-client -t "$sess"
-    else
-      tmux attach-session -t "$sess"
-    fi
+    tmux_attach_or_switch "$sess"
   else
     # local (Mac): no forced tmux, just move into the worktree and launch agent
     info "local environment — entering worktree (no tmux)."
@@ -961,7 +1032,7 @@ attach_ff() {
     warn "not pulling: $branch has uncommitted changes — attaching as-is"
     return 0
   fi
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     info "no upstream for $branch — attaching without pulling"
     return 0
   fi
@@ -970,26 +1041,24 @@ attach_ff() {
     return 0
   }
 
-  local local_rev remote_rev base n
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    info "$branch already up to date — attaching"
-  elif [[ "$local_rev" == "$base" ]]; then
-    n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
-    git -C "$dir" merge -q --ff-only '@{u}'
-    if [[ "$n" == 1 ]]; then
-      ok "fast-forwarded $branch (1 commit) — attaching"
-    else
-      ok "fast-forwarded $branch ($n commits) — attaching"
-    fi
-  elif [[ "$remote_rev" == "$base" ]]; then
-    info "$branch is ahead of remote — attaching ('vibe park' to push)"
-  else
-    warn "not pulling: $branch has diverged from remote — attaching as-is
+  local n
+  case "$(upstream_state "$dir")" in
+    insync) info "$branch already up to date — attaching" ;;
+    behind)
+      n="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+      git -C "$dir" merge -q --ff-only '@{u}'
+      if [[ "$n" == 1 ]]; then
+        ok "fast-forwarded $branch (1 commit) — attaching"
+      else
+        ok "fast-forwarded $branch ($n commits) — attaching"
+      fi
+      ;;
+    ahead) info "$branch is ahead of remote — attaching ('vibe park' to push)" ;;
+    diverged)
+      warn "not pulling: $branch has diverged from remote — attaching as-is
   ('vibe resume --rebase' reconciles once you have decided)"
-  fi
+      ;;
+  esac
   return 0
 }
 
@@ -1000,15 +1069,9 @@ cmd_attach() {
   local task="${1:-}"
   [[ -n "$task" ]] || task="$(pick_task)" || die "no task selected."
   [[ -n "$task" ]] || die "usage: vibe attach <task>"
-  local branch
-  branch="$(slug "$task")"
-  local repo
-  repo="$(repo_name)"
-  local dir
-  dir="$(worktree_dir "$repo" "$branch")"
-  [[ -d "$dir" ]] || die "no worktree for '$branch' (looked in $dir). Run: vibe start $task"
-  attach_ff "$dir"
-  open_session "$repo" "$branch" "$dir"
+  resolve_by_task "$task"
+  attach_ff "$R_dir"
+  open_session "$R_repo" "$R_branch" "$R_dir"
 }
 
 # handoff_age DIR — a short human age for DIR/HANDOFF.md ("3h", "2d"), or
@@ -1242,12 +1305,11 @@ cmd_done() {
     # information about to be orphaned on a branch nobody will look at again —
     # promote it (PROJECT_STATUS.md, repo instructions, commit body) or
     # discard it deliberately, but never silently.
-    # Same filter as handoff_carries_content() above and
-    # claude/hooks/session-start-handoff.sh — three copies kept in lockstep
-    # by comment; see the note on handoff_carries_content().
+    # Shares VIBE_HANDOFF_SCAFFOLD_RE with handoff_carries_content() above;
+    # claude/hooks/session-start-handoff.sh mirrors it literally.
     if [[ "$discard_handoff" != 1 ]] && handoff_carries_content "$dir/HANDOFF.md"; then
       warn "HANDOFF.md still carries content:"
-      grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$dir/HANDOFF.md" |
+      grep -vE "$VIBE_HANDOFF_SCAFFOLD_RE" "$dir/HANDOFF.md" |
         sed 's/^/    /' >&2
       die "refusing to remove $dir
   Promote what is durable, then delete the file ('git rm HANDOFF.md', then
@@ -1337,7 +1399,7 @@ sync_dir() {
   fi
 
   # 3. push with divergence guard
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     warn "no upstream set — pushing with -u"
     git -C "$dir" push -u origin "$branch"
     ok "pushed $branch (new upstream)"
@@ -1345,21 +1407,15 @@ sync_dir() {
   fi
 
   git -C "$dir" fetch -q
-  local local_rev remote_rev base
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    ok "already in sync"
-  elif [[ "$local_rev" == "$base" ]]; then
-    die "remote is ahead. Run 'vibe resume' here first, then sync."
-  elif [[ "$remote_rev" == "$base" ]]; then
-    git -C "$dir" push -q origin "$branch"
-    ok "pushed $branch"
-  else
-    die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync."
-  fi
+  case "$(upstream_state "$dir")" in
+    insync) ok "already in sync" ;;
+    behind) die "remote is ahead. Run 'vibe resume' here first, then sync." ;;
+    ahead)
+      git -C "$dir" push -q origin "$branch"
+      ok "pushed $branch"
+      ;;
+    diverged) die "branch and remote have DIVERGED. Resolve manually (git pull --rebase), then sync." ;;
+  esac
 }
 
 # vibe sync [<task>] — sync the cwd's worktree, or the named task's worktree.
@@ -1381,32 +1437,30 @@ ff_worktree() {
   [[ -z "$(git -C "$dir" status --porcelain)" ]] ||
     die "working tree has uncommitted changes. Commit or 'vibe sync' first."
 
-  if ! git -C "$dir" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
     warn "no upstream for $branch — nothing to pull"
     return
   fi
 
   git -C "$dir" fetch -q
-  local local_rev remote_rev base
-  local_rev="$(git -C "$dir" rev-parse @)"
-  remote_rev="$(git -C "$dir" rev-parse '@{u}')"
-  base="$(git -C "$dir" merge-base @ '@{u}')"
-
-  if [[ "$local_rev" == "$remote_rev" ]]; then
-    ok "already up to date"
-  elif [[ "$local_rev" == "$base" ]]; then
-    git -C "$dir" merge -q --ff-only '@{u}'
-    ok "fast-forwarded $branch to remote"
-  elif [[ "$remote_rev" == "$base" ]]; then
-    warn "you are ahead of remote — nothing to pull. Run 'vibe sync' to push."
-  elif [[ "$rebase" == 1 ]]; then
-    warn "branch and remote have diverged — rebasing onto @{u} (--rebase)."
-    git -C "$dir" pull --rebase
-    ok "rebased $branch onto remote"
-  else
-    die "branch and remote have DIVERGED. Resolve manually, then resume
+  case "$(upstream_state "$dir")" in
+    insync) ok "already up to date" ;;
+    behind)
+      git -C "$dir" merge -q --ff-only '@{u}'
+      ok "fast-forwarded $branch to remote"
+      ;;
+    ahead) warn "you are ahead of remote — nothing to pull. Run 'vibe sync' to push." ;;
+    diverged)
+      if [[ "$rebase" == 1 ]]; then
+        warn "branch and remote have diverged — rebasing onto @{u} (--rebase)."
+        git -C "$dir" pull --rebase
+        ok "rebased $branch onto remote"
+      else
+        die "branch and remote have DIVERGED. Resolve manually, then resume
   (or opt into 'vibe resume --rebase' once you have decided)."
-  fi
+      fi
+      ;;
+  esac
 }
 
 # vibe resume [--rebase] [<task>] — fast-forward pull only, unless --rebase.
@@ -1462,17 +1516,17 @@ cmd_rc() {
 
   need git
   need tmux
-  local repo branch sess dir
-  repo="$(repo_name)"
-  branch="$(slug "$task")"
-  sess="$(tmux_session_name "$repo" "$branch")"
-  dir="$(worktree_dir "$repo" "$branch")"
+  # resolve_by_task confirms the worktree really exists before we try to reach
+  # its session — cmd_rc used to derive the names by hand and skip that check.
+  resolve_by_task "$task"
+  local sess
+  sess="$(tmux_session_name "$R_repo" "$R_branch")"
   tmux has-session -t "$sess" 2>/dev/null ||
     die "no tmux session '$sess' — is the task running? Try: vibe attach $task"
 
   # A loop session runs the runner, not an interactive agent at a prompt.
   # Sending /rc into it would land mid-iteration on the runner, not the agent.
-  if loop_active "$dir"; then
+  if loop_active "$R_dir"; then
     die "'$sess' is running a loop, not an interactive agent — there is no prompt
   to send /rc to. Watch it with 'vibe attach $task' instead."
   fi
