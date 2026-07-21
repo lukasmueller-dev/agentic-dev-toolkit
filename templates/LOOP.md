@@ -5,6 +5,19 @@
 > is handed every round, so keep the goal and done-criteria precise — they are
 > the only instructions it gets.
 
+## How to work a round
+
+Do the **smallest complete task** that moves the goal forward, then stop and
+let the next round pick up the rest. Do not try to finish everything in one
+round. Each round starts with a fresh, empty context and reads only this file,
+so a round that stays small stays coherent — and its work lands as its own
+commit, which is far easier to review or revert than one sprawling change.
+
+Leave the tree in a working state before you stop: a round's changes are
+committed as they are, so a half-applied edit is what the next round inherits.
+If something is worth remembering across rounds, write it into the iteration
+log at the bottom — nothing else survives.
+
 - **Repo:** <repo>
 - **Branch:** `<branch>`
 - **Worktree:** `<worktree>`

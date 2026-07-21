@@ -17,7 +17,7 @@ That creates the `port-the-config-parser-to-the-new-schema` branch and
 worktree, seeds `LOOP.md`, and starts iterating: agent, commit, `npm test`.
 When the tests pass it stops.
 
-## The three ways it stops
+## The four ways it stops
 
 Every loop is bounded. It ends the moment any of these is true:
 
@@ -25,7 +25,16 @@ Every loop is bounded. It ends the moment any of these is true:
 | ----------- | ------------------------------------------------------------- |
 | **success** | the `--until` command exits `0`                               |
 | **max**     | `--max` iterations have run (default 10)                       |
+| **time up** | the `--for` wall-clock budget is spent (unset by default)      |
 | **stall**   | two rounds in a row produced no new commit and no diff        |
+
+`--for` takes a short duration — `45s`, `90m`, `6h`, `2d` — and bounds an
+overnight run by the clock rather than by a round count you have to guess:
+`vibe loop "..." --for 8h`. It is checked after the round's push, so the last
+iteration is never left unpushed, and the deadline is stored with the rest of
+the loop state, so resuming a killed loop honours the original deadline instead
+of restarting the clock. Give a loop both `--max` and `--for` and whichever
+comes first ends it.
 
 `--until` is optional; without it a loop runs until it maxes out or stalls.
 Stall detection is what saves you from watching an agent spin uselessly: if it
@@ -117,6 +126,30 @@ and your network. A permissive agent can touch anything your account can, not
 just the files in the worktree. `--dangerously-allow-all` refuses to start
 unless `VIBE_LOOP_PERMISSIVE_ARGS` is set, so it can never be a silent default.
 
+### Bounding it: `--sandbox`
+
+The answer to that blast radius is not to skip fewer prompts, it is to make the
+prompts unnecessary by confining what a round can reach:
+
+```bash
+vibe loop "..." --sandbox --dangerously-allow-all
+```
+
+`--sandbox` appends `VIBE_LOOP_SANDBOX_ARGS` to the agent invocation — your
+agent's "confine this run" flags, typically restricting filesystem writes to the
+worktree and network access to an allowlist. It composes with
+`--dangerously-allow-all` rather than replacing it: permissive says *don't ask*,
+sandbox says *and you couldn't have done it anyway*. That pairing is the one to
+reach for when you leave a loop running overnight, and the startup warning for a
+fresh non-permissive loop recommends it.
+
+Like its sibling it is **empty by default and names no agent** — every agent
+spells its sandbox differently, so the value is yours to set — and `--sandbox`
+refuses to start unless `VIBE_LOOP_SANDBOX_ARGS` is set, rather than silently
+running unconfined. The choice is recorded in `.vibe-loop.state`, so a loop
+resumed after a kill comes back sandboxed without your having to remember the
+flag.
+
 ## Where it runs
 
 - **Server** — the loop runs in a tmux session named like any other task, so it
@@ -163,6 +196,7 @@ that need your attention. Unset, it is silent. See
 | ---------------------------- | ------- | ------------------------------------------ |
 | `VIBE_AGENT_HEADLESS_ARGS`   | `-p`    | Args that make the agent run one-shot      |
 | `VIBE_LOOP_PERMISSIVE_ARGS`  | unset   | Args for `--dangerously-allow-all`         |
+| `VIBE_LOOP_SANDBOX_ARGS`     | unset   | Args for `--sandbox`                       |
 
 `VIBE_AGENT_HEADLESS_ARGS` is shared with `vibe park` — it is the flag set that
 turns your agent into a one-shot, non-interactive run, with the prompt appended
