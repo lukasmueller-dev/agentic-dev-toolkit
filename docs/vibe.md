@@ -32,6 +32,13 @@ On the **server** this opens a tmux session named `vibe-<repo>-<branch>` and
 starts the agent inside it. On the **Mac** it just drops you into the worktree
 and launches the agent — no tmux, because nothing needs to survive.
 
+When the task grew out of a discussion in another agent session, the
+`handoff-brief` skill ([`skills/handoff-brief/`](../skills/handoff-brief/))
+bridges the two: it distills that conversation into the task's `HANDOFF.md`,
+stages it on the branch, and pushes — so the session `vibe start` opens picks
+up the plan instead of starting cold. It is the interactive sibling of
+[`loop-brief`](vibe-loop.md).
+
 ## Commands
 
 The verbs are layered by how often you reach for them.
