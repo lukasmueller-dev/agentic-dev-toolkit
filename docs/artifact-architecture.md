@@ -76,16 +76,19 @@ logs, or anything about other tasks. History is git's job; rationale is the
 commit body's job.
 
 When the task ends the baton dies: `vibe done` refuses to remove a worktree
-whose `HANDOFF.md` still carries content beyond its own headings. Promote
-what is durable (see below), clear the file back to its headings, sync, then
-finish. `--discard-handoff` is the explicit override meaning "I looked;
-nothing in it is worth keeping."
+whose `HANDOFF.md` still carries content beyond its own headings — and, once
+cleared, refuses again while the file itself is still on the branch, where a
+merge would land it in the PR diff and stray it onto the default branch.
+Promote what is durable (see below), delete the file (`git rm HANDOFF.md`,
+then sync), then finish. `--discard-handoff` is the explicit override
+meaning "I looked; nothing in it is worth keeping — and if the file stays on
+the branch, that is deliberate."
 
 ### `LOOP.md` (layer 1)
 
 The brief handed to an unattended loop's agent every round (`vibe loop`),
 plus its iteration log. Task-scoped like the handoff, with the same
-end-of-task discipline in a different shape. Nothing in it can be silently
+end-of-task discipline. Nothing in it can be silently
 orphaned — brief and log are committed each round — and its content (goal,
 constraints, one-line round notes) is not the kind that gets promoted. But
 the file itself is start-of-task input, not deliverable: left on the branch,

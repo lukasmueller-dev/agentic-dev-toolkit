@@ -115,9 +115,10 @@ vibe start <task>     # here — on the server this is a tmux session that survi
 vibe attach <task>    # from the other machine, after a git fetch happens automatically
 ```
 
-with one note: the session that picks this up must clear the handoff back to
-its headings before finishing (`vibe done` enforces it), so the brief is
-guaranteed to be consumed and promoted, never silently dropped.
+with one note: the session that picks this up must promote what is durable
+and delete the handoff before finishing (`vibe done` enforces it), so the
+brief is guaranteed to be consumed and promoted, never silently dropped —
+and never merged onto the default branch as a stray file.
 
 **Done means:** the handoff is pushed and the command is printed. Do not
 start the session, and do not keep refining after approval.

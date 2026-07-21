@@ -4,8 +4,8 @@
 > next session should do. Overwrite it each session — never append. History
 > lives in git and rationale in commit bodies, not here. Before the task
 > ends, promote anything durable (project status, repo instructions, commit
-> body) and clear this file back to its headings: a finished task hands
-> nothing off.
+> body) and delete this file from the branch: a finished task hands
+> nothing off, and merged, a leftover baton strays onto the default branch.
 
 - **Repo:** <repo>
 - **Branch:** `<branch>`

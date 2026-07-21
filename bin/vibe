@@ -26,9 +26,10 @@
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty, holds unpushed commits, has a loop
 #                         still running (--stop kills it first), if
-#                         HANDOFF.md still carries content — a finished task
-#                         hands nothing off, so promote or discard first
-#                         (--discard-handoff skips only the handoff check) —
+#                         HANDOFF.md still carries content or is still on the
+#                         branch at all — a finished task hands nothing off,
+#                         so promote what matters, then delete the file
+#                         (--discard-handoff skips only the handoff checks) —
 #                         or if LOOP.md is still on the branch, where it would
 #                         land in the PR diff; delete it and sync, or
 #                         --keep-brief to leave it there deliberately.
@@ -1249,9 +1250,20 @@ cmd_done() {
       grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$dir/HANDOFF.md" |
         sed 's/^/    /' >&2
       die "refusing to remove $dir
-  Promote what is durable, clear HANDOFF.md back to its headings, and
-  'vibe sync' — or re-run with --discard-handoff if none of it is worth
+  Promote what is durable, then delete the file ('git rm HANDOFF.md', then
+  'vibe sync') — or re-run with --discard-handoff if none of it is worth
   keeping."
+    fi
+
+    # Even cleared, the baton is not gone until the file is. The dirty and
+    # unpushed guards above mean a HANDOFF.md that still exists here is
+    # committed — merged, it lands in the PR diff and strays onto the default
+    # branch as an empty husk. Same leak the LOOP.md guard below stops, and
+    # exactly how this repo's own main grew a stray HANDOFF.md (PR #14).
+    if [[ "$discard_handoff" != 1 && -f "$dir/HANDOFF.md" ]]; then
+      die "HANDOFF.md is still on branch '$branch' — merged, it lands in the PR diff.
+  Delete it ('git rm HANDOFF.md', then 'vibe sync') — or re-run with
+  --discard-handoff to leave it on the branch deliberately."
     fi
 
     # The brief is start-of-task input, not deliverable. Left on the branch it
