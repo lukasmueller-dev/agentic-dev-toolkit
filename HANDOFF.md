@@ -1,4 +1,4 @@
-# Handoff — agentic-dev-toolkit / protect-main-pre-push-hook
+# Handoff — agentic-dev-toolkit / loop-permission-warning
 
 > The baton. Present tense only: where the work stands *now* and what the
 > next session should do. Overwrite it each session — never append. History
@@ -8,8 +8,8 @@
 > nothing off.
 
 - **Repo:** agentic-dev-toolkit
-- **Branch:** `protect-main-pre-push-hook`
-- **Worktree:** /root/git/worktrees/agentic-dev-toolkit/protect-main-pre-push-hook
+- **Branch:** `loop-permission-warning`
+- **Worktree:** /root/git/worktrees/agentic-dev-toolkit/loop-permission-warning
 - **Last updated:** 2026-07-21 · server (srv1841294)
 
 ## State

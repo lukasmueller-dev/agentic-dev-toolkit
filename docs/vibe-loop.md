@@ -93,6 +93,8 @@ refused, so you cannot accidentally run two.
 A headless agent cannot answer a permission prompt — there is no one to answer
 it. By default `vibe loop` runs the agent with its own default permission
 behaviour, which means a round can block on a prompt it cannot satisfy.
+Starting a fresh loop this way prints a warning to say so, since the loop will
+run — and stall, per the table above — rather than refuse to start.
 
 To let a loop actually run unattended you can opt into a permissive mode:
 
