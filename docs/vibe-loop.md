@@ -214,9 +214,10 @@ branch — delete it first (`git rm LOOP.md`, then `vibe sync`), or pass
 ## Notifications
 
 Loop endings reuse the same ntfy.sh mechanism as the
-[phone notifications](notifications.md): set `VIBE_NTFY_TOPIC` and a finished,
-stalled, or maxed-out loop pushes to your phone — high priority for the two
-that need your attention. Unset, it is silent. See
+[phone notifications](notifications.md): set `VIBE_NTFY_TOPIC` and every loop
+ending pushes to your phone — success, maxed, time-up, stalled, or stopped on a
+diverged remote — high priority for the four that need your attention. With
+`--pr`, the push carries the PR's URL. Unset, it is silent. See
 [notifications.md](notifications.md) for the topic.
 
 ## Configuration
