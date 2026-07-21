@@ -160,6 +160,60 @@ handoff_carries_content() {
   grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
 }
 
+# stage_worktree BRANCH WHAT — set STAGED_DIR to BRANCH's worktree, creating it
+# when it does not exist and refusing while a loop runner owns it. WHAT names
+# the document in that refusal ("brief", "handoff"), which is the only thing the
+# three create paths said differently. Editing a file under a live runner races
+# the runner's own commit of that file, so this refuses rather than warns.
+#
+# Sets a global instead of echoing the path deliberately: 'git worktree add'
+# writes its progress to stdout, and a command substitution here would swallow
+# that into the variable instead of letting it reach the caller's stdout.
+stage_worktree() {
+  local branch="$1" what="$2"
+  STAGED_DIR="$(worktree_dir "$(repo_name)" "$branch")"
+  if [[ -d "$STAGED_DIR" ]] && loop_live "$STAGED_DIR"; then
+    die "a loop is running for '$branch' — never edit a $what under a live runner."
+  fi
+  if [[ ! -d "$STAGED_DIR" ]]; then
+    ensure_worktree "$(main_repo_root)" "$branch" "$STAGED_DIR"
+  fi
+}
+
+# publish_brief DIR BRANCH COMMIT_MSG PUSH_HINT — validate DIR's LOOP.md, then
+# commit it (with HANDOFF.md when present) and push BRANCH.
+#
+# The validation is the point: a brief ships only once it is finished, meaning
+# no token survived the render and the two sections the loop actually reads
+# were written. The iteration log keeps its placeholder — the loop fills that
+# in. Both brief scripts had this written out identically; only the commit
+# message and the push-failure hint ever differed, so those are arguments.
+publish_brief() {
+  local dir="$1" branch="$2" msg="$3" push_hint="$4"
+  local f="$dir/LOOP.md"
+
+  if grep -qE '<(repo|branch|worktree|goal|until|max|date|machine)>' "$f"; then
+    die "LOOP.md still contains unrendered <tokens> — finish the brief first."
+  fi
+  local heading
+  for heading in '## Done when' '## Constraints'; do
+    grep -qxF "$heading" "$f" ||
+      die "LOOP.md lost its '$heading' section — restore the template structure."
+    if section_unfinished "$f" "$heading"; then
+      die "the '$heading' section is still the template placeholder — write it before publishing."
+    fi
+  done
+
+  git -C "$dir" add LOOP.md
+  if [[ -f "$dir/HANDOFF.md" ]]; then git -C "$dir" add HANDOFF.md; fi
+  if [[ -n "$(git -C "$dir" status --porcelain -- LOOP.md HANDOFF.md)" ]]; then
+    git -C "$dir" commit -q -m "$msg"
+    info "committed the brief"
+  fi
+  git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
+  info "pushed '$branch' to origin"
+}
+
 # section_unfinished FILE HEADING — true while the section under HEADING is
 # empty or still holds only the template's _italic_ placeholder paragraph
 # (which may wrap across lines: it starts with '_' and ends with '_').
