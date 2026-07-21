@@ -140,30 +140,8 @@ cmd_publish() {
     die "a loop is running for '$branch' — never edit a brief under a live runner."
   fi
 
-  # The brief must be finished before it ships: no unrendered tokens, and the
-  # two sections the loop depends on actually written. The iteration log keeps
-  # its placeholder — the loop fills that in.
-  if grep -qE '<(repo|branch|worktree|goal|until|max|date|machine)>' "$f"; then
-    die "LOOP.md still contains unrendered <tokens> — finish the brief first."
-  fi
-  local heading
-  for heading in '## Done when' '## Constraints'; do
-    grep -qxF "$heading" "$f" ||
-      die "LOOP.md lost its '$heading' section — restore the template structure."
-    if section_unfinished "$f" "$heading"; then
-      die "the '$heading' section is still the template placeholder — write it before publishing."
-    fi
-  done
-
-  git -C "$dir" add LOOP.md
-  [[ -f "$dir/HANDOFF.md" ]] && git -C "$dir" add HANDOFF.md
-  if [[ -n "$(git -C "$dir" status --porcelain -- LOOP.md HANDOFF.md)" ]]; then
-    git -C "$dir" commit -q -m "vibe loop: brief 'PR #$pr is mergeable'"
-    info "committed the brief"
-  fi
-  git -C "$dir" push -q -u origin "$branch" ||
-    die "push failed — resolve it by hand (never force-push a PR branch)."
-  info "pushed '$branch' to origin"
+  publish_brief "$dir" "$branch" "vibe loop: brief 'PR #$pr is mergeable'" \
+    "push failed — resolve it by hand (never force-push a PR branch)."
 
   echo "STATE=published"
   echo "PR=$pr"
