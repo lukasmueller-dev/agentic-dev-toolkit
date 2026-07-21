@@ -4,6 +4,9 @@
 # and the guards other verbs grew around it. Every test drives a STUB agent on
 # PATH; none invokes a real agent.
 
+# 'run !' (asserting a command fails) needs 1.5.0.
+bats_require_minimum_version 1.5.0
+
 load helper
 
 setup() { git_env; }
@@ -15,7 +18,9 @@ setup() { git_env; }
 #   noop             — exit without changing anything
 # The loop hands the prompt as the final argument (like `vibe park`), so the
 # stub ignores its args. It counts invocations in $STUB_COUNT so an --until
-# check can watch it.
+# check can watch it, and — when $STUB_ARGS is set — records the argv it was
+# handed, one argument per line, so a test can assert which configured flag
+# sets reached the agent.
 # ---------------------------------------------------------------------------
 stub_agent() {
   local path="$BATS_TEST_TMPDIR/agent.sh"
@@ -23,6 +28,7 @@ stub_agent() {
 #!/usr/bin/env bash
 n=$(($(cat "$STUB_COUNT" 2>/dev/null || echo 0) + 1))
 echo "$n" >"$STUB_COUNT"
+if [ -n "${STUB_ARGS:-}" ]; then printf '%s\n' "$@" >>"$STUB_ARGS"; fi
 [ "${STUB_MODE:-change}" = noop ] && exit 0
 echo "iteration $n" >>progress.txt
 exit 0
@@ -39,7 +45,9 @@ loop_vibe() {
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     STUB_COUNT="$BATS_TEST_TMPDIR/count" \
     STUB_MODE="${STUB_MODE-}" \
+    STUB_ARGS="${STUB_ARGS-}" \
     VIBE_NTFY_TOPIC="${VIBE_NTFY_TOPIC-}" \
+    VIBE_LOOP_SANDBOX_ARGS="${VIBE_LOOP_SANDBOX_ARGS-}" \
     "$VIBE" "$@"
 }
 
@@ -388,4 +396,77 @@ EOF
   run loop_vibe loop "danger task" --dangerously-allow-all --max 1
   [ "$status" -eq 1 ]
   [[ "$output" == *"VIBE_LOOP_PERMISSIVE_ARGS"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# --sandbox: the third source of agent arguments. Empty by default, so the flag
+# refuses rather than silently running the agent unconfined.
+# ---------------------------------------------------------------------------
+@test "loop: --sandbox refuses without sandbox args configured" {
+  cd "$(make_repo proj)"
+  stub_agent
+  run loop_vibe loop "boxed task" --sandbox --max 1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"VIBE_LOOP_SANDBOX_ARGS"* ]]
+}
+
+@test "loop: --sandbox appends VIBE_LOOP_SANDBOX_ARGS to the agent invocation" {
+  cd "$(make_repo proj)"
+  stub_agent
+  STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
+    VIBE_LOOP_SANDBOX_ARGS="--stub-box /tmp" \
+    run loop_vibe loop "boxed task" --sandbox --until false --max 1
+  [ "$status" -eq 0 ]
+  # word-split into two arguments, like its siblings
+  grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
+  grep -qx -- "/tmp" "$BATS_TEST_TMPDIR/argv"
+}
+
+@test "loop: without --sandbox the agent gets no sandbox args" {
+  cd "$(make_repo proj)"
+  stub_agent
+  STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
+    VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
+    run loop_vibe loop "plain task" --until false --max 1
+  [ "$status" -eq 0 ]
+  run ! grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
+  [ "$(loop_state plain-task SANDBOX)" = 0 ]
+}
+
+@test "loop: a resumed loop stays sandboxed without repeating the flag" {
+  cd "$(make_repo proj)"
+  stub_agent
+  VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
+    loop_vibe loop "resume boxed" --sandbox --until false --max 1
+  [ "$(loop_state resume-boxed SANDBOX)" = 1 ]
+
+  local sf
+  sf="$(wt resume-boxed)/.vibe-loop.state"
+  set_state "$sf" STATUS running
+  set_state "$sf" PID 99999999
+
+  STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
+    VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
+    run loop_vibe loop "resume boxed" --until false --max 2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"resuming loop"* ]]
+  grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
+  [ "$(loop_state resume-boxed SANDBOX)" = 1 ]
+}
+
+@test "loop: a state file written before --sandbox existed still resumes" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "legacy task" --until false --max 1
+  local sf
+  sf="$(wt legacy-task)/.vibe-loop.state"
+  # an old runner's state: no SANDBOX key at all
+  grep -v '^SANDBOX=' "$sf" >"$sf.t" && mv "$sf.t" "$sf"
+  set_state "$sf" STATUS running
+  set_state "$sf" PID 99999999
+
+  run loop_vibe loop "legacy task" --until false --max 2
+  [ "$status" -eq 0 ]
+  [ "$(loop_state legacy-task ITER)" = 2 ]
+  [ "$(loop_state legacy-task SANDBOX)" = 0 ]
 }

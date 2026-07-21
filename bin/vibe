@@ -38,7 +38,7 @@
 #
 # Unattended:
 #   vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push]
-#                     [--no-attach] [--dangerously-allow-all]
+#                     [--no-attach] [--sandbox] [--dangerously-allow-all]
 #                         Create branch+worktree like start, seed LOOP.md, then
 #                         run the agent headlessly round after round until the
 #                         --until check passes, --max rounds pass, or it stalls.
@@ -95,6 +95,7 @@ _env_worktree_root="${VIBE_WORKTREE_ROOT:-}"
 _env_agent_cmd="${VIBE_AGENT_CMD:-}"
 _env_agent_headless_args="${VIBE_AGENT_HEADLESS_ARGS:-}"
 _env_loop_permissive_args="${VIBE_LOOP_PERMISSIVE_ARGS:-}"
+_env_loop_sandbox_args="${VIBE_LOOP_SANDBOX_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
 _env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
@@ -116,6 +117,12 @@ VIBE_AGENT_HEADLESS_ARGS="${_env_agent_headless_args:-${VIBE_AGENT_HEADLESS_ARGS
 # --dangerously-allow-all: the agent's "skip every permission prompt" mode.
 # Empty by default; see docs/vibe-loop.md for the blast radius before setting it.
 VIBE_LOOP_PERMISSIVE_ARGS="${_env_loop_permissive_args:-${VIBE_LOOP_PERMISSIVE_ARGS:-}}"
+# Extra args appended to a loop's agent invocation ONLY when it is started with
+# --sandbox: the agent's "confine what I can touch" mode, which is what makes an
+# unattended loop safe to leave permissive. Empty by default and deliberately
+# agent-agnostic — every agent spells its sandbox differently, so the value is
+# yours to configure; see docs/vibe-loop.md.
+VIBE_LOOP_SANDBOX_ARGS="${_env_loop_sandbox_args:-${VIBE_LOOP_SANDBOX_ARGS:-}}"
 VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
 VIBE_SERVER_HOSTNAME="${_env_server_hostname:-${VIBE_SERVER_HOSTNAME:-}}"
 VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
@@ -123,7 +130,8 @@ VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
 # a task is reachable from the Claude app without typing /rc first. Server only.
 VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
-  _env_loop_permissive_args _env_tmux_prefix _env_server_hostname \
+  _env_loop_permissive_args _env_loop_sandbox_args \
+  _env_tmux_prefix _env_server_hostname \
   _env_ntfy_topic _env_rc_on_start
 
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
@@ -685,7 +693,7 @@ run_agent_headless() {
 # single entry point for both a fresh start and a resume-after-kill.
 run_loop() {
   local dir="$1" repo="$2" branch="$3"
-  local status phase iter max last until_cmd push permissive started pid
+  local status phase iter max last until_cmd push permissive sandbox started pid
   status="running"
   phase="starting"
   iter="$(loop_get "$dir" ITER)"
@@ -699,6 +707,8 @@ run_loop() {
   push="${push:-0}"
   permissive="$(loop_get "$dir" PERMISSIVE)"
   permissive="${permissive:-0}"
+  sandbox="$(loop_get "$dir" SANDBOX)"
+  sandbox="${sandbox:-0}"
   started="$(loop_get "$dir" STARTED)"
   started="${started:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   pid="$$"
@@ -713,6 +723,10 @@ run_loop() {
     # shellcheck disable=SC2206
     argv+=($VIBE_LOOP_PERMISSIVE_ARGS)
   fi
+  if [[ "$sandbox" == "1" ]]; then
+    # shellcheck disable=SC2206
+    argv+=($VIBE_LOOP_SANDBOX_ARGS)
+  fi
 
   local no_progress=0 log
   log="$(agent_log_path "$dir")"
@@ -724,7 +738,7 @@ run_loop() {
     phase="iterating"
     loop_write_state "$dir" \
       STATUS running PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" PID "$pid" STARTED "$started"
     info "iteration $iter/$max"
 
     local before after
@@ -782,7 +796,7 @@ run_loop() {
     fi
     loop_write_state "$dir" \
       STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
+      UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" PID "$pid" STARTED "$started"
 
     if [[ "$status" == "success" ]]; then
       ok "loop done: stop check passed on iteration $iter"
@@ -809,16 +823,17 @@ run_loop() {
   phase="idle"
   loop_write_state "$dir" \
     STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-    UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" PID "$pid" STARTED "$started"
+    UNTIL "$until_cmd" PUSH "$push" PERMISSIVE "$permissive" SANDBOX "$sandbox" PID "$pid" STARTED "$started"
 }
 
 # loop_parse_args ARGS... — parse the 'vibe loop' flag surface into LP_*
 # globals and validate it, so cmd_loop reads as a sequence of steps rather than
 # opening with a hundred-line getopts. Sets: LP_task LP_until LP_max LP_prompt
-# LP_push LP_permissive LP_no_attach. Dies on a bad flag or combination.
+# LP_push LP_permissive LP_sandbox LP_no_attach. Dies on a bad flag or
+# combination.
 loop_parse_args() {
-  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]"
-  LP_task="" LP_until="" LP_max="" LP_prompt="" LP_push=0 LP_permissive=0 LP_no_attach=0
+  local usage="usage: vibe loop <task> [--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--sandbox] [--dangerously-allow-all]"
+  LP_task="" LP_until="" LP_max="" LP_prompt="" LP_push=0 LP_permissive=0 LP_sandbox=0 LP_no_attach=0
   while (($#)); do
     case "$1" in
       --until)
@@ -853,6 +868,10 @@ loop_parse_args() {
         LP_no_attach=1
         shift
         ;;
+      --sandbox)
+        LP_sandbox=1
+        shift
+        ;;
       --dangerously-allow-all)
         LP_permissive=1
         shift
@@ -870,6 +889,9 @@ loop_parse_args() {
   if [[ "$LP_permissive" == "1" && -z "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
     die "--dangerously-allow-all needs VIBE_LOOP_PERMISSIVE_ARGS set (see docs/vibe-loop.md)."
   fi
+  if [[ "$LP_sandbox" == "1" && -z "$VIBE_LOOP_SANDBOX_ARGS" ]]; then
+    die "--sandbox needs VIBE_LOOP_SANDBOX_ARGS set (see docs/vibe-loop.md)."
+  fi
   # Checked before any scaffolding: locally the loop runs in the foreground,
   # so a late refusal would leave a seeded worktree and a stale state file.
   if [[ "$LP_no_attach" == "1" && "$(detect_env)" != "server" ]]; then
@@ -881,7 +903,7 @@ loop_parse_args() {
 # loop_effective_settings DIR RESUMING — resolve the settings a loop actually
 # runs with into LE_* globals: a new flag (LP_*) overrides, a resume carries the
 # saved value forward, otherwise a default fills in. Sets: LE_iter LE_started
-# LE_last LE_max LE_until LE_push LE_perm.
+# LE_last LE_max LE_until LE_push LE_perm LE_sandbox.
 loop_effective_settings() {
   local dir="$1" resuming="$2"
   if ((resuming)); then
@@ -892,6 +914,7 @@ loop_effective_settings() {
     LE_until="${LP_until:-$(loop_get "$dir" UNTIL)}"
     if [[ "$LP_push" == "1" ]]; then LE_push=1; else LE_push="$(loop_get "$dir" PUSH)"; fi
     if [[ "$LP_permissive" == "1" ]]; then LE_perm=1; else LE_perm="$(loop_get "$dir" PERMISSIVE)"; fi
+    if [[ "$LP_sandbox" == "1" ]]; then LE_sandbox=1; else LE_sandbox="$(loop_get "$dir" SANDBOX)"; fi
   else
     LE_iter=0
     LE_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -900,10 +923,12 @@ loop_effective_settings() {
     LE_until="$LP_until"
     LE_push="$LP_push"
     LE_perm="$LP_permissive"
+    LE_sandbox="$LP_sandbox"
   fi
   LE_max="${LE_max:-10}"
   LE_push="${LE_push:-0}"
   LE_perm="${LE_perm:-0}"
+  LE_sandbox="${LE_sandbox:-0}"
   LE_last="${LE_last:-none}"
   LE_iter="${LE_iter:-0}"
 }
@@ -942,6 +967,7 @@ cmd_loop() {
   if ((!resuming)) && [[ "$LE_perm" != "1" ]]; then
     warn "starting without --dangerously-allow-all: the agent keeps its normal permission prompts."
     warn "unattended, nobody can answer them — any edit or gated command the brief needs will stall the loop after 2 rounds, not run it. See docs/vibe-loop.md#permissions-and-blast-radius."
+    warn "prefer '--sandbox --dangerously-allow-all' over --dangerously-allow-all alone: the sandbox bounds what a round without prompts can reach."
   fi
 
   # First-run scaffolding (seed_loop and the commit skip cleanly on resume).
@@ -956,7 +982,8 @@ cmd_loop() {
 
   loop_write_state "$dir" \
     STATUS running PHASE starting ITER "$LE_iter" MAX "$LE_max" LAST "$LE_last" \
-    UNTIL "$LE_until" PUSH "$LE_push" PERMISSIVE "$LE_perm" PID "" STARTED "$LE_started"
+    UNTIL "$LE_until" PUSH "$LE_push" PERMISSIVE "$LE_perm" SANDBOX "$LE_sandbox" \
+    PID "" STARTED "$LE_started"
 
   local env
   env="$(detect_env)"
@@ -1018,7 +1045,7 @@ loop_stop() {
     STATUS stopped PHASE idle \
     ITER "$(loop_get "$dir" ITER)" MAX "$(loop_get "$dir" MAX)" LAST "$(loop_get "$dir" LAST)" \
     UNTIL "$(loop_get "$dir" UNTIL)" PUSH "$(loop_get "$dir" PUSH)" PERMISSIVE "$(loop_get "$dir" PERMISSIVE)" \
-    PID "" STARTED "$(loop_get "$dir" STARTED)"
+    SANDBOX "$(loop_get "$dir" SANDBOX)" PID "" STARTED "$(loop_get "$dir" STARTED)"
   info "loop marked stopped"
 }
 
@@ -1822,6 +1849,10 @@ cmd_doctor() {
     d_wn "loop perms  VIBE_LOOP_PERMISSIVE_ARGS set — 'vibe loop --dangerously-allow-all' will skip the agent's permission prompts"
   fi
 
+  if [[ -n "$VIBE_LOOP_SANDBOX_ARGS" ]]; then
+    d_ok "loop sandbox VIBE_LOOP_SANDBOX_ARGS set — 'vibe loop --sandbox' will confine the agent"
+  fi
+
   case "$VIBE_RC_ON_START" in
     0) d_ok "rc launch   off (enable with VIBE_RC_ON_START=1 on the server)" ;;
     1)
@@ -1980,7 +2011,7 @@ cmd_help() {
   blank
 
   help_section "Unattended:"
-  help_cmd "loop <task>" "[--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--dangerously-allow-all]" \
+  help_cmd "loop <task>" "[--until <cmd>] [--max <n>] [--prompt <file>] [--push] [--no-attach] [--sandbox] [--dangerously-allow-all]" \
     "Create branch+worktree like start, seed LOOP.md, then" \
     "run the agent headlessly round after round until the" \
     "--until check passes, --max rounds pass, or it stalls." \
