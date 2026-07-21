@@ -33,11 +33,12 @@ calls made on my behalf, anything hard to reverse. Each line says where the
 detail lives instead of restating it. If a summary wants to be longer, the
 overflow belongs in an artifact, not in chat.
 
-**Before a task ends, the handoff must be empty.** Promote what is durable —
+**Before a task ends, the handoff must be gone.** Promote what is durable —
 recurring gotcha → repo `CLAUDE.md`; decision → commit/PR body plus a
-one-liner in `PROJECT_STATUS.md` — then clear `HANDOFF.md` back to its
-headings and sync. `vibe done` refuses while the handoff still carries
-content.
+one-liner in `PROJECT_STATUS.md` — then delete `HANDOFF.md` (`git rm`, then
+sync). Left on the branch, even a cleared handoff merges into the default
+branch as a stray file. `vibe done` refuses while the handoff still carries
+content, and again while the file is still on the branch.
 
 # My setup
 

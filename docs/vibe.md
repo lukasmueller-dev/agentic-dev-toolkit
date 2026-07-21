@@ -155,7 +155,14 @@ vibe: branch 'fix-login-bug' has 2 commit(s) that are on no remote.
   worktree anyway (the branch is kept, so the commits stay reachable).
 ```
 
-`--force` overrides both checks. The branch is always kept, so even a forced
+It also refuses while the task's `HANDOFF.md` is still around — first while
+it carries content (promote what is durable before it is orphaned), and then
+while the file exists on the branch at all: merged, it lands in the PR diff
+and strays onto the default branch as an empty husk. A finished task deletes
+the baton (`git rm HANDOFF.md`, then `vibe sync`); `--discard-handoff` is
+the explicit override that skips both handoff checks.
+
+`--force` overrides every check. The branch is always kept, so even a forced
 removal leaves the commits reachable.
 
 ## Running a task unattended
