@@ -165,21 +165,43 @@ skill updates exactly like dependency updates in software that matters:
    changed, reviewed in the same PR flow `.githooks/pre-push` already
    forces. That diff — not a version bump — is what gets approved.
 
-## Scope: skills only
+## Scope: v1 is skills — and one rule for everything else
 
-v1 vendors skills and nothing else, deliberately:
+The ecosystem offers more than skills: subagent definitions, slash
+commands, hooks, settings baselines, whole Claude Code plugin bundles, and
+standalone orchestrator tools. One rule decides what this mechanism may
+ever carry:
 
-- **Hooks** execute shell in live sessions; vendoring third-party executable
-  hook code is a different risk class and stays out until there is a
-  concrete need.
-- **`bin/` tools** from external repos are ordinary software — install them
-  with a package manager, not this.
-- **Settings fragments / memory** are exactly the files whose merge
-  semantics took the most care in this repo; external merge input is not
-  worth the surface area.
+> **Vendorable content is inert instruction text: files an agent reads,
+> installed by symlink, executing nothing.**
 
-The conf format leaves room (`skill` is a typed line) so a later `hook` or
-`agent` line type is additive, behind its own explicit decision.
+Everything either passes that rule (and can become a later conf line type)
+or fails it permanently:
+
+| Content | Verdict | Why |
+| ------- | ------- | --- |
+| Skills | **v1** | The case this whole document makes. |
+| Subagent definitions (`claude/agents/*.md`) | v2 candidate | Inert markdown, same review model as skills. Claude-specific, so it vendors under `vendor/claude/agents/` — vendor/ mirrors the top-level portable/agent-specific split. |
+| Slash commands (`claude/commands/*.md`) | v2 candidate | Same as agents in every respect. |
+| Output styles | v2 candidate | Same again. |
+| Hooks | **never** | Executable shell inside live sessions, running with your permissions. They also must honor this repo's exit-0/degrade contract, which upstream code was not written for. An external hook worth having is a hook you *adopt*: read it, copy it into `claude/hooks/`, own it and its degrade path. |
+| Settings / permission baselines | **never** | A third-party file unioned into `permissions.allow` is someone else deciding what runs without prompting. Policy is authored here, never pulled. |
+| `bin/` tools, orchestrators (amux, dmux, agent-deck) | never *vendored* | Ordinary software — install with a package manager. The plug point for these is integration, not vendoring: `vibe` can shell out to one, `doctor` can check one is installed. |
+| Claude Code plugin bundles (e.g. superpowers) | not this mechanism | Bundles are Claude-only by construction and Claude Code ships a native marketplace/installer that coexists with the symlink farm (this repo never touches `~/.claude/plugins`). Use the native system for a Claude-only bundle; use `plug` to cherry-pick the portable skills out of the same repo. |
+| Templates | passes the rule, but no | External templates would be exempt from the placeholder contract and the agent-naming CI check that keep local ones honest — a standing trap for one document nobody has asked for. Revisit on concrete need. |
+| Cross-agent memory | already solved | `memory/GLOBAL.md` and its fixed fan-out *are* the toolkit's Agentlink; there is nothing to pull. |
+
+### What v2 (agents, commands, output styles) would require
+
+The conf and lock generalize trivially — `agent <source> <path>` beside
+`skill <source> <path>`, same SHA pinning, same diff review, local wins on
+basename collision. The real cost is in the installer: `claude/*/`
+directories are linked as *whole-directory* symlinks, so `~/.claude/agents`
+can only ever reflect one source. Merging local and vendored agents means
+switching `agents/` (and `commands/`) to per-file links, the way skills
+are per-directory — touching `build_map`, doctor, and the empty-directory
+README guard. That is a contained change, but it is why v2 waits for an
+external agent actually worth pulling rather than shipping speculatively.
 
 ## Tests to add with the implementation
 
