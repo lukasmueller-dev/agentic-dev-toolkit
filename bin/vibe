@@ -133,6 +133,11 @@ VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 # never committed: it holds machine-local counters and a PID, not deliverable work.
 VIBE_LOOP_STATE=".vibe-loop.state"
 
+# Where a headless agent round's own output goes. It lives inside the
+# worktree's git dir, not the working tree, so it needs no gitignore entry and
+# 'git add -A' can never sweep it into a commit.
+VIBE_AGENT_LOG="vibe-agent.log"
+
 # A line matches this iff it is nothing but HANDOFF.md template scaffolding:
 # blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
 # single-line _italic placeholders_. 'grep -v' this to surface only real,
@@ -648,6 +653,34 @@ loop_push() {
   esac
 }
 
+# agent_log_path DIR — absolute path to DIR's headless-agent log. Inside the
+# worktree's git dir (for a linked worktree that is .git/worktrees/<name>), so
+# it is per-worktree and outside anything git tracks.
+agent_log_path() {
+  local dir="$1" gd
+  gd="$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null)" || gd="$dir"
+  printf '%s/%s\n' "$gd" "$VIBE_AGENT_LOG"
+}
+
+# run_agent_headless DIR LOG MSG ARGV... — one headless agent round, with its
+# own output appended to LOG instead of the terminal, and stdin closed.
+#
+# Both matter. A CLI agent that finds a tty on stdout probes the terminal for
+# its colours (OSC 10/11); the terminal answers on the tty *input* side, where
+# nobody is reading, so the line discipline echoes the reply back as visible
+# garbage ("^[]11;rgb:1818/1818/1818") on top of our spinner. Its startup
+# banners and warnings land there too, half-overwritten. Redirecting stdout to
+# a file stops the probe at the source, and </dev/null keeps a round that
+# decides to prompt from eating the loop's own input.
+run_agent_headless() {
+  local dir="$1" log="$2" msg="$3"
+  shift 3
+  mkdir -p "$(dirname "$log")"
+  printf '\n=== %s · %s ===\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" >>"$log"
+  (cd "$dir" && exec "$@") >>"$log" 2>&1 </dev/null &
+  spin "$!" "$msg"
+}
+
 # The loop itself. Everything it needs is in the state file, so this is the
 # single entry point for both a fresh start and a resume-after-kill.
 run_loop() {
@@ -681,8 +714,10 @@ run_loop() {
     argv+=($VIBE_LOOP_PERMISSIVE_ARGS)
   fi
 
-  local no_progress=0
+  local no_progress=0 log
+  log="$(agent_log_path "$dir")"
   ok "loop starting on $branch (max $max)${until_cmd:+, until: $until_cmd}"
+  info "agent output: $log"
 
   while :; do
     iter=$((iter + 1))
@@ -698,9 +733,9 @@ run_loop() {
     # One headless round. LOOP.md is passed as the prompt argument, the same way
     # run_headless_handoff drives the agent, so no agent-specific flag is baked
     # in here. A crashing agent must not kill the loop.
-    (cd "$dir" && "${argv[@]}" "$(cat "$dir/LOOP.md")") &
-    spin "$!" "iteration $iter running…" ||
-      warn "agent exited non-zero on iteration $iter (continuing)"
+    run_agent_headless "$dir" "$log" "iteration $iter running…" \
+      "${argv[@]}" "$(cat "$dir/LOOP.md")" ||
+      warn "agent exited non-zero on iteration $iter (continuing) — see $log"
 
     # Commit whatever the round produced, so vibe done/status account for it.
     # A change to nothing but our own LOOP.md log is not progress: undo it and
@@ -1642,13 +1677,18 @@ session: current state, next concrete action, blockers, and unresolved \
 gotchas. Present tense only — rewrite the sections rather than appending, \
 keep it under one screen, and edit only HANDOFF.md. History belongs in git, \
 not here."
-  # The headless args are meant to be word-split into separate arguments.
-  # shellcheck disable=SC2086
-  (cd "$dir" && $VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "$prompt") &
-  if spin "$!" "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…"; then
+  # The agent command and its headless args are meant to be word-split into
+  # separate arguments.
+  # shellcheck disable=SC2206
+  local -a argv=($VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS)
+  local log
+  log="$(agent_log_path "$dir")"
+  if run_agent_headless "$dir" "$log" \
+    "refreshing HANDOFF.md via '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'…" \
+    "${argv[@]}" "$prompt"; then
     ok "HANDOFF.md refreshed"
   else
-    warn "headless agent run failed — syncing current HANDOFF.md as-is."
+    warn "headless agent run failed — syncing current HANDOFF.md as-is. See $log"
     return 1
   fi
 }
