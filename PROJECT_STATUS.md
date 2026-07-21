@@ -62,7 +62,7 @@ Track A — unattended execution:
       `templates/LOOP.md`: each round does the smallest complete task and
       stops, keeping per-round context fresh. Tests in
       `tests/vibe-loop.bats`; keep bash 3.2 / BSD+GNU compatibility.
-- [ ] `skills/babysit-pr`: a skill that *stages a brief*, not a watcher.
+- [x] `skills/babysit-pr`: a skill that *stages a brief*, not a watcher.
       It renders a `LOOP.md` whose goal is "PR #N is mergeable" and whose
       stop check combines `gh pr checks` with zero unresolved review
       threads, then hands it to `vibe loop` on the server. Escalation to
