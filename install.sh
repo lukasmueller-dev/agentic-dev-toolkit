@@ -496,8 +496,35 @@ install_vscode() {
 # doctor
 # ---------------------------------------------------------------------------
 run_doctor() {
-  local fail=0 warned=0
+  local n_warn=0 n_fail=0
   local pass="  ${c_grn}ok${c_off}  " bad="  ${c_red}FAIL${c_off}" wrn="  ${c_yel}warn${c_off}"
+
+  # d_ok/d_wn/d_no FORMAT [ARG]... — one report line: severity prefix, the
+  # message, a newline, and the tally. Same shape as bin/vibe's cmd_doctor.
+  # Written out longhand, every one of the eighteen lines below repeated the
+  # prefix argument and the '\n', and each non-ok one carried its own flag
+  # assignment on the next line — which is exactly the line that gets forgotten
+  # when a check is added.
+  d_ok() {
+    local fmt="$1"
+    shift
+    # shellcheck disable=SC2059  # FORMAT is ours, never user-supplied
+    printf "%s $fmt\n" "$pass" "$@"
+  }
+  d_wn() {
+    local fmt="$1"
+    shift
+    # shellcheck disable=SC2059  # FORMAT is ours, never user-supplied
+    printf "%s $fmt\n" "$wrn" "$@"
+    n_warn=$((n_warn + 1))
+  }
+  d_no() {
+    local fmt="$1"
+    shift
+    # shellcheck disable=SC2059  # FORMAT is ours, never user-supplied
+    printf "%s $fmt\n" "$bad" "$@"
+    n_fail=$((n_fail + 1))
+  }
 
   hdr "Symlinks"
   build_map
@@ -512,36 +539,29 @@ run_doctor() {
       # A broken link is broken no matter what it points at, so this is
       # checked before comparing targets.
       if [[ ! -e "$dst" ]]; then
-        printf '%s %s -> %s (dangling)\n' "$bad" "$dst" "$target"
-        fail=1
+        d_no '%s -> %s (dangling)' "$dst" "$target"
       elif [[ "$target" == "$src" ]]; then
-        printf '%s %s\n' "$pass" "$dst"
+        d_ok '%s' "$dst"
       elif [[ "$target" == "$REPO"/* ]]; then
-        printf '%s %s -> %s (points elsewhere in this repo)\n' "$wrn" "$dst" "$target"
-        warned=1
+        d_wn '%s -> %s (points elsewhere in this repo)' "$dst" "$target"
       else
-        printf '%s %s -> %s (not ours)\n' "$wrn" "$dst" "$target"
-        warned=1
+        d_wn '%s -> %s (not ours)' "$dst" "$target"
       fi
     elif [[ -e "$dst" ]]; then
-      printf '%s %s is a real file, not a link — run ./install.sh\n' "$wrn" "$dst"
-      warned=1
+      d_wn '%s is a real file, not a link — run ./install.sh' "$dst"
     else
-      printf '%s %s missing — run ./install.sh\n' "$wrn" "$dst"
-      warned=1
+      d_wn '%s missing — run ./install.sh' "$dst"
     fi
   done
 
   hdr "PATH"
   case ":$PATH:" in
-    *":$HOME/bin:"*) printf '%s %s\n' "$pass" "$HOME/bin is on PATH" ;;
+    *":$HOME/bin:"*) d_ok '%s is on PATH' "$HOME/bin" ;;
     *)
       # SC2016: the single quotes are the point — this is literal text for the
       # user to paste into a shell rc, not something to expand here.
       # shellcheck disable=SC2016
-      printf '%s %s is NOT on PATH — add: export PATH="%s"\n' \
-        "$wrn" "$HOME/bin" '$HOME/bin:$PATH'
-      warned=1
+      d_wn '%s is NOT on PATH — add: export PATH="%s"' "$HOME/bin" '$HOME/bin:$PATH'
       ;;
   esac
 
@@ -549,18 +569,16 @@ run_doctor() {
   local t
   for t in git jq; do
     if command -v "$t" >/dev/null 2>&1; then
-      printf '%s %s\n' "$pass" "$t"
+      d_ok '%s' "$t"
     else
-      printf '%s %s missing (needed to merge VS Code settings and by the Claude Code hooks)\n' "$wrn" "$t"
-      warned=1
+      d_wn '%s missing (needed to merge VS Code settings and by the Claude Code hooks)' "$t"
     fi
   done
   for t in tmux gh; do
     if command -v "$t" >/dev/null 2>&1; then
-      printf '%s %s\n' "$pass" "$t"
+      d_ok '%s' "$t"
     else
-      printf '%s %s missing (optional)\n' "$wrn" "$t"
-      warned=1
+      d_wn '%s missing (optional)' "$t"
     fi
   done
 
@@ -570,32 +588,26 @@ run_doctor() {
   if want claude && [[ -f "$GLOBAL_MEMORY" ]]; then
     hdr "Global memory"
     if [[ ! -e "$HOME/.claude/CLAUDE.md" ]]; then
-      printf '%s %s missing — run ./install.sh claude\n' "$wrn" "$HOME/.claude/CLAUDE.md"
-      warned=1
+      d_wn '%s missing — run ./install.sh claude' "$HOME/.claude/CLAUDE.md"
     elif grep -q '^@.*global-memory\.md' "$HOME/.claude/CLAUDE.md"; then
-      printf '%s %s imports %s\n' "$pass" "$HOME/.claude/CLAUDE.md" "$(basename "$GLOBAL_MEMORY_CLAUDE")"
+      d_ok '%s imports %s' "$HOME/.claude/CLAUDE.md" "$(basename "$GLOBAL_MEMORY_CLAUDE")"
     else
-      printf '%s %s does not import %s — Claude Code will not load the shared memory\n' \
-        "$bad" "$HOME/.claude/CLAUDE.md" "$GLOBAL_MEMORY_CLAUDE"
-      fail=1
+      d_no '%s does not import %s — Claude Code will not load the shared memory' \
+        "$HOME/.claude/CLAUDE.md" "$GLOBAL_MEMORY_CLAUDE"
     fi
   fi
 
   hdr "Claude settings"
   if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
-    printf '%s %s does not exist — run ./install.sh claude\n' "$wrn" "$CLAUDE_SETTINGS_DST"
-    warned=1
+    d_wn '%s does not exist — run ./install.sh claude' "$CLAUDE_SETTINGS_DST"
   elif ! command -v jq >/dev/null 2>&1; then
-    printf '%s cannot verify without jq\n' "$wrn"
-    warned=1
+    d_wn 'cannot verify without jq'
   elif ! jq empty "$CLAUDE_SETTINGS_DST" 2>/dev/null; then
-    printf '%s %s is not valid JSON\n' "$bad" "$CLAUDE_SETTINGS_DST"
-    fail=1
+    d_no '%s is not valid JSON' "$CLAUDE_SETTINGS_DST"
   elif [[ "$(jq -S '.' "$CLAUDE_SETTINGS_DST")" == "$(claude_settings_merged "$CLAUDE_SETTINGS_DST" | jq -S '.')" ]]; then
-    printf '%s baseline applied in %s\n' "$pass" "$CLAUDE_SETTINGS_DST"
+    d_ok 'baseline applied in %s' "$CLAUDE_SETTINGS_DST"
   else
-    printf '%s %s is missing part of the baseline — run ./install.sh claude\n' "$wrn" "$CLAUDE_SETTINGS_DST"
-    warned=1
+    d_wn '%s is missing part of the baseline — run ./install.sh claude' "$CLAUDE_SETTINGS_DST"
   fi
 
   hdr "VS Code"
@@ -603,17 +615,14 @@ run_doctor() {
   vtarget="$(vscode_target_file)"
   vsnippet="$(vscode_snippet)"
   if [[ ! -f "$vtarget" ]]; then
-    printf '%s %s does not exist — run ./install.sh vscode\n' "$wrn" "$vtarget"
-    warned=1
+    d_wn '%s does not exist — run ./install.sh vscode' "$vtarget"
   elif ! command -v jq >/dev/null 2>&1; then
-    printf '%s cannot verify without jq\n' "$wrn"
-    warned=1
+    d_wn 'cannot verify without jq'
   elif [[ "$(strip_jsonc "$vtarget" | jq -S '.' 2>/dev/null)" == "$(jq -s -S '.[0] * .[1]' <(strip_jsonc "$vtarget") <(strip_jsonc "$vsnippet") 2>/dev/null)" ]]; then
-    printf '%s settings applied in %s\n' "$pass" "$vtarget"
+    d_ok 'settings applied in %s' "$vtarget"
   else
-    printf '%s %s is missing keys from %s — run ./install.sh vscode\n' \
-      "$wrn" "$vtarget" "$(basename "$vsnippet")"
-    warned=1
+    d_wn '%s is missing keys from %s — run ./install.sh vscode' \
+      "$vtarget" "$(basename "$vsnippet")"
   fi
 
   hdr "Backups"
@@ -621,21 +630,20 @@ run_doctor() {
     local n
     n="$(find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
     if [[ "$n" -gt 0 ]]; then
-      printf '%s %s backup set(s) in %s — remove them once you are sure\n' "$wrn" "$n" "$BACKUP_ROOT"
+      d_wn '%s backup set(s) in %s — remove them once you are sure' "$n" "$BACKUP_ROOT"
       find "$BACKUP_ROOT" -mindepth 1 -maxdepth 1 -type d | sed 's|^|         |'
-      warned=1
     else
-      printf '%s no stale backups\n' "$pass"
+      d_ok 'no stale backups'
     fi
   else
-    printf '%s no stale backups\n' "$pass"
+    d_ok 'no stale backups'
   fi
 
   printf '\n'
-  if ((fail)); then
+  if ((n_fail > 0)); then
     err "install doctor: problems found"
     return 1
-  elif ((warned)); then
+  elif ((n_warn > 0)); then
     warn "install doctor: installed, with warnings"
   else
     ok "install doctor: healthy"
