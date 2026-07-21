@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Blocks pushing directly to main/master. This repo's private on GitHub Free,
+# which has no branch protection or rulesets for private repos (confirmed via
+# `gh api .../branches/main/protection` -> 403 "Upgrade to GitHub Pro"), so
+# there is no server-side way to require PRs. This is the local substitute:
+# real friction, but not a guarantee — --no-verify, or a clone that never ran
+# `git config core.hooksPath .githooks`, bypasses it. See CLAUDE.md.
+#
+# Protocol: git feeds one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+set -eu
+
+protected_refs="refs/heads/main refs/heads/master"
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  for ref in $protected_refs; do
+    if [[ "$remote_ref" == "$ref" ]]; then
+      echo "pre-push: direct push to '$remote_ref' is blocked — open a PR instead." >&2
+      exit 1
+    fi
+  done
+done
+
+exit 0
