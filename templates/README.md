@@ -66,6 +66,9 @@ tokens in.
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 - `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
   into a task worktree before an unattended loop starts
+- `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` into a task worktree
+  before a dedicated session picks the task up (the rendering itself lives in
+  `skills/_lib/vibe-lib.sh`, shared by both brief scripts)
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

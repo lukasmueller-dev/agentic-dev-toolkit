@@ -35,6 +35,7 @@ Then `./install.sh doctor` to check it landed.
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first, delivered as a PR |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
+| [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
 
 Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from
