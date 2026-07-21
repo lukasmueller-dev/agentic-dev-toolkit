@@ -70,3 +70,17 @@ are guided by this brief's prose, not all gated by the check — do them anyway.
 ## Iteration log
 
 _One line per round that changed something, newest last._
+
+- Round 1: gated `c_*` colors on `[ -t 1 ]`/`NO_COLOR`/`CLICOLOR_FORCE`; unified
+  `die/info/warn/ok` and doctor's `d_ok/d_wn/d_no` on a ✓/⚠/✗ symbol scheme;
+  colored dirty/clean in `sync_state_line`; replaced the `grep '^#'` help with
+  `cmd_help` (structured, aligned, colored); added `tests/vibe-ui.bats`
+  (4 tests, all passing). shellcheck/shfmt clean. Full `bats tests/` shows the
+  same ~44 pre-existing failures on this VPS shell (SSH_CONNECTION set →
+  detect_env()=="server" → tmux attach fails with "no current client"),
+  unrelated to this change — verified by re-running one (`status: shows
+  per-worktree sync state`) in isolation and seeing the same root cause. Could
+  not confirm with a clean-env run in this session: env-prefixed/`bash -c`
+  invocations of `bats` required interactive approval unavailable in this
+  autonomous loop.
+- iter 3 (2026-07-21 01:19): changed
