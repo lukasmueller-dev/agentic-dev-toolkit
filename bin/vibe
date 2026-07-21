@@ -902,9 +902,8 @@ run_agent_headless() {
 # single entry point for both a fresh start and a resume-after-kill.
 run_loop() {
   local dir="$1" repo="$2" branch="$3"
-  local status phase iter max last until_cmd push pr permissive sandbox started pid deadline
+  local status iter max last until_cmd push pr permissive sandbox started pid deadline
   status="running"
-  phase="starting"
   iter="$(loop_get_or "$dir" ITER 0)"
   max="$(loop_get_or "$dir" MAX 10)"
   last="$(loop_get_or "$dir" LAST none)"
@@ -932,6 +931,18 @@ run_loop() {
     argv+=($VIBE_LOOP_SANDBOX_ARGS)
   fi
 
+  # persist STATUS PHASE — checkpoint the run to the state file. Every field
+  # but those two is fixed for the whole run or tracked in a variable above, so
+  # the call sites say only what changed. Written out in full at each of the
+  # three checkpoints, the shared fields drifted apart the moment one was added
+  # to two of them (that is how PR and SANDBOX arrived).
+  persist() {
+    loop_write_state "$dir" \
+      STATUS "$1" PHASE "$2" ITER "$iter" MAX "$max" LAST "$last" \
+      UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" \
+      SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+  }
+
   local no_progress=0 log
   log="$(agent_log_path "$dir")"
   ok "loop starting on $branch (max $max)${until_cmd:+, until: $until_cmd}"
@@ -939,10 +950,7 @@ run_loop() {
 
   while :; do
     iter=$((iter + 1))
-    phase="iterating"
-    loop_write_state "$dir" \
-      STATUS running PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+    persist running iterating
     info "iteration $iter/$max"
 
     local before after
@@ -989,7 +997,6 @@ run_loop() {
     fi
 
     # Stop check.
-    phase="checking"
     if [[ -n "$until_cmd" ]]; then
       if (cd "$dir" && bash -c "$until_cmd") >/dev/null 2>&1; then
         last="pass"
@@ -998,9 +1005,7 @@ run_loop() {
         last="fail"
       fi
     fi
-    loop_write_state "$dir" \
-      STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-      UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+    persist "$status" checking
 
     if [[ "$status" == "success" ]]; then
       ok "loop done: stop check passed on iteration $iter"
@@ -1031,10 +1036,7 @@ run_loop() {
     fi
   done
 
-  phase="idle"
-  loop_write_state "$dir" \
-    STATUS "$status" PHASE "$phase" ITER "$iter" MAX "$max" LAST "$last" \
-    UNTIL "$until_cmd" PUSH "$push" PR "$pr" PERMISSIVE "$permissive" SANDBOX "$sandbox" DEADLINE "$deadline" PID "$pid" STARTED "$started"
+  persist "$status" idle
 
   # Last act of the run, after the final state write, because loop_open_pr
   # reports the outcome by reading that state back. Never fatal: see the
