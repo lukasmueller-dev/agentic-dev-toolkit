@@ -76,9 +76,10 @@ Two things are merged rather than symlinked, both with `jq` and both backed up
 first: `vscode/*.jsonc`, because those are fragments; and
 `claude/settings.json`, because Claude Code writes to that file itself — a
 symlink would turn every `/model` switch and every "don't ask again" into a
-diff in this repo. The versioned baseline covers permissions, hooks and the
-statusline; your `model`, `effortLevel` and accumulated permission rules are
-left alone, and permission arrays are unioned rather than replaced.
+diff in this repo. The versioned baseline covers permissions, sandbox
+policy, hooks and the statusline; your `model`, `effortLevel` and
+accumulated permission rules are left alone, and the permission and sandbox
+arrays are unioned rather than replaced.
 
 ### After installing
 
@@ -114,7 +115,10 @@ Optional: [phone notifications](docs/notifications.md), and
 
 `git` and `bash` are the only hard requirements. `tmux` is needed on the
 server for persistent sessions; `jq` for the VS Code merge and the Claude Code
-hooks; `gh` is optional, for PR info in `vibe status`.
+hooks; `gh` is optional, for PR info in `vibe status`. Sandboxed Bash (part
+of the settings baseline) needs `bubblewrap` and `socat` on Linux — without
+them Claude Code falls back to unsandboxed commands under the normal
+permission rules, so nothing breaks; macOS needs nothing extra.
 
 Everything is bash 3.2 compatible and works on both BSD and GNU userland, so
 the same scripts run unchanged on macOS and Linux. CI checks shellcheck,

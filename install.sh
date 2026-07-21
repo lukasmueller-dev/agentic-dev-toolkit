@@ -255,15 +255,32 @@ do_unlink() {
 CLAUDE_SETTINGS_SRC="$REPO/claude/settings.json"
 CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 
-# Deep-merges the baseline over the live file, but UNIONS the permission
-# arrays: jq's `*` replaces arrays wholesale, which would silently discard
-# every rule accumulated through "don't ask again".
+# Deep-merges the baseline over the live file, but UNIONS the permission and
+# sandbox arrays: jq's `*` replaces arrays wholesale, which would silently
+# discard every rule accumulated through "don't ask again" — and, for the
+# sandbox lists, every domain or exclusion the user added by hand. A sandbox
+# path is only unioned when the baseline carries it; one that exists only in
+# the live file is untouched by `*` already.
 claude_settings_merged() {
   jq -s '
     .[0] as $live | .[1] as $repo
     | ($live * $repo)
     | .permissions.allow = ((($live.permissions.allow // []) + ($repo.permissions.allow // [])) | unique)
     | .permissions.deny  = ((($live.permissions.deny  // []) + ($repo.permissions.deny  // [])) | unique)
+    | reduce (
+        [["sandbox", "excludedCommands"],
+         ["sandbox", "credentials", "files"],
+         ["sandbox", "credentials", "envVars"],
+         ["sandbox", "filesystem", "allowRead"],
+         ["sandbox", "filesystem", "allowWrite"],
+         ["sandbox", "filesystem", "denyRead"],
+         ["sandbox", "filesystem", "denyWrite"],
+         ["sandbox", "network", "allowedDomains"],
+         ["sandbox", "network", "deniedDomains"]][]
+      ) as $p (.;
+        if ($repo | getpath($p)) != null
+        then setpath($p; ((($live | getpath($p)) // []) + ($repo | getpath($p))) | unique)
+        else . end)
   ' "$1" "$CLAUDE_SETTINGS_SRC"
 }
 

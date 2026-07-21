@@ -155,6 +155,39 @@
       "Read(**/.aws/credentials)"
     ]
   },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": true,
+    "credentials": {
+      "files": [
+        { "mode": "deny", "path": "~/.aws/credentials" },
+        { "mode": "deny", "path": "~/.ssh" }
+      ]
+    },
+    "network": {
+      "allowedDomains": [
+        "*.github.com",
+        "*.githubusercontent.com",
+        "crates.io",
+        "files.pythonhosted.org",
+        "github.com",
+        "ntfy.sh",
+        "proxy.golang.org",
+        "pypi.org",
+        "registry.npmjs.org",
+        "static.crates.io"
+      ]
+    },
+    "excludedCommands": [
+      "git clone *",
+      "git fetch *",
+      "git pull *",
+      "git push *",
+      "rsync *",
+      "scp *",
+      "ssh *"
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "$HOME/.claude/hooks/statusline.sh",

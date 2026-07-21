@@ -228,6 +228,40 @@ EOF
   jq -e '.permissions.allow | index("Bash(git status:*)")' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: sandbox baseline lands on create" {
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.sandbox.enabled == true' "$HOME/.claude/settings.json"
+  # degrade, don't break, where bubblewrap/socat are missing
+  jq -e '.sandbox.allowUnsandboxedCommands == true' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | length > 0' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: unions sandbox arrays instead of replacing them" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "sandbox": { "network": { "allowedDomains": ["my.internal.host"] },
+               "excludedCommands": ["docker *"] } }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  # jq's `*` would have replaced these arrays wholesale, losing the user's entries
+  jq -e '.sandbox.network.allowedDomains | index("my.internal.host")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.network.allowedDomains | index("github.com")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("docker *")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: a sandbox array only in the live file is left alone" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "sandbox": { "filesystem": { "denyRead": ["~/secrets"] } } }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.sandbox.filesystem.denyRead == ["~/secrets"]' "$HOME/.claude/settings.json"
+}
+
 @test "claude settings: re-running is a no-op that leaves no backup" {
   "$INSTALL" claude >/dev/null
   run "$INSTALL" claude
