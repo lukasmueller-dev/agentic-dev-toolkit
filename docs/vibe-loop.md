@@ -61,6 +61,13 @@ the agent gets each round, with no one there to clarify.
 Substitute your own with `--prompt <file>`; it is rendered through the same
 placeholder contract, so `<branch>`, `<goal>` and the rest still fill in.
 
+The better way to author a brief is the `loop-brief` skill
+([`skills/loop-brief/`](../skills/loop-brief/)): it refines a rough idea
+interactively, stages the finished `LOOP.md` on the task branch, and pushes.
+Since `vibe loop` never overwrites an existing `LOOP.md` — and, when the
+branch exists only on origin, creates the worktree tracking it — a brief
+pushed from one machine is exactly what the loop runs on the other.
+
 ## Resuming
 
 The loop's source of truth is git history plus a small state file
@@ -106,6 +113,9 @@ unless `VIBE_LOOP_PERMISSIVE_ARGS` is set, so it can never be a silent default.
 - **Server** — the loop runs in a tmux session named like any other task, so it
   survives disconnect. `vibe attach <task>` drops you into it to watch;
   attaching never fast-forwards under a live loop (the loop owns the branch).
+  `--no-attach` starts the session and returns instead of attaching — for
+  starting a loop from a remote-controlled agent session (say, from the phone)
+  or a script, where attaching would nest or hang the caller.
 - **Local (Mac)** — there is no persistent session to detach into, so the loop
   runs in the **foreground**. It does not silently fork into the background;
   you either watch it or start it on the server instead. `vibe loop` says so
@@ -124,6 +134,11 @@ vibe done --stop "port the config parser to the new schema"
 `--stop` kills the loop's session, marks the state stopped, then applies the
 usual `done` guards (it still refuses to discard uncommitted or unpushed work
 unless you add `--force`).
+
+The brief gets the same end-of-task treatment as the handoff: a finished task
+does not carry it into the PR. `done` refuses while `LOOP.md` is still on the
+branch — delete it first (`git rm LOOP.md`, then `vibe sync`), or pass
+`--keep-brief` to leave it in the branch history deliberately.
 
 ## Notifications
 

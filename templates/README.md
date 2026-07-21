@@ -64,6 +64,8 @@ tokens in.
   `LOOP.md` into an unattended-loop worktree (`vibe loop`)
 - `skills/project-status-scaffold/scaffold.sh` — scaffolds both files
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
+- `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
+  into a task worktree before an unattended loop starts
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

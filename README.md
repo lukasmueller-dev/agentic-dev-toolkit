@@ -34,6 +34,7 @@ Then `./install.sh doctor` to check it landed.
 | [`codebase-health`](skills/codebase-health/) | Non-behavioral health check — duplication, complexity, drifted docs — then fixes only what you approve |
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first, delivered as a PR |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
+| [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
 
 Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from
