@@ -81,6 +81,9 @@ _vibe() {
     attach | park | rc | sync)
       _vibe_reply "$(_vibe_tasks)" "$cur"
       ;;
+    help)
+      _vibe_reply "start loop attach park done rc status list sync resume where doctor" "$cur"
+      ;;
     *)
       # `start` takes a new task name: free text, nothing useful to suggest
       COMPREPLY=()

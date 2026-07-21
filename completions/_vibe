@@ -92,6 +92,9 @@ _vibe() {
         start)
           _message 'new task name'
           ;;
+        help)
+          _arguments '1:command:(start loop attach park done rc status list sync resume where doctor)'
+          ;;
       esac
       ;;
   esac
