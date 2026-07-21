@@ -48,10 +48,11 @@ without needing the discussion that produced it.
 
 Track A — unattended execution:
 
-- [ ] Sandbox baseline in `claude/settings.json`, so unattended runs stop
-      needing `--dangerously-allow-all` *(in progress on
-      `claude/agentic-dev-trends-3dws2i`, PR #19)*
-- [ ] Ralphify `vibe loop`. Three independent additions to `bin/vibe`:
+- [x] Sandbox baseline in `claude/settings.json`, so unattended runs stop
+      needing `--dangerously-allow-all` *(landed in `63c5a0e`: `sandbox`
+      block with `credentials`, `network.allowedDomains`, `excludedCommands`)*
+- [x] Ralphify `vibe loop` *(PR #27)*. Three independent additions to
+      `bin/vibe`:
       (1) `--sandbox`, appending a new `VIBE_LOOP_PERMISSIVE_ARGS`-style
       variable `VIBE_LOOP_SANDBOX_ARGS` to the agent invocation, and
       recommended over `--dangerously-allow-all` in `docs/vibe-loop.md`
