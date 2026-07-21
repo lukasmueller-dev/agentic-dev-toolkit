@@ -167,6 +167,15 @@ Add a test when you add a guard. The `vibe done` guard, the installer's
 ownership check, and every hook's degrade-to-no-op path each have one, because
 each protects against silent data loss.
 
+**The suite must never look like the server.** `tests/helper.bash` unsets
+`SSH_*`, points `VIBE_SERVER_HOSTNAME` at an unmatchable value, and puts a stub
+`tmux` early on `PATH` — otherwise a run over SSH takes `detect_env`'s server
+path and every `vibe start`/`vibe loop` leaves a real tmux session, and a real
+agent, running against a worktree bats has already deleted. It also unsets the
+runner's `VIBE_*` variables and redirects `VIBE_CONFIG_FILE`, so the developer's
+own config cannot flip an assertion. A test that exercises the server path
+asserts against `$VIBE_TEST_TMUX_LOG`, never the live tmux server.
+
 ## Protecting main
 
 This repo is private on GitHub Free, which has no branch protection or

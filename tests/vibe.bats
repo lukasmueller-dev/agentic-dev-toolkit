@@ -587,6 +587,41 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# Harness isolation — the suite must never touch the real tmux server, even
+# when it runs over SSH on the server itself. See tests/helper.bash.
+# ---------------------------------------------------------------------------
+@test "harness: the suite always looks local, whatever machine it runs on" {
+  cd "$(make_repo proj)"
+  run run_vibe where
+  [ "$status" -eq 0 ]
+  [[ "$output" == local* ]]
+}
+
+@test "harness: a server-path command hits the stub tmux, not the real one" {
+  cd "$(make_repo proj)"
+  local before=""
+  if [ -n "$VIBE_TEST_REAL_TMUX" ]; then
+    before="$("$VIBE_TEST_REAL_TMUX" list-sessions 2>/dev/null || true)"
+  fi
+
+  # SSH_CONNECTION set on purpose: this is the server path.
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "tmux isolation"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"persistent tmux session"* ]]
+
+  # The session was created against the stub...
+  grep -q "new-session -d -s vibe-proj-tmux-isolation " "$VIBE_TEST_TMUX_LOG"
+  # ...and the real tmux server is untouched.
+  if [ -n "$VIBE_TEST_REAL_TMUX" ]; then
+    [ "$("$VIBE_TEST_REAL_TMUX" list-sessions 2>/dev/null || true)" = "$before" ]
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # rc — Remote Control is a server concern
 # ---------------------------------------------------------------------------
 @test "rc: is a no-op on local, with an explanation" {
