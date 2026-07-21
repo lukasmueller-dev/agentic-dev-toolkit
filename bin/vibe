@@ -133,6 +133,14 @@ VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
 # never committed: it holds machine-local counters and a PID, not deliverable work.
 VIBE_LOOP_STATE=".vibe-loop.state"
 
+# A line matches this iff it is nothing but HANDOFF.md template scaffolding:
+# blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
+# single-line _italic placeholders_. 'grep -v' this to surface only real,
+# handed-off content. Written once here so handoff_carries_content and cmd_done
+# cannot drift; claude/hooks/session-start-handoff.sh keeps a literal copy of
+# the same pattern (it cannot source this script) — update both together.
+VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
+
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
@@ -923,8 +931,7 @@ loop_stop() {
 }
 
 # handoff_carries_content FILE — true when FILE holds anything beyond the
-# template's own scaffolding: blank lines, headings, '>' guidance quotes,
-# '- **Field:**' metadata, and single-line _placeholders_. The template keeps
+# template's own scaffolding (see VIBE_HANDOFF_SCAFFOLD_RE). The template keeps
 # every placeholder on one line precisely so this stays a line filter.
 # claude/hooks/session-start-handoff.sh applies the same filter to decide
 # whether to inject HANDOFF.md as session context — kept in lockstep by
@@ -932,7 +939,7 @@ loop_stop() {
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1
-  grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
+  grep -qvE "$VIBE_HANDOFF_SCAFFOLD_RE" "$f"
 }
 
 # ---------------------------------------------------------------------------
@@ -1283,12 +1290,11 @@ cmd_done() {
     # information about to be orphaned on a branch nobody will look at again —
     # promote it (PROJECT_STATUS.md, repo instructions, commit body) or
     # discard it deliberately, but never silently.
-    # Same filter as handoff_carries_content() above and
-    # claude/hooks/session-start-handoff.sh — three copies kept in lockstep
-    # by comment; see the note on handoff_carries_content().
+    # Shares VIBE_HANDOFF_SCAFFOLD_RE with handoff_carries_content() above;
+    # claude/hooks/session-start-handoff.sh mirrors it literally.
     if [[ "$discard_handoff" != 1 ]] && handoff_carries_content "$dir/HANDOFF.md"; then
       warn "HANDOFF.md still carries content:"
-      grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$dir/HANDOFF.md" |
+      grep -vE "$VIBE_HANDOFF_SCAFFOLD_RE" "$dir/HANDOFF.md" |
         sed 's/^/    /' >&2
       die "refusing to remove $dir
   Promote what is durable, then delete the file ('git rm HANDOFF.md', then
