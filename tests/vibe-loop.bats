@@ -524,3 +524,133 @@ EOF
   [ "$(loop_state legacy-task ITER)" = 2 ]
   [ "$(loop_state legacy-task SANDBOX)" = 0 ]
 }
+
+# ---------------------------------------------------------------------------
+# --pr: the loop opens its own pull request
+# ---------------------------------------------------------------------------
+# A stub 'gh' on PATH, controlled by the environment at call time:
+#   GH_LOG      — every invocation's argv, one argument per line, '--' between
+#   GH_EXISTING — what 'gh pr list' reports as the open PR for the branch
+#   GH_FAIL     — non-empty makes every subcommand exit 1 (unauthenticated)
+# 'gh pr create' echoes a URL the way the real one does.
+stub_gh() {
+  local dir="$BATS_TEST_TMPDIR/ghbin"
+  mkdir -p "$dir"
+  cat >"$dir/gh" <<'EOF'
+#!/usr/bin/env bash
+if [ -n "${GH_LOG:-}" ]; then printf '%s\n' "$@" '--' >>"$GH_LOG"; fi
+[ -n "${GH_FAIL:-}" ] && exit 1
+case "$2" in
+  list) printf '%s\n' "${GH_EXISTING:-}" ;;
+  create) echo "https://github.test/proj/pull/7" ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/gh"
+  PATH="$dir:$PATH"
+  export PATH GH_LOG="$BATS_TEST_TMPDIR/gh.log"
+}
+
+@test "loop: --pr implies --push" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  loop_vibe loop "implied push" --until true --max 1 --pr
+  [ "$(loop_state implied-push PR)" = 1 ]
+  [ "$(loop_state implied-push PUSH)" = 1 ]
+  git -C "$(wt implied-push)" rev-parse '@{u}' >/dev/null 2>&1
+}
+
+@test "loop: --pr opens a ready PR when the stop check passed" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  run loop_vibe loop "pr task" --until true --max 1 --pr
+  [ "$status" -eq 0 ]
+  [ "$(loop_state pr-task STATUS)" = success ]
+  [[ "$output" == *"opened PR: https://github.test/proj/pull/7"* ]]
+  grep -qx -- "create" "$GH_LOG"
+  # ready for review, not a draft
+  run ! grep -qx -- "--draft" "$GH_LOG"
+}
+
+@test "loop: --pr opens a draft when the loop did not pass" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  run loop_vibe loop "draft task" --until false --max 1 --pr
+  [ "$status" -eq 0 ]
+  [ "$(loop_state draft-task STATUS)" = maxed ]
+  [[ "$output" == *"opened draft PR"* ]]
+  grep -qx -- "--draft" "$GH_LOG"
+}
+
+@test "loop: --pr drops the brief and the handoff from the branch" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  # a handoff on the branch too: both are input, neither belongs in the diff
+  git checkout -q -b stripped-task
+  printf '# handoff\n' >HANDOFF.md
+  git add -A
+  git commit -q -m "seed handoff"
+  git checkout -q main
+
+  loop_vibe loop "stripped task" --until true --max 1 --pr
+  local dir
+  dir="$(wt stripped-task)"
+  run git -C "$dir" ls-files -- LOOP.md HANDOFF.md
+  [ -z "$output" ]
+  [ ! -f "$dir/LOOP.md" ]
+  # the brief is archived, not lost
+  [ -f "$(git -C "$dir" rev-parse --absolute-git-dir)/vibe-loop-brief.md" ]
+}
+
+@test "loop: a resumed loop gets back the exact brief its PR stripped" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  loop_vibe loop "restored task" --until true --max 1 --pr
+  local dir
+  dir="$(wt restored-task)"
+  # a refined brief, not a fresh render of the task string
+  printf '# refined\n\n## Goal\n\nThe refined goal.\n' \
+    >"$(git -C "$dir" rev-parse --absolute-git-dir)/vibe-loop-brief.md"
+
+  local sf="$dir/.vibe-loop.state"
+  set_state "$sf" STATUS running
+  set_state "$sf" PID 99999999
+  # PR=1 carries forward, so the resume finds its own PR already open and
+  # leaves the restored brief on the branch rather than stripping it twice.
+  GH_EXISTING="https://github.test/proj/pull/7" \
+    run loop_vibe loop "restored task" --until false --max 2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"restored LOOP.md from the archived brief"* ]]
+  grep -q "The refined goal." "$dir/LOOP.md"
+}
+
+@test "loop: --pr leaves an already-open PR alone" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  GH_EXISTING="https://github.test/proj/pull/3" \
+    run loop_vibe loop "second pr" --until true --max 1 --pr
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PR already open"* ]]
+  run ! grep -qx -- "create" "$GH_LOG"
+  # nothing was stripped either — the branch is already under review
+  run git -C "$(wt second-pr)" ls-files -- LOOP.md
+  [[ "$output" == *"LOOP.md"* ]]
+}
+
+@test "loop: --pr warns instead of failing when gh cannot reach GitHub" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_gh
+  GH_FAIL=1 run loop_vibe loop "no auth" --until true --max 1 --pr
+  [ "$status" -eq 0 ]
+  [ "$(loop_state no-auth STATUS)" = success ]
+  [[ "$output" == *"no PR opened"* ]]
+  # the work is still pushed, so it can be opened by hand
+  git -C "$(wt no-auth)" rev-parse '@{u}' >/dev/null 2>&1
+}
