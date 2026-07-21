@@ -21,6 +21,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/hooks" ]
+  [ -L "$HOME/.claude/agents" ]
   # settings.json is merged, not symlinked — Claude Code writes to it itself
   [ -f "$HOME/.claude/settings.json" ]
   [ ! -L "$HOME/.claude/settings.json" ]
@@ -35,6 +36,37 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
     [ -e "$l" ] # not dangling
     [[ "$(readlink "$l")" == "$REPO_ROOT"/* ]]
   done < <(find "$HOME" -type l)
+}
+
+@test "install: the global agent roster is reachable through the link" {
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  local a
+  for a in diff-reviewer test-hardener docs-drift security-sweep; do
+    [ -f "$HOME/.claude/agents/$a.md" ]
+    # the frontmatter name must match the filename, or the agent cannot be
+    # addressed by the name the roster advertises
+    run grep -qx "name: $a" "$HOME/.claude/agents/$a.md"
+    [ "$status" -eq 0 ]
+  done
+  # the README documents the directory and must not be mistaken for an agent
+  [ -f "$HOME/.claude/agents/README.md" ]
+}
+
+@test "install: a claude/ directory holding only a README is not linked" {
+  # The rule that kept agents/ out of ~/.claude while it was empty. Exercised
+  # against a *copy* of the repo — no test may create files under $REPO_ROOT.
+  local copy="$BATS_TEST_TMPDIR/repo"
+  cp -R "$REPO_ROOT" "$copy"
+  rm -rf "$copy/.git"
+  mkdir -p "$copy/claude/emptyish"
+  printf '# nothing here yet\n' >"$copy/claude/emptyish/README.md"
+
+  run "$copy/install.sh" claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.claude/emptyish" ]
+  # and a populated directory beside it still links
+  [ -L "$HOME/.claude/agents" ]
 }
 
 @test "install: is idempotent — a second run creates nothing new" {

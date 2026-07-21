@@ -36,6 +36,7 @@ Then `./install.sh doctor` to check it landed.
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
+| [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
 
 Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from
@@ -48,7 +49,7 @@ not tied to Claude Code. Start a new one from
 | [`claude/settings.json`](claude/settings.json) | Baseline permissions, hook wiring, statusline — *merged* into your real settings, not symlinked |
 | [`claude/CLAUDE.md`](claude/CLAUDE.md) | Global memory — response style and the two-machine workflow |
 | [`claude/hooks/`](claude/hooks/) | Session-end handoff reminder, [phone notifications](docs/notifications.md), `repo · branch · task` statusline |
-| [`claude/agents/`](claude/agents/) | Subagent definitions (empty for now) |
+| [`claude/agents/`](claude/agents/) | Global subagents: `diff-reviewer`, `test-hardener`, `docs-drift`, `security-sweep` |
 
 `codex/` and `gemini/` are placeholders — the layout keeps portable things at
 the top level so adding a second agent is a directory, not a rewrite.
