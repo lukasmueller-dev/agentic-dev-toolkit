@@ -56,7 +56,8 @@
 #
 # Visibility:
 #   vibe status [--all]   Show worktrees with per-worktree sync state (dirty,
-#                         ahead/behind, HANDOFF.md age), tmux state, PRs. --all
+#                         ahead/behind, whether the upstream branch is missing
+#                         or deleted, HANDOFF.md age), tmux state, PRs. --all
 #                         scans every repo under $VIBE_WORKTREE_ROOT.
 #   vibe doctor           Check tools, paths, config and upstream state.
 #
@@ -1258,24 +1259,58 @@ handoff_age() {
   fi
 }
 
-# git_sync_state DIR — echo "DIRTY AHEAD BEHIND" (DIRTY is 1/0) for DIR. The
-# one place that computes this, so the status dot and its detail line can
-# never disagree about what state a worktree is in. Like cmd_doctor, it never
-# fetches: 'ahead'/'behind' are measured against the last fetch so 'vibe
+# upstream_ref_state DIR — echo 'ok', 'gone', or 'none' for DIR's branch. This
+# answers a narrower question than upstream_state above, which cannot tell a
+# branch that was never pushed from one whose remote branch has been deleted:
+# 'rev-parse @{u}' fails identically for both, so both come back 'no-upstream'.
+#
+#   ok    an upstream is configured and its remote-tracking ref still exists
+#   gone  an upstream is configured but the ref is gone — the branch was
+#         deleted on the remote, which after a merged PR is the usual signal
+#         that the task is finished and 'vibe done' can clean it up
+#   none  no upstream configured (never pushed, or a detached HEAD)
+#
+# 'for-each-ref' is what separates 'gone' from 'none'. Like the rest of 'vibe
+# status' this never fetches, so 'gone' reflects the last 'git fetch --prune',
+# not the remote right now.
+upstream_ref_state() {
+  local dir="$1" branch up="" track=""
+  branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null)" || {
+    echo none
+    return
+  }
+  read -r up track <<<"$(git -C "$dir" for-each-ref \
+    --format='%(upstream:short) %(upstream:track)' \
+    "refs/heads/$branch" 2>/dev/null)" || true
+  if [[ -z "$up" ]]; then
+    echo none
+  elif [[ "$track" == "[gone]" ]]; then
+    echo gone
+  else
+    echo ok
+  fi
+}
+
+# git_sync_state DIR — echo "DIRTY AHEAD BEHIND UPSTREAM" (DIRTY is 1/0) for
+# DIR. The one place that computes this, so the status dot and its detail line
+# can never disagree about what state a worktree is in. Like cmd_doctor, it
+# never fetches: 'ahead'/'behind' are measured against the last fetch so 'vibe
 # status' stays read-only and offline.
 git_sync_state() {
   local dir="$1" dirty=0 ahead behind
   [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]] && dirty=1
   ahead="$(unpushed_commits "$dir")"
   behind="$(git -C "$dir" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
-  printf '%s %s %s\n' "$dirty" "$ahead" "$behind"
+  printf '%s %s %s %s\n' "$dirty" "$ahead" "$behind" "$(upstream_ref_state "$dir")"
 }
 
 # worktree_state_dot DIR REPO BRANCH — a colored ● summarizing one worktree
 # for 'vibe status': dim ○ when tmux is installed but no session is running
-# for this task; otherwise green clean+synced, yellow dirty or ahead/behind,
-# red diverged (ahead and behind at once). Locally, where tmux is never
-# forced, a missing tmux binary just falls through to the git-only states.
+# for this task; otherwise green clean+synced, cyan finished (the upstream
+# branch is gone and nothing is left unpushed — a merged PR, ready for 'vibe
+# done'), yellow dirty or ahead/behind, red diverged (ahead and behind at
+# once). Locally, where tmux is never forced, a missing tmux binary just falls
+# through to the git-only states.
 worktree_state_dot() {
   local dir="$1" repo="$2" branch="$3"
   if command -v tmux >/dev/null 2>&1; then
@@ -1286,10 +1321,13 @@ worktree_state_dot() {
       return
     fi
   fi
-  local dirty ahead behind
-  read -r dirty ahead behind <<<"$(git_sync_state "$dir")"
+  local dirty ahead behind upstream
+  read -r dirty ahead behind upstream <<<"$(git_sync_state "$dir")"
   if [[ "$dirty" == "1" ]]; then
     printf '%s●%s' "$c_yel" "$c_off"
+  elif [[ "$upstream" == "gone" && "$ahead" == "0" ]]; then
+    # merged and pruned: nothing left to push, nothing left to merge into
+    printf '%s●%s' "$c_cyn" "$c_off"
   elif ((ahead > 0 && behind > 0)); then
     printf '%s●%s' "$c_red" "$c_off"
   elif ((ahead > 0 || behind > 0)); then
@@ -1302,8 +1340,8 @@ worktree_state_dot() {
 # sync_state_line DIR — one dim detail line under a worktree's entry, joined
 # to it with a '└─' connector.
 sync_state_line() {
-  local dir="$1" dirty ahead behind dirty_word dirty_c
-  read -r dirty ahead behind <<<"$(git_sync_state "$dir")"
+  local dir="$1" dirty ahead behind upstream dirty_word dirty_c
+  read -r dirty ahead behind upstream <<<"$(git_sync_state "$dir")"
   if [[ "$dirty" == "1" ]]; then
     dirty_word="dirty"
     dirty_c="$c_yel"
@@ -1311,10 +1349,18 @@ sync_state_line() {
     dirty_word="clean"
     dirty_c="$c_grn"
   fi
+  # 'behind' is only meaningful against a live upstream; with none, or one
+  # that has been deleted, say so instead of printing a hard-coded 0.
+  local sync
+  case "$upstream" in
+    ok) sync="$ahead ahead · $behind behind" ;;
+    gone) sync="$ahead ahead · ${c_cyn}upstream gone${c_off}${c_dim}" ;;
+    *) sync="$ahead unpushed · no upstream" ;;
+  esac
   local loop=""
   [[ -f "$(loop_state_path "$dir")" ]] && loop=" · loop $(loop_summary "$dir")"
-  printf '    %s└─%s %s%s%s%s · %s ahead · %s behind · handoff %s%s%s\n' \
-    "$c_dim" "$c_off" "$dirty_c" "$dirty_word" "$c_off" "$c_dim" "$ahead" "$behind" "$(handoff_age "$dir")" "$loop" "$c_off"
+  printf '    %s└─%s %s%s%s%s · %s · handoff %s%s%s\n' \
+    "$c_dim" "$c_off" "$dirty_c" "$dirty_word" "$c_off" "$c_dim" "$sync" "$(handoff_age "$dir")" "$loop" "$c_off"
 }
 
 # print_worktrees — the current repo's worktrees, one per line, each with a
