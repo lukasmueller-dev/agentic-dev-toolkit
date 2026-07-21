@@ -8,7 +8,7 @@
 #
 # The topic is never hardcoded. It is read from, in order:
 #   1. $VIBE_NTFY_TOPIC
-#   2. ntfy_topic= (or VIBE_NTFY_TOPIC=) in ~/.config/vibe/config
+#   2. VIBE_NTFY_TOPIC= in ~/.config/vibe/config
 # With neither set this script silently does nothing, which is the correct
 # behavior on a machine that has not opted in.
 #

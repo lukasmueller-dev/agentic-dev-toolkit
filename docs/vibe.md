@@ -50,13 +50,13 @@ The verbs are layered by how often you reach for them.
 | `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
 | `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
 | `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
-| `vibe done [--force] [--stop] [<task>]` | Remove the worktree, keeping the branch           |
+| `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]` | Remove the worktree, keeping the branch |
 
 **Unattended:**
 
 | Command                        | Does                                                       |
 | ------------------------------ | ---------------------------------------------------------- |
-| `vibe loop <task> [--until <cmd>] [--max <n>]` | Run the agent round after round until done — see [loops](vibe-loop.md) |
+| `vibe loop <task> [--until <cmd>] [--max <n>] [--for <duration>] [--prompt <file>] [--push] [--pr] [--no-attach] [--sandbox] [--dangerously-allow-all]` | Run the agent round after round until done — see [loops](vibe-loop.md) |
 
 **Phone:**
 
@@ -219,6 +219,7 @@ vibe doctor        # validates the file and shows the resulting values
 | `VIBE_AGENT_CMD`           | `claude`          | The agent to launch                  |
 | `VIBE_AGENT_HEADLESS_ARGS` | `-p`              | Args that make the agent run one-shot (`vibe park`, `vibe loop`) |
 | `VIBE_LOOP_PERMISSIVE_ARGS` | unset            | Args for `loop --dangerously-allow-all` |
+| `VIBE_LOOP_SANDBOX_ARGS`   | unset             | Args for `loop --sandbox`            |
 | `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |
 | `VIBE_SERVER_HOSTNAME`     | unset             | Fallback server detection            |
 | `VIBE_NTFY_TOPIC`          | unset             | Phone notifications (off when unset) |

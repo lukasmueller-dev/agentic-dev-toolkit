@@ -41,6 +41,16 @@
 # Default: unset
 #VIBE_LOOP_PERMISSIVE_ARGS=--dangerously-skip-permissions
 
+# Extra args appended ONLY when a loop is started with --sandbox: the agent's
+# "confine this run" mode, typically restricting filesystem writes to the
+# worktree and network access to an allowlist. This is the answer to the blast
+# radius above — it composes with --dangerously-allow-all rather than replacing
+# it. Deliberately agent-agnostic: every agent spells its sandbox differently,
+# so the value is yours to set, and --sandbox refuses to start while it is
+# unset rather than silently running unconfined.
+# Default: unset
+#VIBE_LOOP_SANDBOX_ARGS=
+
 # Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
 # Default: vibe
 #VIBE_TMUX_PREFIX=vibe
