@@ -2046,7 +2046,7 @@ cmd_where() {
 # Exit 1 if anything is genuinely broken; warnings alone still exit 0.
 # ---------------------------------------------------------------------------
 cmd_doctor() {
-  local fail=0 warned=0 n_ok=0 n_warn=0 n_fail=0
+  local n_ok=0 n_warn=0 n_fail=0
   local pass="  ${c_grn}✓${c_off}  " bad="  ${c_red}✗${c_off}  " wrn="  ${c_yel}⚠${c_off}  "
 
   d_ok() {
@@ -2055,12 +2055,10 @@ cmd_doctor() {
   }
   d_no() {
     printf '%s%s\n' "$bad" "$*"
-    fail=1
     n_fail=$((n_fail + 1))
   }
   d_wn() {
     printf '%s%s\n' "$wrn" "$*"
-    warned=1
     n_warn=$((n_warn + 1))
   }
 
@@ -2212,10 +2210,10 @@ cmd_doctor() {
   ((n_fail > 0)) && summary="${summary}  ${c_dim}·${c_off}  ${c_red}✗${c_off} ${n_fail} problems"
 
   printf '\n'
-  if ((fail)); then
+  if ((n_fail > 0)); then
     printf '%s✗%s vibe doctor: problems found  —  %s\n' "$c_red" "$c_off" "$summary"
     return 1
-  elif ((warned)); then
+  elif ((n_warn > 0)); then
     printf '%s⚠%s vibe doctor: healthy, with warnings  —  %s\n' "$c_yel" "$c_off" "$summary"
   else
     printf '%s✓%s vibe doctor: healthy  —  %s\n' "$c_grn" "$c_off" "$summary"
