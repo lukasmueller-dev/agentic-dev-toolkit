@@ -760,6 +760,17 @@ cmd_loop() {
   eff_last="${eff_last:-none}"
   eff_iter="${eff_iter:-0}"
 
+  # A fresh, non-permissive loop can't answer its own permission prompts —
+  # nobody is there to. It will stall (see loop_run's stall detector) rather
+  # than hang forever, but the round(s) it burns getting there are silent
+  # until you check back. Warn once, at start, instead of blocking: the
+  # unattended case (scripts, agents, --no-attach) must never be asked to
+  # answer a prompt no one is watching for.
+  if ((!resuming)) && [[ "$eff_perm" != "1" ]]; then
+    warn "starting without --dangerously-allow-all: the agent keeps its normal permission prompts."
+    warn "unattended, nobody can answer them — any edit or gated command the brief needs will stall the loop after 2 rounds, not run it. See docs/vibe-loop.md#permissions-and-blast-radius."
+  fi
+
   # First-run scaffolding (seed_loop and the commit skip cleanly on resume).
   seed_loop "$dir" "$repo" "$branch" "$task" "$eff_until" "$eff_max" "$prompt"
   loop_ignore_state "$dir"
