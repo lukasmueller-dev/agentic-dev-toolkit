@@ -83,15 +83,17 @@ files you already have, because symlinking either one would be wrong:
   feature flags appear unprompted. As a symlink, every one of those becomes a
   git diff in this repo and syncs to the other machine.
 
-So the repo holds a **baseline** — permissions, hooks, statusLine — and the
-installer merges it into the live file. Two rules follow:
+So the repo holds a **baseline** — permissions, sandbox policy, hooks,
+statusLine — and the installer merges it into the live file. Two rules
+follow:
 
 1. **Runtime state stays out of the baseline.** `model`, `effortLevel`, and
    feature flags are deliberately absent, which is what stops the merge
    clobbering the live values. Do not add them back.
-2. **Permission arrays are unioned, not replaced.** `jq`'s `*` replaces arrays
-   wholesale, which would discard every rule accumulated through "don't ask
-   again". `claude_settings_merged()` unions and dedupes them instead.
+2. **Permission and sandbox arrays are unioned, not replaced.** `jq`'s `*`
+   replaces arrays wholesale, which would discard every rule accumulated
+   through "don't ask again" and every sandbox domain or exclusion added by
+   hand. `claude_settings_merged()` unions and dedupes them instead.
 
 Merging must be idempotent in both directions: creating the file from scratch
 and merging into an existing one produce byte-identical output, so a second
