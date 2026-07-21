@@ -200,7 +200,12 @@ check_skill() {
     emit_error "$file" "[SQ1] must start with YAML frontmatter ('---' on line 1)"
     return
   fi
-  if ! sed -n '2,$p' "$file" | grep -qx -- '---'; then
+  # grep without -q here: -q can exit the moment it finds the match, and on
+  # a long enough file sed is still mid-write when that happens - SIGPIPE
+  # kills sed, and with `set -o pipefail` (above) that failure, not grep's
+  # success, becomes the pipeline's exit status. Letting grep drain the rest
+  # of sed's output (into /dev/null) avoids the race.
+  if ! sed -n '2,$p' "$file" | grep -x -- '---' >/dev/null; then
     emit_error "$file" "[SQ1] frontmatter is not closed by a second '---'"
     return
   fi
