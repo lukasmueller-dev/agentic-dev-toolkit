@@ -188,6 +188,68 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [[ "$(printf '%s\n' "$output" | plain)" == *"dangling"* ]]
 }
 
+# ---------------------------------------------------------------------------
+# Portable global memory
+#
+# One file, three agent homes. The failure this guards against is silent: the
+# symlinks can all be correct while Claude Code still loads none of it, because
+# it reads CLAUDE.md alone and reaches the shared half only through the import.
+# ---------------------------------------------------------------------------
+@test "memory: the one file lands in all three agent homes" {
+  run "$INSTALL"
+  [ "$status" -eq 0 ]
+  local src="$REPO_ROOT/memory/GLOBAL.md"
+  [ "$(readlink "$HOME/.claude/global-memory.md")" = "$src" ]
+  [ "$(readlink "$HOME/.codex/AGENTS.md")" = "$src" ]
+  [ "$(readlink "$HOME/.gemini/GEMINI.md")" = "$src" ]
+  # and the directory READMEs stay in the repo — they document the directory,
+  # they are not config. A `case $skip)` alternation used to leak them here.
+  [ ! -e "$HOME/.codex/README.md" ]
+  [ ! -e "$HOME/.gemini/README.md" ]
+}
+
+@test "memory: the Claude memory imports the portable half" {
+  "$INSTALL" claude >/dev/null
+  # Claude Code loads exactly one global memory file. Drop this import and the
+  # workflow memory vanishes with every symlink still reporting ok.
+  run grep -q '^@~/.claude/global-memory.md' "$HOME/.claude/CLAUDE.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "memory: doctor FAILs when the import is gone" {
+  "$INSTALL" claude >/dev/null
+  # stand a real file at the managed path, without the import line
+  rm "$HOME/.claude/CLAUDE.md"
+  printf '# Response style\n' >"$HOME/.claude/CLAUDE.md"
+  run "$INSTALL" doctor claude
+  [ "$status" -eq 1 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"will not load the shared memory"* ]]
+}
+
+@test "memory: installing one agent leaves the other agents' homes alone" {
+  run "$INSTALL" codex
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.codex/AGENTS.md" ]
+  [ ! -e "$HOME/.gemini/GEMINI.md" ]
+  [ ! -e "$HOME/.claude/global-memory.md" ]
+}
+
+@test "memory: uninstall removes every agent's copy" {
+  "$INSTALL" >/dev/null
+  run "$INSTALL" --uninstall
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.claude/global-memory.md" ]
+  [ ! -e "$HOME/.codex/AGENTS.md" ]
+  [ ! -e "$HOME/.gemini/GEMINI.md" ]
+}
+
+@test "memory: names no specific agent or vendor" {
+  # The whole point of the split: this file is installed for every agent, so a
+  # sentence about one of them is wrong in two homes out of three.
+  run grep -nE 'Claude Code|Anthropic|OpenAI|Codex|Gemini CLI' "$REPO_ROOT/memory/GLOBAL.md"
+  [ "$status" -ne 0 ]
+}
+
 @test "install: rejects an unknown target" {
   run "$INSTALL" not-a-target
   [ "$status" -eq 1 ]

@@ -2,7 +2,7 @@
 
 This is the canonical, long-form description of how information produced
 during agentic work is routed between chat, handoff files, git, and docs.
-The short version agents act on lives in `claude/CLAUDE.md`; this file is
+The short version agents act on lives in `memory/GLOBAL.md`; this file is
 what that section points to.
 
 ## The problem this solves
@@ -151,7 +151,7 @@ durable:
 The end of a task is the enforcement point: a finished task hands nothing
 off, so everything still in the handoff is either promoted or consciously
 discarded. `vibe done` checks exactly this, deterministically and with no
-agent involvement — agents are instructed (via `claude/CLAUDE.md` and the
+agent involvement — agents are instructed (via `memory/GLOBAL.md` and the
 `project-status-scaffold` skill) to promote and clear before wrapping up, and
 the guard catches the cases where that discipline was skipped.
 
@@ -159,7 +159,7 @@ the guard catches the cases where that discipline was skipped.
 
 | Rule                                        | Enforced by                              |
 | ------------------------------------------- | ---------------------------------------- |
-| Summary contract, routing table             | `claude/CLAUDE.md` (agent instructions)  |
+| Summary contract, routing table             | `memory/GLOBAL.md` (agent instructions)  |
 | Handoff baton semantics                     | `templates/HANDOFF.md` + scaffold skill  |
 | Handoff empty at task end                   | `vibe done` guard (`bin/vibe`)           |
 | Commit body carries rationale, PR is skim+`<details>` | `skills/commit-push-pr`       |

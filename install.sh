@@ -15,13 +15,21 @@
 #   bin      bin/* -> ~/bin/, plus shell completions
 #   skills   skills/<name>/ -> ~/.claude/skills/<name>
 #   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
-#            and merges claude/settings.json into your real settings.json
+#            memory/GLOBAL.md -> ~/.claude/global-memory.md, and merges
+#            claude/settings.json into your real settings.json
+#   codex    codex/* -> ~/.codex/, memory/GLOBAL.md -> ~/.codex/AGENTS.md
+#   gemini   gemini/* -> ~/.gemini/, memory/GLOBAL.md -> ~/.gemini/GEMINI.md
 #   vscode   merge vscode/*.jsonc into the real VS Code settings.json
 #   all      every target above (the default)
 #
 # Auto-discovery: every target enumerates the repo at run time. Drop a file in
 # bin/, a directory in skills/, a script in claude/hooks/ — the next run picks
 # it up with no edits here.
+#
+# memory/GLOBAL.md is the one file with a fixed fan-out rather than a
+# discovered one: each agent reads its global instructions from a different
+# hard-coded path, so the mapping is spelled out rather than derived from a
+# naming convention.
 #
 # Safety rules this script keeps:
 #   - Idempotent. Re-running changes nothing that is already correct.
@@ -58,7 +66,7 @@ err() { printf '%s%s%s\n' "$c_red" "$*" "$c_off" >&2; }
 hdr() { printf '\n%s%s%s\n' "$c_bld" "$*" "$c_off"; }
 
 usage() {
-  sed -n '3,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -71,7 +79,7 @@ while (($#)); do
     --uninstall) UNINSTALL=1 ;;
     doctor | --doctor) DOCTOR=1 ;;
     -h | --help) usage 0 ;;
-    all | bin | skills | claude | vscode) TARGETS+=("$1") ;;
+    all | bin | skills | claude | codex | gemini | vscode) TARGETS+=("$1") ;;
     *)
       err "unknown argument: $1"
       usage 1
@@ -124,6 +132,41 @@ owned_by_repo() {
 MAP=()
 map_add() { MAP+=("$1	$2	$3"); }
 
+# The portable global memory, and the paths each agent reads its global
+# instructions from. Claude Code loads exactly one such file and this repo also
+# ships Claude-only response-style rules, so its copy lands beside CLAUDE.md
+# under a name CLAUDE.md imports — see memory/README.md.
+GLOBAL_MEMORY="$REPO/memory/GLOBAL.md"
+GLOBAL_MEMORY_CLAUDE="$HOME/.claude/global-memory.md"
+
+# map_agent_home KIND SRCDIR DSTDIR [SKIP...] — link an agent's config
+# directory into that agent's home, leaving the named basenames alone:
+# README.md documents the directory rather than configuring anything, and a
+# config file the CLI writes to itself must never be a symlink into this repo,
+# or every setting it rewrites becomes a git diff here and syncs to the other
+# machine. claude/settings.json is the worked example — it is merged instead.
+#
+# The skips are compared one at a time rather than as a `case` alternation:
+# `case $b in $skip)` does not re-parse `|` out of an expansion, so a
+# README.md|config.toml pattern silently matches neither.
+map_agent_home() {
+  local kind="$1" srcdir="$2" dstdir="$3"
+  shift 3
+  local f b s skipped
+  [[ -d "$srcdir" ]] || return 0
+  for f in "$srcdir"/*; do
+    [[ -f "$f" ]] || continue
+    b="$(basename "$f")"
+    skipped=0
+    for s in "$@"; do
+      [[ "$b" == "$s" ]] && skipped=1
+    done
+    ((skipped)) && continue
+    map_add "$f" "$dstdir/$b" "$kind"
+  done
+  return 0
+}
+
 build_map() {
   MAP=()
   local f d
@@ -174,7 +217,25 @@ build_map() {
         say "skipping claude/$(basename "$d")/ — nothing in it but a README"
       fi
     done
+    [[ -f "$GLOBAL_MEMORY" ]] &&
+      map_add "$GLOBAL_MEMORY" "$GLOBAL_MEMORY_CLAUDE" claude
   fi
+
+  # Codex and Gemini currently take nothing but the shared memory; their
+  # directories are still placeholders. Both are mapped anyway so dropping a
+  # real config file in either one needs no edit here.
+  if want codex; then
+    map_agent_home codex "$REPO/codex" "$HOME/.codex" README.md config.toml
+    [[ -f "$GLOBAL_MEMORY" ]] &&
+      map_add "$GLOBAL_MEMORY" "$HOME/.codex/AGENTS.md" codex
+  fi
+
+  if want gemini; then
+    map_agent_home gemini "$REPO/gemini" "$HOME/.gemini" README.md settings.json
+    [[ -f "$GLOBAL_MEMORY" ]] &&
+      map_add "$GLOBAL_MEMORY" "$HOME/.gemini/GEMINI.md" gemini
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -502,6 +563,23 @@ run_doctor() {
       warned=1
     fi
   done
+
+  # Without the import, Claude Code loads the response-style rules and silently
+  # drops the workflow memory — every symlink still looks correct, so nothing
+  # else in this report would catch it.
+  if want claude && [[ -f "$GLOBAL_MEMORY" ]]; then
+    hdr "Global memory"
+    if [[ ! -e "$HOME/.claude/CLAUDE.md" ]]; then
+      printf '%s %s missing — run ./install.sh claude\n' "$wrn" "$HOME/.claude/CLAUDE.md"
+      warned=1
+    elif grep -q '^@.*global-memory\.md' "$HOME/.claude/CLAUDE.md"; then
+      printf '%s %s imports %s\n' "$pass" "$HOME/.claude/CLAUDE.md" "$(basename "$GLOBAL_MEMORY_CLAUDE")"
+    else
+      printf '%s %s does not import %s — Claude Code will not load the shared memory\n' \
+        "$bad" "$HOME/.claude/CLAUDE.md" "$GLOBAL_MEMORY_CLAUDE"
+      fail=1
+    fi
+  fi
 
   hdr "Claude settings"
   if [[ ! -f "$CLAUDE_SETTINGS_DST" ]]; then
