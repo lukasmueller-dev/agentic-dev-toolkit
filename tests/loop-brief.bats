@@ -51,6 +51,19 @@ finish_brief() {
   [ "$status" -ne 0 ]
 }
 
+@test "create: an --until holding '&&' renders verbatim into LOOP.md" {
+  cd "$(make_repo proj)"
+  run run_brief create "Amp Task" --until 'a && b && c'
+  [ "$status" -eq 0 ]
+  local f
+  f="$(wt amp-task)/LOOP.md"
+  # bash >= 5.2 would expand each unescaped '&' to the matched token
+  run grep -qF 'a && b && c' "$f"
+  [ "$status" -eq 0 ]
+  run grep -qF '<until>' "$f"
+  [ "$status" -ne 0 ]
+}
+
 @test "create: seeds HANDOFF.md alongside the brief" {
   cd "$(make_repo proj)"
   run_brief create "hand task"
