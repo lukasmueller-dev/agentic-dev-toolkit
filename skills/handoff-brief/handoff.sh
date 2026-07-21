@@ -48,16 +48,11 @@ cmd_create() {
   [[ -n "$task" ]] || die "usage: handoff.sh create <task>"
   [[ $# -le 1 ]] || die "one task only — got '$task' and '$2'"
 
-  local repo main branch dir
+  local repo branch dir
   repo="$(repo_name)"
-  main="$(main_repo_root)"
   branch="$(slug "$task")"
-  dir="$(worktree_dir "$repo" "$branch")"
-
-  if [[ -d "$dir" ]] && loop_live "$dir"; then
-    die "a loop is running for '$branch' — never edit a handoff under a live runner."
-  fi
-  [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
+  stage_worktree "$branch" handoff
+  dir="$STAGED_DIR"
 
   local f="$dir/HANDOFF.md"
   if [[ ! -f "$f" ]]; then

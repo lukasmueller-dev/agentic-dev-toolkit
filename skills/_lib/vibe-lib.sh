@@ -160,6 +160,26 @@ handoff_carries_content() {
   grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
 }
 
+# stage_worktree BRANCH WHAT — set STAGED_DIR to BRANCH's worktree, creating it
+# when it does not exist and refusing while a loop runner owns it. WHAT names
+# the document in that refusal ("brief", "handoff"), which is the only thing the
+# three create paths said differently. Editing a file under a live runner races
+# the runner's own commit of that file, so this refuses rather than warns.
+#
+# Sets a global instead of echoing the path deliberately: 'git worktree add'
+# writes its progress to stdout, and a command substitution here would swallow
+# that into the variable instead of letting it reach the caller's stdout.
+stage_worktree() {
+  local branch="$1" what="$2"
+  STAGED_DIR="$(worktree_dir "$(repo_name)" "$branch")"
+  if [[ -d "$STAGED_DIR" ]] && loop_live "$STAGED_DIR"; then
+    die "a loop is running for '$branch' — never edit a $what under a live runner."
+  fi
+  if [[ ! -d "$STAGED_DIR" ]]; then
+    ensure_worktree "$(main_repo_root)" "$branch" "$STAGED_DIR"
+  fi
+}
+
 # publish_brief DIR BRANCH COMMIT_MSG PUSH_HINT — validate DIR's LOOP.md, then
 # commit it (with HANDOFF.md when present) and push BRANCH.
 #

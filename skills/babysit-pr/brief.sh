@@ -77,15 +77,10 @@ cmd_create() {
   title="$(pr_field "$json" title)"
   url="$(pr_field "$json" url)"
 
-  local repo main dir
+  local repo dir
   repo="$(repo_name)"
-  main="$(main_repo_root)"
-  dir="$(worktree_dir "$repo" "$branch")"
-
-  if [[ -d "$dir" ]] && loop_live "$dir"; then
-    die "a loop is running for '$branch' — never edit a brief under a live runner."
-  fi
-  [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
+  stage_worktree "$branch" brief
+  dir="$STAGED_DIR"
 
   local until_cmd="bash $SKILL_DIR/pr-ready.sh $pr"
   local f="$dir/LOOP.md"

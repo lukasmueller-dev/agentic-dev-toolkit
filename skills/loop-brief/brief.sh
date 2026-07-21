@@ -72,16 +72,11 @@ cmd_create() {
   [[ -z "$max" || "$max" =~ ^[0-9]+$ ]] || die "--max must be a number, got '$max'"
   max="${max:-10}"
 
-  local repo main branch dir
+  local repo branch dir
   repo="$(repo_name)"
-  main="$(main_repo_root)"
   branch="$(slug "$task")"
-  dir="$(worktree_dir "$repo" "$branch")"
-
-  if [[ -d "$dir" ]] && loop_live "$dir"; then
-    die "a loop is running for '$branch' — never edit a brief under a live runner."
-  fi
-  [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
+  stage_worktree "$branch" brief
+  dir="$STAGED_DIR"
 
   local f="$dir/LOOP.md"
   if [[ -f "$f" ]]; then
