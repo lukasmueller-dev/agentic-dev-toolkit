@@ -618,6 +618,16 @@ loop_get() {
   sed -n "s/^$2=//p" "$sf" | tail -1
 }
 
+# loop_get_or DIR KEY DEFAULT — loop_get, falling back to DEFAULT when the key
+# is absent or empty. Every reader of the state file wants this rather than the
+# bare value: a state file written by an older vibe is missing the keys added
+# since, and an empty MAX would make the round arithmetic silently wrong.
+loop_get_or() {
+  local v
+  v="$(loop_get "$1" "$2")"
+  echo "${v:-$3}"
+}
+
 # loop_active DIR — true only if a runner is genuinely running: STATUS=running
 # AND its recorded PID is still alive. A running status with a dead PID is a
 # killed loop, which is resumable, not active.
@@ -895,24 +905,16 @@ run_loop() {
   local status phase iter max last until_cmd push pr permissive sandbox started pid deadline
   status="running"
   phase="starting"
-  iter="$(loop_get "$dir" ITER)"
-  iter="${iter:-0}"
-  max="$(loop_get "$dir" MAX)"
-  max="${max:-10}"
-  last="$(loop_get "$dir" LAST)"
-  last="${last:-none}"
+  iter="$(loop_get_or "$dir" ITER 0)"
+  max="$(loop_get_or "$dir" MAX 10)"
+  last="$(loop_get_or "$dir" LAST none)"
   until_cmd="$(loop_get "$dir" UNTIL)"
-  push="$(loop_get "$dir" PUSH)"
-  push="${push:-0}"
-  pr="$(loop_get "$dir" PR)"
-  pr="${pr:-0}"
-  permissive="$(loop_get "$dir" PERMISSIVE)"
-  permissive="${permissive:-0}"
-  sandbox="$(loop_get "$dir" SANDBOX)"
-  sandbox="${sandbox:-0}"
+  push="$(loop_get_or "$dir" PUSH 0)"
+  pr="$(loop_get_or "$dir" PR 0)"
+  permissive="$(loop_get_or "$dir" PERMISSIVE 0)"
+  sandbox="$(loop_get_or "$dir" SANDBOX 0)"
   deadline="$(loop_get "$dir" DEADLINE)"
-  started="$(loop_get "$dir" STARTED)"
-  started="${started:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  started="$(loop_get_or "$dir" STARTED "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
   pid="$$"
 
   local title="$repo · $branch"
