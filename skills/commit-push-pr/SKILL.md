@@ -39,7 +39,32 @@ git checkout -b <type>/<short-slug>
 
 Derive `<type>` from the change (feat, fix, chore, docs, refactor…) and `<slug>` from the primary change (e.g. `fix/oauth-token-refresh`). If already on a topic branch, stay on it.
 
-### 3. Commit
+### 3. Handoff
+
+If this repo has a `HANDOFF.md` at its root, check whether it carries
+anything beyond the bare template scaffold — the same check `vibe done`
+uses:
+
+```bash
+grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' HANDOFF.md
+```
+
+Any line that prints is real content. A PR is the "task ends" boundary
+that convention exists for, so before committing:
+- Make sure whatever it says is either already in the commit body you're
+  about to write, or fold it in now — don't let it get lost.
+- Clear `HANDOFF.md` back to its bare headings (each section holding only
+  its placeholder line) and include that in the same commit.
+
+Skipping this is what causes `HANDOFF.md` merge conflicts between parallel
+task branches: each one fully rewrites the same file with its own
+narrative, and git can't reconcile two different rewrites. A cleared
+handoff still differs from another branch's cleared handoff in its
+Branch/Worktree/date header lines — that residual is a trivial conflict to
+resolve (either side is equally valid), unlike the paragraphs of prose it
+replaces.
+
+### 4. Commit
 
 ```bash
 git add -A
@@ -57,7 +82,7 @@ Conventional Commits rules:
   and PR body only need to point at, not restate.
 - If changes are logically distinct, make multiple commits by staging paths selectively (`git add <paths>`).
 
-### 4. Push
+### 5. Push
 
 ```bash
 git push -u origin HEAD
@@ -65,7 +90,7 @@ git push -u origin HEAD
 
 Only ever push the current topic branch. Never `--force` / `--force-with-lease` to a shared branch.
 
-### 5. Open PR
+### 6. Open PR
 
 ```bash
 gh pr create --fill --base <default-branch>
