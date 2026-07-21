@@ -35,6 +35,7 @@ Then `./install.sh doctor` to check it landed.
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first, delivered as a PR |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
+| [`babysit-pr`](skills/babysit-pr/) | Stages an unattended-loop brief that drives a pull request to mergeable — green checks, no unresolved threads. [Docs](docs/babysit-pr.md) |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
 | [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
 
@@ -122,6 +123,8 @@ Optional: [phone notifications](docs/notifications.md), and
 - [The vibe workflow](docs/vibe.md) — tasks, machine switching, phone access,
   configuration
 - [Phone notifications](docs/notifications.md) — ntfy.sh setup
+- [Babysitting a pull request](docs/babysit-pr.md) — staging a loop that drives
+  a PR to mergeable
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

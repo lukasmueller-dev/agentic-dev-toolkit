@@ -82,3 +82,7 @@ and shellcheck-clean. It exits 1 today, on the missing docs page.
 ## Iteration log
 
 _One line per round that changed something, newest last._
+
+- Added `skills/babysit-pr/` (SKILL.md, brief.sh, pr-ready.sh),
+  `tests/babysit-pr.bats` (18 tests), `docs/babysit-pr.md`; ticked the Track A
+  checkbox and added README rows. Stop check exits 0.
