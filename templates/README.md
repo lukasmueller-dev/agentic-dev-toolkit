@@ -8,6 +8,7 @@ copy.
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
 | `LOOP.md`            | worktree root   | Short — one per unattended loop  |
+| `LOOP_PR.md`         | never on disk   | Rendered straight into a PR body when a loop ends with `--pr` |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
@@ -37,11 +38,15 @@ render still produces a readable file.
 | `<repo>`      | Repository name                                      |
 | `<branch>`    | Current branch                                       |
 | `<worktree>`  | Absolute path to the worktree root                   |
-| `<date>`      | Render date, `YYYY-MM-DD`                            |
-| `<machine>`   | Where it was rendered — `local` or `server`          |
-| `<goal>`      | The task a loop is working toward (`LOOP.md` only)   |
-| `<until>`     | The loop's stop-check command, or `—` (`LOOP.md`)    |
-| `<max>`       | The loop's max round count (`LOOP.md` only)          |
+| `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` |
+| `<machine>`   | Where it was rendered — `local` or `server`, with the hostname in parentheses when rendered by `bin/vibe` |
+| `<goal>`      | The task a loop is working toward (`LOOP.md`, `LOOP_PR.md`) |
+| `<until>`     | The loop's stop-check command, or `—` (`LOOP.md`, `LOOP_PR.md`) |
+| `<max>`       | The loop's max round count (`LOOP.md`, `LOOP_PR.md`) |
+| `<outcome>`   | One-line verdict on how the loop ended (`LOOP_PR.md` only) |
+| `<status>`    | The loop's final state — `success`, `maxed`, … (`LOOP_PR.md` only) |
+| `<iter>`      | Rounds actually run (`LOOP_PR.md` only)              |
+| `<last>`      | Result of the last stop check — `pass`/`fail`/`none` (`LOOP_PR.md` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -60,8 +65,9 @@ tokens in.
 
 ## Consumers
 
-- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`), and
-  `LOOP.md` into an unattended-loop worktree (`vibe loop`)
+- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`),
+  `LOOP.md` into an unattended-loop worktree (`vibe loop`), and renders
+  `LOOP_PR.md` as the PR body when a loop ends with `--pr`
 - `skills/project-status-scaffold/scaffold.sh` — scaffolds both files
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 - `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
