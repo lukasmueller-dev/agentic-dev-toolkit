@@ -45,6 +45,28 @@ stops making changes, the loop notices and quits rather than burning the full
 The result of every run is a phone push (below), so you learn *how* it ended
 without checking.
 
+### Exit status (foreground)
+
+When the loop runs in the foreground — locally, see
+[where it runs](#where-it-runs) — its exit code is the outcome, so
+`vibe loop … && next-step` can branch on it:
+
+| Exit | Outcome                                    |
+| ---- | ------------------------------------------ |
+| `0`  | success — the `--until` check passed       |
+| `2`  | stalled                                    |
+| `3`  | maxed                                      |
+| `4`  | time up                                    |
+| `5`  | stopped — `--push` hit a diverged remote   |
+
+`1` stays the ordinary failure exit — bad flags, a refused start — so "the
+loop ran and did not pass" is distinguishable from "vibe refused to run it".
+Note that a loop without `--until` has no way to end in success, so it always
+exits non-zero; ignore the code if all you wanted was a bounded run. On the
+server the loop is detached into tmux, where the runner's exit status has no
+caller to read it — there the state file (`.vibe-loop.state` `STATUS`) and
+the ntfy push carry the outcome.
+
 ## What each round does
 
 1. Run the agent once, headless, handing it `LOOP.md` as the prompt — the same

@@ -95,7 +95,9 @@ _vibe() {
           _arguments '--all[scan every repo under the worktree root]'
           ;;
         start)
-          _message 'new task name'
+          _arguments \
+            '--no-attach[start the tmux session and return instead of attaching (server)]' \
+            '1:new task name:'
           ;;
         help)
           _arguments '1:command:(start loop attach park done rc status list sync resume where doctor)'
