@@ -217,6 +217,37 @@ slug() {
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
 }
 
+@test "done: multiple tasks — a git-side removal refusal is a failure, not a false success" {
+  cd "$(make_repo proj)"
+  run_vibe start task_a
+  run_vibe start task_b
+  rm "$BATS_TEST_TMPDIR/worktrees/proj/task_a/HANDOFF.md"
+  rm "$BATS_TEST_TMPDIR/worktrees/proj/task_b/HANDOFF.md"
+  # vibe's own guards all pass; git itself refuses to remove a locked worktree.
+  git worktree lock "$BATS_TEST_TMPDIR/worktrees/proj/task_a"
+
+  run run_vibe "done" task_a task_b
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"removed worktree $BATS_TEST_TMPDIR/worktrees/proj/task_a"* ]]
+  [ -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
+}
+
+@test "done: multiple tasks run from inside the first worktree still removes the rest" {
+  cd "$(make_repo proj)"
+  run_vibe start task_a
+  run_vibe start task_b
+  rm "$BATS_TEST_TMPDIR/worktrees/proj/task_a/HANDOFF.md"
+  rm "$BATS_TEST_TMPDIR/worktrees/proj/task_b/HANDOFF.md"
+
+  # Removing task_a deletes this shell's cwd; task_b must not be collateral.
+  cd "$BATS_TEST_TMPDIR/worktrees/proj/task_a"
+  run run_vibe "done" task_a task_b
+  [ "$status" -eq 0 ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
+}
+
 # ---------------------------------------------------------------------------
 # vibe sync / resume — divergence handling
 # ---------------------------------------------------------------------------

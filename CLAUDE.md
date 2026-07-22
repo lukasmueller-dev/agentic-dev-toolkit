@@ -164,6 +164,15 @@ that command's, and the function call itself (`myfunc`) is an ordinary
 simple command with no exemption. Use `if cond; then cmd; fi` for anything
 that can end up as a function's tail statement.
 
+**The subshell sibling of that trap:** running a function as a tested
+condition — `if (myfunc); then …` or `(myfunc) || failed=1` — switches
+errexit off through the *whole* subshell, not just at the call site. Every
+non-`die` failure inside then falls through to the next line, so a command
+whose failure must stop the function needs its own `|| die` when the
+function can be called this way. This produced a real false success:
+multi-task `vibe done` printed "removed worktree" and exited 0 after git
+refused the removal.
+
 **The `pipefail` sibling of that trap, which has bitten three times here:**
 `x="$(cmd | … | head -1)"`. `head` closes the pipe as soon as it has its line,
 so the producer is still writing and dies of SIGPIPE (141) — and under

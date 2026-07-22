@@ -1787,6 +1787,12 @@ cmd_done() {
   # b`: attempt every one, keep going past a failure, fail the command overall
   # only once all of them have been tried. Each runs in a subshell so a 'die'
   # inside done_one exits only that task's attempt, not the whole loop.
+  #
+  # Step out before the first removal: each attempt changes directory only
+  # inside its own subshell, so removing the worktree this shell stands in
+  # would leave every later attempt starting from a deleted cwd, where the
+  # repo/worktree resolution dies before that task's guards even run.
+  cd "$(main_repo_root)"
   local failed=0 t
   for t in "${tasks[@]}"; do
     if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$t"); then
@@ -1904,11 +1910,17 @@ done_one() {
   cd "$main" 2>/dev/null || cd / || true
 
   # --force only when explicitly asked: otherwise let git apply its own checks
-  # as a second line of defence.
+  # as a second line of defence. The explicit die is what keeps that defence
+  # real in multi-task mode: there each attempt runs as the tested condition
+  # of an 'if', which switches errexit off through the whole subshell — so
+  # without it, git's refusal (say, a locked worktree) would fall through to
+  # the success message and a zero exit.
   if [[ "$force" == 1 ]]; then
-    git -C "$main" worktree remove "$dir" --force
+    git -C "$main" worktree remove "$dir" --force ||
+      die "could not remove worktree $dir (see git's message above)"
   else
-    git -C "$main" worktree remove "$dir"
+    git -C "$main" worktree remove "$dir" ||
+      die "could not remove worktree $dir (see git's message above)"
   fi
   info "removed worktree $dir (branch '$branch' kept)"
 }
