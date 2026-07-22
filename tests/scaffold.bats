@@ -20,8 +20,17 @@ SCAFFOLD="$REPO_ROOT/skills/project-status-scaffold/scaffold.sh"
   done
   grep -q "^# Project Status — proj$" PROJECT_STATUS.md
   grep -q "^# Project Roadmap — proj$" PROJECT_ROADMAP.md
-  run grep -qE '<(repo|branch|worktree|date|machine)>' PROJECT_ROADMAP.md
-  [ "$status" -ne 0 ]
+  # No unrendered placeholder in ANY of the three — HANDOFF.md especially, the
+  # one that travels between machines and where <branch>/<worktree> live. A
+  # per-file check, since the renderer feeds each a different token set.
+  local f
+  for f in PROJECT_STATUS.md PROJECT_ROADMAP.md HANDOFF.md; do
+    run grep -nE '<(repo|branch|worktree|date|machine|task)>' "$f"
+    [ "$status" -ne 0 ] || {
+      echo "unrendered placeholder in $f: $output" >&2
+      return 1
+    }
+  done
 }
 
 @test "scaffold: second run reports existing files and changes nothing" {
