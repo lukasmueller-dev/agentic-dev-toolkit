@@ -154,7 +154,10 @@ jobs:
             echo "::error::memory/GLOBAL.md is missing — this guard cannot run"
             exit 1
           }
-          if grep -rnE 'Claude Code|Anthropic|OpenAI|Codex|Gemini CLI' memory/GLOBAL.md; then
+          # Bare 'Claude'/'Gemini' stay allowed: the file legitimately names
+          # the per-agent instruction *files* (CLAUDE.md, GEMINI.md). Vendor
+          # names, product compounds, and per-agent config paths do not.
+          if grep -rniE 'Claude Code|Anthropic|OpenAI|ChatGPT|\bGPT\b|Copilot|Cursor|Codex|Gemini CLI|~/\.claude|~/\.codex|~/\.gemini' memory/GLOBAL.md; then
             echo "::error::memory/GLOBAL.md must not name a specific agent or vendor"
             exit 1
           fi
@@ -184,7 +187,11 @@ jobs:
               exit 1
             }
           done
-          if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' \
+          # 'vibe' unanchored on purpose: \bvibe\b misses $VIBE_WORKTREE_ROOT
+          # (underscore is a word character, so \b never fires there). Agent
+          # CLI names are part of the same rule — a template saying "ask
+          # claude to review" is coupled just as surely as one naming vibe.
+          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac\b|\bVPS\b' \
             templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md; then
             echo "::error::templates must not name a specific tool or machine"

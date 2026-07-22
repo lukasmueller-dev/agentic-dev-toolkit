@@ -60,8 +60,8 @@ tokens in.
   starts the drift over.
 - **Add a token, document it here.** The table above is the contract that
   `bin/vibe` and `skills/project-status-scaffold/scaffold.sh` implement.
-- **Consumers never overwrite.** Both renderers skip a file that already
-  exists; updating is an edit, not a regeneration.
+- **Consumers never overwrite.** Every renderer below skips a file that
+  already exists; updating is an edit, not a regeneration.
 
 ## Consumers
 

@@ -55,7 +55,7 @@ The verbs are layered by how often you reach for them.
 | `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
 | `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
 | `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
-| `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]` | Remove the worktree, keeping the branch |
+| `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]` | Remove the worktree(s), keeping the branch(es) |
 
 **Unattended:**
 
@@ -159,7 +159,11 @@ and leaves you on stale code.
 
 ```bash
 vibe done "fix login bug"      # removes the worktree, keeps the branch
+vibe done task-a task-b        # several at once, like 'git branch -d a b'
 ```
+
+With several tasks, each is attempted independently — one refusal does not
+stop the rest, and the command exits non-zero if any task failed.
 
 `done` refuses if the worktree has uncommitted changes, or if the branch holds
 commits that exist on no remote:

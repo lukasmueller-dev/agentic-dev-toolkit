@@ -24,7 +24,7 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]
+#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty, holds unpushed commits, has a loop
 #                         still running (--stop kills it first), if
@@ -164,8 +164,9 @@ VIBE_LOOP_BRIEF_ARCHIVE="vibe-loop-brief.md"
 # blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
 # single-line _italic placeholders_. 'grep -v' this to surface only real,
 # handed-off content. Written once here so handoff_carries_content and cmd_done
-# cannot drift; claude/hooks/session-start-handoff.sh keeps a literal copy of
-# the same pattern (it cannot source this script) — update both together.
+# cannot drift. Two literal copies exist elsewhere, in files that cannot
+# source this script: claude/hooks/session-start-handoff.sh and
+# skills/_lib/vibe-lib.sh — update all three together.
 VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
 
 # ---------------------------------------------------------------------------
@@ -1297,16 +1298,25 @@ cmd_loop() {
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
     # everything from the state file just written.
     run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    # A launch failure must not strand the state: it was written as
+    # "running" just above, so dying here via set -e would leave vibe status
+    # reporting a live loop with no runner behind it, forever.
     if ((sess_exists)); then
       # Leftover session from a finished or killed run, pane already verified
       # idle above. Type the runner into it rather than just attaching — the
       # old "already exists" path started nothing, which stranded the state
       # file at STATUS=running with no runner behind it.
-      tmux send-keys -t "$sess" "$run_cmd" C-m
+      if ! tmux send-keys -t "$sess" "$run_cmd" C-m; then
+        loop_stop "$dir" "$repo" "$branch"
+        die "could not type the runner into tmux session '$sess' — loop not started"
+      fi
       info "restarting loop in existing tmux session: $sess"
     else
-      tmux new-session -d -s "$sess" -c "$dir"
-      tmux send-keys -t "$sess" "$run_cmd" C-m
+      if ! tmux new-session -d -s "$sess" -c "$dir" ||
+        ! tmux send-keys -t "$sess" "$run_cmd" C-m; then
+        loop_stop "$dir" "$repo" "$branch"
+        die "could not start tmux session '$sess' — loop not started"
+      fi
       info "starting loop in tmux session: $sess"
     fi
     if [[ "$LP_no_attach" == "1" ]]; then
@@ -1367,8 +1377,9 @@ loop_stop() {
 # template's own scaffolding (see VIBE_HANDOFF_SCAFFOLD_RE). The template keeps
 # every placeholder on one line precisely so this stays a line filter.
 # claude/hooks/session-start-handoff.sh applies the same filter to decide
-# whether to inject HANDOFF.md as session context — kept in lockstep by
-# comment, since the hook cannot source this file.
+# whether to inject HANDOFF.md as session context, and skills/_lib/vibe-lib.sh
+# carries it for the brief-staging skills — both kept in lockstep by comment,
+# since neither can source this file.
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1
@@ -1787,6 +1798,12 @@ cmd_done() {
   # b`: attempt every one, keep going past a failure, fail the command overall
   # only once all of them have been tried. Each runs in a subshell so a 'die'
   # inside done_one exits only that task's attempt, not the whole loop.
+  #
+  # Step out before the first removal: each attempt changes directory only
+  # inside its own subshell, so removing the worktree this shell stands in
+  # would leave every later attempt starting from a deleted cwd, where the
+  # repo/worktree resolution dies before that task's guards even run.
+  cd "$(main_repo_root)"
   local failed=0 t
   for t in "${tasks[@]}"; do
     if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$t"); then
@@ -1904,11 +1921,17 @@ done_one() {
   cd "$main" 2>/dev/null || cd / || true
 
   # --force only when explicitly asked: otherwise let git apply its own checks
-  # as a second line of defence.
+  # as a second line of defence. The explicit die is what keeps that defence
+  # real in multi-task mode: there each attempt runs as the tested condition
+  # of an 'if', which switches errexit off through the whole subshell — so
+  # without it, git's refusal (say, a locked worktree) would fall through to
+  # the success message and a zero exit.
   if [[ "$force" == 1 ]]; then
-    git -C "$main" worktree remove "$dir" --force
+    git -C "$main" worktree remove "$dir" --force ||
+      die "could not remove worktree $dir (see git's message above)"
   else
-    git -C "$main" worktree remove "$dir"
+    git -C "$main" worktree remove "$dir" ||
+      die "could not remove worktree $dir (see git's message above)"
   fi
   info "removed worktree $dir (branch '$branch' kept)"
 }

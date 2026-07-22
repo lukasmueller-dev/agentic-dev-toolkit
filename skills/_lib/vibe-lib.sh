@@ -156,9 +156,10 @@ seed_handoff_file() {
 
 # handoff_carries_content FILE — true when FILE holds anything beyond the
 # template's own scaffolding: blank lines, headings, '>' guidance quotes,
-# '- **Field:**' metadata, and single-line _placeholders_. Same line filter
-# as bin/vibe's guard behind 'vibe done'; the template keeps every
-# placeholder on one line precisely so this stays a line filter.
+# '- **Field:**' metadata, and single-line _placeholders_. Literal copy of
+# VIBE_HANDOFF_SCAFFOLD_RE in bin/vibe ('vibe done's guard) — a third lives in
+# claude/hooks/session-start-handoff.sh; update all three together. The
+# template keeps every placeholder on one line so this stays a line filter.
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1

@@ -260,7 +260,10 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 @test "memory: names no specific agent or vendor" {
   # The whole point of the split: this file is installed for every agent, so a
   # sentence about one of them is wrong in two homes out of three.
-  run grep -nE 'Claude Code|Anthropic|OpenAI|Codex|Gemini CLI' "$REPO_ROOT/memory/GLOBAL.md"
+  # Mirrors ci.yml's guard — update both together. Bare 'Claude'/'Gemini'
+  # stay allowed (the file names the instruction files CLAUDE.md/GEMINI.md);
+  # vendor names, product compounds, and per-agent config paths do not.
+  run grep -niE 'Claude Code|Anthropic|OpenAI|ChatGPT|\bGPT\b|Copilot|Cursor|Codex|Gemini CLI|~/\.claude|~/\.codex|~/\.gemini' "$REPO_ROOT/memory/GLOBAL.md"
   [ "$status" -ne 0 ]
 }
 

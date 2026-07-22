@@ -35,8 +35,9 @@ handoff="$root/HANDOFF.md"
 [[ -f "$handoff" ]] || exit 0
 
 # Same line filter as VIBE_HANDOFF_SCAFFOLD_RE in bin/vibe, which
-# handoff_carries_content() and the 'vibe done' guard both apply — kept in
-# lockstep by comment, not by sourcing: this hook runs on machines that may
+# handoff_carries_content() and the 'vibe done' guard both apply — a third
+# literal copy lives in skills/_lib/vibe-lib.sh; update all three together.
+# Lockstep is by comment, not by sourcing: this hook runs on machines that may
 # not have bin/vibe on PATH, and hooks must not depend on other repo scripts.
 grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$handoff" || exit 0
 

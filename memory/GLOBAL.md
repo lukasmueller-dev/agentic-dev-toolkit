@@ -62,7 +62,9 @@ the session ends. Concretely:
   ask.
 - Update `PROJECT_STATUS.md` (repo root) only when something durable changed: a
   decision, an architecture change, a TODO opened or closed.
-- The `project-status-scaffold` skill handles both. Let it.
+- Where the `project-status-scaffold` skill is available, it handles both —
+  let it. Without that skill, keep the two files current by hand, per the
+  table above.
 
 **Nothing uncommitted crosses machines.** The handoff travels through git.
 Uncommitted work on one machine is invisible everywhere else. If a session ends

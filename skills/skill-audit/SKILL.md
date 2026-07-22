@@ -42,7 +42,8 @@ to reproduce them.
 
 ## Phase 3 — load the criteria
 
-Run `bash scripts/criteria-path.sh` to get the absolute path to
+Run `bash scripts/criteria-path.sh` (resolve the path from this skill's
+directory — the shell's cwd is the audited repo) to get the absolute path to
 `docs/skill-quality.md`, then read that file. Grade against the **judgment**
 rows only — the reader's half of SQ8, and SQ9–SQ13 and SQ15–SQ18. Do not
 restate the criteria from memory; read the current file.

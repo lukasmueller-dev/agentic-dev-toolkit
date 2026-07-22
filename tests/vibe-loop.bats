@@ -681,6 +681,40 @@ EOF
   PATH="$dir:$PATH"
 }
 
+# A tmux that fails to create sessions — the launch-failure path. The state
+# file is written as "running" *before* tmux runs, so the failure must not
+# leave it that way.
+stub_tmux_failing() {
+  local dir="$BATS_TEST_TMPDIR/tmuxbin"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"\${VIBE_TEST_TMUX_LOG:?}"
+case "\${1:-}" in
+  has-session) exit 1 ;;
+  new-session) exit 1 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+  PATH="$dir:$PATH"
+}
+
+@test "loop: a failed tmux launch marks the state stopped, not running" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_tmux_failing
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" loop "no tmux" --no-attach --max 1
+  [ "$status" -eq 1 ]
+  # Without the guard, the launch failure died mid-command via set -e and
+  # left STATUS=running with no runner — reported as a live loop forever.
+  [ "$(loop_state no-tmux STATUS)" = stopped ]
+}
+
 @test "loop: a leftover idle tmux session gets the runner typed back into it" {
   cd "$(make_repo proj)"
   stub_agent
