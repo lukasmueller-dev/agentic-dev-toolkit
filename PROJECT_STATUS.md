@@ -58,6 +58,13 @@ the installer's auto-discovery rules.
   tokens); per-ecosystem judgment lives in the skill's `references/`;
   status files stay owned by `project-status-scaffold`. Rationale in the
   PR for `skill-full-scaffold`.
+- 2026-07-22: A foreground `vibe loop` exits with its outcome (0 success,
+  2 stalled, 3 maxed, 4 timeup, 5 stopped; 1 stays the generic failure) —
+  foreground path only, detached tmux runs unchanged. Rationale in the
+  commit body of `d0e6833` and the PR for `review3-followups`.
+- 2026-07-22: `vibe start --no-attach` (server only) mirrors the loop
+  flag, so `ssh <host> vibe start <task>` is scriptable instead of dying
+  on the headless attach after the work is done. See `c96cf2c`.
 - 2026-07-22: Planned work moved out of this file into
   `PROJECT_ROADMAP.md` (template + scaffold + `add-roadmap-item` skill,
   which holds new items to the pick-up-cold design bar); this file keeps
@@ -74,12 +81,3 @@ in the merged PRs.)
 
 - Agent Teams is still experimental in Claude Code; `team-up` targets
   subagents now and adopts teams once the experiment stabilises.
-- A foreground `vibe loop` exits 0 whatever the outcome — stalled, maxed
-  and timeup are indistinguishable from success for a scripted caller
-  (`vibe loop … && next-step`). The state file and ntfy carry the
-  outcome, so this may be deliberate; decide and either document it or
-  map non-success statuses to a non-zero exit. (Round three, PR #41.)
-- `vibe start` on a server without a tty exits 1 *after* creating the
-  session and launching the agent, because the final attach fails.
-  Harmless interactively; a `--no-attach` analog like `vibe loop`'s
-  would make `ssh <host> vibe start <task>` scriptable. (Round three.)

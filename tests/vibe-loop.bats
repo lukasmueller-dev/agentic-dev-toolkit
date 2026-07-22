@@ -51,6 +51,19 @@ loop_vibe() {
     "$VIBE" "$@"
 }
 
+# A foreground loop exits with its outcome (0 success, 2 stalled, 3 maxed,
+# 4 timeup, 5 stopped — docs/vibe-loop.md). Tests that run a loop only for
+# its side effects swallow exactly those codes here, so a real failure
+# (die exits 1) still fails the test.
+loop_ended() {
+  local rc=0
+  loop_vibe "$@" || rc=$?
+  case "$rc" in
+    2 | 3 | 4 | 5) return 0 ;;
+    *) return "$rc" ;;
+  esac
+}
+
 wt() { echo "$BATS_TEST_TMPDIR/worktrees/proj/$1"; }
 loop_state() { sed -n "s/^$2=//p" "$(wt "$1")/.vibe-loop.state" | tail -1; }
 
@@ -79,7 +92,7 @@ set_state() {
   cd "$(make_repo proj)"
   stub_agent
   run loop_vibe loop "timed task" --until false --for=0s --max 10
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 4 ]
   [[ "$output" == *"time budget spent"* ]]
   [ "$(loop_state timed-task STATUS)" = timeup ]
   [ "$(loop_state timed-task ITER)" = 1 ]
@@ -88,19 +101,19 @@ set_state() {
 @test "loop: a resumed loop keeps the original --for deadline" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "keep deadline" --until false --for 6h --max 1
+  loop_ended loop "keep deadline" --until false --for 6h --max 1
   local first
   first="$(loop_state keep-deadline DEADLINE)"
   [ -n "$first" ]
   run loop_vibe loop "keep deadline" --until false --max 2
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [ "$(loop_state keep-deadline DEADLINE)" = "$first" ]
 }
 
 @test "loop: --for pushes the final round before stopping" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "timed push" --until false --for=0s --max 10 --push
+  loop_ended loop "timed push" --until false --for=0s --max 10 --push
   [ "$(loop_state timed-push STATUS)" = timeup ]
   # The remote must actually hold the final round's commit — asserting only
   # "not ahead" passed vacuously whenever the status command itself failed.
@@ -127,7 +140,7 @@ set_state() {
   cd "$(make_repo proj)"
   stub_agent
   run loop_vibe loop "max task" --until false --max 3
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [[ "$output" == *"hit max 3 iterations"* ]]
   [ "$(loop_state max-task STATUS)" = maxed ]
   [ "$(loop_state max-task ITER)" = 3 ]
@@ -137,7 +150,7 @@ set_state() {
   cd "$(make_repo proj)"
   stub_agent
   STUB_MODE=noop run loop_vibe loop "stall task" --max 10
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 2 ]
   [[ "$output" == *"stalled"* ]]
   [ "$(loop_state stall-task STATUS)" = stalled ]
   [ "$(loop_state stall-task ITER)" = 2 ]
@@ -149,7 +162,7 @@ set_state() {
 @test "loop: keeps the worktree clean (state file is gitignored)" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "clean task" --until false --max 2
+  loop_ended loop "clean task" --until false --max 2
   [ -f "$(wt clean-task)/.vibe-loop.state" ]
   # no untracked/modified files: the state file must not show up
   [ -z "$(git -C "$(wt clean-task)" status --porcelain)" ]
@@ -173,7 +186,7 @@ EOF
   chmod +x "$path"
 
   run loop_vibe loop "quiet task" --until false --max 1
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [[ "$output" != *AGENT-CHATTER* ]]
 
   local log
@@ -191,7 +204,7 @@ EOF
 @test "loop: resumes from saved state after a kill" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "resume task" --until false --max 2
+  loop_ended loop "resume task" --until false --max 2
   local sf
   sf="$(wt resume-task)/.vibe-loop.state"
   [ "$(loop_state resume-task ITER)" = 2 ]
@@ -202,7 +215,7 @@ EOF
   set_state "$sf" PID 99999999
 
   run loop_vibe loop "resume task" --until false --max 4
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [[ "$output" == *"resuming loop"* ]]
   # continued at 3 and 4, did not restart at 1
   [ "$(loop_state resume-task ITER)" = 4 ]
@@ -212,7 +225,7 @@ EOF
 @test "loop: refuses to start a second runner while one is live" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "busy task" --until false --max 1
+  loop_ended loop "busy task" --until false --max 1
   local sf live
   sf="$(wt busy-task)/.vibe-loop.state"
   # a genuinely live runner: mark running, point PID at a real sleeping process
@@ -234,7 +247,7 @@ EOF
   cd "$(make_repo proj)"
   stub_agent
   # first round pushes, establishing an upstream for the branch
-  loop_vibe loop "div task" --until false --max 1 --push
+  loop_ended loop "div task" --until false --max 1 --push
   git -C "$(wt div-task)" rev-parse '@{u}' >/dev/null 2>&1
 
   # a second clone pushes a diverging commit onto the same branch
@@ -253,7 +266,7 @@ EOF
   set_state "$sf" STATUS running
   set_state "$sf" PID 99999999
   run loop_vibe loop "div task" --until false --max 4 --push
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 5 ]
   [[ "$output" == *"diverged"* ]]
   [ "$(loop_state div-task STATUS)" = stopped ]
 }
@@ -274,7 +287,7 @@ EOF
 
   VIBE_NTFY_TOPIC="" PATH="$BATS_TEST_TMPDIR/fakebin:$PATH" \
     run loop_vibe loop "quiet task" --until false --max 2
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [ ! -f "$BATS_TEST_TMPDIR/curl-was-called" ]
 }
 
@@ -284,7 +297,7 @@ EOF
 @test "loop: done refuses while the loop is running" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "guard task" --until false --max 1
+  loop_ended loop "guard task" --until false --max 1
   local sf live
   sf="$(wt guard-task)/.vibe-loop.state"
   sleep 30 &
@@ -302,7 +315,7 @@ EOF
 @test "loop: done --stop --force clears a running loop and removes it" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "stopme task" --until false --max 1
+  loop_ended loop "stopme task" --until false --max 1
   local sf live
   sf="$(wt stopme-task)/.vibe-loop.state"
   sleep 30 &
@@ -319,7 +332,7 @@ EOF
 @test "done: refuses while LOOP.md is still on the branch" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "brief task" --until false --max 1 --push
+  loop_ended loop "brief task" --until false --max 1 --push
   run loop_vibe "done" "brief task"
   [ "$status" -eq 1 ]
   [[ "$output" == *"LOOP.md"* ]]
@@ -329,7 +342,7 @@ EOF
 @test "done: --keep-brief removes the worktree, brief stays in history" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "keep brief" --until false --max 1 --push
+  loop_ended loop "keep brief" --until false --max 1 --push
   run loop_vibe "done" --keep-brief "keep brief"
   [ "$status" -eq 0 ]
   [ ! -d "$(wt keep-brief)" ]
@@ -339,7 +352,7 @@ EOF
 @test "done: passes once the brief is deleted and synced" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "del brief" --until false --max 1 --push
+  loop_ended loop "del brief" --until false --max 1 --push
   git -C "$(wt del-brief)" rm -q LOOP.md
   git -C "$(wt del-brief)" commit -q -m "chore: drop loop brief"
   git -C "$(wt del-brief)" push -q
@@ -360,7 +373,7 @@ EOF
 @test "loop: attach notes an active loop instead of touching the branch" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "watch task" --until false --max 1
+  loop_ended loop "watch task" --until false --max 1
   local sf live
   sf="$(wt watch-task)/.vibe-loop.state"
   sleep 30 &
@@ -380,7 +393,7 @@ EOF
 @test "loop: status shows the loop's iteration and last result" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "shown task" --until false --max 2
+  loop_ended loop "shown task" --until false --max 2
   run loop_vibe status
   [ "$status" -eq 0 ]
   [[ "$output" == *"loop iter 2/2"* ]]
@@ -394,7 +407,7 @@ EOF
   # healthy forever.
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "dead runner" --until false --max 1
+  loop_ended loop "dead runner" --until false --max 1
   local sf dead
   sf="$(wt dead-runner)/.vibe-loop.state"
   true &
@@ -421,7 +434,7 @@ EOF
 @test "loop: seeds LOOP.md from the shared template" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "Doc Task" --until false --max 1
+  loop_ended loop "Doc Task" --until false --max 1
   local f
   f="$(wt doc-task)/LOOP.md"
   [ -f "$f" ]
@@ -434,7 +447,7 @@ EOF
 @test "loop: an --until holding '&&' renders verbatim into LOOP.md" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "amp task" --until 'a && b && c' --max 1
+  loop_ended loop "amp task" --until 'a && b && c' --max 1
   local f
   f="$(wt amp-task)/LOOP.md"
   # bash >= 5.2 would expand each unescaped '&' to the matched token
@@ -451,7 +464,7 @@ EOF
   # it just inserted.
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "document the <machine> placeholder" --until false --max 1
+  loop_ended loop "document the <machine> placeholder" --until false --max 1
   local f
   f="$(wt document-the-machine-placeholder)/LOOP.md"
   [ -f "$f" ]
@@ -462,7 +475,7 @@ EOF
   cd "$(make_repo proj)"
   stub_agent
   printf '# Custom brief for <branch>\n\nDo the thing.\n' >"$BATS_TEST_TMPDIR/brief.md"
-  loop_vibe loop "custom task" --prompt "$BATS_TEST_TMPDIR/brief.md" --until false --max 1
+  loop_ended loop "custom task" --prompt "$BATS_TEST_TMPDIR/brief.md" --until false --max 1
   local f
   f="$(wt custom-task)/LOOP.md"
   grep -q "Custom brief for custom-task" "$f"
@@ -517,7 +530,7 @@ EOF
   STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
     VIBE_LOOP_SANDBOX_ARGS="--stub-box /tmp" \
     run loop_vibe loop "boxed task" --sandbox --until false --max 1
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   # word-split into two arguments, like its siblings
   grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
   grep -qx -- "/tmp" "$BATS_TEST_TMPDIR/argv"
@@ -529,7 +542,7 @@ EOF
   STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
     VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
     run loop_vibe loop "plain task" --until false --max 1
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   run ! grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
   [ "$(loop_state plain-task SANDBOX)" = 0 ]
 }
@@ -538,7 +551,7 @@ EOF
   cd "$(make_repo proj)"
   stub_agent
   VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
-    loop_vibe loop "resume boxed" --sandbox --until false --max 1
+    loop_ended loop "resume boxed" --sandbox --until false --max 1
   [ "$(loop_state resume-boxed SANDBOX)" = 1 ]
 
   local sf
@@ -549,7 +562,7 @@ EOF
   STUB_ARGS="$BATS_TEST_TMPDIR/argv" \
     VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
     run loop_vibe loop "resume boxed" --until false --max 2
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [[ "$output" == *"resuming loop"* ]]
   grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
   [ "$(loop_state resume-boxed SANDBOX)" = 1 ]
@@ -558,7 +571,7 @@ EOF
 @test "loop: a state file written before --sandbox existed still resumes" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "legacy task" --until false --max 1
+  loop_ended loop "legacy task" --until false --max 1
   local sf
   sf="$(wt legacy-task)/.vibe-loop.state"
   # an old runner's state: no SANDBOX key at all
@@ -567,7 +580,7 @@ EOF
   set_state "$sf" PID 99999999
 
   run loop_vibe loop "legacy task" --until false --max 2
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [ "$(loop_state legacy-task ITER)" = 2 ]
   [ "$(loop_state legacy-task SANDBOX)" = 0 ]
 }
@@ -626,7 +639,7 @@ EOF
   stub_agent
   stub_gh
   run loop_vibe loop "draft task" --until false --max 1 --pr
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [ "$(loop_state draft-task STATUS)" = maxed ]
   [[ "$output" == *"opened draft PR"* ]]
   grep -qx -- "--draft" "$GH_LOG"
@@ -670,7 +683,7 @@ EOF
   # PR=1 carries forward, so the resume finds its own PR already open.
   GH_EXISTING="https://github.test/proj/pull/7" \
     run loop_vibe loop "restored task" --until false --max 2
-  [ "$status" -eq 0 ]
+  [ "$status" -eq 3 ]
   [[ "$output" == *"restored LOOP.md from the archived brief"* ]]
   # The resumed rounds ran against the refined brief, and the end of the run
   # stripped it off the branch again — re-archived, not lost.
@@ -808,7 +821,7 @@ EOF
   # __loop-run — it must pick up ITER/MAX from the state file and continue.
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "runner task" --until false --max 1
+  loop_ended loop "runner task" --until false --max 1
   [ "$(loop_state runner-task ITER)" = 1 ]
   set_state "$(wt runner-task)/.vibe-loop.state" MAX 2
 
@@ -838,7 +851,7 @@ EOF
   # /rc typed into a loop session lands on the runner, not an agent prompt.
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "rc loop" --until false --max 1
+  loop_ended loop "rc loop" --until false --max 1
   local sf live
   sf="$(wt rc-loop)/.vibe-loop.state"
   sleep 30 &
@@ -911,7 +924,7 @@ EOF
 @test "loop: done --stop keeps the PR flag in the state file" {
   cd "$(make_repo proj)"
   stub_agent
-  loop_vibe loop "stop pr" --until false --max 1
+  loop_ended loop "stop pr" --until false --max 1
   local sf live
   sf="$(wt stop-pr)/.vibe-loop.state"
   sleep 30 &

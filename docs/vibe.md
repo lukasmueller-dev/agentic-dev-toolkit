@@ -37,6 +37,11 @@ On a **server** this opens a tmux session named `vibe-<repo>-<branch>` and
 starts the agent inside it. On a **local** machine it just drops you into the
 worktree and launches the agent — no tmux, because nothing needs to survive.
 
+`--no-attach` (server only, like `vibe loop`'s flag) starts the tmux session
+and returns instead of attaching — for starts with no tty to attach from,
+so `ssh <host> vibe start <task>` is scriptable. `vibe attach <task>` joins
+the session later.
+
 When the task grew out of a discussion in another agent session, the
 `handoff-brief` skill ([`skills/handoff-brief/`](../skills/handoff-brief/))
 bridges the two: it distills that conversation into the task's `HANDOFF.md`,
@@ -52,7 +57,7 @@ The verbs are layered by how often you reach for them.
 
 | Command                        | Does                                                       |
 | ------------------------------ | ---------------------------------------------------------- |
-| `vibe start <task>`            | Branch + worktree + `HANDOFF.md`, then launch the agent    |
+| `vibe start <task> [--no-attach]` | Branch + worktree + `HANDOFF.md`, then launch the agent |
 | `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
 | `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
 | `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]` | Remove the worktree(s), keeping the branch(es) |
