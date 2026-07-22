@@ -69,11 +69,16 @@ case "$kind" in
 esac
 
 # -f so an HTTP error is a non-zero exit rather than a silent success.
+# --data-raw, never -d/--data: curl reads a leading '@' in the value as "this
+# is a filename". A notification whose message starts with '@' would otherwise
+# POST the contents of that local file to a public ntfy topic, where the topic
+# name is the only access control - and if the path does not exist, curl fails
+# and the '|| true' below drops the push without a word.
 curl -fsS --max-time 10 \
   -H "Title: $title" \
   -H "Priority: $prio" \
   -H "Tags: $tags" \
-  -d "$body" \
+  --data-raw "$body" \
   "https://ntfy.sh/$topic" >/dev/null 2>&1 || true
 
 exit 0

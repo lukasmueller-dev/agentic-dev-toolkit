@@ -146,6 +146,15 @@ decided. `attach` has its own never-refusing fast-forward — it declines to
 guess about git, never to attach — while `resume` is the strict plumbing you
 call directly.
 
+**`resume` pulls a branch up to *its own* upstream — not to the default
+branch.** For a task branch that means `origin/<branch>`, so a branch whose
+remote is in sync reports `already up to date` however far behind `main` it
+has fallen. That is the right behaviour for picking work back up on another
+machine, and the wrong tool for "main moved under me". To catch up with the
+default branch, use the `sync-with-main` skill, or `git rebase origin/main`
+directly. Reaching for `resume` here is a quiet failure: it succeeds, says so,
+and leaves you on stale code.
+
 ## Finishing a task
 
 ```bash

@@ -333,6 +333,18 @@ CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 # sandbox lists, every domain or exclusion the user added by hand. A sandbox
 # path is only unioned when the baseline carries it; one that exists only in
 # the live file is untouched by `*` already.
+#
+# `hooks` needs a union too, and a different one. Plain `*` replaced each event
+# array wholesale, so a hook the user had configured for an event the baseline
+# also defines (Notification, PostToolUse, SessionEnd, SessionStart) was
+# dropped on every run, silently. But a plain concat is wrong in the other
+# direction: rename a script in claude/hooks/ and the stale entry would live on
+# forever, pointing at a file that no longer exists. So: keep the live entries
+# that are NOT ours, and let the baseline be authoritative for the ones that
+# are. "Ours" is any entry whose command names .claude/hooks/, the directory
+# this installer owns and symlinks into place. Events only the user has (say
+# PreCompact) survive untouched, and an event left with no entries is dropped
+# rather than written as an empty array, so the merge stays idempotent.
 claude_settings_merged() {
   jq -s '
     .[0] as $live | .[1] as $repo
@@ -353,6 +365,14 @@ claude_settings_merged() {
         if ($repo | getpath($p)) != null
         then setpath($p; ((($live | getpath($p)) // []) + ($repo | getpath($p))) | unique)
         else . end)
+    | .hooks = (
+        reduce ((($live.hooks // {}) + ($repo.hooks // {})) | keys[]) as $e ({};
+          .[$e] = (
+            (($live.hooks[$e] // [])
+              | map(select(
+                  ((.hooks // []) | any((.command // "") | contains(".claude/hooks/"))) | not)))
+            + ($repo.hooks[$e] // [])))
+        | with_entries(select((.value | length) > 0)))
   ' "$1" "$CLAUDE_SETTINGS_SRC"
 }
 

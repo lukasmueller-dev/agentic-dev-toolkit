@@ -53,16 +53,18 @@ Any line that prints is real content. A PR is the "task ends" boundary
 that convention exists for, so before committing:
 - Make sure whatever it says is either already in the commit body you're
   about to write, or fold it in now — don't let it get lost.
-- Clear `HANDOFF.md` back to its bare headings (each section holding only
-  its placeholder line) and include that in the same commit.
+- `git rm HANDOFF.md` and include the deletion in the same commit. Delete
+  it, don't blank it: a finished task hands nothing off, and an emptied
+  husk still merges onto the default branch as a stray file. `vibe done`
+  refuses while the file is on the branch at all, and CI fails a stray
+  `HANDOFF.md` at the repo root — so clearing it in place blocks the merge
+  you are opening the PR for.
 
 Skipping this is what causes `HANDOFF.md` merge conflicts between parallel
 task branches: each one fully rewrites the same file with its own
-narrative, and git can't reconcile two different rewrites. A cleared
-handoff still differs from another branch's cleared handoff in its
-Branch/Worktree/date header lines — that residual is a trivial conflict to
-resolve (either side is equally valid), unlike the paragraphs of prose it
-replaces.
+narrative, and git can't reconcile two different rewrites. Deleting it on
+each branch removes the file both sides were rewriting, so there is nothing
+left to conflict over.
 
 ### 4. Commit
 

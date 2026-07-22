@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-21 · server_
+_Last updated: 2026-07-22 · server_
 
 ## Goal
 
@@ -85,9 +85,46 @@ Track B — portability and team:
       stays the install path on real machines. Note the `@` import in
       `claude/CLAUDE.md` resolves against `~/.claude`, which a plugin does
       not populate.
+      **A 228-line design doc for this exists but was never merged:**
+      `docs/plugins.md` on `origin/claude/open-source-alternatives-2yiha7`
+      (2 commits, no PR ever opened). Recover it before starting, and
+      before any branch pruning.
 - [ ] Curated MCP server list in `docs/` (docs-first; `~/.claude.json` is
       Claude-written and stays unmanaged — same file class as
       `settings.json`'s runtime keys)
+
+Track C — verification debt (opened by the 2026-07-22 review pass):
+
+- [ ] **GitHub Actions is billing-blocked**, so nothing has been verified
+      by CI since 2026-07-21. PRs #33–#35 merged unverified, and the macOS
+      leg — the only place bash 3.2 and BSD userland are exercised — has
+      not run since. This blocks confidence in every change, so it comes
+      before the rest of this track.
+- [ ] Assert bash 3.2 rather than assume it. The macOS leg does run
+      3.2.57 today, but `ci.yml` only *prints* `bash --version`; scripts
+      use `#!/usr/bin/env bash`, so a runner-image change would retire the
+      portability guarantee with a green build.
+- [ ] `install.sh` chmods `+x` inside the developer's own checkout
+      (`:704-705`), and `tests/install.bats` runs the real installer ~25×
+      per suite run. Harmless today — every such file is already
+      executable — but a deliberately non-executable `*.sh` under a skill
+      would have its mode flipped by running the tests, and the guard at
+      `tests/install.bats:101` filters mode-only changes by design.
+- [ ] `tests/helper.bash` never redirects `HOME` (only `install.bats`
+      does), contra `CLAUDE.md`. No test escapes `$BATS_TEST_TMPDIR` today
+      — verified by marker-file diff — but the defaults are one forgotten
+      wrapper away from the real worktree root.
+- [ ] Cover the server side of `cmd_loop` / `cmd_loop_run` / `cmd_rc`,
+      `--uninstall --dry`, both jq-absent degrade paths, `vibe list`, and
+      a *conflicting* `resume --rebase`. Strengthen four assertions that
+      pass vacuously: `install.bats:172`, `vibe-loop.bats:100`,
+      `hooks.bats:322`, `vibe-ui.bats:50`.
+- [ ] Residual doc drift: `docs/vibe.md:170` (`--force` does not override
+      the running-loop guard) · `project-status-scaffold/SKILL.md:29`
+      (points at a template that is not there) ·
+      `implement-test-suite/SKILL.md:13,103` (`codebase-healthiness` →
+      `codebase-health`) · `docs/vibe-loop.md:20-29` (a fifth stop
+      condition, diverged remote, is missing from the table).
 
 ## Open questions
 

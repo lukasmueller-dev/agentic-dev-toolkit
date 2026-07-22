@@ -49,8 +49,16 @@ newest_work_mtime() {
   done < <(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null | cut -c4-)
 
   # A commit is work too: it may be newer than any file left in the tree.
+  # Excluding the two status files here for the same reason the loop above
+  # does: the handoff is written first and committed a moment later, so a
+  # commit that contains it is always newer than the file's own mtime. Counting
+  # it as "work" made every correctly-finished session end with a stale-handoff
+  # warning on a clean tree - a guard that cries wolf every time teaches you to
+  # ignore it, which costs more than the one it was meant to catch.
   local commit_t
-  commit_t="$(git -C "$root" log -1 --format=%ct 2>/dev/null || echo 0)"
+  commit_t="$(git -C "$root" log -1 --format=%ct \
+    -- . ':(exclude)HANDOFF.md' ':(exclude)PROJECT_STATUS.md' 2>/dev/null || echo 0)"
+  commit_t="${commit_t:-0}"
   ((commit_t > newest)) && newest="$commit_t"
 
   echo "$newest"

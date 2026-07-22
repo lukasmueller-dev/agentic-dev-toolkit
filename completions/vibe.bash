@@ -17,7 +17,9 @@ _vibe_tasks() {
   cfg="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
   root="${VIBE_WORKTREE_ROOT:-}"
   if [[ -z "$root" && -r "$cfg" ]]; then
-    root="$(sed -n 's/^[[:space:]]*VIBE_WORKTREE_ROOT[[:space:]]*=[[:space:]]*//p' \
+    # optional 'export ' prefix: bin/vibe sources the config and vibe doctor
+    # accepts it, so a parser that ignores it completes the wrong worktree root
+    root="$(sed -nE 's/^[[:space:]]*(export[[:space:]]+)?VIBE_WORKTREE_ROOT[[:space:]]*=[[:space:]]*//p' \
       "$cfg" | tail -1 | tr -d '"'\''')"
   fi
   root="${root:-$HOME/git/worktrees}"

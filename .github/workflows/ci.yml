@@ -11,10 +11,13 @@ on:
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
 
-# Cancel an in-flight run when the branch is pushed again.
+# Cancel an in-flight run when the branch is pushed again — but never on main.
+# PR runs are opt-in per label, so the push-to-main run is the only verification
+# some commits ever get; back-to-back merges were cancelling it and landing
+# unverified. On a topic branch superseding the run is still what you want.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -143,6 +146,14 @@ jobs:
           # alike, so a sentence about one agent is wrong in the other two.
           # CLAUDE.md / AGENTS.md / GEMINI.md as filenames are fine — those are
           # the open conventions each agent reads.
+          #
+          # Assert the file exists first: grep exits 2 on a missing file, which
+          # is falsy, so a rename would turn this guard green forever instead
+          # of failing — the exact silent drift it exists to catch.
+          test -f memory/GLOBAL.md || {
+            echo "::error::memory/GLOBAL.md is missing — this guard cannot run"
+            exit 1
+          }
           if grep -rnE 'Claude Code|Anthropic|OpenAI|Codex|Gemini CLI' memory/GLOBAL.md; then
             echo "::error::memory/GLOBAL.md must not name a specific agent or vendor"
             exit 1
@@ -162,6 +173,17 @@ jobs:
         run: |
           # A template that names a specific CLI re-couples the document to one
           # workflow, which is the drift this layout exists to prevent.
+          #
+          # Existence check first, for the same reason as the guard above: grep
+          # exits 2 on a missing file, so deleting or renaming a template would
+          # silently retire its neutrality check rather than fail the build.
+          for f in templates/HANDOFF.md templates/LOOP.md \
+            templates/LOOP_PR.md templates/PROJECT_STATUS.md; do
+            test -f "$f" || {
+              echo "::error file=$f::missing — this guard cannot run"
+              exit 1
+            }
+          done
           if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' \
             templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md; then

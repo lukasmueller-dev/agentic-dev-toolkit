@@ -105,6 +105,52 @@ trim() {
   printf '%s' "$s"
 }
 
+# Strip one layer of matching YAML quotes. Both forms are valid YAML, and
+# handling only double quotes made `name: 'thing'` fail SQ3 and SQ4 on input
+# that was never wrong — under --strict, a CI failure on a correct skill.
+unquote() {
+  local s="$1"
+  case "$s" in
+    '"'*'"') s="${s#\"}" && s="${s%\"}" ;;
+    "'"*"'") s="${s#\'}" && s="${s%\'}" ;;
+  esac
+  printf '%s' "$s"
+}
+
+# Can this line still be YAML frontmatter, rather than the start of the body?
+fm_line_ok() {
+  local line="$1"
+  [ -z "$(trim "$line")" ] && return 0 # blank
+  case "$line" in
+    [[:space:]]*) return 0 ;; # indented continuation or nested block
+    '#'*) return 0 ;;         # YAML comment
+    '- '*) return 0 ;;        # list item
+  esac
+  local key_re='^[A-Za-z_][A-Za-z0-9_.-]*[[:space:]]*:'
+  [[ $line =~ $key_re ]] # key:
+}
+
+# frontmatter_closed FILE — is the opening '---' closed by a second one BEFORE
+# the body starts? Searching the whole file for a bare '---' (the old check)
+# let an unterminated block pass whenever the body happened to contain a
+# markdown horizontal rule: that rule was taken as the close, prose was parsed
+# as frontmatter, and the most basic structural check in this linter returned a
+# false negative.
+#
+# Pure bash on purpose. `sed | grep` invited the SIGPIPE race documented on
+# check_skill, and awk would add a dependency this linter promises not to need
+# — tests/skill-lint.bats pins the tool set it must degrade to.
+frontmatter_closed() {
+  local file="$1" line n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    [ "$n" -eq 1 ] && continue # the opening '---', already checked
+    [ "$(trim "$line")" = "---" ] && return 0
+    fm_line_ok "$line" || return 1
+  done <"$file"
+  return 1 # ran off the end without a close
+}
+
 # --------------------------------------------------------------------------
 # Tool detection. Done once; the bundled-script checks consult these flags.
 # --------------------------------------------------------------------------
@@ -200,13 +246,8 @@ check_skill() {
     emit_error "$file" "[SQ1] must start with YAML frontmatter ('---' on line 1)"
     return
   fi
-  # grep without -q here: -q can exit the moment it finds the match, and on
-  # a long enough file sed is still mid-write when that happens - SIGPIPE
-  # kills sed, and with `set -o pipefail` (above) that failure, not grep's
-  # success, becomes the pipeline's exit status. Letting grep drain the rest
-  # of sed's output (into /dev/null) avoids the race.
-  if ! sed -n '2,$p' "$file" | grep -x -- '---' >/dev/null; then
-    emit_error "$file" "[SQ1] frontmatter is not closed by a second '---'"
+  if ! frontmatter_closed "$file"; then
+    emit_error "$file" "[SQ1] frontmatter is not closed by a second '---' before the body"
     return
   fi
 
@@ -216,9 +257,7 @@ check_skill() {
   # name --------------------------------------------------------------------
   local nm
   nm="$(printf '%s\n' "$fm" | sed -n 's/^name:[[:space:]]*//p' | head -1)"
-  nm="$(trim "$nm")"
-  nm="${nm%\"}"
-  nm="${nm#\"}"
+  nm="$(unquote "$(trim "$nm")")"
   if [ -z "$nm" ]; then
     emit_error "$file" "[SQ2] frontmatter is missing 'name:'"
   else
@@ -238,9 +277,7 @@ check_skill() {
   # description -------------------------------------------------------------
   local desc
   desc="$(printf '%s\n' "$fm" | sed -n 's/^description:[[:space:]]*//p' | head -1)"
-  desc="$(trim "$desc")"
-  desc="${desc%\"}"
-  desc="${desc#\"}"
+  desc="$(unquote "$(trim "$desc")")"
   if [ -z "$desc" ]; then
     emit_error "$file" "[SQ5] frontmatter is missing 'description:'"
   else

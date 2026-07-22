@@ -1,6 +1,13 @@
 # install.sh backups (created when a real file was already in place)
 *.bak.*
 
+# vibe loop runtime state: machine-local counters and a PID, never deliverable
+# work. `vibe loop` adds the state file to .git/info/exclude at runtime, but
+# only the exact name — the atomic-write temp (.vibe-loop.state.tmp.$$) is left
+# behind by a kill mid-write, and run_loop's `git add -A` would commit it.
+.vibe-loop.state
+.vibe-loop.state.tmp.*
+
 # OS / editor cruft
 .DS_Store
 *.swp
