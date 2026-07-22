@@ -101,15 +101,6 @@ Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):
 
-- [ ] `claude/settings.json` protects secret files only from the `Read`
-      tool, while `Bash(cat:*)`, `grep`, `head`, `tail` are allowed and
-      the sandbox gates just `~/.aws/credentials` and `~/.ssh` — so
-      `.env`, `*.pem`, `id_rsa`, and `~/.config/gh/hosts.yml` are readable
-      with no prompt. Closing it means sandbox credential entries for
-      those paths; that touches the settings merge, so owner go-ahead
-      first. Two smaller nits in the same file: the force-push deny misses
-      the `git push origin +main` refspec form, and `--force` as a prefix
-      also blocks the safe `--force-with-lease`.
 - [ ] SQ13 vs reality: `commit-push-pr` and `sync-with-main` stay
       model-invocable while autonomously committing, pushing, or
       force-pushing — the two skills squarest inside SQ13's own example

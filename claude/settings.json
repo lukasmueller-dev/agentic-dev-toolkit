@@ -129,13 +129,22 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push --mirror:*)",
+      "Bash(git push * --force)",
+      "Bash(git push * --force *)",
+      "Bash(git push * -f)",
+      "Bash(git push * -f *)",
+      "Bash(git push * --mirror)",
+      "Bash(git push * --mirror *)",
+      "Bash(git push * +*)",
       "Read(**/.env)",
       "Read(**/.env.*)",
       "Read(**/*.pem)",
       "Read(**/id_rsa)",
       "Read(**/id_ed25519)",
       "Read(**/.ssh/**)",
-      "Read(**/.aws/credentials)"
+      "Read(**/.aws/credentials)",
+      "Read(**/gh/hosts.yml)",
+      "Read(**/.netrc)"
     ]
   },
   "sandbox": {
@@ -144,7 +153,9 @@
     "credentials": {
       "files": [
         { "mode": "deny", "path": "~/.aws/credentials" },
-        { "mode": "deny", "path": "~/.ssh" }
+        { "mode": "deny", "path": "~/.ssh" },
+        { "mode": "deny", "path": "~/.config/gh/hosts.yml" },
+        { "mode": "deny", "path": "~/.netrc" }
       ]
     },
     "network": {
