@@ -86,8 +86,11 @@ _vibe() {
     help)
       _vibe_reply "start loop attach park done rc status list sync resume where doctor" "$cur"
       ;;
+    start)
+      # a new task name is free text, so only flags are worth suggesting
+      [[ "$cur" == -* ]] && _vibe_reply "--no-attach" "$cur"
+      ;;
     *)
-      # `start` takes a new task name: free text, nothing useful to suggest
       COMPREPLY=()
       ;;
   esac

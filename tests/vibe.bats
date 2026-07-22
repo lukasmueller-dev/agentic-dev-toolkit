@@ -458,6 +458,34 @@ slug() {
   git -C "$wt" rev-parse '@{u}' >/dev/null
 }
 
+@test "start: --no-attach starts the tmux session and returns (server)" {
+  # Mirrors "loop: on the server a fresh loop starts detached inside tmux":
+  # the session is created against the stub tmux and never attached, so
+  # 'ssh <host> vibe start <task>' exits 0 instead of dying on the headless
+  # attach after the agent is already up.
+  cd "$(make_repo proj)"
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "srv headless" --no-attach
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"session running detached"* ]]
+  [[ "$output" == *"vibe attach srv-headless"* ]]
+  grep -q "new-session -d -s vibe-proj-srv-headless " "$VIBE_TEST_TMUX_LOG"
+  # no attach: started from a script, attaching would fail or hang the caller
+  run grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "start: --no-attach refuses on local before creating anything" {
+  cd "$(make_repo proj)"
+  run run_vibe start "det start" --no-attach
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"server"* ]]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/det-start" ]
+}
+
 # ---------------------------------------------------------------------------
 # list
 # ---------------------------------------------------------------------------

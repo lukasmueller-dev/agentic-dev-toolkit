@@ -15,8 +15,12 @@
 # Commands, in the order you reach for them:
 #
 # Daily loop:
-#   vibe start <task>     Create branch+worktree for <task>, seed HANDOFF.md,
+#   vibe start <task> [--no-attach]
+#                         Create branch+worktree for <task>, seed HANDOFF.md,
 #                         then open a claude session (in tmux on server).
+#                         --no-attach (server) starts the tmux session and
+#                         returns instead of attaching — for starts with no
+#                         tty to attach from (ssh <host> vibe start <task>).
 #   vibe attach [<task>]  Arrive at a task: fast-forward its worktree when that
 #                         is safe (clean + ff-only), then attach. Never refuses
 #                         — a dirty/diverged tree is reported and attached as-is.
@@ -1436,8 +1440,28 @@ handoff_carries_content() {
 # ---------------------------------------------------------------------------
 cmd_start() {
   need git
-  local task="${1:-}"
-  [[ -n "$task" ]] || die "usage: vibe start <task>"
+  local usage="usage: vibe start <task> [--no-attach]"
+  local task="" no_attach=0
+  while (($#)); do
+    case "$1" in
+      --no-attach)
+        no_attach=1
+        shift
+        ;;
+      -*) die "unknown option '$1' ($usage)" ;;
+      *)
+        task="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$task" ]] || die "$usage"
+  # Checked before any scaffolding, like 'vibe loop' does: a late refusal
+  # would leave a seeded worktree behind.
+  if [[ "$no_attach" == "1" && "$(detect_env)" != "server" ]]; then
+    die "--no-attach needs a server tmux session — locally 'vibe start' opens
+  the agent in the foreground, so there is nothing to detach from."
+  fi
   local branch
   branch="$(slug "$task")"
   local repo
@@ -1454,11 +1478,14 @@ cmd_start() {
   fi
 
   seed_handoff "$dir" "$repo" "$branch"
-  open_session "$repo" "$branch" "$dir"
+  open_session "$repo" "$branch" "$dir" "$no_attach"
 }
 
+# open_session REPO BRANCH DIR [NO_ATTACH] — bring the task's session to the
+# foreground: tmux on the server, exec the agent locally. NO_ATTACH=1 (server
+# only) leaves the tmux session running detached instead of attaching.
 open_session() {
-  local repo="$1" branch="$2" dir="$3"
+  local repo="$1" branch="$2" dir="$3" no_attach="${4:-0}"
   local env
   env="$(detect_env)"
 
@@ -1477,7 +1504,14 @@ open_session() {
     else
       info "starting persistent tmux session: $sess"
     fi
-    tmux_attach_or_switch "$sess"
+    if [[ "$no_attach" == "1" ]]; then
+      # Started without a tty (ssh <host> vibe start …) or from a script:
+      # attaching would fail or hang the caller. The session runs either way.
+      info "session running detached: $sess"
+      info "watch it: vibe attach $branch   ·   check on it: vibe status"
+    else
+      tmux_attach_or_switch "$sess"
+    fi
   else
     # local: no forced tmux, just move into the worktree and launch agent.
     # Word-split on purpose, like run_loop does: VIBE_AGENT_CMD may carry
@@ -2460,9 +2494,12 @@ cmd_help() {
   }
 
   help_section "Daily loop:"
-  help_cmd "start <task>" "" \
+  help_cmd "start <task>" "[--no-attach]" \
     "Create branch+worktree for <task>, seed HANDOFF.md," \
-    "then open a claude session (in tmux on server)."
+    "then open a claude session (in tmux on server)." \
+    "--no-attach (server) starts the tmux session and" \
+    "returns instead of attaching — for starts with no" \
+    "tty to attach from (ssh <host> vibe start <task>)."
   help_cmd "attach [<task>]" "" \
     "Arrive at a task: fast-forward its worktree when that" \
     "is safe (clean + ff-only), then attach. Never refuses" \
