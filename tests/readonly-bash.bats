@@ -131,6 +131,41 @@ vet() {
   [ "$status" -eq 2 ]
 }
 
+@test "readonly-bash: blocks process substitution, a sibling of \$(...)" {
+  # <(cmd) and >(cmd) run a command just as $(...) does, but the inner text is
+  # invisible to this vet — a reviewer reaching for 'diff <(a) <(b)' can write
+  # through it. Both directions, and the payload really executing, are the risk.
+  run vet 'cat <(sh -c "echo pwned > /tmp/x")'
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"own Bash call"* ]]
+  run vet 'diff <(git show HEAD:a) <(git show HEAD:b)'
+  [ "$status" -eq 2 ]
+  run vet 'tee >(sh -c "rm x")'
+  [ "$status" -eq 2 ]
+}
+
+@test "readonly-bash: blocks awk that runs a command via 'cmd | getline'" {
+  # The pipe lives inside the awk program's own quotes, so the pre-pass never
+  # splits it into a segment — the getline form has to be denied by name.
+  run vet 'awk "BEGIN{ \"touch /tmp/x\" | getline line }"'
+  [ "$status" -eq 2 ]
+  run vet 'awk "BEGIN{ system(\"rm x\") }"'
+  [ "$status" -eq 2 ]
+}
+
+@test "readonly-bash: a target near /dev/null is not /dev/null" {
+  # '/dev/null*' as a glob also accepted /dev/nullx, a real writable file.
+  run vet 'echo x >/dev/nullx'
+  [ "$status" -eq 2 ]
+  run vet 'echo x >/dev/null.bak'
+  [ "$status" -eq 2 ]
+  # the genuine article, alone and paired with 2>&1, still passes
+  run vet 'grep -rn foo . >/dev/null'
+  [ "$status" -eq 0 ]
+  run vet 'grep -rn foo . >/dev/null 2>&1'
+  [ "$status" -eq 0 ]
+}
+
 @test "readonly-bash: an env-var prefix does not smuggle a command past" {
   run vet 'GIT_PAGER=cat git diff'
   [ "$status" -eq 0 ]
