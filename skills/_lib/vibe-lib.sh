@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 #
 # vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
-# briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh).
+# briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh,
+# review-brief/review.sh).
 #
 # Sourced, never executed. The caller is expected to run under
 # `set -euo pipefail` and to have resolved its own real location first
@@ -203,6 +204,57 @@ stage_worktree() {
   if [[ ! -d "$STAGED_DIR" ]]; then
     ensure_worktree "$(main_repo_root)" "$branch" "$STAGED_DIR"
   fi
+}
+
+# handoff_stage_state DIR REPO BRANCH — seed DIR's HANDOFF.md when absent and
+# print the STATE line telling the caller what it found: created (rendered
+# fresh from the template), existing-scaffold (already there but holding only
+# the template's scaffolding — fill it in like a fresh one), existing-handoff
+# (real content — refine it in place, never overwrite). Shared by
+# handoff-brief and review-brief, which stage the same document.
+handoff_stage_state() {
+  local dir="$1" repo="$2" branch="$3" f="$1/HANDOFF.md"
+  if [[ ! -f "$f" ]]; then
+    seed_handoff_file "$dir" "$repo" "$branch"
+    [[ -f "$f" ]] || die "no HANDOFF template at $TEMPLATE_DIR/HANDOFF.md"
+    echo "STATE=created"
+  elif handoff_carries_content "$f"; then
+    echo "STATE=existing-handoff"
+  else
+    echo "STATE=existing-scaffold"
+  fi
+}
+
+# publish_handoff DIR BRANCH COMMIT_MSG PUSH_HINT — validate that DIR's
+# HANDOFF.md is finished, then commit and push BRANCH. The handoff sibling of
+# publish_brief below, shared for the same reason: only the commit message and
+# the push-failure hint ever differ between the callers.
+#
+# Finished means: no token survived the render, and the two sections a cold
+# session depends on were actually written. Blockers and Gotchas may keep
+# their placeholders — often there are none yet.
+publish_handoff() {
+  local dir="$1" branch="$2" msg="$3" push_hint="$4" f="$1/HANDOFF.md"
+
+  if grep -qE '<(repo|branch|worktree|date|machine)>' "$f"; then
+    die "HANDOFF.md still contains unrendered <tokens> — finish the handoff first."
+  fi
+  local heading
+  for heading in '## State' '## Next action'; do
+    grep -qxF "$heading" "$f" ||
+      die "HANDOFF.md lost its '$heading' section — restore the template structure."
+    if section_unfinished "$f" "$heading"; then
+      die "the '$heading' section is still the template placeholder — write it before publishing."
+    fi
+  done
+
+  git -C "$dir" add HANDOFF.md
+  if [[ -n "$(git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
+    git -C "$dir" commit -q -m "$msg"
+    info "committed the handoff"
+  fi
+  git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
+  info "pushed '$branch' to origin"
 }
 
 # publish_brief DIR BRANCH COMMIT_MSG PUSH_HINT — validate DIR's LOOP.md, then
