@@ -164,6 +164,20 @@ that command's, and the function call itself (`myfunc`) is an ordinary
 simple command with no exemption. Use `if cond; then cmd; fi` for anything
 that can end up as a function's tail statement.
 
+**The `pipefail` sibling of that trap, which has bitten three times here:**
+`x="$(cmd | … | head -1)"`. `head` closes the pipe as soon as it has its line,
+so the producer is still writing and dies of SIGPIPE (141) — and under
+`set -o pipefail` that 141, not `head`'s success, becomes the assignment's
+status, which `set -e` then unwinds. It is invisible in tests, because the
+producer only outruns `head` once the input is bigger than a pipe buffer, and
+fixtures are small. The same shape hides in `grep -q` (exits early on match)
+and in `grep -v` (exits **1** when it filters everything out, so a
+blank-but-valid input fails). Any pipeline whose consumer can finish or fail
+early needs `|| true` on the assignment and a fallback for the empty value —
+see `loop_pr_title` and `wait_for_pane_idle` in `bin/vibe`. Where the script
+must degrade to bare bash, do it in-process instead: `frontmatter_closed` in
+`bin/skill-lint` reads the file line by line for exactly this reason.
+
 Scripts invoked through a symlink (`bin/*`, skill scripts, hooks) must resolve
 their own location by walking the symlink chain — `$0` and `$PWD` both point
 somewhere useless. Copy the `script_dir()` helper from `bin/vibe`.
