@@ -387,6 +387,34 @@ EOF
   [[ "$output" == *"maxed"* ]]
 }
 
+@test "loop: status calls a running loop with a dead runner interrupted" {
+  # A killed runner leaves STATUS=running behind with a dead PID. loop_active
+  # already treats that as not-running (so resume works); the status line
+  # printed the raw word "running" anyway, reporting a crashed loop as
+  # healthy forever.
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "dead runner" --until false --max 1
+  local sf dead
+  sf="$(wt dead-runner)/.vibe-loop.state"
+  true &
+  dead=$!
+  wait "$dead"
+  set_state "$sf" STATUS running
+  set_state "$sf" PID "$dead"
+  run loop_vibe status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"interrupted"* ]]
+  [[ "$output" != *"· running"* ]]
+
+  # An empty PID is the launch window — cmd_loop writes the state before
+  # tmux starts the runner — and that must still read as running.
+  set_state "$sf" PID ""
+  run loop_vibe status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"· running"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # LOOP.md is rendered from the template, tokens all substituted
 # ---------------------------------------------------------------------------

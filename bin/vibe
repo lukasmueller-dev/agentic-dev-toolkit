@@ -669,11 +669,21 @@ loop_active() {
 
 # loop_summary DIR — one-line "iter N/M · last R · status" for vibe status.
 loop_summary() {
-  local dir="$1" it mx la st
+  local dir="$1" it mx la st pid
   it="$(loop_get "$dir" ITER)"
   mx="$(loop_get "$dir" MAX)"
   la="$(loop_get "$dir" LAST)"
   st="$(loop_get "$dir" STATUS)"
+  # "running" with a dead recorded runner is a killed loop — the same test
+  # loop_active applies — and reporting it as running reads as healthy
+  # forever. An EMPTY pid stays "running": cmd_loop writes the state before
+  # tmux has started the runner, and that launch window is genuinely live.
+  if [[ "$st" == "running" ]]; then
+    pid="$(loop_get "$dir" PID)"
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      st="interrupted (vibe loop resumes)"
+    fi
+  fi
   printf 'iter %s/%s · last %s · %s' "${it:-0}" "${mx:-?}" "${la:-none}" "${st:-?}"
 }
 
