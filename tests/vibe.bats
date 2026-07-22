@@ -198,6 +198,68 @@ slug() {
   git show-ref --verify --quiet refs/heads/task-three
 }
 
+@test "done: removes the worktree before killing the task's tmux session" {
+  cd "$(make_repo proj)"
+  run_vibe start "task kill" >/dev/null
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-kill"
+
+  # Run from inside the session vibe is about to kill — the real shape of the
+  # bug: killing first SIGHUPs vibe itself, so the removal never runs and not
+  # even the refusal messages reach the user. The stub cannot deliver a real
+  # SIGHUP, so it records whether the worktree was still there at kill time.
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-done"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  kill-session) [ -d "${VIBE_TEST_DOOMED_WT:?}" ] &&
+    printf 'STILL-PRESENT-AT-KILL\n' >>"$VIBE_TEST_TMUX_LOG" ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" \
+    VIBE_TEST_DOOMED_WT="$wt" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" --force "task kill"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  grep -q "kill-session -t vibe-proj-task-kill" "$VIBE_TEST_TMUX_LOG"
+  run ! grep -q "STILL-PRESENT-AT-KILL" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "done: reports the removal before the kill that can cut the output off" {
+  cd "$(make_repo proj)"
+  run_vibe start "task msg" >/dev/null
+
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-msg"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" --force "task msg"
+  [ "$status" -eq 0 ]
+  # Nothing after the kill is guaranteed to be printed, so the outcome must
+  # already be on screen when the kill is announced.
+  [[ "${output#*removed worktree}" == *"killing tmux session"* ]]
+}
+
 @test "done: rejects an unknown option instead of treating it as a task" {
   cd "$(make_repo proj)"
   run run_vibe "done" --bogus "task"
