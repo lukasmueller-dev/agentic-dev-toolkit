@@ -37,6 +37,31 @@ file or docs, and the staged brief tells the session so.
 - **Cross-file consistency.** Constants, regexes, or contracts duplicated
   across files and kept in lockstep only by comment — verify every copy,
   and every pointer comment that names the siblings.
+- **Derived-but-unused values.** A script that computes a value, validates
+  it, and names it in a log line, but never actually acts on it — a
+  resolved repo root that is never entered, a config path never read. The
+  surrounding comments and docs describe the intended use, so the code
+  reads as correct; only following the variable to every use site catches
+  it. Pairs lethally with a swallowed exit status: the work never happens
+  and the wrapper still reports success.
+- **Guard patterns with blind spots.** A grep or regex that enforces an
+  invariant is itself unreviewed code. Check the boundary logic against
+  the spellings a real violation would use — `\bmac\b` never fires on
+  "macOS" — and confirm the guard fails loudly when its input goes
+  missing, since grep exits non-zero for "no such file" exactly as it does
+  for "no match". Prove it by injecting a violation.
+- **Allowlist escapes through unmodelled syntax.** Where a hook or wrapper
+  vets a command string, enumerate the constructs that execute code but do
+  not look like the ones it blocks: process substitution `<(…)` beside the
+  `$(…)` it denies, interpreter escapes inside a permitted tool, prefix
+  spellings of a blocked path. Test the guard by running candidate
+  bypasses through it, not by reading its policy comment.
+- **Hardcoded defaults in emitted artifacts.** Anything a tool writes into
+  *another* repo — CI workflows, hooks, ignore files — must be checked
+  against a target that differs from the authoring repo. A default branch
+  named `main`, a `tests/` directory, a lockfile that is assumed present:
+  each becomes a silent no-op elsewhere, and the emitting tool's own
+  verify step reports success because the file exists.
 
 ## Conditional — only when the anchor files exist in the target repo
 
