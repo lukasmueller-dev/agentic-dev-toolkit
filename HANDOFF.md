@@ -78,7 +78,9 @@ bats tests/
 ./bin/skill-lint skills/ --strict
 ```
 
-Baseline at the time of writing: all clean, `bats` 260/260.
+Baseline at the time of writing: all clean locally, `bats` 260/260 — and
+`origin/main` is green in CI on both legs, so a failure you see is yours,
+not inherited.
 
 Then start with the biggest gap — drive `vibe` through a **full lifecycle
 in a throwaway repo**: `start` → work → `sync` → `loop` (bounded, with
@@ -93,16 +95,22 @@ finding. Anything reasoned but unproven must be labelled as such.
 
 ## Blockers
 
-**CI cannot verify anything: GitHub Actions is billing-blocked**
-(`PROJECT_STATUS.md`, Track C item 1). The macOS leg is the only place
-bash 3.2 and BSD userland are exercised, and it has not run since
-2026-07-21 — so round one's 11 merged commits are themselves unverified on
-that platform. Until billing is cleared, the five commands above are the
-only gate, and a portability regression can merge green. Clearing it is the
-highest-value action available and unblocks judging this round's own work.
+None. The Actions billing block is **cleared** — verified by a real run,
+not just by the billing page.
 
-Note also that CI is **opt-in per PR**: a PR runs nothing unless it carries
-the `run-ci` label, and GitHub's merge box reads a skipped job as passing.
+`origin/main` (`4cb588c`) is green on all four jobs, including
+`bats (macos-latest)` running **bash 3.2.57**, so round one's 11 merged
+commits are now genuinely verified on the platform that matters for the
+portability rules. **`PROJECT_STATUS.md` Track C item 1 is therefore
+resolved — strike it as part of this task**, and re-read the rest of Track
+C in that light: item 2 (assert bash 3.2 rather than assume it) is now the
+top of that track, and is still real, because CI *prints* the version
+without checking it.
+
+One live constraint remains, and it is not a blocker so much as a trap: CI
+is **opt-in per PR**. A PR runs nothing unless it carries the `run-ci`
+label, and GitHub's merge box reads a skipped job as passing. Label this
+task's PR (`gh pr edit <n> --add-label run-ci`) or it merges unverified.
 
 ## Gotchas (unpromoted)
 
