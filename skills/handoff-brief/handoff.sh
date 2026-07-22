@@ -54,24 +54,12 @@ cmd_create() {
   stage_worktree "$branch" handoff
   dir="$STAGED_DIR"
 
-  local f="$dir/HANDOFF.md"
-  if [[ ! -f "$f" ]]; then
-    seed_handoff_file "$dir" "$repo" "$branch"
-    [[ -f "$f" ]] || die "no HANDOFF template at $TEMPLATE_DIR/HANDOFF.md"
-    echo "STATE=created"
-  elif handoff_carries_content "$f"; then
-    # A handoff with real content means a task already in flight — the caller
-    # must show it and refine it, never start over.
-    echo "STATE=existing-handoff"
-  else
-    # Scaffolding only (e.g. seeded earlier by vibe start): safe to fill in.
-    echo "STATE=existing-scaffold"
-  fi
+  handoff_stage_state "$dir" "$repo" "$branch"
 
   echo "REPO=$repo"
   echo "BRANCH=$branch"
   echo "WORKTREE=$dir"
-  echo "HANDOFF_MD=$f"
+  echo "HANDOFF_MD=$dir/HANDOFF.md"
 }
 
 # ---------------------------------------------------------------------------
@@ -93,29 +81,8 @@ cmd_publish() {
     die "a loop is running for '$branch' — never edit a handoff under a live runner."
   fi
 
-  # The handoff must be finished before it ships: no unrendered tokens, and
-  # the two sections a cold session depends on actually written. Blockers and
-  # Gotchas may keep their placeholders — often there are none yet.
-  if grep -qE '<(repo|branch|worktree|date|machine)>' "$f"; then
-    die "HANDOFF.md still contains unrendered <tokens> — finish the handoff first."
-  fi
-  local heading
-  for heading in '## State' '## Next action'; do
-    grep -qxF "$heading" "$f" ||
-      die "HANDOFF.md lost its '$heading' section — restore the template structure."
-    if section_unfinished "$f" "$heading"; then
-      die "the '$heading' section is still the template placeholder — write it before publishing."
-    fi
-  done
-
-  git -C "$dir" add HANDOFF.md
-  if [[ -n "$(git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
-    git -C "$dir" commit -q -m "vibe handoff: brief '$branch'"
-    info "committed the handoff"
-  fi
-  git -C "$dir" push -q -u origin "$branch" ||
-    die "push failed — resolve it by hand (never force-push a handoff)."
-  info "pushed '$branch' to origin"
+  publish_handoff "$dir" "$branch" "vibe handoff: brief '$branch'" \
+    "push failed — resolve it by hand (never force-push a handoff)."
 
   echo "STATE=published"
   echo "BRANCH=$branch"
