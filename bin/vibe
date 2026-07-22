@@ -164,8 +164,9 @@ VIBE_LOOP_BRIEF_ARCHIVE="vibe-loop-brief.md"
 # blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
 # single-line _italic placeholders_. 'grep -v' this to surface only real,
 # handed-off content. Written once here so handoff_carries_content and cmd_done
-# cannot drift; claude/hooks/session-start-handoff.sh keeps a literal copy of
-# the same pattern (it cannot source this script) — update both together.
+# cannot drift. Two literal copies exist elsewhere, in files that cannot
+# source this script: claude/hooks/session-start-handoff.sh and
+# skills/_lib/vibe-lib.sh — update all three together.
 VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
 
 # ---------------------------------------------------------------------------
@@ -1376,8 +1377,9 @@ loop_stop() {
 # template's own scaffolding (see VIBE_HANDOFF_SCAFFOLD_RE). The template keeps
 # every placeholder on one line precisely so this stays a line filter.
 # claude/hooks/session-start-handoff.sh applies the same filter to decide
-# whether to inject HANDOFF.md as session context — kept in lockstep by
-# comment, since the hook cannot source this file.
+# whether to inject HANDOFF.md as session context, and skills/_lib/vibe-lib.sh
+# carries it for the brief-staging skills — both kept in lockstep by comment,
+# since neither can source this file.
 handoff_carries_content() {
   local f="$1"
   [[ -f "$f" ]] || return 1
