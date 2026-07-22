@@ -1297,16 +1297,25 @@ cmd_loop() {
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
     # everything from the state file just written.
     run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    # A launch failure must not strand the state: it was written as
+    # "running" just above, so dying here via set -e would leave vibe status
+    # reporting a live loop with no runner behind it, forever.
     if ((sess_exists)); then
       # Leftover session from a finished or killed run, pane already verified
       # idle above. Type the runner into it rather than just attaching — the
       # old "already exists" path started nothing, which stranded the state
       # file at STATUS=running with no runner behind it.
-      tmux send-keys -t "$sess" "$run_cmd" C-m
+      if ! tmux send-keys -t "$sess" "$run_cmd" C-m; then
+        loop_stop "$dir" "$repo" "$branch"
+        die "could not type the runner into tmux session '$sess' — loop not started"
+      fi
       info "restarting loop in existing tmux session: $sess"
     else
-      tmux new-session -d -s "$sess" -c "$dir"
-      tmux send-keys -t "$sess" "$run_cmd" C-m
+      if ! tmux new-session -d -s "$sess" -c "$dir" ||
+        ! tmux send-keys -t "$sess" "$run_cmd" C-m; then
+        loop_stop "$dir" "$repo" "$branch"
+        die "could not start tmux session '$sess' — loop not started"
+      fi
       info "starting loop in tmux session: $sess"
     fi
     if [[ "$LP_no_attach" == "1" ]]; then
