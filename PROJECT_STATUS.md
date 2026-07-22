@@ -97,10 +97,6 @@ Track C — verification debt (opened by the 2026-07-22 review pass; CI
 billing was resolved the same day — main `4cb588c` ran green on all four
 jobs, macOS leg on bash 3.2.57, so merges are verified again):
 
-- [ ] Assert bash 3.2 rather than assume it. The macOS leg does run
-      3.2.57 today, but `ci.yml` only *prints* `bash --version`; scripts
-      use `#!/usr/bin/env bash`, so a runner-image change would retire the
-      portability guarantee with a green build.
 - [ ] `install.sh` chmods `+x` inside the developer's own checkout
       (`:704-705`), and `tests/install.bats` runs the real installer ~25×
       per suite run. Harmless today — every such file is already
