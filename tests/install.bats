@@ -110,6 +110,35 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -f "$REPO_ROOT/skills/_template/SKILL.md" ]
 }
 
+@test "install: never chmods a script inside the checkout" {
+  # The installer used to chmod +x bin/* and every *.sh under linked
+  # directories — mutating the developer's working tree on every run (and
+  # the suite runs the installer ~25×). Exercised against a copy: a
+  # deliberately non-executable script must keep its mode.
+  local copy="$BATS_TEST_TMPDIR/repo"
+  cp -R "$REPO_ROOT" "$copy"
+  rm -rf "$copy/.git"
+  printf '#!/bin/sh\n' >"$copy/skills/codebase-health/noexec.sh"
+  chmod 644 "$copy/skills/codebase-health/noexec.sh"
+
+  run "$copy/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ ! -x "$copy/skills/codebase-health/noexec.sh" ]
+}
+
+@test "install: warns about a non-executable bin/ file instead of fixing it" {
+  local copy="$BATS_TEST_TMPDIR/repo"
+  cp -R "$REPO_ROOT" "$copy"
+  rm -rf "$copy/.git"
+  printf '#!/bin/sh\necho hi\n' >"$copy/bin/newtool"
+  chmod 644 "$copy/bin/newtool"
+
+  run "$copy/install.sh" bin
+  [ "$status" -eq 0 ]
+  [ ! -x "$copy/bin/newtool" ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"not executable"* ]]
+}
+
 @test "install: backs up a real file instead of deleting it" {
   mkdir -p "$HOME/.claude"
   printf 'PRECIOUS\n' >"$HOME/.claude/CLAUDE.md"

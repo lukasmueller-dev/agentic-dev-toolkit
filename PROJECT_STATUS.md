@@ -97,12 +97,6 @@ Track C — verification debt (opened by the 2026-07-22 review pass; CI
 billing was resolved the same day — main `4cb588c` ran green on all four
 jobs, macOS leg on bash 3.2.57, so merges are verified again):
 
-- [ ] `install.sh` chmods `+x` inside the developer's own checkout
-      (`:704-705`), and `tests/install.bats` runs the real installer ~25×
-      per suite run. Harmless today — every such file is already
-      executable — but a deliberately non-executable `*.sh` under a skill
-      would have its mode flipped by running the tests, and the guard at
-      `tests/install.bats:101` filters mode-only changes by design.
 - [ ] `tests/helper.bash` never redirects `HOME` (only `install.bats`
       does), contra `CLAUDE.md`. No test escapes `$BATS_TEST_TMPDIR` today
       — verified by marker-file diff — but the defaults are one forgotten

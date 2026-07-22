@@ -730,10 +730,14 @@ for rec in ${MAP[@]+"${MAP[@]}"}; do
     hdr "$kind"
     last_kind="$kind"
   fi
-  # Bundled scripts must be executable wherever they came from.
-  if ((DRY == 0)); then
-    [[ -f "$src" && "$src" == "$REPO/bin/"* ]] && chmod +x "$src"
-    [[ -d "$src" ]] && find "$src" -name '*.sh' -exec chmod +x {} +
+  # CLIs in bin/ must be executable, but the checkout is not the installer's
+  # to mutate: the exec bit is tracked by git, and a chmod here rewrites the
+  # developer's working tree (the test suite runs this installer ~25×, so a
+  # deliberately non-executable file would have its mode flipped by running
+  # the tests). Warn and let the fix happen in git. Skill scripts need no
+  # bit at all — every SKILL.md invokes them as `bash script.sh`.
+  if [[ -f "$src" && "$src" == "$REPO/bin/"* && ! -x "$src" ]]; then
+    warn "  not executable: $src — fix with chmod +x and commit"
   fi
   do_link "$src" "$dst" "$kind"
 done
