@@ -18,10 +18,16 @@ discussion that produced it*.
 - **Never start the work.** The deliverable is the roadmap entry. No
   branches, no worktrees, no implementation — queueing is the point.
 - **Never write PROJECT_ROADMAP.md from memory or a heredoc.** If the file
-  is missing, run `scaffold.sh` from the `project-status-scaffold` skill (a
-  sibling directory of this one), or render `templates/PROJECT_ROADMAP.md`
-  by hand per the placeholder contract. You only ever *edit* the rendered
-  file.
+  is missing, render it from `templates/PROJECT_ROADMAP.md` per the
+  placeholder contract — that creates exactly the one file this skill needs.
+  Resolve the template like a sibling script would: this skill is reached
+  through a symlink in `~/.claude/skills`, so `$PWD` is the user's repo, not
+  the toolkit; resolve the skill's own directory physically (`cd -P`) and go
+  two levels up to `<toolkit>/templates/`. The sibling
+  `project-status-scaffold/scaffold.sh` is the fallback, but note it also
+  creates PROJECT_STATUS.md and HANDOFF.md when they are missing — do not run
+  it just to obtain the roadmap file in a checkout that would gain an unwanted
+  stray HANDOFF.md. You only ever *edit* the rendered file.
 - **Never delete, reorder, or rewrite existing items** unless the user asks.
   Pruning finished items belongs to `project-status-scaffold`.
 - **Never absorb rationale into the item.** The item holds the conclusion
@@ -30,12 +36,14 @@ discussion that produced it*.
 
 ## Phase 1 — Harvest
 
-The raw material is the discussion that just happened. Collect what was
-actually concluded: the goal, the approach chosen, alternatives rejected and
-why, constraints, files or modules identified, and how the result would be
-verified. If any of goal, approach, or verification is missing, ask —
-inventing design the discussion never settled produces an item that lies to
-the session that picks it up.
+The raw material is the discussion that just happened. If the skill was
+invoked with an item name in `$ARGUMENTS`, that is the item's name — use it
+and harvest the design around it, rather than asking for a name the user
+already typed. Collect what was actually concluded: the goal, the approach
+chosen, alternatives rejected and why, constraints, files or modules
+identified, and how the result would be verified. If any of goal, approach,
+or verification is missing, ask — inventing design the discussion never
+settled produces an item that lies to the session that picks it up.
 
 ## Phase 2 — Design the item
 
@@ -51,7 +59,7 @@ Shape the harvest into one checkbox item:
 One item is one task, sized for a single PR. If the harvest describes more
 than that, split it and say so.
 
-## Phase 3 — Place and write
+## Phase 3 — Confirm, then place and write
 
 1. If `PROJECT_ROADMAP.md` is missing, create it (see boundaries above).
 2. Read the existing file. Choose placement: an existing track if the item
@@ -60,8 +68,12 @@ than that, split it and say so.
 3. Check the new item against what is already there — a duplicate or a
    contradiction with an existing item is a finding to raise, not silently
    merge.
-4. Write the item, update the file's `Last updated` line, and show the user
-   the entry as written.
+4. **Show the drafted item and its placement, and wait for the user's
+   go-ahead before writing anything.** The item is prose distilled from a
+   discussion; the "never reorder or rewrite existing items" boundary makes a
+   post-hoc correction awkward, so the review happens before the file
+   changes, not after.
+5. On approval, write the item and update the file's `Last updated` line.
 
 ## Done
 
