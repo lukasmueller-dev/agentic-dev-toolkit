@@ -1115,6 +1115,21 @@ run_loop() {
   fi
 }
 
+# loop_exit_for_status STATUS — the foreground exit-code contract
+# (docs/vibe-loop.md): 0 success, 2 stalled, 3 maxed, 4 timeup, 5 stopped.
+# 1 stays the generic die/usage failure, so a caller can tell "the loop ran
+# and did not pass" from "vibe refused to run it". An unknown status maps
+# to 0 rather than inventing a failure.
+loop_exit_for_status() {
+  case "$1" in
+    stalled) return 2 ;;
+    maxed) return 3 ;;
+    timeup) return 4 ;;
+    stopped) return 5 ;;
+    *) return 0 ;;
+  esac
+}
+
 # loop_parse_args ARGS... — parse the 'vibe loop' flag surface into LP_*
 # globals and validate it, so cmd_loop reads as a sequence of steps rather than
 # opening with a hundred-line getopts. Sets: LP_task LP_until LP_max LP_prompt
@@ -1380,6 +1395,11 @@ cmd_loop() {
     warn "local environment — running the loop in the foreground (Ctrl-C to stop)."
     warn "run it on the server for a detached session that survives disconnect."
     run_loop "$dir" "$repo" "$branch"
+    # Foreground only: surface how the loop ended as the exit code, so
+    # 'vibe loop … && next-step' can branch on the outcome. A detached
+    # (tmux) run has no caller to read a status — there the state file and
+    # the ntfy push carry it.
+    loop_exit_for_status "$(loop_get "$dir" STATUS)"
   fi
 }
 
