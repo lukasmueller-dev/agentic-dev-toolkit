@@ -1,0 +1,13 @@
+# --- OS and editor noise (applies to every project type) ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+
+# --- Local secrets and environment ---
+# Commit an .env.example instead; real values never enter git.
+.env
+.env.*
+!.env.example

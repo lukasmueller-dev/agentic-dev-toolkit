@@ -1,0 +1,6 @@
+# --- Rust ---
+target/
+
+# Cargo.lock: keep it committed for binaries and applications; for a library,
+# uncomment the next line.
+# Cargo.lock

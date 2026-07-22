@@ -1,0 +1,15 @@
+# --- Node ---
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
+
+# --- Next.js (harmless in a plain Node repo) ---
+.next/
+out/
+next-env.d.ts
+.vercel/

@@ -12,6 +12,13 @@ copy.
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
+| `repo/pre-push`      | `<repo>/.githooks/pre-push` | Long — git hook blocking direct pushes to the default branch |
+| `gitignore/*.gitignore` | `<repo>/.gitignore` | Long — fragments concatenated per project type (`common` + each detected type) |
+| `ci/*.yml`           | `<repo>/.github/workflows/ci.yml` | Long — starting-point workflow per project type, adapted to the repo's tooling |
+
+The `repo/`, `gitignore/`, and `ci/` files carry no placeholder tokens — they
+are copied (and then adapted in place by their consumer), not rendered. The
+placeholder contract below applies to the document templates.
 
 How the documents divide information between them — and why the handoff must
 end a task empty — is `docs/artifact-architecture.md`. The templates encode
@@ -77,6 +84,8 @@ tokens in.
 - `skills/babysit-pr/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
   for the loop that babysits a PR to mergeable (the rendering itself lives in
   `skills/_lib/vibe-lib.sh`, shared by the brief scripts)
+- `skills/repo-scaffold` — copies `repo/pre-push`, concatenates
+  `gitignore/*`, and adapts `ci/*` into the repo being scaffolded
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

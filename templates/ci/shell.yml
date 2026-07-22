@@ -1,0 +1,53 @@
+name: CI
+
+# If CI minutes are billed on this repo (private repo on a free plan), PR runs
+# are opt-in: add the `run-ci` label to the PR to start one. Push to the
+# default branch always runs, so a merge is always verified. On a repo with
+# free minutes, delete the `if:` line on each job and the `labeled` activity
+# type below.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+# Supersede an in-flight run when the branch is pushed again — but never on
+# the default branch, whose run may be the only verification a merge gets.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-ci')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck, shfmt and bats
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck bats
+          curl -fsSL -o /usr/local/bin/shfmt \
+            https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64
+          chmod +x /usr/local/bin/shfmt
+
+      # shfmt -f finds shell files by extension AND shebang, so scripts
+      # without a .sh suffix are still covered.
+      - name: shellcheck
+        run: shfmt -f . | xargs -r shellcheck
+
+      - name: shfmt (check formatting)
+        run: shfmt -d -i 2 -ci .
+
+      - name: Test
+        run: |
+          if [ -d tests ]; then
+            bats tests/
+          else
+            echo "no tests/ directory — skipping bats"
+          fi

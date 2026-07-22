@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Blocks pushing directly to the default branch, so every change goes through
+# a pull request. Useful where the hosting plan offers no server-side branch
+# protection. Real friction, not a guarantee: --no-verify skips hooks, and a
+# clone only enforces this after a one-time
+#   git config core.hooksPath .githooks
+# because .git/hooks is never tracked — record that step in the repo's
+# contributor instructions.
+#
+# Protocol: git feeds one line per ref on stdin:
+#   <local ref> <local sha> <remote ref> <remote sha>
+set -eu
+
+protected_refs="refs/heads/main refs/heads/master"
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  for ref in $protected_refs; do
+    if [[ "$remote_ref" == "$ref" ]]; then
+      echo "pre-push: direct push to '$remote_ref' is blocked — open a PR instead." >&2
+      exit 1
+    fi
+  done
+done
+
+exit 0

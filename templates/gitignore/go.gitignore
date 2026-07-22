@@ -1,0 +1,10 @@
+# --- Go ---
+# Compiled binaries and test artifacts
+*.exe
+*.test
+*.out
+coverage.out
+dist/
+
+# vendor/ is a deliberate choice: uncomment only if this repo does not vendor.
+# vendor/
