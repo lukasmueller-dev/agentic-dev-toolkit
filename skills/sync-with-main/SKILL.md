@@ -34,7 +34,7 @@ unless a **Stop condition** below is hit.
 git status --porcelain                 # must be empty — see Boundaries
 git branch --show-current              # must not be the default branch
 git fetch origin
-default="origin/$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)"
+default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
 git rev-list --count "HEAD..$default"  # commits the branch is behind
 ```
 
