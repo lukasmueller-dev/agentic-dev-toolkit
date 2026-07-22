@@ -38,8 +38,8 @@ render still produces a readable file.
 | `<repo>`      | Repository name                                      |
 | `<branch>`    | Current branch                                       |
 | `<worktree>`  | Absolute path to the worktree root                   |
-| `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` |
-| `<machine>`   | Where it was rendered — `local` or `server`, with the hostname in parentheses when rendered by `bin/vibe` |
+| `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` and the brief scripts (`scaffold.sh` stays day-only) |
+| `<machine>`   | Where it was rendered — `local` or `server`, with the hostname in parentheses |
 | `<goal>`      | The task a loop is working toward (`LOOP.md`, `LOOP_PR.md`) |
 | `<until>`     | The loop's stop-check command, or `—` (`LOOP.md`, `LOOP_PR.md`) |
 | `<max>`       | The loop's max round count (`LOOP.md`, `LOOP_PR.md`) |
@@ -73,8 +73,10 @@ tokens in.
 - `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
   into a task worktree before an unattended loop starts
 - `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` into a task worktree
-  before a dedicated session picks the task up (the rendering itself lives in
-  `skills/_lib/vibe-lib.sh`, shared by both brief scripts)
+  before a dedicated session picks the task up
+- `skills/babysit-pr/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
+  for the loop that babysits a PR to mergeable (the rendering itself lives in
+  `skills/_lib/vibe-lib.sh`, shared by the brief scripts)
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

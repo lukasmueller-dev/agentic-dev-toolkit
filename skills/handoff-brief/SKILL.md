@@ -9,7 +9,7 @@ argument-hint: "[<task name>]"
 
 Turn the conversation that just happened into the baton a dedicated session
 picks up cold. The brief is `HANDOFF.md` at the root of the task's own
-worktree, committed and pushed so either machine can start the session; the
+worktree, committed and pushed so any machine can start the session; the
 session runner (`vibe start`) adopts an existing worktree and never reseeds a
 handoff that is already there.
 

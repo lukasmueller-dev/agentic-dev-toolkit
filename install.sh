@@ -66,7 +66,9 @@ err() { printf '%s%s%s\n' "$c_red" "$*" "$c_off" >&2; }
 hdr() { printf '\n%s%s%s\n' "$c_bld" "$*" "$c_off"; }
 
 usage() {
-  sed -n '3,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # The whole header comment, however long it grows: from line 3 to the first
+  # non-comment line. A hard line range here silently truncated the help once.
+  awk 'NR < 3 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
   exit "${1:-0}"
 }
 
@@ -143,8 +145,8 @@ GLOBAL_MEMORY_CLAUDE="$HOME/.claude/global-memory.md"
 # directory into that agent's home, leaving the named basenames alone:
 # README.md documents the directory rather than configuring anything, and a
 # config file the CLI writes to itself must never be a symlink into this repo,
-# or every setting it rewrites becomes a git diff here and syncs to the other
-# machine. claude/settings.json is the worked example — it is merged instead.
+# or every setting it rewrites becomes a git diff here and syncs to every
+# other machine. claude/settings.json is the worked example — it is merged.
 #
 # The skips are compared one at a time rather than as a `case` alternation:
 # `case $b in $skip)` does not re-parse `|` out of an expansion, so a

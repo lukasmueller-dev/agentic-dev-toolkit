@@ -2010,7 +2010,7 @@ wait_for_pane_idle() {
 # vibe rc <task> — turn on Remote Control for a running task by sending '/rc'
 # into its tmux session, so it can be driven from the Claude app on a phone.
 # Server only: there is no persistent session to reach on local. This is what
-# makes 'ssh <vps> vibe rc <task>' work from anywhere.
+# makes 'ssh <host> vibe rc <task>' work from anywhere.
 cmd_rc() {
   local task="${1:-}"
   [[ -n "$task" ]] || die "usage: vibe rc <task>"
@@ -2018,7 +2018,7 @@ cmd_rc() {
   if [[ "$(detect_env)" != "server" ]]; then
     warn "vibe rc is a no-op on local: Remote Control reaches a persistent tmux
   session on the server, and there is none here. Run it on the server, e.g.
-  'ssh <vps> vibe rc $task'."
+  'ssh <host> vibe rc $task'."
     return 0
   fi
 
@@ -2359,13 +2359,13 @@ cmd_help() {
     "Remove the worktree (branch is kept). Refuses if the" \
     "worktree is dirty, holds unpushed commits, has a loop" \
     "still running (--stop kills it first), if HANDOFF.md" \
-    "still carries content — a finished task hands nothing" \
-    "off, so promote or discard first (--discard-handoff" \
-    "skips only the handoff check) — or if LOOP.md is still" \
-    "on the branch, where it would land in the PR diff;" \
-    "delete it and sync, or --keep-brief to leave it there" \
-    "deliberately. Infers the task from the cwd when run" \
-    "inside a worktree."
+    "still carries content or is itself still on the branch" \
+    "— a finished task hands nothing off, so promote, then" \
+    "delete it and sync (--discard-handoff skips both" \
+    "handoff checks) — or if LOOP.md is still on the branch," \
+    "where it would land in the PR diff; delete it and sync," \
+    "or --keep-brief to leave it there deliberately. Infers" \
+    "the task from the cwd when run inside a worktree."
   blank
 
   help_section "Unattended:"
