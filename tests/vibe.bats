@@ -750,3 +750,30 @@ EOF
   run env -u VIBE_WORKTREE_ROOT VIBE_CONFIG_FILE="$cfg" "$VIBE" doctor
   [[ "$output" == *"from-config"* ]]
 }
+
+# ---------------------------------------------------------------------------
+# script_dir / symlink resolution
+# ---------------------------------------------------------------------------
+@test "script_dir: resolves templates when vibe is invoked through a symlink" {
+  # install.sh links ~/bin/vibe -> <repo>/bin/vibe, so EVERY real invocation
+  # goes through a symlink and none of the rest of the suite does. If the
+  # symlink walk broke, TEMPLATE_DIR would resolve next to the link instead of
+  # the repo, `vibe start` would seed nothing, and the whole suite would stay
+  # green — the failure would only show up on a real machine.
+  cd "$(make_repo proj)"
+  mkdir -p "$BATS_TEST_TMPDIR/fakebin"
+  ln -s "$VIBE" "$BATS_TEST_TMPDIR/fakebin/vibe"
+  run env -u TOOLKIT_TEMPLATE_DIR VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$BATS_TEST_TMPDIR/fakebin/vibe" doctor
+  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]]
+}
+
+@test "script_dir: resolves through a chain of symlinks" {
+  cd "$(make_repo proj)"
+  mkdir -p "$BATS_TEST_TMPDIR/l1" "$BATS_TEST_TMPDIR/l2"
+  ln -s "$VIBE" "$BATS_TEST_TMPDIR/l1/vibe"
+  ln -s "$BATS_TEST_TMPDIR/l1/vibe" "$BATS_TEST_TMPDIR/l2/vibe"
+  run env -u TOOLKIT_TEMPLATE_DIR VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$BATS_TEST_TMPDIR/l2/vibe" doctor
+  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]]
+}

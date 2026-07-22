@@ -312,6 +312,36 @@ EOF
   jq -e '.statusLine.type == "command"' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: every hook and statusLine command resolves to a real file" {
+  # Rename or delete a script in claude/hooks/ and Claude Code silently runs
+  # nothing — which is indistinguishable from the hooks' own "stay quiet when a
+  # dependency is missing" contract, so it fails completely silently and stays
+  # broken. Nothing else in the suite ties the baseline's command strings to
+  # the files they name.
+  local cmd path checked=0
+  while IFS= read -r cmd; do
+    checked=$((checked + 1))
+    # The baseline stores the literal $HOME; expand it against the real repo,
+    # since ~/.claude/hooks is a symlink to claude/hooks in this checkout.
+    path="${cmd%% *}"
+    path="${path/\$HOME\/.claude\/hooks/$REPO_ROOT/claude/hooks}"
+    [ -f "$path" ] || {
+      echo "settings.json names a command that does not exist: $cmd" >&2
+      return 1
+    }
+    [ -x "$path" ] || {
+      echo "settings.json names a command that is not executable: $cmd" >&2
+      return 1
+    }
+  done < <(jq -r '
+    [(.hooks // {} | .[][]?.hooks[]?.command), (.statusLine.command // empty)][]
+  ' "$REPO_ROOT/claude/settings.json")
+
+  # Without this the test passes on an empty loop, which is exactly what a
+  # broken jq path or a renamed key would produce.
+  [ "$checked" -ge 5 ]
+}
+
 @test "claude settings: never clobbers runtime state Claude Code owns" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'
