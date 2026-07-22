@@ -93,14 +93,11 @@ Track B — portability and team:
       Claude-written and stays unmanaged — same file class as
       `settings.json`'s runtime keys)
 
-Track C — verification debt (opened by the 2026-07-22 review pass; CI
-billing was resolved the same day — main `4cb588c` ran green on all four
-jobs, macOS leg on bash 3.2.57, so merges are verified again):
-
-Track C additions from the 2026-07-22 second review pass (round two;
-fixed findings landed in that round's PR — these are the ones left open
-because each needs an owner decision or a design):
-
+Track C — verification debt from the two 2026-07-22 review passes:
+closed 2026-07-22 by the `track-c-pass` branch, one commit per item.
+The three owner-decision items (reviewer Bash guard policy, settings
+baseline changes, SQ13 resolution) landed as proposals — each decision
+is spelled out in its commit body and the PR for owner review.
 
 ## Open questions
 
