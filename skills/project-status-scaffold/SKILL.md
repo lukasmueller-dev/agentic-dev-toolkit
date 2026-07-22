@@ -76,3 +76,12 @@ exists, read it and update the relevant sections instead.
   point each one at the commit or PR that carries the full reasoning.
 - In `PROJECT_STATUS.md`, delete finished TODOs — the trail lives in git
   history and merged PRs, not in the snapshot.
+
+## Done
+
+Done when both files exist and read true for *right now*: `HANDOFF.md` names
+the current state, the next concrete action, and any blockers;
+`PROJECT_STATUS.md` reflects every durable change from this session and no
+finished TODOs. Stop there — committing, pushing, and deleting a finished
+task's handoff belong to the task workflow (`vibe sync` / `vibe done`), not
+to this skill.

@@ -1,6 +1,6 @@
 ---
 name: implement-test-suite
-description: "Stand up or extend a repository's automated test suite — the test code itself plus the infrastructure around it (test-runner config, fixtures, CI wiring). Works plan-first: analyzes the repo, proposes a test plan with per-repo policy choices, and implements only after the user approves the plan. Delivers on a separate branch as a PR whose description doubles as the report."
+description: "Stand up or extend a repository's automated test suite — the test code itself plus the infrastructure around it (test-runner config, fixtures, CI wiring). Use when the user says \"write tests\", \"add a test suite\", \"set up testing\", \"improve test coverage\", \"harden the tests\", or asks to wire tests into CI. Works plan-first: analyzes the repo, proposes a test plan with per-repo policy choices, and implements only after the user approves the plan. Delivers on a separate branch as a PR whose description doubles as the report."
 disable-model-invocation: true
 argument-hint: "[scope path — default: whole repo]"
 ---

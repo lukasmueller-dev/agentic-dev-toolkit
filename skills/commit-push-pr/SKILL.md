@@ -6,7 +6,15 @@ disable-model-invocation: true
 
 # Commit, Push & PR
 
-Autonomous flow: stage → commit (Conventional Commits) → push → open PR via `gh`. Run end-to-end without asking for confirmation unless a **Stop condition** below is hit.
+Autonomous flow: stage → commit (Conventional Commits) → push → open PR via `gh`. Run end-to-end without asking for confirmation unless a **Stop condition** is hit.
+
+## Stop conditions (pause and ask the user)
+
+- Diff contains apparent secrets/credentials (API keys, tokens, `.env` values, private keys).
+- Working tree has merge-conflict markers or unresolved conflicts.
+- Would require force-pushing a shared/protected branch.
+- No remote named `origin`, or push is rejected (diverged history).
+- Repo default branch is protected in a way that blocks PR creation.
 
 ## Prerequisites (check once, fail fast)
 
@@ -121,15 +129,8 @@ PR body rules — the body says only what the diff *cannot*:
   </details>
   ```
 
-Return the PR URL as the final output.
-
-## Stop conditions (pause and ask the user)
-
-- Diff contains apparent secrets/credentials (API keys, tokens, `.env` values, private keys).
-- Working tree has merge-conflict markers or unresolved conflicts.
-- Would require force-pushing a shared/protected branch.
-- No remote named `origin`, or push is rejected (diverged history).
-- Repo default branch is protected in a way that blocks PR creation.
+Return the PR URL as the final output. **Done** = the PR is open and its URL
+reported (or an existing PR's URL reported); merging it is out of scope.
 
 ## Notes
 

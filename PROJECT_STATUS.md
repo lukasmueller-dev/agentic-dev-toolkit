@@ -101,12 +101,6 @@ Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):
 
-- [ ] Skill-structure grades below the bar in `docs/skill-quality.md`:
-      `commit-push-pr` keeps its stop conditions at the end of the file
-      instead of opening with them; `project-status-scaffold` never
-      defines "done"; `codebase-health`'s step-5 approval gate is not
-      bold-marked; `implement-test-suite`'s description has no trigger
-      phrases. One small pass, guided by the quality doc.
 
 ## Open questions
 
