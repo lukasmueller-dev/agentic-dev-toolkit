@@ -60,7 +60,10 @@ run_script() {
   grep -q -- "--until test -f docs/sota/2026-W29.md" "$VIBE_LOG"
   grep -q -- "--pr" "$VIBE_LOG"
   grep -q -- "--no-attach" "$VIBE_LOG"
-  grep -q -- "--prompt $SKILL/loop-brief.md" "$VIBE_LOG"
+  # Matched by suffix, not against $SKILL: the script resolves its own location
+  # with `cd -P`, and on macOS that turns the test's /var/folders/… path into
+  # its /private/var/folders/… real path, so the two strings never compare equal.
+  grep -qE -- "--prompt /.*/sota-digest/loop-brief\.md" "$VIBE_LOG"
 }
 
 @test "sota-weekly: writes its own log instead of mailing cron output" {
