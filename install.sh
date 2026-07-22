@@ -585,7 +585,12 @@ run_doctor() {
     elif [[ -e "$dst" ]]; then
       d_wn '%s is a real file, not a link — run ./install.sh' "$dst"
     else
-      d_wn '%s missing — run ./install.sh' "$dst"
+      # A managed link that is simply gone is unambiguous breakage — unlike
+      # "not ours" / "points elsewhere", which are checkout-relative and stay
+      # warnings — so it fails the run. Otherwise 'install.sh doctor', whose
+      # job in the verification gate is "the live machine still resolves",
+      # reports a broken install as healthy and exits 0.
+      d_no '%s missing — run ./install.sh' "$dst"
     fi
   done
 
