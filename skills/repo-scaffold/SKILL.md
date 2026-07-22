@@ -44,7 +44,7 @@ Then take stock of the baseline, item by item:
 | Server-side protection | only if a GitHub remote exists: `gh api "repos/<owner>/<repo>/branches/<default>/protection"` — a 403 mentioning an upgrade means the plan has none (private repo on a free plan); 404 means available but not enabled |
 | CI | a workflow under `.github/workflows/` that runs lint and tests |
 | Billed minutes | private repo on a free plan (same probe as above) — decides whether CI keeps the opt-in `run-ci` label gate |
-| Status files | `PROJECT_STATUS.md` at the repo root, `HANDOFF.md` in the worktree |
+| Status files | `PROJECT_STATUS.md` and `PROJECT_ROADMAP.md` at the repo root, `HANDOFF.md` in the worktree |
 | Instruction file | `CLAUDE.md` / `AGENTS.md` — exists, and records the conventions the scaffold establishes |
 
 Degrade gracefully: no `gh`, no remote, or no network means the remote checks

@@ -27,9 +27,12 @@ blank one.
 
 ## Phase 1 — Understand the idea
 
-The rough idea arrives as `$ARGUMENTS`; if it is empty, ask for it. Confirm
-you are inside a git repository with an `origin` remote — the brief travels
-through git, so a repo without a remote cannot hand off to another machine.
+The rough idea arrives as `$ARGUMENTS`; if it is empty, ask for it. When it
+names a `PROJECT_ROADMAP.md` item, that item's design is the starting point —
+carry it into the brief and leave the item in place until the work merges.
+Confirm you are inside a git repository with an `origin` remote — the brief
+travels through git, so a repo without a remote cannot hand off to another
+machine.
 
 Pick a short task name with the user (it becomes the branch and worktree
 name). Explore the codebase as needed to ground the next phase in reality —

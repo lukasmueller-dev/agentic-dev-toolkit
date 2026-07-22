@@ -37,8 +37,10 @@ unattended, use `loop-brief` instead.
 The raw material is the discussion that just happened, not new input. Collect
 what was actually concluded: the goal, the approach chosen, alternatives
 rejected and why, files or modules identified, constraints and gotchas that
-surfaced. If the conversation has not reached a conclusion worth handing
-off, say so instead of staging a vague brief.
+surfaced. When the task is a `PROJECT_ROADMAP.md` item, that item is the
+harvest — carry its design into the brief and leave the item in place until
+the work merges. If the conversation has not reached a conclusion worth
+handing off, say so instead of staging a vague brief.
 
 Confirm you are inside a git repository with an `origin` remote — the
 handoff travels through git, so a repo without a remote cannot hand off to
