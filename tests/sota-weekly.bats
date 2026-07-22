@@ -17,13 +17,16 @@ setup() {
   chmod +x "$SKILL/sota-weekly.sh"
   SCRIPT="$SKILL/sota-weekly.sh"
 
-  # A stub vibe that records its arguments instead of creating anything.
+  # A stub vibe that records its arguments — and its working directory, since
+  # the real vibe resolves the repo from the cwd and nothing else.
   STUB="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$STUB"
   VIBE_LOG="$BATS_TEST_TMPDIR/vibe-calls"
+  VIBE_CWD="$BATS_TEST_TMPDIR/vibe-cwd"
   cat >"$STUB/vibe" <<STUBEOF
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"$VIBE_LOG"
+pwd -P >>"$VIBE_CWD"
 exit 0
 STUBEOF
   chmod +x "$STUB/vibe"
@@ -90,6 +93,18 @@ run_script() {
   [ "$status" -eq 1 ]
   grep -q "no loop brief" "$XDG_STATE_HOME/sota-digest/2026-W29.log"
   [ ! -f "$VIBE_LOG" ]
+}
+
+@test "sota-weekly: launches the loop from inside the checkout, not cron's cwd" {
+  # cron runs the job from $HOME, and `vibe` resolves the repo from the current
+  # directory — never from an argument. Launching from anywhere else makes the
+  # loop die "not a git repo." before it starts, and because the launch is
+  # wrapped in '|| rc=$?' the script still logs "done" and exits 0. That is a
+  # weekly digest that silently never runs, so assert the cwd, not just the args.
+  cd "$BATS_TEST_TMPDIR"
+  run_script 2026-W29
+  [ "$status" -eq 0 ]
+  [ "$(cat "$VIBE_CWD")" = "$(cd -P "$REPO" && pwd -P)" ]
 }
 
 @test "sota-weekly: refuses to run outside a git checkout" {

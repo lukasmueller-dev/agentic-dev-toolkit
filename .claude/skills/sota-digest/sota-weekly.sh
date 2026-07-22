@@ -29,6 +29,17 @@ REPO_DIR="$(git -C "$SELF_DIR" rev-parse --show-toplevel 2>/dev/null)" ||
     exit 1
   }
 
+# Stand in the checkout before doing anything else. `vibe` resolves the repo
+# from the *current directory*, not from an argument, and cron runs the job
+# from $HOME — which is not a git repo, so the loop would die "not a git repo."
+# the moment it started. Deriving REPO_DIR and never entering it is what made
+# that failure silent: the launch is wrapped in `|| rc=$?`, so the script went
+# on to log "done" and exit 0 every week without ever running a digest.
+cd "$REPO_DIR" || {
+  echo "sota-weekly: cannot enter $REPO_DIR" >&2
+  exit 1
+}
+
 # cron's PATH is famously minimal, and both `vibe` and the agent CLI are
 # normally installed into a home-directory bin.
 PATH="$HOME/bin:$HOME/.local/bin:$PATH"
