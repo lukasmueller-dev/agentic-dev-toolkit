@@ -98,6 +98,19 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/.claude/skills/codebase-health" ]
 }
 
+@test "install: never installs the repo-local skills under .claude/" {
+  # .claude/skills/ holds skills that exist only to run against *this* repo
+  # (sota-digest). Installing one would put it in every other repo's context,
+  # where its instructions are wrong. The installer discovers skills/ only —
+  # this asserts that stays true.
+  [ -d "$REPO_ROOT/.claude/skills/sota-digest" ]
+
+  run "$INSTALL" skills
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.claude/skills/sota-digest" ]
+  [ -L "$HOME/.claude/skills/codebase-health" ]
+}
+
 @test "the suite creates and deletes nothing under skills/" {
   # A standing guard against the bug described above. Only additions (??) and
   # deletions (D) are checked: ordinary uncommitted *edits* are normal while

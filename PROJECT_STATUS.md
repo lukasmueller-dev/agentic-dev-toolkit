@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-22 · server_
+_Last updated: 2026-07-22 · server (srv1841294)_
 
 ## Goal
 
@@ -65,6 +65,13 @@ the installer's auto-discovery rules.
 - 2026-07-22: `vibe start --no-attach` (server only) mirrors the loop
   flag, so `ssh <host> vibe start <task>` is scriptable instead of dying
   on the headless attach after the work is done. See `c96cf2c`.
+- 2026-07-22: The repo watches its own state of the art on a weekly cron
+  entry — `.claude/skills/sota-digest` (repo-local, never installed
+  elsewhere) driven by `vibe loop --pr`, digest at `docs/sota/<YYYY-Www>.md`,
+  merging the PR as the review gate and the host's PR email as the only
+  notification. Recommendations are promoted by hand via `add-roadmap-item`,
+  never written into the roadmap by the run. See `docs/sota-watch.md`;
+  rationale in the PR for `agentic-dev-sota`.
 - 2026-07-22: Planned work moved out of this file into
   `PROJECT_ROADMAP.md` (template + scaffold + `add-roadmap-item` skill,
   which holds new items to the pick-up-cold design bar); this file keeps
