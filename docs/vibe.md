@@ -142,8 +142,9 @@ anything else. The handoff is legible in the log instead of being buried in a
 When you *do* want to reconcile a divergence by hand, that is the plumbing
 layer: `vibe resume` fast-forwards and otherwise refuses, and `vibe resume
 --rebase` is the one explicit escape hatch (`git pull --rebase`) once you have
-decided. `attach` uses `resume`'s machinery internally, but you rarely call it
-yourself.
+decided. `attach` has its own never-refusing fast-forward — it declines to
+guess about git, never to attach — while `resume` is the strict plumbing you
+call directly.
 
 ## Finishing a task
 
@@ -174,7 +175,8 @@ removal leaves the commits reachable.
 
 `vibe loop <task>` is `start`'s hands-off sibling: same branch and worktree, but
 instead of an interactive agent it runs bounded rounds — agent, commit, check —
-until an `--until` command passes, `--max` rounds pass, or it stalls. On the
+until an `--until` command passes, `--max` rounds pass, the `--for` time budget
+is spent, or it stalls. On the
 server it lives in a tmux session, so it keeps going after you disconnect and
 pushes to your phone when it ends. The full contract — stop conditions, resume,
 the `--dangerously-allow-all` blast radius — is in

@@ -360,6 +360,20 @@ slug() {
 }
 
 # ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+@test "list: an existing but empty worktree dir lists nothing and exits 0" {
+  # The normal state after the last 'vibe done': git worktree remove leaves
+  # the per-repo parent directory behind. The old tail-position '[[ ]] &&'
+  # made cmd_list return 1 here, which set -e turned into a silent exit 1.
+  cd "$(make_repo proj)"
+  mkdir -p "$BATS_TEST_TMPDIR/worktrees/proj"
+  run run_vibe list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no tasks yet"* ]]
+}
+
+# ---------------------------------------------------------------------------
 # status — the worktree listing must not present the main checkout as a task
 # ---------------------------------------------------------------------------
 @test "status: shows per-worktree sync state" {

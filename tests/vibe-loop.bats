@@ -620,13 +620,17 @@ EOF
   local sf="$dir/.vibe-loop.state"
   set_state "$sf" STATUS running
   set_state "$sf" PID 99999999
-  # PR=1 carries forward, so the resume finds its own PR already open and
-  # leaves the restored brief on the branch rather than stripping it twice.
+  # PR=1 carries forward, so the resume finds its own PR already open.
   GH_EXISTING="https://github.test/proj/pull/7" \
     run loop_vibe loop "restored task" --until false --max 2
   [ "$status" -eq 0 ]
   [[ "$output" == *"restored LOOP.md from the archived brief"* ]]
-  grep -q "The refined goal." "$dir/LOOP.md"
+  # The resumed rounds ran against the refined brief, and the end of the run
+  # stripped it off the branch again — re-archived, not lost.
+  grep -q "The refined goal." \
+    "$(git -C "$dir" rev-parse --absolute-git-dir)/vibe-loop-brief.md"
+  run git -C "$dir" ls-files -- LOOP.md
+  [ -z "$output" ]
 }
 
 @test "loop: --pr leaves an already-open PR alone" {
@@ -638,9 +642,10 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PR already open"* ]]
   run ! grep -qx -- "create" "$GH_LOG"
-  # nothing was stripped either — the branch is already under review
+  # The brief is still stripped and pushed: a merge from GitHub never passes
+  # vibe done's guards, so leaving LOOP.md here would land it on main.
   run git -C "$(wt second-pr)" ls-files -- LOOP.md
-  [[ "$output" == *"LOOP.md"* ]]
+  [ -z "$output" ]
 }
 
 @test "loop: --pr warns instead of failing when gh cannot reach GitHub" {
@@ -653,4 +658,79 @@ EOF
   [[ "$output" == *"no PR opened"* ]]
   # the work is still pushed, so it can be opened by hand
   git -C "$(wt no-auth)" rev-parse '@{u}' >/dev/null 2>&1
+}
+
+# ---------------------------------------------------------------------------
+# Server path: reusing (or refusing) the task's existing tmux session
+# ---------------------------------------------------------------------------
+# A tmux stub that, unlike the helper's, reports the session as existing —
+# with a pane running PANE_CMD — so the reuse/refuse fork can be exercised.
+stub_tmux_existing() { # stub_tmux_existing PANE_CMD
+  local dir="$BATS_TEST_TMPDIR/tmuxbin"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"\${VIBE_TEST_TMUX_LOG:?}"
+case "\${1:-}" in
+  has-session) exit 0 ;;
+  display-message) echo "$1" ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+  PATH="$dir:$PATH"
+}
+
+@test "loop: a leftover idle tmux session gets the runner typed back into it" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_tmux_existing bash
+  # SSH_CONNECTION set on purpose: this is the server path.
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    STUB_COUNT="$BATS_TEST_TMPDIR/count" \
+    "$VIBE" loop "idle sess" --no-attach --max 1
+  [ "$status" -eq 0 ]
+  # The old path said "already exists", attached, and ran nothing — leaving
+  # the state file at STATUS=running with no runner behind it.
+  [[ "$output" == *"restarting loop in existing tmux session"* ]]
+  grep -q "send-keys -t vibe-proj-idle-sess .*__loop-run" "$VIBE_TEST_TMUX_LOG"
+  run ! grep -q "new-session" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "loop: refuses a tmux session that is busy running something else" {
+  cd "$(make_repo proj)"
+  stub_agent
+  stub_tmux_existing claude
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    STUB_COUNT="$BATS_TEST_TMPDIR/count" \
+    "$VIBE" loop "busy sess" --no-attach --max 1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"busy running 'claude'"* ]]
+  # Refused before anything was written: no worktree, no state saying running.
+  [ ! -d "$(wt busy-sess)" ]
+}
+
+@test "loop: done --stop keeps the PR flag in the state file" {
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "stop pr" --until false --max 1
+  local sf live
+  sf="$(wt stop-pr)/.vibe-loop.state"
+  sleep 30 &
+  live=$!
+  set_state "$sf" STATUS running
+  set_state "$sf" PID "$live"
+  set_state "$sf" PR 1
+  # done goes on to refuse (unpushed work) — the stop still happened, and the
+  # rewrite it does must not lose PR, or the next resume forgets to open one.
+  run loop_vibe "done" --stop "stop pr"
+  kill "$live" 2>/dev/null || true
+  [ "$(loop_state stop-pr STATUS)" = stopped ]
+  [ "$(loop_state stop-pr PR)" = 1 ]
 }

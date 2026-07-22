@@ -9,7 +9,7 @@ argument-hint: "<rough task idea>"
 
 Turn a rough idea into the brief an unattended loop agent is handed every
 round. The brief is `LOOP.md` at the root of the task's own worktree,
-committed and pushed so either machine can start the loop; the loop runner
+committed and pushed so any machine can start the loop; the loop runner
 (`vibe loop`) finds an existing `LOOP.md` and uses it instead of seeding a
 blank one.
 

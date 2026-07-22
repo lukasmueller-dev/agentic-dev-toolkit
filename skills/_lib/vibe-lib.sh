@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
 # vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
-# briefs (loop-brief/brief.sh, handoff-brief/handoff.sh).
+# briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh).
 #
 # Sourced, never executed. The caller is expected to run under
 # `set -euo pipefail` and to have resolved its own real location first

@@ -30,7 +30,8 @@ export VIBE_SERVER_HOSTNAME="vibe-tests/never-a-real-host"
 # machine that exports VIBE_LOOP_PERMISSIVE_ARGS or keeps a real
 # ~/.config/vibe/config would otherwise flip assertions from under the tests.
 unset VIBE_WORKTREE_ROOT VIBE_AGENT_CMD VIBE_AGENT_HEADLESS_ARGS \
-  VIBE_LOOP_PERMISSIVE_ARGS VIBE_TMUX_PREFIX VIBE_NTFY_TOPIC VIBE_RC_ON_START
+  VIBE_LOOP_PERMISSIVE_ARGS VIBE_LOOP_SANDBOX_ARGS VIBE_TMUX_PREFIX \
+  VIBE_NTFY_TOPIC VIBE_RC_ON_START
 export VIBE_CONFIG_FILE="${BATS_TEST_TMPDIR:-$BATS_FILE_TMPDIR}/no-such-config"
 
 # Resolved before the stub goes on PATH, so a test can still ask the real tmux

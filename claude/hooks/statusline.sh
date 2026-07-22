@@ -59,8 +59,11 @@ branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 wt_root="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
 wt_root="${wt_root:-$HOME/git/worktrees}"
 task=""
+# Two path components required below the root: at the root itself, or at
+# <root>/<repo>, there is no task yet — the old single-star pattern matched
+# those too and rendered a path fragment as the task segment.
 case "$cwd/" in
-  "$wt_root"/*)
+  "$wt_root"/*/*/)
     rel="${cwd#"$wt_root"/}" # <repo>/<task>[/deeper...]
     task="${rel#*/}"         # strip <repo>/
     task="${task%%/*}"       # keep only <task>

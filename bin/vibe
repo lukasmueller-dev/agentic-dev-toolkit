@@ -819,10 +819,6 @@ loop_open_pr() {
     warn "no PR opened: 'gh' could not reach GitHub (not authenticated?). Open it by hand from $branch."
     return 0
   fi
-  if [[ -n "$existing" ]]; then
-    info "PR already open for '$branch': $existing"
-    return 0
-  fi
 
   status="$(loop_get "$dir" STATUS)"
   iter="$(loop_get "$dir" ITER)"
@@ -831,12 +827,22 @@ loop_open_pr() {
   until_cmd="$(loop_get "$dir" UNTIL)"
   goal="$(loop_goal "$dir")"
 
+  # Strip and push even when a PR is already open: a resumed loop restores
+  # the brief and commits it back onto the branch, and a merge from GitHub
+  # never passes through cmd_done's guards — left here, the brief lands in
+  # that PR's diff and strays onto the default branch.
   if ! loop_strip_brief "$dir" "$branch"; then
-    warn "no PR opened: could not drop the brief from '$branch'."
+    warn "brief not dropped from '$branch' — remove LOOP.md/HANDOFF.md by hand before merging."
+    [[ -z "$existing" ]] && warn "no PR opened."
     return 0
   fi
   if ! loop_push "$dir" "$branch"; then
-    warn "no PR opened: remote diverged from $branch — resolve it, then open the PR by hand."
+    warn "remote diverged from $branch — resolve it by hand."
+    [[ -z "$existing" ]] && warn "no PR opened."
+    return 0
+  fi
+  if [[ -n "$existing" ]]; then
+    info "PR already open for '$branch': $existing"
     return 0
   fi
 
@@ -866,7 +872,10 @@ loop_open_pr() {
     return 0
   fi
   # gh prints the URL on the last line; anything before it is progress noise.
-  url="$(printf '%s\n' "$url" | grep -o 'https://[^[:space:]]*' | tail -1)"
+  # '|| true': under pipefail a no-match grep would fail the assignment and
+  # kill this never-fatal function AFTER the PR was already created.
+  url="$(printf '%s\n' "$url" | grep -o 'https://[^[:space:]]*' | tail -1 || true)"
+  url="${url:-(no URL in gh output — see 'gh pr list')}"
   if [[ "$status" == "success" ]]; then
     ok "opened PR: $url"
     ntfy_push "$repo · $branch" default heavy_check_mark "loop finished — PR opened: $url"
@@ -1214,6 +1223,30 @@ cmd_loop() {
     info "resuming loop for '$branch' from saved state (iter $(loop_get "$dir" ITER))"
   fi
 
+  # Where the runner will go, decided before anything is written. On the
+  # server the loop runs inside tmux, and the task's session may already
+  # exist: idle after a finished or killed run (its pane back at a shell), or
+  # busy with an interactive 'vibe start' agent — same session name. The busy
+  # case must refuse HERE, before the state file is rewritten to "running",
+  # or a refused loop leaves state that vibe status reports as live forever.
+  local env sess="" sess_exists=0
+  env="$(detect_env)"
+  if [[ "$env" == "server" ]]; then
+    need tmux
+    sess="$(tmux_session_name "$repo" "$branch")"
+    if tmux has-session -t "$sess" 2>/dev/null; then
+      sess_exists=1
+      local pane_cmd
+      pane_cmd="$(tmux display-message -p -t "$sess" '#{pane_current_command}' 2>/dev/null || true)"
+      case "$pane_cmd" in
+        "" | bash | -bash | zsh | -zsh | sh | dash | fish) ;; # idle shell — reusable
+        *)
+          die "tmux session '$sess' is busy running '$pane_cmd' — watch it (vibe attach ${task}) or kill it (tmux kill-session -t $sess), then re-run vibe loop"
+          ;;
+      esac
+    fi
+  fi
+
   [[ -d "$dir" ]] || ensure_worktree "$main" "$branch" "$dir"
 
   loop_effective_settings "$dir" "$resuming"
@@ -1245,18 +1278,21 @@ cmd_loop() {
     UNTIL "$LE_until" PUSH "$LE_push" PR "$LE_pr" PERMISSIVE "$LE_perm" SANDBOX "$LE_sandbox" \
     DEADLINE "$LE_deadline" PID "" STARTED "$LE_started"
 
-  local env
-  env="$(detect_env)"
   if [[ "$env" == "server" ]]; then
-    need tmux
-    local sess run_cmd
-    sess="$(tmux_session_name "$repo" "$branch")"
+    local run_cmd
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
     # everything from the state file just written.
     run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
-    if tmux_ensure_session "$sess" "$dir" "$run_cmd"; then
-      info "loop session already exists: $sess"
+    if ((sess_exists)); then
+      # Leftover session from a finished or killed run, pane already verified
+      # idle above. Type the runner into it rather than just attaching — the
+      # old "already exists" path started nothing, which stranded the state
+      # file at STATUS=running with no runner behind it.
+      tmux send-keys -t "$sess" "$run_cmd" C-m
+      info "restarting loop in existing tmux session: $sess"
     else
+      tmux new-session -d -s "$sess" -c "$dir"
+      tmux send-keys -t "$sess" "$run_cmd" C-m
       info "starting loop in tmux session: $sess"
     fi
     if [[ "$LP_no_attach" == "1" ]]; then
@@ -1301,12 +1337,15 @@ loop_stop() {
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
   fi
+  # Key list mirrors run_loop's persist(): loop_write_state rewrites the whole
+  # file, so a key missing here is silently dropped from the state — that is
+  # how a stopped --pr loop once forgot it was meant to open a PR on resume.
   loop_write_state "$dir" \
     STATUS stopped PHASE idle \
     ITER "$(loop_get "$dir" ITER)" MAX "$(loop_get "$dir" MAX)" LAST "$(loop_get "$dir" LAST)" \
-    UNTIL "$(loop_get "$dir" UNTIL)" PUSH "$(loop_get "$dir" PUSH)" PERMISSIVE "$(loop_get "$dir" PERMISSIVE)" \
-    SANDBOX "$(loop_get "$dir" SANDBOX)" DEADLINE "$(loop_get "$dir" DEADLINE)" \
-    PID "" STARTED "$(loop_get "$dir" STARTED)"
+    UNTIL "$(loop_get "$dir" UNTIL)" PUSH "$(loop_get "$dir" PUSH)" PR "$(loop_get "$dir" PR)" \
+    PERMISSIVE "$(loop_get "$dir" PERMISSIVE)" SANDBOX "$(loop_get "$dir" SANDBOX)" \
+    DEADLINE "$(loop_get "$dir" DEADLINE)" PID "" STARTED "$(loop_get "$dir" STARTED)"
   info "loop marked stopped"
 }
 
@@ -1370,10 +1409,15 @@ open_session() {
     fi
     tmux_attach_or_switch "$sess"
   else
-    # local: no forced tmux, just move into the worktree and launch agent
+    # local: no forced tmux, just move into the worktree and launch agent.
+    # Word-split on purpose, like run_loop does: VIBE_AGENT_CMD may carry
+    # flags ("claude --model x"), and exec'ing it as one word treats the
+    # whole string as a command name.
     info "local environment — entering worktree (no tmux)."
     cd "$dir"
-    exec "$VIBE_AGENT_CMD"
+    # shellcheck disable=SC2206
+    local -a agent_argv=($VIBE_AGENT_CMD)
+    exec "${agent_argv[@]}"
   fi
 }
 
@@ -1674,9 +1718,19 @@ cmd_list() {
     echo "no tasks yet for $repo"
     return
   }
+  local found=0
   for d in "$base"/*/; do
-    [[ -d "$d" ]] && printf '  %s%s%s\n' "$c_cyn" "$(basename "$d")" "$c_off"
+    # if/fi, not '&& printf': this loop is the function's tail statement, so
+    # with no worktrees the failed [[ ]] would become cmd_list's own exit
+    # status and trip set -e in main (see CLAUDE.md on the &&-list trap).
+    if [[ -d "$d" ]]; then
+      printf '  %s%s%s\n' "$c_cyn" "$(basename "$d")" "$c_off"
+      found=1
+    fi
   done
+  if ((!found)); then
+    echo "no tasks yet for $repo"
+  fi
 }
 
 # unpushed_commits DIR — echo how many commits in DIR's branch exist nowhere
@@ -1956,7 +2010,7 @@ wait_for_pane_idle() {
 # vibe rc <task> — turn on Remote Control for a running task by sending '/rc'
 # into its tmux session, so it can be driven from the Claude app on a phone.
 # Server only: there is no persistent session to reach on local. This is what
-# makes 'ssh <vps> vibe rc <task>' work from anywhere.
+# makes 'ssh <host> vibe rc <task>' work from anywhere.
 cmd_rc() {
   local task="${1:-}"
   [[ -n "$task" ]] || die "usage: vibe rc <task>"
@@ -1964,7 +2018,7 @@ cmd_rc() {
   if [[ "$(detect_env)" != "server" ]]; then
     warn "vibe rc is a no-op on local: Remote Control reaches a persistent tmux
   session on the server, and there is none here. Run it on the server, e.g.
-  'ssh <vps> vibe rc $task'."
+  'ssh <host> vibe rc $task'."
     return 0
   fi
 
@@ -2305,13 +2359,13 @@ cmd_help() {
     "Remove the worktree (branch is kept). Refuses if the" \
     "worktree is dirty, holds unpushed commits, has a loop" \
     "still running (--stop kills it first), if HANDOFF.md" \
-    "still carries content — a finished task hands nothing" \
-    "off, so promote or discard first (--discard-handoff" \
-    "skips only the handoff check) — or if LOOP.md is still" \
-    "on the branch, where it would land in the PR diff;" \
-    "delete it and sync, or --keep-brief to leave it there" \
-    "deliberately. Infers the task from the cwd when run" \
-    "inside a worktree."
+    "still carries content or is itself still on the branch" \
+    "— a finished task hands nothing off, so promote, then" \
+    "delete it and sync (--discard-handoff skips both" \
+    "handoff checks) — or if LOOP.md is still on the branch," \
+    "where it would land in the PR diff; delete it and sync," \
+    "or --keep-brief to leave it there deliberately. Infers" \
+    "the task from the cwd when run inside a worktree."
   blank
 
   help_section "Unattended:"
