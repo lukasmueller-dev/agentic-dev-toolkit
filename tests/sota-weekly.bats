@@ -83,7 +83,8 @@ run_script() {
   VIBE_STUB_ENV=local run_script 2026-W29
   [ "$status" -eq 0 ]
   grep -q -- "--pr" "$VIBE_LOG"
-  ! grep -q -- "--no-attach" "$VIBE_LOG"
+  run grep -q -- "--no-attach" "$VIBE_LOG"
+  [ "$status" -ne 0 ]
 }
 
 @test "sota-weekly: writes its own log instead of mailing cron output" {
