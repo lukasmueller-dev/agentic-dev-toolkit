@@ -158,6 +158,11 @@ jobs:
       - name: skills pass skill-lint
         run: ./bin/skill-lint skills/ --strict
 
+      # The repo-local skills under .claude/ are never installed anywhere, so
+      # they are invisible to the sweep above — and would drift unlinted.
+      - name: repo-local skills pass skill-lint
+        run: ./bin/skill-lint .claude/skills/ --strict
+
       - name: global memory stays agent-neutral
         run: |
           # memory/GLOBAL.md is installed to ~/.claude, ~/.codex and ~/.gemini

@@ -132,6 +132,8 @@ Optional: [phone notifications](docs/notifications.md), and
 - [Phone notifications](docs/notifications.md) — ntfy.sh setup
 - [Babysitting a pull request](docs/babysit-pr.md) — staging a loop that drives
   a PR to mergeable
+- [The SOTA watch](docs/sota-watch.md) — the weekly unattended digest this repo
+  runs on itself
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements
