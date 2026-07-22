@@ -102,8 +102,13 @@ set_state() {
   stub_agent
   loop_vibe loop "timed push" --until false --for=0s --max 10 --push
   [ "$(loop_state timed-push STATUS)" = timeup ]
-  run git -C "$(wt timed-push)" status -sb
-  [[ "$output" != *"ahead"* ]]
+  # The remote must actually hold the final round's commit — asserting only
+  # "not ahead" passed vacuously whenever the status command itself failed.
+  local local_head remote_head
+  local_head="$(git -C "$(wt timed-push)" rev-parse HEAD)"
+  remote_head="$(git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse refs/heads/timed-push)"
+  [ -n "$local_head" ]
+  [ "$local_head" = "$remote_head" ]
 }
 
 @test "loop: stops when --until passes" {
@@ -698,6 +703,84 @@ exit 0
 EOF
   chmod +x "$dir/tmux"
   PATH="$dir:$PATH"
+}
+
+@test "loop: on the server a fresh loop starts detached inside tmux" {
+  # The helper's stub tmux reports no session, so this takes the new-session
+  # branch: state written as running, the runner typed into the session, and
+  # --no-attach leaves it detached. The stub never runs the runner, which is
+  # the point — cmd_loop's job ends at handing the loop to tmux.
+  cd "$(make_repo proj)"
+  stub_agent
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" loop "srv fresh" --no-attach --max 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"starting loop in tmux session"* ]]
+  [[ "$output" == *"loop running detached"* ]]
+  grep -q "new-session -d -s vibe-proj-srv-fresh " "$VIBE_TEST_TMUX_LOG"
+  grep -q "send-keys -t vibe-proj-srv-fresh .*__loop-run" "$VIBE_TEST_TMUX_LOG"
+  # no attach: started from a script, attaching would hang the caller
+  run ! grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
+  [ "$(loop_state srv-fresh STATUS)" = running ]
+}
+
+@test "loop: __loop-run drives a loop from its saved state" {
+  # This is what the tmux session actually executes on the server. Seed state
+  # with a finished local loop, raise MAX, and hand the worktree to
+  # __loop-run — it must pick up ITER/MAX from the state file and continue.
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "runner task" --until false --max 1
+  [ "$(loop_state runner-task ITER)" = 1 ]
+  set_state "$(wt runner-task)/.vibe-loop.state" MAX 2
+
+  run loop_vibe __loop-run "$(wt runner-task)"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"hit max 2 iterations"* ]]
+  [ "$(loop_state runner-task STATUS)" = maxed ]
+  [ "$(loop_state runner-task ITER)" = 2 ]
+}
+
+@test "loop: __loop-run refuses a worktree that has no loop state" {
+  cd "$(make_repo proj)"
+  run loop_vibe __loop-run "$BATS_TEST_TMPDIR/proj"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no loop state"* ]]
+
+  run loop_vibe __loop-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"usage: vibe __loop-run"* ]]
+
+  run loop_vibe __loop-run "$BATS_TEST_TMPDIR/does-not-exist"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no worktree at"* ]]
+}
+
+@test "rc: refuses while the session is running a loop" {
+  # /rc typed into a loop session lands on the runner, not an agent prompt.
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "rc loop" --until false --max 1
+  local sf live
+  sf="$(wt rc-loop)/.vibe-loop.state"
+  sleep 30 &
+  live=$!
+  set_state "$sf" STATUS running
+  set_state "$sf" PID "$live"
+  stub_tmux_existing claude
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" rc "rc loop"
+  kill "$live" 2>/dev/null || true
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"running a loop, not an interactive agent"* ]]
+  # and nothing was typed into the session
+  run ! grep -q "send-keys" "$VIBE_TEST_TMUX_LOG"
 }
 
 @test "loop: a failed tmux launch marks the state stopped, not running" {

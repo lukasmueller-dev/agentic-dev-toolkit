@@ -387,6 +387,36 @@ slug() {
   [ -f mine.txt ]
 }
 
+@test "resume --rebase: a conflicting rebase fails without claiming success" {
+  # Both sides edit the same line, so the rebase must stop on a conflict.
+  # What matters: non-zero exit, no "rebased" success line, and the worktree
+  # left mid-rebase for a human — never a silent half-merge reported as done.
+  cd "$(make_repo proj)"
+  echo "base" >shared.txt
+  git add -A
+  git commit -q -m "base"
+  git push -q
+
+  local other
+  other="$(clone_repo proj other)"
+  echo "theirs" >"$other/shared.txt"
+  git -C "$other" add -A
+  git -C "$other" commit -q -m "theirs"
+  git -C "$other" push -q
+
+  echo "mine" >shared.txt
+  git add -A
+  git commit -q -m "mine"
+
+  run run_vibe resume --rebase
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"rebased main onto remote"* ]]
+  # git left the rebase in progress, conflict markers and all
+  run git status
+  [[ "$output" == *"rebase in progress"* ]]
+  git rebase --abort
+}
+
 # ---------------------------------------------------------------------------
 # start / templates
 # ---------------------------------------------------------------------------
@@ -440,6 +470,26 @@ slug() {
   run run_vibe list
   [ "$status" -eq 0 ]
   [[ "$output" == *"no tasks yet"* ]]
+}
+
+@test "list: prints one line per existing task" {
+  cd "$(make_repo proj)"
+  run_vibe start "task one" >/dev/null
+  run_vibe start "task two" >/dev/null
+  run run_vibe list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"task-one"* ]]
+  [[ "$output" == *"task-two"* ]]
+  [[ "$output" != *"no tasks yet"* ]]
+}
+
+@test "list: reports no tasks before the first worktree exists" {
+  # No worktree root at all — the guard before the glob, not the empty-glob
+  # path (that one has its own test above).
+  cd "$(make_repo proj)"
+  run run_vibe list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no tasks yet for proj"* ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -770,6 +820,50 @@ EOF
   run run_vibe rc
   [ "$status" -eq 1 ]
   [[ "$output" == *"usage"* ]]
+}
+
+@test "rc: refuses when the task has no tmux session" {
+  # Server path against the helper's stub tmux, whose has-session always
+  # fails — exactly the "worktree exists but nothing is running" case.
+  cd "$(make_repo proj)"
+  run_vibe start "rc idle" >/dev/null
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" rc "rc idle"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no tmux session"* ]]
+}
+
+@test "rc: sends /rc into an idle interactive session" {
+  cd "$(make_repo proj)"
+  run_vibe start "rc live" >/dev/null
+
+  # A tmux whose session exists and whose pane shows an idle agent prompt,
+  # so wait_for_pane_idle returns immediately instead of polling for 20s.
+  local dir="$BATS_TEST_TMPDIR/tmuxbin"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  capture-pane) printf '│ > \n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    PATH="$dir:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" rc "rc live"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sending /rc"* ]]
+  grep -q "send-keys -t vibe-proj-rc-live /rc" "$VIBE_TEST_TMUX_LOG"
 }
 
 # ---------------------------------------------------------------------------
