@@ -45,8 +45,8 @@ an example. That is precisely how the three divergent copies of `HANDOFF.md`
 came about. If a tool needs to emit a document, it reads `templates/`.
 
 Templates must not name a specific CLI, machine, or agent. CI fails the build
-if `templates/HANDOFF.md`, `templates/LOOP.md`, `templates/LOOP_PR.md`, or
-`templates/PROJECT_STATUS.md` mentions one.
+if `templates/HANDOFF.md`, `templates/LOOP.md`, `templates/LOOP_PR.md`,
+`templates/PROJECT_STATUS.md`, or `templates/repo/pre-push` mentions one.
 
 ## Global memory lives in `memory/`
 

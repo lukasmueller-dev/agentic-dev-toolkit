@@ -1,0 +1,42 @@
+name: CI
+
+# If CI minutes are billed on this repo (private repo on a free plan), PR runs
+# are opt-in: add the `run-ci` label to the PR to start one. Push to the
+# default branch always runs, so a merge is always verified. On a repo with
+# free minutes, delete the `if:` line on each job and the `labeled` activity
+# type below.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+# Supersede an in-flight run when the branch is pushed again — but never on
+# the default branch, whose run may be the only verification a merge gets.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'run-ci')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...

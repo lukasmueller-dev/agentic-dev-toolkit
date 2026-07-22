@@ -51,6 +51,13 @@ the installer's auto-discovery rules.
   through an `@` import in `claude/CLAUDE.md`, which keeps the
   response-style rules agent-local. Rationale in the PR for
   `portable-global-memory-per-the-project_status.md-roadmap-item`.
+- 2026-07-22: General repo scaffolding is one gated, model-invocable skill,
+  `skills/repo-scaffold` — read-only audit, phase-3 approval gate on every
+  write (second SQ13 exception). Emitted assets live in `templates/`
+  (`gitignore/`, `ci/`, `repo/pre-push`, copied verbatim — no placeholder
+  tokens); per-ecosystem judgment lives in the skill's `references/`;
+  status files stay owned by `project-status-scaffold`. Rationale in the
+  PR for `skill-full-scaffold`.
 
 ## TODOs
 
