@@ -23,8 +23,13 @@ setup() {
   mkdir -p "$STUB"
   VIBE_LOG="$BATS_TEST_TMPDIR/vibe-calls"
   VIBE_CWD="$BATS_TEST_TMPDIR/vibe-cwd"
+  # 'vibe where' is answered on its own — the script reads the environment from
+  # it to decide whether to pass --no-attach — and is not logged as a loop
+  # launch. VIBE_STUB_ENV lets a test flip the verdict; default server, the
+  # case cron runs in.
   cat >"$STUB/vibe" <<STUBEOF
 #!/usr/bin/env bash
+if [ "\$1" = where ]; then echo "\${VIBE_STUB_ENV:-server} (stub)"; exit 0; fi
 printf '%s\n' "\$*" >>"$VIBE_LOG"
 pwd -P >>"$VIBE_CWD"
 exit 0
@@ -62,11 +67,23 @@ run_script() {
   # three turns the run into something that finishes without producing a digest.
   grep -q -- "--until test -f docs/sota/2026-W29.md" "$VIBE_LOG"
   grep -q -- "--pr" "$VIBE_LOG"
+  # server is the stub's default env, so --no-attach is passed (the loop
+  # detaches into tmux and cron has no tty to attach from).
   grep -q -- "--no-attach" "$VIBE_LOG"
   # Matched by suffix, not against $SKILL: the script resolves its own location
   # with `cd -P`, and on macOS that turns the test's /var/folders/… path into
   # its /private/var/folders/… real path, so the two strings never compare equal.
   grep -qE -- "--prompt /.*/sota-digest/loop-brief\.md" "$VIBE_LOG"
+}
+
+@test "sota-weekly: omits --no-attach on a local machine, where the loop refuses it" {
+  # Passed unconditionally, --no-attach made a by-hand local run die outright
+  # ('--no-attach needs a server tmux session'). The script now asks 'vibe
+  # where' and adds the flag only for a server.
+  VIBE_STUB_ENV=local run_script 2026-W29
+  [ "$status" -eq 0 ]
+  grep -q -- "--pr" "$VIBE_LOG"
+  ! grep -q -- "--no-attach" "$VIBE_LOG"
 }
 
 @test "sota-weekly: writes its own log instead of mailing cron output" {

@@ -85,14 +85,22 @@ TASK="sota $WEEK"
 # costs nothing extra. Re-running for a week whose worktree already exists
 # resumes that loop rather than starting a second one — which is exactly the
 # behaviour wanted after a crashed run.
-log "launching: vibe loop '$TASK' --pr --max 3"
+set -- --prompt "$BRIEF" --until "test -f docs/sota/$WEEK.md" --max 3 --pr
+
+# --no-attach only where it belongs: on a server the loop detaches into tmux
+# and cron has no tty to attach from, so it is required. On a local machine
+# 'vibe loop' runs in the foreground and REFUSES --no-attach outright — passing
+# it unconditionally made the by-hand run (docs/sota-watch.md) die instantly
+# rather than run. So ask vibe which environment this is and add the flag only
+# for a server. 'vibe where' prints "<env> (reason)"; the first word is env.
+env="$(vibe where | awk '{print $1}')"
+if [[ "$env" == "server" ]]; then
+  set -- "$@" --no-attach
+fi
+
+log "launching (env: ${env:-unknown}): vibe loop '$TASK' $*"
 rc=0
-vibe loop "$TASK" \
-  --prompt "$BRIEF" \
-  --until "test -f docs/sota/$WEEK.md" \
-  --max 3 \
-  --pr \
-  --no-attach || rc=$?
+vibe loop "$TASK" "$@" || rc=$?
 
 # On a server the loop detaches into tmux and this exit status only reports the
 # launch, not the run; on a local machine a non-zero status is the loop's own
