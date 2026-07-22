@@ -240,3 +240,16 @@ bats tests/                       # tests
 
 Conventional Commits. The body should say *why* — a commit that fixes a
 data-loss bug should explain what was being lost.
+
+## CI is opt-in per PR
+
+GitHub Actions minutes are billed on this private repo, and the macOS test leg
+bills at 10×. So the workflow does **not** run on a PR unless the PR carries
+the `run-ci` label — add it (`gh pr edit <n> --add-label run-ci`) and the run
+starts; `gh workflow run ci.yml --ref <branch>` is the manual equivalent.
+Push-to-`main` still runs unconditionally, so a merge is always verified.
+
+That makes the four commands above the real gate, not CI: an unlabeled PR
+shows no checks at all, and GitHub's merge box reads a skipped job as passing.
+Required checks cannot compensate — they are not configurable on a private
+Free-plan repo.
