@@ -1316,8 +1316,19 @@ cmd_loop() {
   if [[ "$env" == "server" ]]; then
     local run_cmd
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
-    # everything from the state file just written.
-    run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    # the round bookkeeping from the state file just written — but it
+    # re-reads VIBE_* from its own environment, which is the tmux pane's:
+    # inherited from the tmux SERVER process, i.e. from whatever command
+    # first touched tmux on this machine, not from this invocation (VIBE_*
+    # is not in tmux's update-environment set). Left alone, a loop started
+    # with VIBE_LOOP_SANDBOX_ARGS in the environment passed validation here
+    # and then ran without them in the pane — state saying SANDBOX=1, argv
+    # carrying nothing. Prefix the runner with the values this invocation
+    # resolved, so what was validated is what runs.
+    run_cmd="$(printf 'VIBE_AGENT_CMD=%q VIBE_AGENT_HEADLESS_ARGS=%q VIBE_LOOP_PERMISSIVE_ARGS=%q VIBE_LOOP_SANDBOX_ARGS=%q VIBE_NTFY_TOPIC=%q' \
+      "$VIBE_AGENT_CMD" "$VIBE_AGENT_HEADLESS_ARGS" \
+      "$VIBE_LOOP_PERMISSIVE_ARGS" "$VIBE_LOOP_SANDBOX_ARGS" \
+      "$VIBE_NTFY_TOPIC") $(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
     # A launch failure must not strand the state: it was written as
     # "running" just above, so dying here via set -e would leave vibe status
     # reporting a live loop with no runner behind it, forever.

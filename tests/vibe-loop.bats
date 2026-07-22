@@ -741,6 +741,30 @@ EOF
   [ "$(loop_state srv-fresh STATUS)" = running ]
 }
 
+@test "loop: the runner is handed this invocation's VIBE_* values" {
+  # The pane's environment comes from the tmux SERVER process, not from the
+  # shell that ran 'vibe loop', so without the env prefix on the typed
+  # command the runner re-resolved VIBE_* from whatever the first
+  # tmux-touching command on the machine had: a loop that passed the
+  # sandbox/permissive validation here ran without those args in the pane —
+  # state saying SANDBOX=1, agent argv carrying nothing.
+  cd "$(make_repo proj)"
+  stub_agent
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    VIBE_LOOP_SANDBOX_ARGS="--sandbox-flag" \
+    VIBE_LOOP_PERMISSIVE_ARGS="--yolo-flag" \
+    "$VIBE" loop "env carry" --no-attach --max 1 --sandbox --dangerously-allow-all
+  [ "$status" -eq 0 ]
+  local typed
+  typed="$(grep "send-keys -t vibe-proj-env-carry" "$VIBE_TEST_TMUX_LOG")"
+  [[ "$typed" == *"VIBE_AGENT_CMD=$BATS_TEST_TMPDIR/agent.sh"* ]]
+  [[ "$typed" == *"VIBE_LOOP_SANDBOX_ARGS=--sandbox-flag"* ]]
+  [[ "$typed" == *"VIBE_LOOP_PERMISSIVE_ARGS=--yolo-flag"* ]]
+}
+
 @test "loop: __loop-run drives a loop from its saved state" {
   # This is what the tmux session actually executes on the server. Seed state
   # with a finished local loop, raise MAX, and hand the worktree to
