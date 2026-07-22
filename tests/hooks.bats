@@ -325,10 +325,20 @@ EOF
   local wt="$BATS_TEST_TMPDIR/worktrees/proj/feat-x"
   mkdir -p "$(dirname "$wt")"
   git -C "$r" worktree add -q -b feat-x "$wt"
-  git -C "$wt" checkout -q -b hotfix
 
+  # branch == task: the task segment must be suppressed, so "feat-x" renders
+  # exactly once. Without this half the test passed even when the segment
+  # was printed unconditionally — the "only" in the name went untested.
   run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
     bash -c "echo '{\"workspace\":{\"current_dir\":\"$wt\"}}' | '$HOOKS/statusline.sh'"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | grep -o 'feat-x' | wc -l | tr -d ' ')" -eq 1 ]
+
+  # branch != task: both segments render
+  git -C "$wt" checkout -q -b hotfix
+  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    bash -c "echo '{\"workspace\":{\"current_dir\":\"$wt\"}}' | '$HOOKS/statusline.sh'"
+  [ "$status" -eq 0 ]
   [[ "$output" == *"hotfix"* ]]
   [[ "$output" == *"feat-x"* ]]
 }

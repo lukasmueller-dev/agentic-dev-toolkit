@@ -50,8 +50,20 @@ has_escapes() { [[ "$1" == *$'\033['* ]]; }
 @test "help: lists every command in main()'s dispatch" {
   run run_vibe help
   [ "$status" -eq 0 ]
-  local cmd
-  for cmd in start loop attach park rc status list "done" sync resume where doctor; do
-    [[ "$output" == *"$cmd"* ]]
-  done
+  # Read the dispatch out of main() itself, so a command added there without
+  # a help entry fails here. The old hardcoded list also matched bare
+  # substrings — "rc" is inside "force", "done" inside "abandoned" — so it
+  # could not fail; anchor each match to a help line that starts with the
+  # command as its own word.
+  local cmd found=0
+  while IFS= read -r cmd; do
+    found=$((found + 1))
+    printf '%s\n' "$output" | grep -qE "^  ${cmd}( |\$)" ||
+      {
+        echo "missing from help: $cmd" >&2
+        return 1
+      }
+  done < <(sed -n 's/^    \([a-z][a-z-]*\)) cmd_.*/\1/p' "$VIBE")
+  # and the dispatch was actually parsed — an empty list proves nothing
+  [ "$found" -ge 12 ]
 }

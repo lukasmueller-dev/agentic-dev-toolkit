@@ -41,7 +41,7 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 
 | ID   | Tag      | Criterion | Why |
 | ---- | -------- | --------- | --- |
-| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. |
+| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. One recorded exception: a skill whose every side effect sits behind an explicit in-skill approval gate (`codebase-health` — findings are reported first, fixes need the user's category-by-category go-ahead) may stay model-invocable. | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. When the human's approval is built into the flow itself, the gate is already there. |
 
 ## Bundled files and portability
 

@@ -148,9 +148,10 @@ unescaped `&` in *rep* to whatever *pat* matched. Escaping is not portable —
 under 3.2 the backslash survives into the output — so unset the option around
 the substitution instead, guarding both halves
 (`shopt -u patsub_replacement 2>/dev/null || true`) because 3.2 exits non-zero
-on an option it does not know. `render_template` in `bin/vibe` and
-`skills/_lib/vibe-lib.sh` does this; note that CI's macOS leg cannot catch the
-bug, only the Linux one.
+on an option it does not know. The strongest fix is to not use `${var//}` on
+untrusted values at all: `render_template` (both copies — `bin/vibe` and
+`skills/_lib/vibe-lib.sh`) renders by index-slicing for this reason. Note that
+CI's macOS leg cannot catch the bug, only the Linux one.
 
 Both of these have already caused real bugs. The bats suite runs on macOS in
 CI for exactly this reason.

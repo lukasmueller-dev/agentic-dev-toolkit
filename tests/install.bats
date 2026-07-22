@@ -110,6 +110,35 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -f "$REPO_ROOT/skills/_template/SKILL.md" ]
 }
 
+@test "install: never chmods a script inside the checkout" {
+  # The installer used to chmod +x bin/* and every *.sh under linked
+  # directories — mutating the developer's working tree on every run (and
+  # the suite runs the installer ~25×). Exercised against a copy: a
+  # deliberately non-executable script must keep its mode.
+  local copy="$BATS_TEST_TMPDIR/repo"
+  cp -R "$REPO_ROOT" "$copy"
+  rm -rf "$copy/.git"
+  printf '#!/bin/sh\n' >"$copy/skills/codebase-health/noexec.sh"
+  chmod 644 "$copy/skills/codebase-health/noexec.sh"
+
+  run "$copy/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ ! -x "$copy/skills/codebase-health/noexec.sh" ]
+}
+
+@test "install: warns about a non-executable bin/ file instead of fixing it" {
+  local copy="$BATS_TEST_TMPDIR/repo"
+  cp -R "$REPO_ROOT" "$copy"
+  rm -rf "$copy/.git"
+  printf '#!/bin/sh\necho hi\n' >"$copy/bin/newtool"
+  chmod 644 "$copy/bin/newtool"
+
+  run "$copy/install.sh" bin
+  [ "$status" -eq 0 ]
+  [ ! -x "$copy/bin/newtool" ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"not executable"* ]]
+}
+
 @test "install: backs up a real file instead of deleting it" {
   mkdir -p "$HOME/.claude"
   printf 'PRECIOUS\n' >"$HOME/.claude/CLAUDE.md"
@@ -168,6 +197,49 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [[ "$(printf '%s\n' "$output" | plain)" == *"not ours to remove"* ]]
 }
 
+@test "uninstall: --dry announces removals but removes nothing" {
+  "$INSTALL" >/dev/null
+  run "$INSTALL" --uninstall --dry
+  [ "$status" -eq 0 ]
+  # every symlink survives the dry run
+  [ -L "$HOME/bin/vibe" ]
+  [ -L "$HOME/.claude/CLAUDE.md" ]
+  [ -L "$HOME/.claude/skills/project-status-scaffold" ]
+  # and it says what it would do — "remove", never the past-tense
+  # "  removed  " report line ("not removed:" notes about merged settings
+  # are expected either way)
+  [ "$(printf '%s\n' "$output" | plain | grep -c '^  remove   ')" -gt 0 ]
+  [ "$(printf '%s\n' "$output" | plain | grep -c '^  removed  ')" -eq 0 ]
+}
+
+@test "install: degrades politely when jq is missing (settings + vscode)" {
+  # Both merge steps depend on jq; without it the installer must still link
+  # everything, warn about the two files it could not merge, and exit 0 —
+  # hooks have the same rule, and this is the installer's version of it.
+  local nojq="$BATS_TEST_TMPDIR/nojq-bin" d f b
+  mkdir -p "$nojq"
+  for d in ${PATH//:/ }; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      [ -x "$f" ] || continue
+      b="${f##*/}"
+      [ "$b" = jq ] && continue
+      [ -e "$nojq/$b" ] || ln -s "$f" "$nojq/$b"
+    done
+  done
+
+  run env PATH="$nojq" "$INSTALL" claude vscode
+  [ "$status" -eq 0 ]
+  local plain_out
+  plain_out="$(printf '%s\n' "$output" | plain)"
+  [[ "$plain_out" == *"jq not installed — cannot merge settings.json."* ]]
+  [[ "$plain_out" == *"jq not installed — cannot merge automatically."* ]]
+  # the symlink half of the claude target still happened
+  [ -L "$HOME/.claude/CLAUDE.md" ]
+  # and no half-merged settings file was invented
+  [ ! -e "$HOME/.claude/settings.json" ]
+}
+
 @test "uninstall: is safe to run twice" {
   "$INSTALL" >/dev/null
   "$INSTALL" --uninstall >/dev/null
@@ -179,7 +251,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   "$INSTALL" >/dev/null
   run "$INSTALL" doctor
   # ~/bin is not on PATH inside the test shell, so warnings are expected;
-  # what must not happen is a FAIL.
+  # what must not happen is a FAIL. The positive matches keep this from
+  # passing vacuously on empty output (a doctor that crashed printed no
+  # FAIL either).
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"install doctor:"* ]]
   [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]]
 }
 

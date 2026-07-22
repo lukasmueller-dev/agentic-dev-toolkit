@@ -1,6 +1,7 @@
 ---
 name: sync-with-main
 description: Rebase the current topic branch onto the latest default branch after a parallel PR's merge moved it. Use when the user says "sync with main", "main moved", "catch up with main", "rebase onto main", or reports that a just-merged PR touches files this branch also edits. Fetches and confirms the branch is behind, scopes the overlap before touching anything, rebases, resolves textual and semantic conflicts, re-runs the repo's checks, and pushes with --force-with-lease. Do NOT use for reconciling a branch with its own upstream after a rejected push, for merging PRs, or on the default branch itself.
+disable-model-invocation: true
 ---
 
 # Sync With Main

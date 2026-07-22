@@ -26,6 +26,20 @@ unset SSH_CONNECTION SSH_TTY SSH_CLIENT
 # No hostname can contain a slash, so this never matches.
 export VIBE_SERVER_HOSTNAME="vibe-tests/never-a-real-host"
 
+# ---------------------------------------------------------------------------
+# Isolation from the real HOME
+#
+# The contract says no test touches the real ~/.claude, ~/bin, or worktree
+# root — but with HOME left alone, that held only because every call site
+# remembered its wrapper: one `$VIBE` invoked without run_vibe defaults its
+# worktree root under the real ~. Redirect HOME itself so a forgotten
+# wrapper lands in the sandbox instead. install.bats narrows this further
+# to a per-test directory in its own setup().
+# ---------------------------------------------------------------------------
+HOME="${BATS_TEST_TMPDIR:-${BATS_FILE_TMPDIR:-${BATS_RUN_TMPDIR:-$BATS_TMPDIR}}}/home"
+export HOME
+mkdir -p "$HOME"
+
 # The runner's own vibe configuration must not reach the suite: a developer
 # machine that exports VIBE_LOOP_PERMISSIVE_ARGS or keeps a real
 # ~/.config/vibe/config would otherwise flip assertions from under the tests.

@@ -181,8 +181,10 @@ and strays onto the default branch as an empty husk. A finished task deletes
 the baton (`git rm HANDOFF.md`, then `vibe sync`); `--discard-handoff` is
 the explicit override that skips both handoff checks.
 
-`--force` overrides every check. The branch is always kept, so even a forced
-removal leaves the commits reachable.
+`--force` overrides every check above — but not a still-running loop: that
+guard only yields to `--stop`, which kills the loop before removing the
+worktree. The branch is always kept, so even a forced removal leaves the
+commits reachable.
 
 ## Running a task unattended
 

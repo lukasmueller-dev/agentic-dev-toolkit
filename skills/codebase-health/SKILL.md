@@ -94,8 +94,10 @@ to fix: **dedup**, **complexity**, **docs**, any combination, or none.
 
 ### 5. Approve
 
-Wait for the user. Fix only approved categories. Record unapproved findings
-— they reappear in the delivery step so nothing silently disappears.
+**Stop here and wait for the user's category-by-category approval — do not
+proceed to step 6 without it.** Fix only approved categories. Record
+unapproved findings — they reappear in the delivery step so nothing silently
+disappears.
 
 ### 6. Fix
 

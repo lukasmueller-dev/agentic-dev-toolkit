@@ -12,7 +12,12 @@ definitions, installed globally so every repo gets the same roster.
 
 Three of the four are read-only by tool allowlist, not just by instruction:
 the point of a reviewing subagent is a verdict you can trust, and an agent
-that can edit can also make its own findings disappear.
+that can edit can also make its own findings disappear. `tools:` alone cannot
+finish that job — it takes bare tool names, so granting `Bash` grants all of
+Bash. Each reviewer therefore carries a frontmatter `PreToolUse` hook running
+[`../hooks/readonly-bash.sh`](../hooks/readonly-bash.sh), which holds every
+Bash command to a read-only allowlist and blocks the rest with a message
+saying what to do instead.
 
 The roster is composed, not imported. `skills/team-up` reads this directory
 and the repo's `.claude/agents` at the start of a task and drafts who owns

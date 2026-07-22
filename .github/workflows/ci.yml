@@ -110,6 +110,24 @@ jobs:
           shfmt --version
           git --version
 
+      # The macOS leg exists to prove bash 3.2 compatibility. Assert it
+      # instead of trusting the runner image: if a future image ships (or
+      # brew pulls in) a newer bash first on PATH, the portability guarantee
+      # would silently retire while the build stays green. Resolve bash the
+      # same way the scripts under test do — `env bash` via PATH — rather
+      # than checking this step's own $BASH_VERSION.
+      - name: Assert bash 3.2 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          v="$(env bash -c 'echo "$BASH_VERSION"')"
+          case "$v" in
+            3.2.*) echo "PATH bash is $v — the 3.2 portability leg is intact" ;;
+            *)
+              echo "::error::PATH bash is ${v:-unknown}, not 3.2 — this leg no longer tests the portability floor"
+              exit 1
+              ;;
+          esac
+
       - name: Run tests
         run: bats --print-output-on-failure tests/
 

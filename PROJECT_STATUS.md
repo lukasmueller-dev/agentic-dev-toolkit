@@ -93,75 +93,11 @@ Track B — portability and team:
       Claude-written and stays unmanaged — same file class as
       `settings.json`'s runtime keys)
 
-Track C — verification debt (opened by the 2026-07-22 review pass; CI
-billing was resolved the same day — main `4cb588c` ran green on all four
-jobs, macOS leg on bash 3.2.57, so merges are verified again):
-
-- [ ] Assert bash 3.2 rather than assume it. The macOS leg does run
-      3.2.57 today, but `ci.yml` only *prints* `bash --version`; scripts
-      use `#!/usr/bin/env bash`, so a runner-image change would retire the
-      portability guarantee with a green build.
-- [ ] `install.sh` chmods `+x` inside the developer's own checkout
-      (`:704-705`), and `tests/install.bats` runs the real installer ~25×
-      per suite run. Harmless today — every such file is already
-      executable — but a deliberately non-executable `*.sh` under a skill
-      would have its mode flipped by running the tests, and the guard at
-      `tests/install.bats:101` filters mode-only changes by design.
-- [ ] `tests/helper.bash` never redirects `HOME` (only `install.bats`
-      does), contra `CLAUDE.md`. No test escapes `$BATS_TEST_TMPDIR` today
-      — verified by marker-file diff — but the defaults are one forgotten
-      wrapper away from the real worktree root.
-- [ ] Cover the server side of `cmd_loop` / `cmd_loop_run` / `cmd_rc`,
-      `--uninstall --dry`, both jq-absent degrade paths, `vibe list`, and
-      a *conflicting* `resume --rebase`. Strengthen four assertions that
-      pass vacuously: `install.bats:172`, `vibe-loop.bats:100`,
-      `hooks.bats:322`, `vibe-ui.bats:50`.
-- [ ] Residual doc drift: `docs/vibe.md:170` (`--force` does not override
-      the running-loop guard) · `project-status-scaffold/SKILL.md:29`
-      (points at a template that is not there) ·
-      `implement-test-suite/SKILL.md:13,103` (`codebase-healthiness` →
-      `codebase-health`) · `docs/vibe-loop.md:20-29` (a fifth stop
-      condition, diverged remote, is missing from the table).
-
-Track C additions from the 2026-07-22 second review pass (round two;
-fixed findings landed in that round's PR — these are the ones left open
-because each needs an owner decision or a design):
-
-- [ ] The three reviewer subagents (`diff-reviewer`, `docs-drift`,
-      `security-sweep`) grant unscoped `Bash`, defeating the recorded
-      "read-only by tool allowlist" decision: the merged settings baseline
-      auto-allows write-capable commands (`shfmt -w`, `gofmt -w`,
-      `sort -o`, `echo >`), so a reviewing agent can silently rewrite the
-      file it found a defect in. Agent frontmatter `tools:` takes bare
-      names only (checked against current Claude Code docs), so the fix is
-      a per-agent `PreToolUse` hook that vets Bash commands — the
-      allow/deny policy for that classifier is the owner decision.
-- [ ] `claude/settings.json` protects secret files only from the `Read`
-      tool, while `Bash(cat:*)`, `grep`, `head`, `tail` are allowed and
-      the sandbox gates just `~/.aws/credentials` and `~/.ssh` — so
-      `.env`, `*.pem`, `id_rsa`, and `~/.config/gh/hosts.yml` are readable
-      with no prompt. Closing it means sandbox credential entries for
-      those paths; that touches the settings merge, so owner go-ahead
-      first. Two smaller nits in the same file: the force-push deny misses
-      the `git push origin +main` refspec form, and `--force` as a prefix
-      also blocks the safe `--force-with-lease`.
-- [ ] SQ13 vs reality: `commit-push-pr` and `sync-with-main` stay
-      model-invocable while autonomously committing, pushing, or
-      force-pushing — the two skills squarest inside SQ13's own example
-      list (`codebase-health` is borderline). Either add
-      `disable-model-invocation: true` or record the deliberate exemption
-      in `docs/skill-quality.md`; today the divergence is silent.
-- [ ] `render_template` substitutes tokens sequentially, so a task string
-      that itself contains a later token (`vibe loop "document the
-      <machine> placeholder"`) is re-substituted inside the rendered
-      brief. Low impact; the fix is order-independent rendering in both
-      `bin/vibe` and `skills/_lib/vibe-lib.sh`.
-- [ ] Skill-structure grades below the bar in `docs/skill-quality.md`:
-      `commit-push-pr` keeps its stop conditions at the end of the file
-      instead of opening with them; `project-status-scaffold` never
-      defines "done"; `codebase-health`'s step-5 approval gate is not
-      bold-marked; `implement-test-suite`'s description has no trigger
-      phrases. One small pass, guided by the quality doc.
+Track C — verification debt from the two 2026-07-22 review passes:
+closed 2026-07-22 by the `track-c-pass` branch, one commit per item.
+The three owner-decision items (reviewer Bash guard policy, settings
+baseline changes, SQ13 resolution) landed as proposals — each decision
+is spelled out in its commit body and the PR for owner review.
 
 ## Open questions
 

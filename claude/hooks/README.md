@@ -9,12 +9,18 @@ directory at `~/.claude/hooks`, and wired up by `../settings.json`.
 | `session-start-handoff.sh`| `SessionStart` hook    | Injects `HANDOFF.md` as context on `startup`/`clear` |
 | `session-end-handoff.sh`  | `SessionEnd` hook      | Warns when `HANDOFF.md` / `PROJECT_STATUS.md` are stale |
 | `notify-ntfy.sh`          | `Notification` hook    | Pushes to my phone via ntfy.sh                  |
+| `readonly-bash.sh`        | `PreToolUse(Bash)`, from agent frontmatter | Holds the reviewer subagents' Bash to a read-only allowlist |
 | `statusline.sh`           | `statusLine` command   | Renders `repo · branch · task`                  |
 
 `statusline.sh` is not a hook event — Claude Code calls it through the
 `statusLine` setting. It lives here because it is the same kind of artifact (an
 executable this toolkit installs for Claude Code to run) and one symlinked
 directory beats two.
+
+`readonly-bash.sh` is the other odd one out: it is wired up in the reviewer
+subagents' own frontmatter (`../agents/*.md`), not in `settings.json`, so it
+fires only while one of those agents runs. Blocking works by exiting 2 with
+the reason on stderr, which PreToolUse feeds back to the model.
 
 ## Rules for anything added here
 

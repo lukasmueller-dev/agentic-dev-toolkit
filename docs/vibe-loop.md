@@ -17,16 +17,17 @@ That creates the `port-the-config-parser-to-the-new-schema` branch and
 worktree, seeds `LOOP.md`, and starts iterating: agent, commit, `npm test`.
 When the tests pass it stops.
 
-## The four ways it stops
+## The five ways it stops
 
 Every loop is bounded. It ends the moment any of these is true:
 
-| Stop        | Trigger                                                        |
-| ----------- | ------------------------------------------------------------- |
-| **success** | the `--until` command exits `0`                               |
-| **max**     | `--max` iterations have run (default 10)                       |
-| **time up** | the `--for` wall-clock budget is spent (unset by default)      |
-| **stall**   | two rounds in a row produced no new commit and no diff        |
+| Stop         | Trigger                                                       |
+| ------------ | ------------------------------------------------------------- |
+| **success**  | the `--until` command exits `0`                               |
+| **max**      | `--max` iterations have run (default 10)                      |
+| **time up**  | the `--for` wall-clock budget is spent (unset by default)     |
+| **stall**    | two rounds in a row produced no new commit and no diff        |
+| **diverged** | with `--push`, the remote has moved under the branch — an unattended loop never merges or forces, so it stops for a human |
 
 `--for` takes a short duration — `45s`, `90m`, `6h`, `2d` — and bounds an
 overnight run by the clock rather than by a round count you have to guess:

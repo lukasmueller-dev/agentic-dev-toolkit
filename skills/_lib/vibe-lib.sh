@@ -34,27 +34,46 @@ TOOLKIT_HOME="$(dirname "$(dirname "$VIBE_LIB_DIR")")"
 TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
+# KEEP IN LOCKSTEP with the copy in bin/vibe (these scripts cannot source it).
 # Pure bash: no sed, so a value containing slashes (worktree paths hold them)
-# needs no escaping. The one character bash itself is not literal about is
-# '&': from 5.2 the patsub_replacement option — on by default — expands an
-# unescaped '&' in the replacement half of ${var//pat/rep} to whatever the
-# pattern matched, so an --until command chain would render as '<until><until>'.
-# Unset it around the loop and restore it after; shopt is shell-global, and
-# bash 3.2 (macOS) has no such option, hence the guards.
+# needs no escaping. One left-to-right scan: the earliest remaining token
+# occurrence is copied out with its value and scanning resumes AFTER the
+# inserted value, so a value that itself contains another token renders
+# literally instead of being re-substituted by a later pass — the old
+# one-token-at-a-time ${content//tok/val} loop got that wrong. Avoiding
+# ${var//pat/rep} entirely also retires the bash ≥5.2 patsub_replacement
+# hazard ('&' in the value expanding to the matched pattern) this function
+# used to shopt around.
 render_template() {
   local tpl="$1"
   shift
-  local patsub_was_set=0
-  if shopt -q patsub_replacement 2>/dev/null; then patsub_was_set=1; fi
-  shopt -u patsub_replacement 2>/dev/null || true
-  local content
-  content="$(cat "$tpl")"
+  local -a toks=() vals=()
   while (($# >= 2)); do
-    content="${content//$1/$2}"
+    toks+=("$1")
+    vals+=("$2")
     shift 2
   done
-  if ((patsub_was_set)); then shopt -s patsub_replacement 2>/dev/null || true; fi
-  printf '%s\n' "$content"
+  local rest out="" pre
+  rest="$(cat "$tpl")"
+  local i best_at best_i
+  while [[ -n "$rest" ]]; do
+    best_at=-1 best_i=0
+    for ((i = 0; i < ${#toks[@]}; i++)); do
+      # prefix before the token's first occurrence; unchanged means absent
+      pre="${rest%%"${toks[$i]}"*}"
+      if [[ "$pre" != "$rest" ]] && ((best_at < 0 || ${#pre} < best_at)); then
+        best_at=${#pre}
+        best_i=$i
+      fi
+    done
+    if ((best_at < 0)); then
+      out+="$rest"
+      break
+    fi
+    out+="${rest:0:best_at}${vals[$best_i]}"
+    rest="${rest:$((best_at + ${#toks[$best_i]}))}"
+  done
+  printf '%s\n' "$out"
 }
 
 # ---------------------------------------------------------------------------
