@@ -2006,14 +2006,6 @@ done_one() {
     fi
   fi
 
-  # kill tmux session if present
-  local sess
-  sess="$(tmux_session_name "$repo" "$branch")"
-  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
-    tmux kill-session -t "$sess"
-    info "killed tmux session $sess"
-  fi
-
   # Step out of the target first: 'vibe done' with no argument is run from
   # inside the worktree it is about to remove, and git refuses to remove the
   # worktree that is the current directory.
@@ -2033,6 +2025,21 @@ done_one() {
       die "could not remove worktree $dir (see git's message above)"
   fi
   info "removed worktree $dir (branch '$branch' kept)"
+
+  # The tmux kill goes last, and every message above it is already printed.
+  # On the server 'vibe done' is normally run from inside the task's own
+  # session, so this kill SIGHUPs the very process running it: anything left
+  # after this line does not happen. Killing first meant the worktree was
+  # never removed and not a byte was printed — not even the refusals above,
+  # which all die further down the same doomed pane.
+  local sess
+  sess="$(tmux_session_name "$repo" "$branch")"
+  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
+    # Announce before killing, for the same reason: when the session is our
+    # own, a message printed afterwards dies with the pane.
+    info "killing tmux session $sess"
+    tmux kill-session -t "$sess"
+  fi
 }
 
 # sync_dir DIR — commit handoff files first (own commit), then the rest, then
