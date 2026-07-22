@@ -387,6 +387,34 @@ EOF
   [[ "$output" == *"maxed"* ]]
 }
 
+@test "loop: status calls a running loop with a dead runner interrupted" {
+  # A killed runner leaves STATUS=running behind with a dead PID. loop_active
+  # already treats that as not-running (so resume works); the status line
+  # printed the raw word "running" anyway, reporting a crashed loop as
+  # healthy forever.
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "dead runner" --until false --max 1
+  local sf dead
+  sf="$(wt dead-runner)/.vibe-loop.state"
+  true &
+  dead=$!
+  wait "$dead"
+  set_state "$sf" STATUS running
+  set_state "$sf" PID "$dead"
+  run loop_vibe status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"interrupted"* ]]
+  [[ "$output" != *"· running"* ]]
+
+  # An empty PID is the launch window — cmd_loop writes the state before
+  # tmux starts the runner — and that must still read as running.
+  set_state "$sf" PID ""
+  run loop_vibe status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"· running"* ]]
+}
+
 # ---------------------------------------------------------------------------
 # LOOP.md is rendered from the template, tokens all substituted
 # ---------------------------------------------------------------------------
@@ -675,8 +703,17 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(loop_state no-auth STATUS)" = success ]
   [[ "$output" == *"no PR opened"* ]]
-  # the work is still pushed, so it can be opened by hand
-  git -C "$(wt no-auth)" rev-parse '@{u}' >/dev/null 2>&1
+  # The brief is stripped and pushed BEFORE the gh checks give up: the warn
+  # says to open the PR by hand, and when the gh checks ran first that
+  # advice handed over a branch with LOOP.md still on it — the hand-opened
+  # PR carried the brief in its diff.
+  run git -C "$(wt no-auth)" ls-files -- LOOP.md
+  [ -z "$output" ]
+  # the stripped state is what was pushed, so opening by hand is safe
+  local local_head remote_head
+  local_head="$(git -C "$(wt no-auth)" rev-parse HEAD)"
+  remote_head="$(git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse refs/heads/no-auth)"
+  [ "$local_head" = "$remote_head" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -739,6 +776,30 @@ EOF
   # no attach: started from a script, attaching would hang the caller
   run ! grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
   [ "$(loop_state srv-fresh STATUS)" = running ]
+}
+
+@test "loop: the runner is handed this invocation's VIBE_* values" {
+  # The pane's environment comes from the tmux SERVER process, not from the
+  # shell that ran 'vibe loop', so without the env prefix on the typed
+  # command the runner re-resolved VIBE_* from whatever the first
+  # tmux-touching command on the machine had: a loop that passed the
+  # sandbox/permissive validation here ran without those args in the pane —
+  # state saying SANDBOX=1, agent argv carrying nothing.
+  cd "$(make_repo proj)"
+  stub_agent
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    VIBE_LOOP_SANDBOX_ARGS="--sandbox-flag" \
+    VIBE_LOOP_PERMISSIVE_ARGS="--yolo-flag" \
+    "$VIBE" loop "env carry" --no-attach --max 1 --sandbox --dangerously-allow-all
+  [ "$status" -eq 0 ]
+  local typed
+  typed="$(grep "send-keys -t vibe-proj-env-carry" "$VIBE_TEST_TMUX_LOG")"
+  [[ "$typed" == *"VIBE_AGENT_CMD=$BATS_TEST_TMPDIR/agent.sh"* ]]
+  [[ "$typed" == *"VIBE_LOOP_SANDBOX_ARGS=--sandbox-flag"* ]]
+  [[ "$typed" == *"VIBE_LOOP_PERMISSIVE_ARGS=--yolo-flag"* ]]
 }
 
 @test "loop: __loop-run drives a loop from its saved state" {

@@ -109,3 +109,12 @@ is spelled out in its commit body and the PR for owner review.
 
 - Agent Teams is still experimental in Claude Code; `team-up` targets
   subagents now and adopts teams once the experiment stabilises.
+- A foreground `vibe loop` exits 0 whatever the outcome — stalled, maxed
+  and timeup are indistinguishable from success for a scripted caller
+  (`vibe loop … && next-step`). The state file and ntfy carry the
+  outcome, so this may be deliberate; decide and either document it or
+  map non-success statuses to a non-zero exit. (Round three, PR #41.)
+- `vibe start` on a server without a tty exits 1 *after* creating the
+  session and launching the agent, because the final attach fails.
+  Harmless interactively; a `--no-attach` analog like `vibe loop`'s
+  would make `ssh <host> vibe start <task>` scriptable. (Round three.)

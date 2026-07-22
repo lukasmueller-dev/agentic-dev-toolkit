@@ -669,11 +669,21 @@ loop_active() {
 
 # loop_summary DIR — one-line "iter N/M · last R · status" for vibe status.
 loop_summary() {
-  local dir="$1" it mx la st
+  local dir="$1" it mx la st pid
   it="$(loop_get "$dir" ITER)"
   mx="$(loop_get "$dir" MAX)"
   la="$(loop_get "$dir" LAST)"
   st="$(loop_get "$dir" STATUS)"
+  # "running" with a dead recorded runner is a killed loop — the same test
+  # loop_active applies — and reporting it as running reads as healthy
+  # forever. An EMPTY pid stays "running": cmd_loop writes the state before
+  # tmux has started the runner, and that launch window is genuinely live.
+  if [[ "$st" == "running" ]]; then
+    pid="$(loop_get "$dir" PID)"
+    if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+      st="interrupted (vibe loop resumes)"
+    fi
+  fi
   printf 'iter %s/%s · last %s · %s' "${it:-0}" "${mx:-?}" "${la:-none}" "${st:-?}"
 }
 
@@ -842,6 +852,32 @@ loop_open_pr() {
   local dir="$1" repo="$2" branch="$3"
   local status iter max last until_cmd goal title body url existing
 
+  status="$(loop_get "$dir" STATUS)"
+  iter="$(loop_get "$dir" ITER)"
+  max="$(loop_get "$dir" MAX)"
+  last="$(loop_get "$dir" LAST)"
+  until_cmd="$(loop_get "$dir" UNTIL)"
+  goal="$(loop_goal "$dir")"
+
+  # Strip and push before anything that needs gh: the brief comes off the
+  # branch whether or not a PR can be opened from here. Every giving-up arm
+  # below says "open it by hand from $branch" — advice that, when the gh
+  # checks ran first, handed the user a branch with LOOP.md and HANDOFF.md
+  # still on it, so the hand-opened PR carried the brief in its diff. The
+  # strip also cannot be skipped when a PR is already open: a resumed loop
+  # restores the brief and commits it back onto the branch, and a merge
+  # from GitHub never passes through cmd_done's guards.
+  if ! loop_strip_brief "$dir" "$branch"; then
+    warn "brief not dropped from '$branch' — remove LOOP.md/HANDOFF.md by hand before merging."
+    warn "no PR opened."
+    return 0
+  fi
+  if ! loop_push "$dir" "$branch"; then
+    warn "remote diverged from $branch — resolve it by hand."
+    warn "no PR opened."
+    return 0
+  fi
+
   if ! command -v gh >/dev/null 2>&1; then
     warn "no PR opened: 'gh' is not installed. Open it by hand from $branch."
     return 0
@@ -852,28 +888,6 @@ loop_open_pr() {
   # them should read as "no PR exists" and push a second one.
   if ! existing="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url' 2>/dev/null)"; then
     warn "no PR opened: 'gh' could not reach GitHub (not authenticated?). Open it by hand from $branch."
-    return 0
-  fi
-
-  status="$(loop_get "$dir" STATUS)"
-  iter="$(loop_get "$dir" ITER)"
-  max="$(loop_get "$dir" MAX)"
-  last="$(loop_get "$dir" LAST)"
-  until_cmd="$(loop_get "$dir" UNTIL)"
-  goal="$(loop_goal "$dir")"
-
-  # Strip and push even when a PR is already open: a resumed loop restores
-  # the brief and commits it back onto the branch, and a merge from GitHub
-  # never passes through cmd_done's guards — left here, the brief lands in
-  # that PR's diff and strays onto the default branch.
-  if ! loop_strip_brief "$dir" "$branch"; then
-    warn "brief not dropped from '$branch' — remove LOOP.md/HANDOFF.md by hand before merging."
-    [[ -z "$existing" ]] && warn "no PR opened."
-    return 0
-  fi
-  if ! loop_push "$dir" "$branch"; then
-    warn "remote diverged from $branch — resolve it by hand."
-    [[ -z "$existing" ]] && warn "no PR opened."
     return 0
   fi
   if [[ -n "$existing" ]]; then
@@ -1316,8 +1330,19 @@ cmd_loop() {
   if [[ "$env" == "server" ]]; then
     local run_cmd
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
-    # everything from the state file just written.
-    run_cmd="$(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
+    # the round bookkeeping from the state file just written — but it
+    # re-reads VIBE_* from its own environment, which is the tmux pane's:
+    # inherited from the tmux SERVER process, i.e. from whatever command
+    # first touched tmux on this machine, not from this invocation (VIBE_*
+    # is not in tmux's update-environment set). Left alone, a loop started
+    # with VIBE_LOOP_SANDBOX_ARGS in the environment passed validation here
+    # and then ran without them in the pane — state saying SANDBOX=1, argv
+    # carrying nothing. Prefix the runner with the values this invocation
+    # resolved, so what was validated is what runs.
+    run_cmd="$(printf 'VIBE_AGENT_CMD=%q VIBE_AGENT_HEADLESS_ARGS=%q VIBE_LOOP_PERMISSIVE_ARGS=%q VIBE_LOOP_SANDBOX_ARGS=%q VIBE_NTFY_TOPIC=%q' \
+      "$VIBE_AGENT_CMD" "$VIBE_AGENT_HEADLESS_ARGS" \
+      "$VIBE_LOOP_PERMISSIVE_ARGS" "$VIBE_LOOP_SANDBOX_ARGS" \
+      "$VIBE_NTFY_TOPIC") $(printf '%q' "$VIBE_HOME/bin/vibe") __loop-run $(printf '%q' "$dir")"
     # A launch failure must not strand the state: it was written as
     # "running" just above, so dying here via set -e would leave vibe status
     # reporting a live loop with no runner behind it, forever.
