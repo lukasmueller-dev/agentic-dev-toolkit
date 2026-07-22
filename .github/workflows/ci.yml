@@ -155,7 +155,22 @@ jobs:
           # A template that names a specific CLI re-couples the document to one
           # workflow, which is the drift this layout exists to prevent.
           if grep -rniE '\bvibe\b|\bmac\b|\bVPS\b' \
-            templates/HANDOFF.md templates/LOOP.md templates/PROJECT_STATUS.md; then
+            templates/HANDOFF.md templates/LOOP.md \
+            templates/LOOP_PR.md templates/PROJECT_STATUS.md; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi
+
+      - name: no stray handoff or brief at the repo root
+        run: |
+          # HANDOFF.md and LOOP.md are start-of-task input, not deliverable.
+          # `vibe done` refuses to finish while either is on the branch, but a
+          # PR merged without it (or with CI down) can still carry one onto
+          # main — that has happened twice (PRs #11 and #14) plus once more
+          # while Actions was disabled by billing. This is the backstop.
+          for f in HANDOFF.md LOOP.md; do
+            if [ -e "$f" ]; then
+              echo "::error file=$f::stray $f at the repo root — task briefs must be dropped before merge"
+              exit 1
+            fi
+          done
