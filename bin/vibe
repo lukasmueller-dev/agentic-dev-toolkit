@@ -24,7 +24,7 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>]
+#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty, holds unpushed commits, has a loop
 #                         still running (--stop kills it first), if
