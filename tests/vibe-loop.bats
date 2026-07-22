@@ -88,6 +88,15 @@ set_state() {
   [[ "$output" == *"--for must be a duration"* ]]
 }
 
+@test "loop: a second bare word is an error, not a silently truncated task" {
+  # 'vibe loop sota 2026-W30' quietly looped on branch '2026-w30' before.
+  cd "$(make_repo proj)"
+  stub_agent
+  run ! loop_vibe loop sota 2026-W30 --max 1
+  [[ "$output" == *"one task at a time"* ]]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/2026-w30" ]
+}
+
 @test "loop: --for= stops the loop once its time budget is spent" {
   cd "$(make_repo proj)"
   stub_agent

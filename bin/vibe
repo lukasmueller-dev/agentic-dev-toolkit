@@ -1198,6 +1198,10 @@ loop_parse_args() {
         ;;
       -*) die "unknown option '$1' ($usage)" ;;
       *)
+        # As in cmd_start: a second bare word is an error, not the new task.
+        # 'vibe loop sota 2026-W30' quietly looped on branch '2026-w30' before.
+        [[ -z "$LP_task" ]] ||
+          die "one task at a time — got '$LP_task' then '$1'; quote a name with spaces ($usage)"
         LP_task="$1"
         shift
         ;;
@@ -1470,6 +1474,11 @@ cmd_start() {
         ;;
       -*) die "unknown option '$1' ($usage)" ;;
       *)
+        # Reject a second bare word rather than silently keeping the last:
+        # 'vibe start sota 2026-W30' used to make branch '2026-w30' and drop
+        # the rest. A task name with spaces has to be quoted.
+        [[ -z "$task" ]] ||
+          die "one task at a time — got '$task' then '$1'; quote a name with spaces ($usage)"
         task="$1"
         shift
         ;;
@@ -2032,6 +2041,12 @@ done_one() {
   # after this line does not happen. Killing first meant the worktree was
   # never removed and not a byte was printed — not even the refusals above,
   # which all die further down the same doomed pane.
+  #
+  # In multi-task 'vibe done a b', each done_one runs in its own subshell and
+  # 'vibe' itself runs from the main repo root (cmd_done cd's there first), not
+  # from any task's session — so killing task a's session does not take down
+  # the loop that still has task b to do. The self-SIGHUP case is only the
+  # single-task run started from inside that one task's pane.
   local sess
   sess="$(tmux_session_name "$repo" "$branch")"
   if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then

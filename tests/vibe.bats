@@ -548,6 +548,21 @@ EOF
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/det-start" ]
 }
 
+@test "start: a second bare word is an error, not a silently truncated task" {
+  # 'vibe start sota 2026-W30' used to keep only '2026-W30' and make branch
+  # '2026-w30'. A task name with spaces must be quoted; two words is a mistake.
+  cd "$(make_repo proj)"
+  run run_vibe start sota 2026-W30
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"one task at a time"* ]]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/2026-w30" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/sota" ]
+  # the quoted form is still accepted
+  run run_vibe start "sota 2026-W30"
+  [ "$status" -eq 0 ]
+  [ -d "$BATS_TEST_TMPDIR/worktrees/proj/sota-2026-w30" ]
+}
+
 # ---------------------------------------------------------------------------
 # list
 # ---------------------------------------------------------------------------
