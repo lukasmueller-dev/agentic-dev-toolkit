@@ -101,11 +101,6 @@ Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):
 
-- [ ] `render_template` substitutes tokens sequentially, so a task string
-      that itself contains a later token (`vibe loop "document the
-      <machine> placeholder"`) is re-substituted inside the rendered
-      brief. Low impact; the fix is order-independent rendering in both
-      `bin/vibe` and `skills/_lib/vibe-lib.sh`.
 - [ ] Skill-structure grades below the bar in `docs/skill-quality.md`:
       `commit-push-pr` keeps its stop conditions at the end of the file
       instead of opening with them; `project-status-scaffold` never
