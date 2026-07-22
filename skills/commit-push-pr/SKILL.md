@@ -1,6 +1,7 @@
 ---
 name: commit-push-pr
 description: Autonomously stage, commit, push, and open a GitHub PR. Use when the user says "commit and push", "open a PR", "ship this", "create a pull request", or similar, after code changes are ready. Handles Conventional Commits messages, pushes the branch, and opens a PR via GitHub CLI with an auto-generated title and body. Do NOT use for merging PRs, force-pushing to shared branches, or committing secrets.
+disable-model-invocation: true
 ---
 
 # Commit, Push & PR

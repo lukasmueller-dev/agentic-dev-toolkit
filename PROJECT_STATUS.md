@@ -101,12 +101,6 @@ Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):
 
-- [ ] SQ13 vs reality: `commit-push-pr` and `sync-with-main` stay
-      model-invocable while autonomously committing, pushing, or
-      force-pushing — the two skills squarest inside SQ13's own example
-      list (`codebase-health` is borderline). Either add
-      `disable-model-invocation: true` or record the deliberate exemption
-      in `docs/skill-quality.md`; today the divergence is silent.
 - [ ] `render_template` substitutes tokens sequentially, so a task string
       that itself contains a later token (`vibe loop "document the
       <machine> placeholder"`) is re-substituted inside the rendered
