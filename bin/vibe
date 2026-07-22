@@ -1761,18 +1761,48 @@ unpushed_commits() {
 
 cmd_done() {
   need git
-  local force=0 stop=0 discard_handoff=0 keep_brief=0 task=""
+  local force=0 stop=0 discard_handoff=0 keep_brief=0
+  local tasks=()
   while (($#)); do
     case "$1" in
       -f | --force) force=1 ;;
       --stop) stop=1 ;;
       --discard-handoff) discard_handoff=1 ;;
       --keep-brief) keep_brief=1 ;;
-      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] <task>)" ;;
-      *) task="$1" ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] <task>...)" ;;
+      *) tasks+=("$1") ;;
     esac
     shift
   done
+
+  # 0 or 1 task: run inline, so a failure's 'die' exits the whole command with
+  # its own message — the plain single-task behaviour this command has always
+  # had, including inferring the task from the cwd when none was named.
+  if ((${#tasks[@]} <= 1)); then
+    done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "${tasks[0]:-}"
+    return
+  fi
+
+  # 2+ tasks, e.g. `vibe done task_1 task_2` — same idea as `git branch -d a
+  # b`: attempt every one, keep going past a failure, fail the command overall
+  # only once all of them have been tried. Each runs in a subshell so a 'die'
+  # inside done_one exits only that task's attempt, not the whole loop.
+  local failed=0 t
+  for t in "${tasks[@]}"; do
+    if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$t"); then
+      :
+    else
+      failed=1
+    fi
+  done
+  ((failed == 0))
+}
+
+# done_one FORCE STOP DISCARD_HANDOFF KEEP_BRIEF TASK — remove one task's
+# worktree (branch kept). TASK may be "" to infer the task from the cwd, which
+# is only meaningful when 'vibe done' was given no task names at all.
+done_one() {
+  local force="$1" stop="$2" discard_handoff="$3" keep_brief="$4" task="$5"
   local branch repo main dir
   if [[ -n "$task" ]]; then
     branch="$(slug "$task")"
@@ -2374,7 +2404,7 @@ cmd_help() {
     "Leave a machine: refresh HANDOFF.md by running the" \
     "agent headlessly, then sync. Degrades to a plain sync" \
     "if the agent is missing or the headless call fails."
-  help_cmd "done [<task>]" "[--force] [--stop] [--discard-handoff] [--keep-brief]" \
+  help_cmd "done [<task>...]" "[--force] [--stop] [--discard-handoff] [--keep-brief]" \
     "Remove the worktree (branch is kept). Refuses if the" \
     "worktree is dirty, holds unpushed commits, has a loop" \
     "still running (--stop kills it first), if HANDOFF.md" \
@@ -2384,7 +2414,10 @@ cmd_help() {
     "handoff checks) — or if LOOP.md is still on the branch," \
     "where it would land in the PR diff; delete it and sync," \
     "or --keep-brief to leave it there deliberately. Infers" \
-    "the task from the cwd when run inside a worktree."
+    "the task from the cwd when run inside a worktree with" \
+    "no task named. Multiple tasks remove each in turn, like" \
+    "'git branch -d a b' — one failing doesn't stop the" \
+    "rest, but the command exits non-zero if any did."
   blank
 
   help_section "Unattended:"
