@@ -215,7 +215,11 @@ jobs:
           # (underscore is a word character, so \b never fires there). Agent
           # CLI names are part of the same rule — a template saying "ask
           # claude to review" is coupled just as surely as one naming vibe.
-          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac\b|\bVPS\b' \
+          # 'mac' carries an explicit (os|book)? rather than a bare \bmac\b:
+          # O and B are word characters, so \b never fires after "mac" in
+          # "macOS" or "MacBook" — the two spellings a real violation uses.
+          # Left anchored either side, so "machine" and "macro" still pass.
+          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
             templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md \
             templates/PROJECT_ROADMAP.md templates/repo/pre-push; then
