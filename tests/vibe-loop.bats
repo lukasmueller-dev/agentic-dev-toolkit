@@ -703,8 +703,17 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(loop_state no-auth STATUS)" = success ]
   [[ "$output" == *"no PR opened"* ]]
-  # the work is still pushed, so it can be opened by hand
-  git -C "$(wt no-auth)" rev-parse '@{u}' >/dev/null 2>&1
+  # The brief is stripped and pushed BEFORE the gh checks give up: the warn
+  # says to open the PR by hand, and when the gh checks ran first that
+  # advice handed over a branch with LOOP.md still on it — the hand-opened
+  # PR carried the brief in its diff.
+  run git -C "$(wt no-auth)" ls-files -- LOOP.md
+  [ -z "$output" ]
+  # the stripped state is what was pushed, so opening by hand is safe
+  local local_head remote_head
+  local_head="$(git -C "$(wt no-auth)" rev-parse HEAD)"
+  remote_head="$(git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse refs/heads/no-auth)"
+  [ "$local_head" = "$remote_head" ]
 }
 
 # ---------------------------------------------------------------------------
