@@ -121,6 +121,20 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
 }
 
+@test "install: two displaced files sharing a basename both survive backup" {
+  # ~/bin/vibe and the bash completion back up under the same kind and
+  # basename ("bin/vibe") in one run — the second must not clobber the first.
+  mkdir -p "$HOME/bin" "$HOME/.local/share/bash-completion/completions"
+  printf 'REAL-CLI\n' >"$HOME/bin/vibe"
+  printf 'REAL-COMPLETION\n' >"$HOME/.local/share/bash-completion/completions/vibe"
+  run "$INSTALL" bin
+  [ "$status" -eq 0 ]
+  run grep -rl REAL-CLI "$HOME/.agentic-dev-toolkit-backups"
+  [ "$status" -eq 0 ]
+  run grep -rl REAL-COMPLETION "$HOME/.agentic-dev-toolkit-backups"
+  [ "$status" -eq 0 ]
+}
+
 @test "uninstall: removes every symlink it created" {
   "$INSTALL" >/dev/null
   run "$INSTALL" --uninstall

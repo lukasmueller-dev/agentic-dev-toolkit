@@ -242,10 +242,19 @@ build_map() {
 # Linking
 # ---------------------------------------------------------------------------
 backup() { # backup PATH KIND — move a real file out of the way, never delete
-  local path="$1" bak="$BACKUP_DST/$2"
+  local path="$1" bak="$BACKUP_DST/$2" dst n=1
   mkdir -p "$bak"
-  mv "$path" "$bak/$(basename "$path")"
-  warn "  backed up $path -> $bak/$(basename "$path")"
+  # Two managed paths can share a kind and a basename (~/bin/vibe and the
+  # bash completion both back up as bin/vibe), and a second mv to the same
+  # destination would silently clobber the first backup — the one thing this
+  # function exists to never do. Suffix instead of overwrite.
+  dst="$bak/$(basename "$path")"
+  while [[ -e "$dst" ]]; do
+    dst="$bak/$(basename "$path").$n"
+    n=$((n + 1))
+  done
+  mv "$path" "$dst"
+  warn "  backed up $path -> $dst"
 }
 
 do_link() {
