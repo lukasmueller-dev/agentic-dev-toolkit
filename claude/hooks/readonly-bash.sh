@@ -73,7 +73,7 @@ segments="$(printf '%s\n' "$cmd" | awk '
       c = substr(line, i, 1)
       if (esc) { seg = seg c; esc = 0; continue }
       if (c == "\\" && !insq) { seg = seg c; esc = 1; continue }
-      if (c == "\x27" && !indq) { insq = !insq; seg = seg c; continue }
+      if (c == "\047" && !indq) { insq = !insq; seg = seg c; continue }
       if (c == "\"" && !insq) { indq = !indq; seg = seg c; continue }
       if (!insq) {
         if (c == "`") { seg = seg "\002"; continue }
@@ -226,17 +226,23 @@ while IFS= read -r seg; do
   # substitution first: its payload is invisible to every later check
   [[ "$seg" == *"$S"* ]] && deny 'command substitution — run the inner command as its own Bash call'
 
-  # redirection: strip the two harmless forms, then any '>' left is a write
+  # redirection: walk to each unquoted '>' and judge what follows. Only fd
+  # duplication (2>&1) and /dev/null targets pass. Glob matching and prefix
+  # stripping only — bash 3.2 on macOS mis-handles the =~ form this used.
   probe="$seg"
-  re="[0-9]?${R}&[0-9]+"
-  while [[ "$probe" =~ $re ]]; do
-    probe="${probe/"${BASH_REMATCH[0]}"/}"
+  while [[ "$probe" == *"$R"* ]]; do
+    after="${probe#*"$R"}"
+    # a doubled marker is '>>' — same judgement on its target
+    [[ "$after" == "$R"* ]] && after="${after#"$R"}"
+    if [[ "$after" == "&"[0-9]* ]]; then
+      : # fd duplication, harmless
+    else
+      target="${after#"${after%%[![:space:]]*}"}" # ltrim
+      [[ "$target" == /dev/null* ]] ||
+        deny "output redirection — only >/dev/null and 2>&1 pass"
+    fi
+    probe="$after"
   done
-  re="[0-9]?${R}${R}?[[:space:]]*/dev/null"
-  while [[ "$probe" =~ $re ]]; do
-    probe="${probe/"${BASH_REMATCH[0]}"/}"
-  done
-  [[ "$probe" == *"$R"* ]] && deny "output redirection — only >/dev/null and 2>&1 pass"
 
   # leading whitespace, then env-style VAR=val prefixes and wrappers
   seg_trim="${seg#"${seg%%[![:space:]]*}"}"

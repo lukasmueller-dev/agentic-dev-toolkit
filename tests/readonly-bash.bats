@@ -50,6 +50,11 @@ vet() {
   [ "$status" -eq 0 ]
   run vet 'rg "=>" src/'
   [ "$status" -eq 0 ]
+  # single quotes too — awk's quote tracking must recognize both kinds
+  run vet "grep -E 'foo|bar' file"
+  [ "$status" -eq 0 ]
+  run vet "rg 'a > b' docs/"
+  [ "$status" -eq 0 ]
 }
 
 @test "readonly-bash: /dev/null and fd duplication are not writes" {
