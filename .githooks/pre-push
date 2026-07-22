@@ -10,7 +10,16 @@
 #   <local ref> <local sha> <remote ref> <remote sha>
 set -eu
 
+# main and master are always protected; additionally protect the repo's real
+# default branch, resolved from the remote's HEAD at push time, so this stays
+# correct if the default is ever renamed. Kept in lockstep with the emitted
+# copy in templates/repo/pre-push.
 protected_refs="refs/heads/main refs/heads/master"
+default_branch="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+default_branch="${default_branch#origin/}"
+if [ -n "$default_branch" ]; then
+  protected_refs="refs/heads/$default_branch $protected_refs"
+fi
 
 while read -r _local_ref _local_sha remote_ref _remote_sha; do
   for ref in $protected_refs; do

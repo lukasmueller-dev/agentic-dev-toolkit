@@ -14,8 +14,12 @@ still worth covering with this CI's lint job alongside the primary type's.
 
 ## Adapting the CI template
 
-- **bats** — the test step already degrades to a note when there is no
-  `tests/` directory, so the template lands safely before tests exist.
+- **bats** — the test step degrades to a note when there is no `tests/`
+  directory, so the template lands safely before tests exist. The flip side:
+  it cannot tell *not yet* from *no longer*, so once the repo has real tests,
+  point the step at the actual directory (`tests/`, `test/`, `spec/`) rather
+  than leaving the fallback — otherwise a later rename leaves CI green while
+  running nothing.
 - **Formatting flags** — the template checks `shfmt -i 2 -ci`. If the repo
   already formats differently, match the repo; changing its style is not
   scaffolding.
