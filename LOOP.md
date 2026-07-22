@@ -41,3 +41,4 @@ above tests for the file; the rest is on you.
 ## Iteration log
 
 _One line per round that changed something, newest last._
+- iter 1 (2026-07-22 21:54): changed
