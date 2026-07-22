@@ -40,6 +40,12 @@ the installer's auto-discovery rules.
   just by instruction — an agent that can edit can make its own findings
   disappear. `test-hardener` is the one exception and may write tests
   only. See `claude/agents/README.md`.
+- 2026-07-22: Independent review rounds are staged by `skills/review-brief`,
+  one round per invocation behind the human merge gate; its
+  `references/review-dimensions.md` catalog is where review knowledge
+  accumulates (generic core, anchor-gated dimensions, standing rules).
+  No unattended variant — a review has no executable stop check.
+  Rationale in the PR for `review-brief-skill`.
 - 2026-07-21: Global memory is one portable file, `memory/GLOBAL.md`,
   installed to each agent's own instruction path; Claude Code reaches it
   through an `@` import in `claude/CLAUDE.md`, which keeps the
