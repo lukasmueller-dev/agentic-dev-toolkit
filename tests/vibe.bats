@@ -192,6 +192,31 @@ slug() {
   [[ "$output" == *"unknown option"* ]]
 }
 
+@test "done: removes multiple tasks in one call" {
+  cd "$(make_repo proj)"
+  run_vibe start task_a
+  run_vibe start task_b
+
+  run run_vibe "done" --force task_a task_b
+  [ "$status" -eq 0 ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
+}
+
+@test "done: multiple tasks keeps going past one failure and exits non-zero" {
+  cd "$(make_repo proj)"
+  run_vibe start task_a
+  run_vibe start task_b
+  echo "unsaved work" >"$BATS_TEST_TMPDIR/worktrees/proj/task_a/scratch.txt"
+  rm "$BATS_TEST_TMPDIR/worktrees/proj/task_b/HANDOFF.md" # a finished task hands nothing off
+
+  run run_vibe "done" task_a task_b
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"uncommitted changes"* ]]
+  [ -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
+}
+
 # ---------------------------------------------------------------------------
 # vibe sync / resume — divergence handling
 # ---------------------------------------------------------------------------
