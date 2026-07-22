@@ -26,8 +26,9 @@ without re-reading the whole diff to work out where things stand.
 ## When to act
 
 1. **On entering a repo** — if `PROJECT_STATUS.md` is missing at the repo root,
-   create it from the template below (or run `scaffold.sh`). If `HANDOFF.md` is
-   missing in the current worktree, create it too.
+   create it by running `scaffold.sh` (fallback: render it by hand from the
+   toolkit's `templates/` directory — see below). If `HANDOFF.md` is missing
+   in the current worktree, create it too.
 2. **On request** — user asks to scaffold, set up, or update these files.
 3. **At the end of a work session (proactive)** — before wrapping up, update
    both files so the next session can pick up:

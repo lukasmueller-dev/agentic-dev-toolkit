@@ -97,13 +97,6 @@ Track C — verification debt (opened by the 2026-07-22 review pass; CI
 billing was resolved the same day — main `4cb588c` ran green on all four
 jobs, macOS leg on bash 3.2.57, so merges are verified again):
 
-- [ ] Residual doc drift: `docs/vibe.md:170` (`--force` does not override
-      the running-loop guard) · `project-status-scaffold/SKILL.md:29`
-      (points at a template that is not there) ·
-      `implement-test-suite/SKILL.md:13,103` (`codebase-healthiness` →
-      `codebase-health`) · `docs/vibe-loop.md:20-29` (a fifth stop
-      condition, diverged remote, is missing from the table).
-
 Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):

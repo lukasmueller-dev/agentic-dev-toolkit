@@ -10,7 +10,7 @@ argument-hint: "[scope path — default: whole repo]"
 Set up a proper automated test suite for a repository, or extend an existing
 one. This skill covers **test code** and **test infrastructure** (runner
 config, shared fixtures, markers, CI workflow). It is the counterpart to the
-codebase-healthiness skill: that skill checks code quality and defers
+codebase-health skill: that skill checks code quality and defers
 functionality to tests — this skill builds those tests.
 
 **Hard boundaries — never do these as part of this skill:**
@@ -100,7 +100,7 @@ is no separate report file. It must state:
 - The three policies that were applied (as approved in the plan).
 - Quarantined pre-existing failures, if any, with reasons.
 - Testability problems that were flagged but deliberately not fixed
-  (candidates for the codebase-healthiness skill).
+  (candidates for the codebase-health skill).
 - How to run each tier locally, and what CI runs when.
 
 Stop after opening the PR. The user reviews and merges.
