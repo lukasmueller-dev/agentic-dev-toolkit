@@ -416,6 +416,20 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "loop: a goal that names another placeholder renders literally" {
+  # Sequential substitution re-substituted a later token inside an earlier
+  # value: a goal mentioning <machine> rendered as "document the local
+  # (host) placeholder" in the brief. The renderer must never rescan what
+  # it just inserted.
+  cd "$(make_repo proj)"
+  stub_agent
+  loop_vibe loop "document the <machine> placeholder" --until false --max 1
+  local f
+  f="$(wt document-the-machine-placeholder)/LOOP.md"
+  [ -f "$f" ]
+  grep -q "document the <machine> placeholder" "$f"
+}
+
 @test "loop: --prompt substitutes a custom brief" {
   cd "$(make_repo proj)"
   stub_agent

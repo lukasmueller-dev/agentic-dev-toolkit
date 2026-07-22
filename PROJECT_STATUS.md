@@ -101,15 +101,6 @@ Track C additions from the 2026-07-22 second review pass (round two;
 fixed findings landed in that round's PR — these are the ones left open
 because each needs an owner decision or a design):
 
-- [ ] The three reviewer subagents (`diff-reviewer`, `docs-drift`,
-      `security-sweep`) grant unscoped `Bash`, defeating the recorded
-      "read-only by tool allowlist" decision: the merged settings baseline
-      auto-allows write-capable commands (`shfmt -w`, `gofmt -w`,
-      `sort -o`, `echo >`), so a reviewing agent can silently rewrite the
-      file it found a defect in. Agent frontmatter `tools:` takes bare
-      names only (checked against current Claude Code docs), so the fix is
-      a per-agent `PreToolUse` hook that vets Bash commands — the
-      allow/deny policy for that classifier is the owner decision.
 - [ ] `claude/settings.json` protects secret files only from the `Read`
       tool, while `Bash(cat:*)`, `grep`, `head`, `tail` are allowed and
       the sandbox gates just `~/.aws/credentials` and `~/.ssh` — so
