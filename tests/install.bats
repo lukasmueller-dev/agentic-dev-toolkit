@@ -352,6 +352,12 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # Mirrors ci.yml's guard — update both together. Bare 'Claude'/'Gemini'
   # stay allowed (the file names the instruction files CLAUDE.md/GEMINI.md);
   # vendor names, product compounds, and per-agent config paths do not.
+  #
+  # Existence check first, mirroring ci.yml: grep exits 2 on a missing file,
+  # which '-ne 0' accepts just as happily as "no match". Without this, renaming
+  # or deleting memory/GLOBAL.md turns the guard green forever instead of
+  # failing — the exact silent drift it exists to catch.
+  [ -f "$REPO_ROOT/memory/GLOBAL.md" ]
   run grep -niE 'Claude Code|Anthropic|OpenAI|ChatGPT|\bGPT\b|Copilot|Cursor|Codex|Gemini CLI|~/\.claude|~/\.codex|~/\.gemini' "$REPO_ROOT/memory/GLOBAL.md"
   [ "$status" -ne 0 ]
 }
