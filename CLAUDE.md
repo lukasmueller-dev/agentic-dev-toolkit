@@ -262,6 +262,10 @@ bats tests/                       # tests
 ./install.sh doctor               # the live machine still resolves
 ```
 
+`doctor` is only meaningful from the checkout the symlinks point at
+(normally the main clone). Run from a worktree it reports every link as
+"not ours" — that is the ownership check working, not breakage.
+
 Conventional Commits. The body should say *why* — a commit that fixes a
 data-loss bug should explain what was being lost.
 

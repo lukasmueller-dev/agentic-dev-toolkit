@@ -65,59 +65,17 @@ the installer's auto-discovery rules.
 - 2026-07-22: `vibe start --no-attach` (server only) mirrors the loop
   flag, so `ssh <host> vibe start <task>` is scriptable instead of dying
   on the headless attach after the work is done. See `c96cf2c`.
+- 2026-07-22: Planned work moved out of this file into
+  `PROJECT_ROADMAP.md` (template + scaffold + `add-roadmap-item` skill,
+  which holds new items to the pick-up-cold design bar); this file keeps
+  only a pointer. Rationale in the PR for `feat-roadmap`.
 
-## TODOs
+## Roadmap
 
-Roadmap, one PR each. Order matters within a track; tracks are
-independent. Each item carries enough design to stage a `HANDOFF.md` (the
-`handoff-brief` skill) or a `LOOP.md` (the `loop-brief` skill) from it
-without needing the discussion that produced it.
-
-Track A — unattended execution:
-
-- [x] Sandbox baseline in `claude/settings.json`, so unattended runs stop
-      needing `--dangerously-allow-all` *(landed in `63c5a0e`: `sandbox`
-      block with `credentials`, `network.allowedDomains`, `excludedCommands`)*
-- [x] Ralphify `vibe loop` *(PR #27)*. Three independent additions to
-      `bin/vibe`:
-      (1) `--sandbox`, appending a new `VIBE_LOOP_PERMISSIVE_ARGS`-style
-      variable `VIBE_LOOP_SANDBOX_ARGS` to the agent invocation, and
-      recommended over `--dangerously-allow-all` in `docs/vibe-loop.md`
-      and in the startup warning; (2) `--for <duration>` wall-clock stop
-      alongside `--max` (overnight runs are time-bounded, not
-      round-bounded) — a fourth row in the stop table, stored in
-      `.vibe-loop.state`; (3) one-task-per-round discipline written into
-      `templates/LOOP.md`: each round does the smallest complete task and
-      stops, keeping per-round context fresh. Tests in
-      `tests/vibe-loop.bats`; keep bash 3.2 / BSD+GNU compatibility.
-- [x] `skills/babysit-pr`: a skill that *stages a brief*, not a watcher.
-      It renders a `LOOP.md` whose goal is "PR #N is mergeable" and whose
-      stop check combines `gh pr checks` with zero unresolved review
-      threads, then hands it to `vibe loop` on the server. Escalation to
-      the phone reuses the existing ntfy hook. Portable (`gh` only, no
-      Claude-specifics) — it belongs in top-level `skills/`.
-
-Track B — portability and team:
-
-- [ ] `.claude-plugin/` manifest bundling skills, agents, hooks, and
-      `memory/GLOBAL.md` so the toolkit installs in web/cloud sessions
-      with no `$HOME` symlinks. Pure addition beside `install.sh`, which
-      stays the install path on real machines. Note the `@` import in
-      `claude/CLAUDE.md` resolves against `~/.claude`, which a plugin does
-      not populate.
-      **A 228-line design doc for this exists but was never merged:**
-      `docs/plugins.md` on `origin/claude/open-source-alternatives-2yiha7`
-      (2 commits, no PR ever opened). Recover it before starting, and
-      before any branch pruning.
-- [ ] Curated MCP server list in `docs/` (docs-first; `~/.claude.json` is
-      Claude-written and stays unmanaged — same file class as
-      `settings.json`'s runtime keys)
-
-Track C — verification debt from the two 2026-07-22 review passes:
-closed 2026-07-22 by the `track-c-pass` branch, one commit per item.
-The three owner-decision items (reviewer Bash guard policy, settings
-baseline changes, SQ13 resolution) landed as proposals — each decision
-is spelled out in its commit body and the PR for owner review.
+Planned work lives in `PROJECT_ROADMAP.md`, one designed item per task —
+this file keeps only the pointer. (Track A — unattended execution — and
+Track C — verification debt — completed and were removed; their trail is
+in the merged PRs.)
 
 ## Open questions
 

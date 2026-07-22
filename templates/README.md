@@ -10,6 +10,7 @@ copy.
 | `LOOP.md`            | worktree root   | Short — one per unattended loop  |
 | `LOOP_PR.md`         | never on disk   | Rendered straight into a PR body when a loop ends with `--pr` |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
+| `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
 | `repo/pre-push`      | `<repo>/.githooks/pre-push` | Long — git hook blocking direct pushes to the default branch |
@@ -75,8 +76,11 @@ tokens in.
 - `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`),
   `LOOP.md` into an unattended-loop worktree (`vibe loop`), and renders
   `LOOP_PR.md` as the PR body when a loop ends with `--pr`
-- `skills/project-status-scaffold/scaffold.sh` — scaffolds both files
+- `skills/project-status-scaffold/scaffold.sh` — scaffolds all three status
+  documents (`PROJECT_STATUS.md`, `PROJECT_ROADMAP.md`, `HANDOFF.md`)
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
+- `skills/add-roadmap-item` — renders `PROJECT_ROADMAP.md` from the template
+  (via `scaffold.sh`) when the repo lacks one, before adding an item to it
 - `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
   into a task worktree before an unattended loop starts
 - `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` into a task worktree

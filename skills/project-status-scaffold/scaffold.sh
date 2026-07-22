@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# scaffold.sh — ensure PROJECT_STATUS.md (repo root) and HANDOFF.md (worktree
-# root) exist. Idempotent: never overwrites an existing file.
+# scaffold.sh — ensure PROJECT_STATUS.md and PROJECT_ROADMAP.md (repo root)
+# and HANDOFF.md (worktree root) exist. Idempotent: never overwrites an
+# existing file.
 #
-# Both files are rendered from the toolkit's templates/ directory, which is the
-# single source of truth. This script holds no copy of either document.
+# All three files are rendered from the toolkit's templates/ directory, which
+# is the single source of truth. This script holds no copy of any document.
 #
 # Usage: bash scaffold.sh
 set -euo pipefail
@@ -60,6 +61,7 @@ today="$(date '+%Y-%m-%d')"
 machine="$(detect_env) ($(hostname))"
 
 status_file="$repo_root/PROJECT_STATUS.md"
+roadmap_file="$repo_root/PROJECT_ROADMAP.md"
 handoff_file="$worktree_root/HANDOFF.md"
 
 # scaffold_one DST TEMPLATE LABEL [TOKEN VALUE]...
@@ -79,6 +81,11 @@ scaffold_one() {
 }
 
 scaffold_one "$status_file" "$TEMPLATE_DIR/PROJECT_STATUS.md" "PROJECT_STATUS.md" \
+  '<repo>' "$repo" \
+  '<date>' "$today" \
+  '<machine>' "$machine"
+
+scaffold_one "$roadmap_file" "$TEMPLATE_DIR/PROJECT_ROADMAP.md" "PROJECT_ROADMAP.md" \
   '<repo>' "$repo" \
   '<date>' "$today" \
   '<machine>' "$machine"
