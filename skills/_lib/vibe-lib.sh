@@ -63,11 +63,16 @@ render_template() {
 # ---------------------------------------------------------------------------
 VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
 
+# The optional `export ` prefix is not cosmetic: bin/vibe *sources* the config,
+# so `export KEY=value` works there, and `vibe doctor` explicitly accepts it as
+# valid. A parser that does not would silently disagree with both — bin/vibe
+# using the configured worktree root while this lib falls back to the default,
+# which is how a brief gets re-seeded into a second worktree.
 read_config() {
   local key="$1"
   [[ -r "$VIBE_CONFIG_FILE" ]] || return 0
-  sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$VIBE_CONFIG_FILE" |
-    tail -1 | tr -d '"'\'''
+  sed -nE "s/^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=[[:space:]]*//p" \
+    "$VIBE_CONFIG_FILE" | tail -1 | tr -d '"'\'''
 }
 
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
