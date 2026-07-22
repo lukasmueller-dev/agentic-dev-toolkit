@@ -6,6 +6,19 @@ load helper
 
 setup() { git_env; }
 
+@test "helper: HOME is redirected into the bats sandbox" {
+  # The isolation contract in CLAUDE.md: no test may touch the real
+  # ~/.claude, ~/bin, or worktree root. helper.bash enforces it by
+  # pointing HOME into a bats tmpdir — this pins that guard.
+  case "$HOME" in
+    "$BATS_TEST_TMPDIR"* | "${BATS_FILE_TMPDIR:-//}"* | "${BATS_RUN_TMPDIR:-//}"*) ;;
+    *)
+      echo "HOME escaped the sandbox: $HOME" >&2
+      return 1
+      ;;
+  esac
+}
+
 # ---------------------------------------------------------------------------
 # slug() — unit-tested by sourcing vibe with its final `main "$@"` stripped,
 # so the function definitions land in the shell without the CLI running.

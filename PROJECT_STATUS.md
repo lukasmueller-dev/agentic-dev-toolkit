@@ -97,10 +97,6 @@ Track C — verification debt (opened by the 2026-07-22 review pass; CI
 billing was resolved the same day — main `4cb588c` ran green on all four
 jobs, macOS leg on bash 3.2.57, so merges are verified again):
 
-- [ ] `tests/helper.bash` never redirects `HOME` (only `install.bats`
-      does), contra `CLAUDE.md`. No test escapes `$BATS_TEST_TMPDIR` today
-      — verified by marker-file diff — but the defaults are one forgotten
-      wrapper away from the real worktree root.
 - [ ] Cover the server side of `cmd_loop` / `cmd_loop_run` / `cmd_rc`,
       `--uninstall --dry`, both jq-absent degrade paths, `vibe list`, and
       a *conflicting* `resume --rebase`. Strengthen four assertions that
