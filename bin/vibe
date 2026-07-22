@@ -718,14 +718,21 @@ loop_log_round() {
 loop_push() {
   local dir="$1" branch="$2"
   if [[ "$(upstream_state "$dir")" == no-upstream ]]; then
-    git -C "$dir" push -q -u origin "$branch"
-    return
+    # A bare 'return' here inherited the push's exit status, and run_loop reads
+    # non-zero as "the remote diverged" — so a missing origin, a dropped
+    # network or a rejected pre-push hook stopped the loop and pushed
+    # "remote diverged — resolve manually" to the user's phone. A failed push
+    # is transient by this function's own contract: warn and carry on.
+    git -C "$dir" push -q -u origin "$branch" ||
+      warn "could not push $branch (no upstream yet) — retrying next round"
+    return 0
   fi
   git -C "$dir" fetch -q || return 0
   case "$(upstream_state "$dir")" in
     insync) return 0 ;;
     ahead)
-      git -C "$dir" push -q origin "$branch"
+      git -C "$dir" push -q origin "$branch" ||
+        warn "could not push $branch — retrying next round"
       return 0
       ;;
     *)
@@ -754,9 +761,16 @@ loop_goal() {
 # own history and title the PR with someone else's commit.
 loop_pr_title() {
   local dir="$1" branch="$2" subj
+  # '|| true' is load-bearing, not defensive: 'head -1' closes the pipe as soon
+  # as it has its line, so on any real history 'git log' is still writing and
+  # dies of SIGPIPE (141). Under 'set -euo pipefail' that 141 becomes the
+  # assignment's status and unwinds loop_pr_title -> loop_open_pr -> run_loop,
+  # exiting the runner *after* the branch was pushed but before the PR was
+  # opened - silently, on the one path nobody is watching. The ${subj:-...}
+  # fallback below already covers an empty result, so swallowing is safe.
   subj="$(git -C "$dir" log --format=%s 2>/dev/null |
     awk '/^vibe loop: start /{ exit } { print }' |
-    grep -v '^vibe loop: ' | head -1)"
+    grep -v '^vibe loop: ' | head -1 || true)"
   printf '%s\n' "${subj:-vibe loop: $branch}"
 }
 
@@ -1997,7 +2011,12 @@ wait_for_pane_idle() {
   while ((waited < max)); do
     # last few non-blank lines of the pane; an agent waiting for input ends in
     # its prompt box ('│ >' / '❯' / a bare '>').
-    tail="$(tmux capture-pane -t "$sess" -p 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 3)"
+    # '|| true': a pane that has not rendered yet is all blank lines, grep
+    # matches nothing and exits 1, and pipefail would make that the
+    # assignment's status and kill vibe under set -e - exactly when this
+    # function is most likely to be called, on a session that just started.
+    tail="$(tmux capture-pane -t "$sess" -p 2>/dev/null |
+      grep -v '^[[:space:]]*$' | tail -n 3 || true)"
     case "$tail" in
       *'│ >'* | *'❯'* | *'> '*) return 0 ;;
     esac
