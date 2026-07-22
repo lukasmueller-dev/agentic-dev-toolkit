@@ -21,9 +21,10 @@ _One line each, dated, with a pointer (commit or PR) to the full rationale. The 
 
 - <date>: (initial scaffold)
 
-## TODOs
+## Roadmap
 
-- [ ] ...
+Planned work lives in `PROJECT_ROADMAP.md`, one designed item per task —
+this file keeps only the pointer.
 
 ## Open questions
 

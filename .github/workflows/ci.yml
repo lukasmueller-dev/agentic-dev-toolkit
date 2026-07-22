@@ -200,7 +200,7 @@ jobs:
           # silently retire its neutrality check rather than fail the build.
           for f in templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md \
-            templates/repo/pre-push; do
+            templates/PROJECT_ROADMAP.md templates/repo/pre-push; do
             test -f "$f" || {
               echo "::error file=$f::missing — this guard cannot run"
               exit 1
@@ -213,7 +213,7 @@ jobs:
           if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac\b|\bVPS\b' \
             templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md \
-            templates/repo/pre-push; then
+            templates/PROJECT_ROADMAP.md templates/repo/pre-push; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi

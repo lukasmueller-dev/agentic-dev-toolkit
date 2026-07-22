@@ -10,7 +10,8 @@ architecture: `~/git/agentic-dev-toolkit/docs/artifact-architecture.md`.
 | Current task state, next action, blockers, gotchas     | `HANDOFF.md` — overwrite, never append   |
 | Why a change was made, alternatives rejected           | commit body (be verbose here)            |
 | Task intent, what to verify, risks                     | PR description (detail in `<details>`)   |
-| Durable picture: goal, architecture, decisions, TODOs  | `PROJECT_STATUS.md` (snapshot, not a log) |
+| Durable picture: goal, architecture, decisions         | `PROJECT_STATUS.md` (snapshot, not a log) |
+| Planned work, designed to be picked up cold            | `PROJECT_ROADMAP.md` — one item per task; finished items deleted |
 | Decision rationale referenced from PROJECT_STATUS      | commit/PR body — status holds one line + pointer |
 | Rules that should change agent behavior                | the repo's instruction file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) |
 | Deep narrative on one topic                            | `docs/`                                  |
@@ -61,10 +62,13 @@ the session ends. Concretely:
   the next session should do first. Update it *before* I wrap up, not after I
   ask.
 - Update `PROJECT_STATUS.md` (repo root) only when something durable changed: a
-  decision, an architecture change, a TODO opened or closed.
-- Where the `project-status-scaffold` skill is available, it handles both —
-  let it. Without that skill, keep the two files current by hand, per the
-  table above.
+  decision or an architecture change. Planned work lives in
+  `PROJECT_ROADMAP.md` — delete items a session finishes; add new ones through
+  the `add-roadmap-item` skill where it is available, so they arrive designed
+  rather than as bare one-liners.
+- Where the `project-status-scaffold` skill is available, it scaffolds and
+  maintains these files — let it. Without that skill, keep them current by
+  hand, per the table above.
 
 **Nothing uncommitted crosses machines.** The handoff travels through git.
 Uncommitted work on one machine is invisible everywhere else. If a session ends

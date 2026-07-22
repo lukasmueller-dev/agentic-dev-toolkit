@@ -46,6 +46,7 @@ else is retrievable.
 | 2     | Diff                 | permanent                         | anyone, forever               |
 | 2     | Commit body          | permanent (`git log` / `blame`)   | future maintainer             |
 | 3     | `PROJECT_STATUS.md`  | living, repo-scoped               | anyone joining the repo cold  |
+| 3     | `PROJECT_ROADMAP.md` | living, repo-scoped               | the session picking up the next task |
 | 3     | Repo `CLAUDE.md`     | living, repo-scoped               | agents                        |
 | 3     | `docs/`              | living, repo-scoped               | humans                        |
 
@@ -119,13 +120,25 @@ they cost nothing to skim past today. Verbose is correct here.
 
 ### `PROJECT_STATUS.md` (layer 3)
 
-The durable *current* picture: goal, architecture, key decisions, open TODOs
-and questions. A snapshot, not a log — git history is the log, so there is no
-"Done" section and finished TODOs are simply removed.
+The durable *current* picture: goal, architecture, key decisions, open
+questions. A snapshot, not a log — git history is the log, so there is no
+"Done" section. Planned work is not state, so it lives next door in
+`PROJECT_ROADMAP.md`; the status file keeps only the pointer.
 
 "Key decisions" entries are one line each, dated, with a pointer (commit SHA
 or PR number) to the full rationale at layer 2. The file stays skimmable
 because it never absorbs the reasoning, only the conclusion and the pointer.
+
+### `PROJECT_ROADMAP.md` (layer 3)
+
+The queue of planned work, one item per task. Each item carries enough
+design — goal, approach chosen, constraints, what "done" looks like — that a
+session can pick it up cold and stage a task brief from it without the
+discussion that produced it; the `add-roadmap-item` skill is the gate that
+holds new items to that bar. Same snapshot discipline as the status file:
+finished items are deleted, not checked off and kept — their trail is git
+history and the merged PR. Rationale stays at layer 2; an item holds the
+conclusion and a pointer.
 
 ### Repo `CLAUDE.md` and `docs/` (layer 3)
 
@@ -145,6 +158,9 @@ durable:
   `CLAUDE.md`.
 - Decision made mid-task → commit/PR body, plus a one-line pointer entry in
   `PROJECT_STATUS.md` when it shapes future work.
+- Work scoped in discussion but not started → a designed
+  `PROJECT_ROADMAP.md` item (the `add-roadmap-item` skill), so the design
+  survives the chat that produced it.
 - `PROJECT_STATUS.md` section outgrowing a paragraph → `docs/` file plus a
   link.
 
