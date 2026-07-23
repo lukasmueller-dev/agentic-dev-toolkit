@@ -71,6 +71,7 @@ _vibe() {
             '--stop[stop a running loop first, then remove]' \
             '--discard-handoff[skip the HANDOFF.md content guard]' \
             '--keep-brief[leave LOOP.md on the branch instead of requiring its deletion]' \
+            '--rm-branch[also delete the local branch once the work has landed]' \
             '*:task:_vibe_tasks'
           ;;
         loop)

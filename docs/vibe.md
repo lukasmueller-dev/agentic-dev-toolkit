@@ -60,7 +60,7 @@ The verbs are layered by how often you reach for them.
 | `vibe start <task> [--no-attach]` | Branch + worktree + `HANDOFF.md`, then launch the agent |
 | `vibe attach [<task>]`         | Arrive at a task: fast-forward when safe, then attach      |
 | `vibe park [<task>]`           | Leave a machine: refresh `HANDOFF.md` via the agent, then sync |
-| `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]` | Remove the worktree(s), keeping the branch(es) |
+| `vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [--rm-branch] [<task>...]` | Remove the worktree(s), keeping the branch(es) unless `--rm-branch` |
 
 **Unattended:**
 
@@ -200,8 +200,58 @@ the explicit override that skips both handoff checks.
 
 `--force` overrides every check above — but not a still-running loop: that
 guard only yields to `--stop`, which kills the loop before removing the
-worktree. The branch is always kept, so even a forced removal leaves the
+worktree. The branch is kept by default, so even a forced removal leaves the
 commits reachable.
+
+### Deleting the branch too
+
+Keeping the branch is the safe default, and over a few dozen tasks it is also
+how you end up with a `git branch` listing nobody can read. `--rm-branch`
+deletes the local branch as part of finishing the task:
+
+```bash
+vibe done --rm-branch "fix login bug"
+```
+
+It fetches with `--prune` first, then deletes only if one of two things is
+true:
+
+- the branch is an **ancestor of the default branch** — the work is reachable
+  from `main`, so nothing is lost. This is a PR merged with a merge commit.
+- its **remote branch is gone** — after a merged PR, that is the finish signal,
+  and the only one left when the PR was squashed or rebased: neither leaves the
+  original commits reachable from `main` at all.
+
+Anything else keeps the branch and says so, without failing the command:
+
+```
+vibe: branch 'fix-login-bug' kept: not merged into main, and its remote branch
+  still exists.
+  Merge the pull request first, or drop it deliberately with
+  'git branch -D fix-login-bug'.
+```
+
+`git branch -d` is deliberately not what does the checking. Git compares
+against the *upstream* whenever one is set, so a pushed branch whose PR is
+still open counts as "fully merged" and `-d` deletes it without complaint —
+try it and you get a warning, an exit status of 0, and no branch. The ancestor
+test asks the question you meant to ask.
+
+`--force --rm-branch` skips all of it and deletes the branch outright.
+
+To clear a backlog that has already accumulated, sweep the branches whose
+remote is gone:
+
+```bash
+git fetch --prune
+git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads |
+  awk '$2 == "[gone]" {print $1}' | xargs -r git branch -d
+```
+
+(`git branch -vv | awk '/: gone]/{print $1}'` is the version usually quoted,
+but `$1` is `+` for a branch checked out in a worktree, so it feeds junk to
+`xargs`. `git config --global fetch.prune true` makes the explicit fetch flag
+unnecessary.)
 
 ## Running a task unattended
 
