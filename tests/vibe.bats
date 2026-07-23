@@ -338,6 +338,114 @@ EOF
   [[ "${output#*removed worktree}" == *"killing tmux session"* ]]
 }
 
+@test "done: replays its outcome in the outer terminal when it ends its own session" {
+  cd "$(make_repo proj)"
+  run_vibe start "task self" >/dev/null
+
+  # A tmux that answers as though vibe were running inside the very session it
+  # is about to end. Printing into that pane is not enough: the client owns the
+  # terminal's alternate screen, so when it goes the output is erased, not
+  # scrolled off. The outcome has to leave with the client instead.
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-self"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  display-message) printf '%s\n' "vibe-proj-task-self" ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" TMUX=/nowhere/tmux-sock,1,0 \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" --force "task self"
+  [ "$status" -eq 0 ]
+
+  local sent
+  sent="$(grep "detach-client -s vibe-proj-task-self" "$VIBE_TEST_TMUX_LOG")"
+  # The outcome travels with the departing client...
+  [[ "$sent" == *"removed worktree"* ]]
+  # ...and the kill runs from there, once the client is out.
+  [[ "$sent" == *"kill-session -t 'vibe-proj-task-self'"* ]]
+  # It must stay a single line: the string is one tmux argument and one shell
+  # command, and an embedded newline gives both parsers something to trip on.
+  [ "$(printf '%s\n' "$sent" | wc -l)" -eq 1 ]
+  # Nothing kills the session from inside the doomed pane.
+  run ! grep -qx "kill-session -t vibe-proj-task-self" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "done: falls back to a plain kill when tmux is too old for 'detach-client -E'" {
+  cd "$(make_repo proj)"
+  run_vibe start "task old" >/dev/null
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-old"
+
+  # tmux < 2.4 rejects -E outright, which would leave the client attached and
+  # the session alive. Losing the summary is the old behaviour; stranding a
+  # finished task's session is not.
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-old"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  display-message) printf '%s\n' "vibe-proj-task-old" ;;
+  detach-client) exit 1 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" TMUX=/nowhere/tmux-sock,1,0 \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" --force "task old"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [[ "$output" == *"2.4+"* ]]
+  grep -qx "kill-session -t vibe-proj-task-old" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "done: ends the session it is running in last, so the other tasks still run" {
+  cd "$(make_repo proj)"
+  run_vibe start "task one" >/dev/null
+  run_vibe start "task two" >/dev/null
+
+  # vibe is running inside task one's session, and it was named first. Killing
+  # it there and then SIGHUPs vibe, and task two silently never happens.
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-order"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  display-message) printf '%s\n' "vibe-proj-task-one" ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" TMUX=/nowhere/tmux-sock,1,0 \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" --force "task one" "task two"
+  [ "$status" -eq 0 ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task-one" ]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task-two" ]
+
+  local log
+  log="$(cat "$VIBE_TEST_TMUX_LOG")"
+  [[ "${log#*kill-session -t vibe-proj-task-two}" == *"detach-client -s vibe-proj-task-one"* ]]
+}
+
 @test "done: rejects an unknown option instead of treating it as a task" {
   cd "$(make_repo proj)"
   run run_vibe "done" --bogus "task"
