@@ -12,3 +12,10 @@
 .DS_Store
 *.swp
 .vscode/
+
+# secrets — forward guard; none tracked today, keep it that way
+.env
+.env.*
+*.pem
+*.key
+*credentials*
