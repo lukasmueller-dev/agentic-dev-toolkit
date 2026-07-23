@@ -198,6 +198,84 @@ slug() {
   git show-ref --verify --quiet refs/heads/task-three
 }
 
+# ---------------------------------------------------------------------------
+# vibe done --rm-branch — the branch survives unless the work has landed
+# ---------------------------------------------------------------------------
+
+# finish_task SLUG — a task worktree in repo 'proj', taken to the state 'vibe done'
+# accepts: handoff gone, work committed, branch pushed. Echoes the worktree.
+finish_task() {
+  local slug="$1" wt="$BATS_TEST_TMPDIR/worktrees/proj/$1"
+  run_vibe start "$slug" >/dev/null
+  echo "work" >"$wt/work.txt"
+  rm -f "$wt/HANDOFF.md" # a finished task hands nothing off
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "work on $slug"
+  git -C "$wt" push -q -u origin "$slug"
+  printf '%s\n' "$wt"
+}
+
+@test "done --rm-branch: deletes a branch merged into the default branch" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-merged)"
+  git merge -q --no-ff -m "merge task-merged" task-merged
+
+  run run_vibe "done" --rm-branch task-merged
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [[ "$output" == *"deleted branch 'task-merged'"* ]]
+  run git show-ref --verify --quiet refs/heads/task-merged
+  [ "$status" -ne 0 ]
+}
+
+@test "done --rm-branch: keeps a pushed branch whose PR is still open" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-open)"
+
+  # The trap this guard exists for: 'git branch -d' compares against the
+  # upstream when one is set, so an unmerged branch that is level with
+  # origin/<branch> counts as "fully merged" and would be deleted here.
+  run run_vibe "done" --rm-branch task-open
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [[ "$output" == *"kept"* ]]
+  git show-ref --verify --quiet refs/heads/task-open
+}
+
+@test "done --rm-branch: deletes an unmerged branch whose remote branch is gone" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-squashed)"
+  # What a squash- or rebase-merged PR leaves behind: the local commits are on
+  # no branch the base can reach, and the remote branch is deleted. Delete it
+  # on the remote itself rather than with 'push --delete', which would prune
+  # the local ref in the same breath — here the ref is still stale, which is
+  # the real shape (the PR was merged on GitHub) and makes the prune inside
+  # --rm-branch the thing under test.
+  git -C "$BATS_TEST_TMPDIR/proj.git" update-ref -d refs/heads/task-squashed
+
+  run run_vibe "done" --rm-branch task-squashed
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [[ "$output" == *"upstream gone"* ]]
+  run git show-ref --verify --quiet refs/heads/task-squashed
+  [ "$status" -ne 0 ]
+}
+
+@test "done --rm-branch: --force deletes an unmerged branch anyway" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-forced)"
+
+  run run_vibe "done" --force --rm-branch task-forced
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  run git show-ref --verify --quiet refs/heads/task-forced
+  [ "$status" -ne 0 ]
+}
+
 @test "done: removes the worktree before killing the task's tmux session" {
   cd "$(make_repo proj)"
   run_vibe start "task kill" >/dev/null

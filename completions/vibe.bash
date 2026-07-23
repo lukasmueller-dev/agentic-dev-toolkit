@@ -65,7 +65,7 @@ _vibe() {
       ;;
     done)
       if [[ "$cur" == -* ]]; then
-        _vibe_reply "--force --stop --discard-handoff --keep-brief" "$cur"
+        _vibe_reply "--force --stop --discard-handoff --keep-brief --rm-branch" "$cur"
       else
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi

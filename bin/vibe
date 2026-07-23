@@ -28,7 +28,8 @@
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
-#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [<task>...]
+#   vibe done [--force] [--stop] [--discard-handoff] [--keep-brief]
+#             [--rm-branch] [<task>...]
 #                         Remove the worktree (branch is kept). Refuses if the
 #                         worktree is dirty, holds unpushed commits, has a loop
 #                         still running (--stop kills it first), if
@@ -39,6 +40,10 @@
 #                         or if LOOP.md is still on the branch, where it would
 #                         land in the PR diff; delete it and sync, or
 #                         --keep-brief to leave it there deliberately.
+#                         --rm-branch also deletes the local branch, but only
+#                         once the work has landed: merged into the default
+#                         branch, or its remote branch deleted (a squashed PR).
+#                         Otherwise the branch is kept with a warning.
 #                         Infers the task from the cwd when run inside a
 #                         worktree.
 #
@@ -1785,12 +1790,20 @@ handoff_age() {
 # status' this never fetches, so 'gone' reflects the last 'git fetch --prune',
 # not the remote right now.
 upstream_ref_state() {
-  local dir="$1" branch up="" track=""
+  local dir="$1" branch
   branch="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null)" || {
     echo none
     return
   }
-  read -r up track <<<"$(git -C "$dir" for-each-ref \
+  branch_upstream_state "$dir" "$branch"
+}
+
+# branch_upstream_state REPO BRANCH — the same ok/gone/none verdict for a branch
+# named explicitly, from any checkout of REPO. The form 'vibe done --rm-branch'
+# needs, because by the time it asks, the branch's own worktree is gone.
+branch_upstream_state() {
+  local repo="$1" branch="$2" up="" track=""
+  read -r up track <<<"$(git -C "$repo" for-each-ref \
     --format='%(upstream:short) %(upstream:track)' \
     "refs/heads/$branch" 2>/dev/null)" || true
   if [[ -z "$up" ]]; then
@@ -2021,7 +2034,7 @@ unpushed_commits() {
 
 cmd_done() {
   need git
-  local force=0 stop=0 discard_handoff=0 keep_brief=0
+  local force=0 stop=0 discard_handoff=0 keep_brief=0 rm_branch=0
   local tasks=()
   while (($#)); do
     case "$1" in
@@ -2029,7 +2042,8 @@ cmd_done() {
       --stop) stop=1 ;;
       --discard-handoff) discard_handoff=1 ;;
       --keep-brief) keep_brief=1 ;;
-      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] <task>...)" ;;
+      --rm-branch) rm_branch=1 ;;
+      -*) die "unknown option '$1' (usage: vibe done [--force] [--stop] [--discard-handoff] [--keep-brief] [--rm-branch] <task>...)" ;;
       *) tasks+=("$1") ;;
     esac
     shift
@@ -2039,7 +2053,7 @@ cmd_done() {
   # its own message — the plain single-task behaviour this command has always
   # had, including inferring the task from the cwd when none was named.
   if ((${#tasks[@]} <= 1)); then
-    done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "${tasks[0]:-}"
+    done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$rm_branch" "${tasks[0]:-}"
     return
   fi
 
@@ -2055,7 +2069,7 @@ cmd_done() {
   cd "$(main_repo_root)"
   local failed=0 t
   for t in "${tasks[@]}"; do
-    if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$t"); then
+    if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$rm_branch" "$t"); then
       :
     else
       failed=1
@@ -2064,11 +2078,12 @@ cmd_done() {
   ((failed == 0))
 }
 
-# done_one FORCE STOP DISCARD_HANDOFF KEEP_BRIEF TASK — remove one task's
-# worktree (branch kept). TASK may be "" to infer the task from the cwd, which
-# is only meaningful when 'vibe done' was given no task names at all.
+# done_one FORCE STOP DISCARD_HANDOFF KEEP_BRIEF RM_BRANCH TASK — remove one
+# task's worktree (branch kept unless RM_BRANCH). TASK may be "" to infer the
+# task from the cwd, which is only meaningful when 'vibe done' was given no task
+# names at all.
 done_one() {
-  local force="$1" stop="$2" discard_handoff="$3" keep_brief="$4" task="$5"
+  local force="$1" stop="$2" discard_handoff="$3" keep_brief="$4" rm_branch="$5" task="$6"
   local branch repo main dir
   if [[ -n "$task" ]]; then
     branch="$(slug "$task")"
@@ -2174,7 +2189,12 @@ done_one() {
     git -C "$main" worktree remove "$dir" ||
       die "could not remove worktree $dir (see git's message above)"
   fi
-  info "removed worktree $dir (branch '$branch' kept)"
+  if [[ "$rm_branch" == 1 ]]; then
+    info "removed worktree $dir"
+    delete_branch "$main" "$branch" "$force"
+  else
+    info "removed worktree $dir (branch '$branch' kept)"
+  fi
 
   # The tmux kill goes last, and every message above it is already printed.
   # On the server 'vibe done' is normally run from inside the task's own
@@ -2195,6 +2215,82 @@ done_one() {
     # own, a message printed afterwards dies with the pane.
     info "killing tmux session $sess"
     tmux kill-session -t "$sess"
+  fi
+}
+
+# default_base_ref MAIN — the ref a finished task's work should have landed in.
+# 'origin/HEAD' is the remote's own answer, but it is only written at clone
+# time, so fall back to whatever branch the main checkout is on — which is what
+# 'vibe start' branched from in the first place.
+default_base_ref() {
+  local main="$1" ref=""
+  ref="$(git -C "$main" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" || ref=""
+  if [[ -z "$ref" ]]; then
+    ref="$(git -C "$main" symbolic-ref --quiet --short HEAD 2>/dev/null)" || ref=""
+  fi
+  [[ -n "$ref" ]] || ref="main"
+  printf '%s\n' "$ref"
+}
+
+# delete_branch MAIN BRANCH FORCE — delete a finished task's local branch, once
+# its worktree is gone (git refuses while a worktree still holds the branch).
+#
+# Never fails the command. The worktree removal this follows has already
+# succeeded and been reported, so a branch that is not safe to drop is kept
+# with a warning rather than turning a successful cleanup into an error.
+#
+# Two independent reasons to consider the work landed, either one enough:
+#
+#   ancestor of the base    the commits are reachable from the default branch,
+#                           so deleting the branch loses nothing. This is the
+#                           merge-commit PR case.
+#   upstream gone           the remote branch was deleted, which after a merged
+#                           PR is the finish signal — and the only one left when
+#                           the PR was squashed or rebased, since neither leaves
+#                           the local commits reachable from the base at all.
+#
+# 'git branch -d' is deliberately *not* the check being relied on: git only
+# compares against HEAD when no upstream is set, and against the upstream when
+# one is, so a pushed branch whose PR is still open is "fully merged" as far as
+# '-d' is concerned and would be deleted without a murmur. The ancestor test
+# above asks the question actually being asked, and '-D' then carries it out.
+delete_branch() {
+  local main="$1" branch="$2" force="$3"
+
+  if [[ "$force" == 1 ]]; then
+    if git -C "$main" branch -D "$branch" >/dev/null 2>&1; then
+      info "deleted branch '$branch' (--force)"
+    else
+      warn "could not delete branch '$branch' — run 'git branch -D $branch' to see why"
+    fi
+    return 0
+  fi
+
+  # Prune first: 'gone' otherwise reflects the last fetch, and the PR whose
+  # merge prompted this cleanup was very likely merged seconds ago. Offline is
+  # not fatal — say so and judge from what is already known.
+  if git -C "$main" remote get-url origin >/dev/null 2>&1; then
+    git -C "$main" fetch -q --prune origin >/dev/null 2>&1 ||
+      warn "could not reach origin — judging '$branch' from the last fetch"
+  fi
+
+  local base reason=""
+  base="$(default_base_ref "$main")"
+  if git -C "$main" merge-base --is-ancestor "$branch" "$base" 2>/dev/null; then
+    reason="merged into $base"
+  elif [[ "$(branch_upstream_state "$main" "$branch")" == gone ]]; then
+    reason="upstream gone"
+  else
+    warn "branch '$branch' kept: not merged into $base, and its remote branch still exists.
+  Merge the pull request first, or drop it deliberately with
+  'git branch -D $branch'."
+    return 0
+  fi
+
+  if git -C "$main" branch -D "$branch" >/dev/null 2>&1; then
+    info "deleted branch '$branch' ($reason)"
+  else
+    warn "could not delete branch '$branch' — run 'git branch -D $branch' to see why"
   fi
 }
 
@@ -2698,7 +2794,7 @@ cmd_help() {
     "Leave a machine: refresh HANDOFF.md by running the" \
     "agent headlessly, then sync. Degrades to a plain sync" \
     "if the agent is missing or the headless call fails."
-  help_cmd "done [<task>...]" "[--force] [--stop] [--discard-handoff] [--keep-brief]" \
+  help_cmd "done [<task>...]" "[--force] [--stop] [--discard-handoff] [--keep-brief] [--rm-branch]" \
     "Remove the worktree (branch is kept). Refuses if the" \
     "worktree is dirty, holds unpushed commits, has a loop" \
     "still running (--stop kills it first), if HANDOFF.md" \
@@ -2707,7 +2803,11 @@ cmd_help() {
     "delete it and sync (--discard-handoff skips both" \
     "handoff checks) — or if LOOP.md is still on the branch," \
     "where it would land in the PR diff; delete it and sync," \
-    "or --keep-brief to leave it there deliberately. Infers" \
+    "or --keep-brief to leave it there deliberately." \
+    "--rm-branch also deletes the local branch, but only" \
+    "once the work has landed — merged into the default" \
+    "branch, or its remote branch deleted (a squashed PR);" \
+    "otherwise the branch is kept with a warning. Infers" \
     "the task from the cwd when run inside a worktree with" \
     "no task named. Multiple tasks remove each in turn, like" \
     "'git branch -d a b' — one failing doesn't stop the" \

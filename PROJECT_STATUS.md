@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-22 · server (srv1841294)_
+_Last updated: 2026-07-23 · server (srv1841294)_
 
 ## Goal
 
@@ -72,6 +72,10 @@ the installer's auto-discovery rules.
   notification. Recommendations are promoted by hand via `add-roadmap-item`,
   never written into the roadmap by the run. See `docs/sota-watch.md`;
   rationale in the PR for `agentic-dev-sota`.
+- 2026-07-23: `vibe done --rm-branch` gates branch deletion on the work
+  having landed — ancestor of the default branch, or remote branch gone —
+  and never on `git branch -d`, which counts a pushed branch with an open
+  PR as merged. See `bd4eaa2` and the PR for `cleanup-old-branches`.
 - 2026-07-22: Planned work moved out of this file into
   `PROJECT_ROADMAP.md` (template + scaffold + `add-roadmap-item` skill,
   which holds new items to the pick-up-cold design bar); this file keeps
