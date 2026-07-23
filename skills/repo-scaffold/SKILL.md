@@ -43,7 +43,7 @@ Then take stock of the baseline, item by item:
 | Pre-push protection | `.githooks/pre-push` exists **and** `git config core.hooksPath` returns `.githooks` — either alone protects nothing |
 | Server-side protection | only if a GitHub remote exists: `gh api "repos/<owner>/<repo>/branches/<default>/protection"` — a 403 mentioning an upgrade means the plan has none (private repo on a free plan); 404 means available but not enabled |
 | CI | a workflow under `.github/workflows/` that runs lint and tests |
-| Billed minutes | private repo on a free plan (same probe as above) — decides whether CI keeps the opt-in `run-ci` label gate |
+| Repo visibility | only if a GitHub remote exists: `gh repo view --json isPrivate --jq .isPrivate` — `true` (private) keeps the opt-in `run-ci` label gate on CI; `false` (public) strips it, since public repos get free Actions minutes |
 | Status files | `PROJECT_STATUS.md` and `PROJECT_ROADMAP.md` at the repo root, `HANDOFF.md` in the worktree |
 | Instruction file | `CLAUDE.md` / `AGENTS.md` — exists, and records the conventions the scaffold establishes |
 
@@ -89,11 +89,11 @@ and go two levels up; templates are at `<toolkit>/templates/`.
     and the concurrency line. If the repo's default branch (resolved in
     phase 1) is not `main`, replace it in both places; GitHub expands no
     variable there, and an unreplaced `main` means CI never runs on merge.
-  - **The `run-ci` label** — if minutes are billed and you keep the label
+  - **The `run-ci` label** — if the repo is private and you keep the label
     gate, create the label too (`gh label create run-ci -c '#0e8a16'
     -d 'Run CI on this PR'`), or the gate is unusable: `run-ci` is not one
     of GitHub's default labels, so `gh pr edit --add-label run-ci` fails
-    until it exists. If minutes are free, strip the gate as the template's
+    until it exists. If the repo is public, strip the gate as the template's
     header comment describes.
   - Several types → one workflow, one job per type — and give each job a
     distinct id (`check-python`, `check-shell`), not the template's shared
