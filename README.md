@@ -3,7 +3,7 @@
 Personal tooling for agentic development across as many machines as you work
 on — the one in front of you, and any you reach over SSH and want to keep
 working after you disconnect. One repo, one `install.sh`, kept in sync on every
-machine with `git pull`.
+machine with `git pull`. Inspired by [this video](https://www.youtube.com/watch?v=trg1FRbpnys).
 
 Installed by symlink, so updating is just pulling — nothing is ever copied into
 place and left to drift.
