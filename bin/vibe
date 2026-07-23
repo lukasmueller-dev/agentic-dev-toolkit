@@ -1870,11 +1870,22 @@ cmd_status() {
   rule "Worktrees"
   if ((all)); then print_all_worktrees; else print_worktrees; fi
 
-  # tmux sessions belonging to vibe
+  # tmux sessions belonging to vibe — scoped to this repo unless --all, same
+  # as the worktree listing above
   if command -v tmux >/dev/null 2>&1 && tmux ls >/dev/null 2>&1; then
     printf '\n'
     rule "Active tmux sessions"
-    tmux ls 2>/dev/null | grep "^${VIBE_TMUX_PREFIX}-" | sed 's/^/  /' || echo "  (none)"
+    local sess_prefix="${VIBE_TMUX_PREFIX}-"
+    if ((!all)) && git rev-parse --show-toplevel >/dev/null 2>&1; then
+      sess_prefix="${VIBE_TMUX_PREFIX}-$(repo_name)-"
+    fi
+    local sess_line sess_found=0
+    while IFS= read -r sess_line; do
+      [[ "$sess_line" == "${sess_prefix}"* ]] || continue
+      printf '  %s\n' "$sess_line"
+      sess_found=1
+    done < <(tmux ls 2>/dev/null)
+    ((sess_found)) || echo "  (none)"
   fi
 
   # open PRs via gh, if available and we are inside a repo

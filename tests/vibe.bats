@@ -671,6 +671,63 @@ EOF
   [[ "$output" == *"proj/task-b"* ]]
 }
 
+@test "status: scopes tmux sessions to the current repo" {
+  cd "$(make_repo proj)"
+  run_vibe start "task a" >/dev/null
+
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-scope"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  ls)
+    echo "vibe-proj-task-a: 1 windows"
+    echo "vibe-other-task-b: 1 windows"
+    exit 0
+    ;;
+  has-session) exit 1 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"vibe-proj-task-a"* ]]
+  [[ "$output" != *"vibe-other-task-b"* ]]
+}
+
+@test "status --all: shows tmux sessions from every repo" {
+  cd "$(make_repo proj)"
+
+  local dir="$BATS_TEST_TMPDIR/tmuxbin-scope-all"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  ls)
+    echo "vibe-proj-task-a: 1 windows"
+    echo "vibe-other-task-b: 1 windows"
+    exit 0
+    ;;
+  has-session) exit 1 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+
+  run env PATH="$dir:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" status --all
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"vibe-proj-task-a"* ]]
+  [[ "$output" == *"vibe-other-task-b"* ]]
+}
+
 @test "attach: with no task and no tasks, reports there is nothing to pick" {
   cd "$(make_repo proj)"
   run run_vibe attach
