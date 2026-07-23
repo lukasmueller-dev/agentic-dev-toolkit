@@ -33,6 +33,15 @@ under a running agent is how you corrupt a session. The task name is slugged
 into a branch-safe form, so `"Fix Login Bug"` and `fix-login-bug` are the same
 task.
 
+When the task is genuinely new — no local or remote branch of that name
+already exists — the new branch is cut from the main checkout's HEAD. Before
+that cut, `vibe start` fast-forwards the main checkout to its upstream (fetch
++ `merge --ff-only`), so the branch starts from what origin actually has, not
+whatever the main checkout happened to be at. It never blocks the start: a
+dirty main checkout, no upstream, or a failed fetch are all skipped silently
+and the branch is cut from HEAD as-is. `VIBE_START_PULL_MAIN=0` turns this
+off.
+
 On a **server** this opens a tmux session named `vibe-<repo>-<branch>` and
 starts the agent inside it. On a **local** machine it just drops you into the
 worktree and launches the agent — no tmux, because nothing needs to survive.

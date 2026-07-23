@@ -84,6 +84,15 @@
 # Default: 0
 #VIBE_RC_ON_START=0
 
+# Before 'vibe start' cuts a brand-new task branch off the main checkout's
+# HEAD, fast-forward that checkout to its upstream first (fetch + merge
+# --ff-only). Skipped automatically when the main checkout is dirty, has no
+# upstream, or the fetch fails — it never blocks a start, only keeps it from
+# quietly forking off local history that predates a teammate's merge. Set to
+# 0 to branch off HEAD exactly as it is, the pre-existing behaviour.
+# Default: 1
+#VIBE_START_PULL_MAIN=1
+
 # ntfy.sh topic for phone notifications. Unset means notifications are off.
 #
 # On the public ntfy.sh instance the topic name IS the access control: anyone
