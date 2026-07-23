@@ -112,6 +112,7 @@ _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_server_hostname="${VIBE_SERVER_HOSTNAME:-}"
 _env_ntfy_topic="${VIBE_NTFY_TOPIC:-}"
 _env_rc_on_start="${VIBE_RC_ON_START:-}"
+_env_start_pull_main="${VIBE_START_PULL_MAIN:-}"
 
 if [[ -r "$VIBE_CONFIG_FILE" ]]; then
   # shellcheck source=/dev/null
@@ -149,10 +150,16 @@ VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
 # Opt-in: launch the server-side agent with Remote Control already enabled, so
 # a task is reachable from the Claude app without typing /rc first. Server only.
 VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
+# Best-effort fast-forward of the main checkout's current branch to its
+# upstream before 'vibe start' branches a brand-new task off its HEAD, so the
+# new branch does not fork from local history that predates a teammate's
+# merge. Never blocks: see ff_main_quiet. Set to 0 to branch off HEAD as-is,
+# the pre-existing behaviour.
+VIBE_START_PULL_MAIN="${_env_start_pull_main:-${VIBE_START_PULL_MAIN:-1}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
   _env_agent_resume_args _env_loop_permissive_args _env_loop_sandbox_args \
   _env_tmux_prefix _env_server_hostname \
-  _env_ntfy_topic _env_rc_on_start
+  _env_ntfy_topic _env_rc_on_start _env_start_pull_main
 
 # Files committed separately (as their own "chore: handoff" commit) by vibe sync.
 VIBE_HANDOFF_FILES=("HANDOFF.md" "PROJECT_STATUS.md")
@@ -410,12 +417,38 @@ worktree_dir() {
   echo "$VIBE_WORKTREE_ROOT/$repo/$branch"
 }
 
+# ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
+# to its upstream, called right before a brand-new task branch is cut from
+# MAIN's HEAD. Mirrors attach_ff's fetch/ff-only logic but without its
+# "attaching" framing, and never refuses: a disabled setting, a dirty tree, no
+# upstream, or a failed fetch are all silently skipped, so 'vibe start' always
+# still branches off whatever HEAD already is rather than blocking on git.
+ff_main_quiet() {
+  local main="$1"
+  [[ "$VIBE_START_PULL_MAIN" == "1" ]] || return 0
+  [[ -z "$(git -C "$main" status --porcelain 2>/dev/null)" ]] || return 0
+  [[ "$(upstream_state "$main")" != no-upstream ]] || return 0
+  git -C "$main" fetch -q 2>/dev/null || return 0
+  [[ "$(upstream_state "$main")" == behind ]] || return 0
+  local branch n
+  branch="$(git -C "$main" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+  n="$(git -C "$main" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo '?')"
+  git -C "$main" merge -q --ff-only '@{u}' 2>/dev/null || return 0
+  if [[ "$n" == 1 ]]; then
+    ok "fast-forwarded $branch (1 commit) before branching"
+  else
+    ok "fast-forwarded $branch ($n commits) before branching"
+  fi
+}
+
 # ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
 # needed, and tracked — so a branch pushed from another machine is picked up
 # instead of silently shadowed by a fresh branch off HEAD); new branch off
 # HEAD. The fetch is best-effort: offline or remote-less repos fall through to
-# today's branch-off-HEAD behavior.
+# today's branch-off-HEAD behavior. Only the final case — genuinely cutting a
+# new branch from MAIN's own HEAD — calls ff_main_quiet first: the other two
+# reuse a branch's own history, so MAIN being stale does not affect them.
 # Kept in lockstep with skills/loop-brief/brief.sh.
 ensure_worktree() {
   local main="$1" branch="$2" dir="$3"
@@ -428,6 +461,7 @@ ensure_worktree() {
     if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
       git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
     else
+      ff_main_quiet "$main"
       git -C "$main" worktree add -b "$branch" "$dir"
     fi
   fi

@@ -98,6 +98,8 @@ read_config() {
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}"
 VIBE_SERVER_HOSTNAME="${VIBE_SERVER_HOSTNAME:-$(read_config VIBE_SERVER_HOSTNAME)}"
+VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-$(read_config VIBE_START_PULL_MAIN)}"
+VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-1}"
 
 # The loop runner's gitignored per-worktree state file (see bin/vibe).
 LOOP_STATE_FILE=".vibe-loop.state"
@@ -115,10 +117,34 @@ repo_name() { basename "$(main_repo_root)"; }
 slug() { echo "$1" | tr '[:upper:] /' '[:lower:]--' | sed 's/[^a-z0-9._-]//g'; }
 worktree_dir() { echo "$VIBE_WORKTREE_ROOT/$1/$2"; }
 
+# ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
+# to its upstream, called right before a brand-new task branch is cut from
+# MAIN's HEAD. KEEP IN LOCKSTEP with bin/vibe's copy. Never refuses: a
+# disabled setting, a dirty tree, no upstream, or a failed fetch/merge are all
+# silently skipped, so the caller always still branches off whatever HEAD
+# already is rather than blocking on git.
+ff_main_quiet() {
+  local main="$1"
+  [[ "$VIBE_START_PULL_MAIN" == "1" ]] || return 0
+  [[ -z "$(git -C "$main" status --porcelain 2>/dev/null)" ]] || return 0
+  git -C "$main" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || return 0
+  git -C "$main" fetch -q 2>/dev/null || return 0
+  local base
+  base="$(git -C "$main" merge-base @ '@{u}' 2>/dev/null)" || return 0
+  [[ "$base" == "$(git -C "$main" rev-parse @)" ]] || return 0
+  [[ "$base" != "$(git -C "$main" rev-parse '@{u}')" ]] || return 0
+  local branch
+  branch="$(git -C "$main" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
+  git -C "$main" merge -q --ff-only '@{u}' 2>/dev/null &&
+    info "fast-forwarded $branch before branching"
+}
+
 # ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
 # needed, and tracked — so a brief pushed from another machine is picked up
-# instead of shadowed by a fresh branch off HEAD); new branch off HEAD.
+# instead of shadowed by a fresh branch off HEAD); new branch off HEAD. Only
+# the last case calls ff_main_quiet: the other two reuse a branch's own
+# history, so MAIN being stale does not affect them.
 ensure_worktree() {
   local main="$1" branch="$2" dir="$3"
   mkdir -p "$(dirname "$dir")"
@@ -130,6 +156,7 @@ ensure_worktree() {
     if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
       git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
     else
+      ff_main_quiet "$main"
       git -C "$main" worktree add -b "$branch" "$dir"
     fi
   fi

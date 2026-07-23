@@ -520,6 +520,48 @@ EOF
   git -C "$wt" rev-parse '@{u}' >/dev/null
 }
 
+@test "start: fast-forwards a stale main checkout before branching a new task" {
+  local work
+  work="$(make_repo proj)"
+  cd "$work"
+  local other
+  other="$(clone_repo proj other)"
+  echo landed >"$other/landed.txt"
+  git -C "$other" add landed.txt
+  git -C "$other" commit -q -m "landed on main"
+  git -C "$other" push -q origin main
+
+  # The main checkout has not pulled yet — it must not see landed.txt.
+  [ ! -f "$work/landed.txt" ]
+
+  run run_vibe start "fresh task"
+  [ "$status" -eq 0 ]
+
+  # The main checkout itself moved...
+  [ -f "$work/landed.txt" ]
+  # ...and the new branch was cut from the fast-forwarded HEAD.
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/fresh-task"
+  [ -f "$wt/landed.txt" ]
+}
+
+@test "start: VIBE_START_PULL_MAIN=0 branches off the stale HEAD as before" {
+  local work
+  work="$(make_repo proj)"
+  cd "$work"
+  local other
+  other="$(clone_repo proj other)"
+  echo landed >"$other/landed.txt"
+  git -C "$other" add landed.txt
+  git -C "$other" commit -q -m "landed on main"
+  git -C "$other" push -q origin main
+
+  VIBE_START_PULL_MAIN=0 run_vibe start "fresh task"
+
+  [ ! -f "$work/landed.txt" ]
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/fresh-task"
+  [ ! -f "$wt/landed.txt" ]
+}
+
 @test "start: --no-attach starts the tmux session and returns (server)" {
   # Mirrors "loop: on the server a fresh loop starts detached inside tmux":
   # the session is created against the stub tmux and never attached, so
