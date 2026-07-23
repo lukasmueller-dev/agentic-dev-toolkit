@@ -1,7 +1,7 @@
 # Review-dimensions catalog
 
 The accumulated knowledge of what an independent review round looks at.
-`review-brief` assembles each round's mission from this file: the generic
+`codebase-review` assembles each round's mission from this file: the generic
 core applies to any repo; a conditional dimension applies only when its
 anchor files exist in the target repo. A staged round is this catalog,
 minus dimensions well-covered by recent rounds, plus the code changed
@@ -21,7 +21,10 @@ file or docs, and the staged brief tells the session so.
   for it. Silent-failure paths first — the bug that prints success.
 - **Docs-vs-code drift.** README, docs, help text, comments that describe
   a sibling file, config examples, completions: does each still match the
-  code as it is today?
+  code as it is today? The `codebase-health` scan's **docs** category
+  sweeps the surfaces a language is known to have; this dimension remains
+  the judgment half — a surface no reference file lists is still yours to
+  find.
 - **Test blind spots and harness isolation.** Guards without tests; paths
   only one platform exercises; assertions that pass vacuously; whether
   the suite can ever touch the developer's real environment.
@@ -36,7 +39,10 @@ file or docs, and the staged brief tells the session so.
   triggers understood by the merge process.
 - **Cross-file consistency.** Constants, regexes, or contracts duplicated
   across files and kept in lockstep only by comment — verify every copy,
-  and every pointer comment that names the siblings.
+  and every pointer comment that names the siblings. The `codebase-health`
+  scan's **dedup** category runs a clone detector over the same ground and
+  catches the near-copies reading misses; a contract held in lockstep by
+  comment alone stays judgment.
 - **Derived-but-unused values.** A script that computes a value, validates
   it, and names it in a log line, but never actually acts on it — a
   resolved repo root that is never entered, a config path never read. The
@@ -91,6 +97,13 @@ file or docs, and the staged brief tells the session so.
   reading prior rounds' findings or the project's debt tracks. A re-found
   fixed-or-tracked item is replication — evidence the pass works — and is
   reported separately, never as a finding.
+- Run a `codebase-health` pass as its own leg of the round, and **only
+  after** the blind discovery pass — a tool-driven scan read first anchors
+  the reviewer to what the tools already know. Scan only: stop at that
+  skill's report, take no approval step, and open none of its `health/*`
+  branches or PRs, which would put fixes in place of the report. Fold what
+  survives into the ranked list, de-duplicated against discovery; note in
+  the round's output which language reference it used, or that it had none.
 - The deliverable is a ranked findings list: each with `file:line` and a
   concrete failure scenario, reasoned-but-unproven claims labelled as
   such. Fixes never replace the report.

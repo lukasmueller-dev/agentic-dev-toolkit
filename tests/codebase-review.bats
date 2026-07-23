@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# skills/review-brief/review.sh — staging the brief for an independent
+# skills/codebase-review/review.sh — staging the brief for an independent
 # repo-review round: round numbering, the merge gate between rounds, and the
 # shared handoff publish contract. Everything runs in throwaway repos under
 # $BATS_TEST_TMPDIR.
@@ -9,7 +9,7 @@ load helper
 
 setup() { git_env; }
 
-REVIEW="$REPO_ROOT/skills/review-brief/review.sh"
+REVIEW="$REPO_ROOT/skills/codebase-review/review.sh"
 
 run_review() {
   VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \

@@ -2,7 +2,7 @@
 #
 # vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
 # briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh,
-# review-brief/review.sh).
+# codebase-review/review.sh).
 #
 # Sourced, never executed. The caller is expected to run under
 # `set -euo pipefail` and to have resolved its own real location first
@@ -238,7 +238,7 @@ stage_worktree() {
 # fresh from the template), existing-scaffold (already there but holding only
 # the template's scaffolding — fill it in like a fresh one), existing-handoff
 # (real content — refine it in place, never overwrite). Shared by
-# handoff-brief and review-brief, which stage the same document.
+# handoff-brief and codebase-review, which stage the same document.
 handoff_stage_state() {
   local dir="$1" repo="$2" branch="$3" f="$1/HANDOFF.md"
   if [[ ! -f "$f" ]]; then
