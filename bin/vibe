@@ -105,6 +105,7 @@ VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
 _env_worktree_root="${VIBE_WORKTREE_ROOT:-}"
 _env_agent_cmd="${VIBE_AGENT_CMD:-}"
 _env_agent_headless_args="${VIBE_AGENT_HEADLESS_ARGS:-}"
+_env_agent_resume_args="${VIBE_AGENT_RESUME_ARGS:-}"
 _env_loop_permissive_args="${VIBE_LOOP_PERMISSIVE_ARGS:-}"
 _env_loop_sandbox_args="${VIBE_LOOP_SANDBOX_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
@@ -124,6 +125,14 @@ VIBE_AGENT_CMD="${_env_agent_cmd:-${VIBE_AGENT_CMD:-claude}}"
 # 'vibe park' to refresh HANDOFF.md). Default is Claude Code's '-p', but the
 # split lets any agent be driven headlessly without hardcoding one here.
 VIBE_AGENT_HEADLESS_ARGS="${_env_agent_headless_args:-${VIBE_AGENT_HEADLESS_ARGS:--p}}"
+# Arguments that make VIBE_AGENT_CMD pick its previous conversation back up
+# instead of starting a fresh one. Used in exactly one place: when 'vibe
+# attach'/'vibe start' finds the task's tmux session alive but its agent gone,
+# so the pane is back at a shell. Empty by default and deliberately
+# agent-agnostic (Claude Code spells it '--continue') — unset, the agent is
+# relaunched with a fresh context and HANDOFF.md carries the state, which is
+# the workflow's normal assumption.
+VIBE_AGENT_RESUME_ARGS="${_env_agent_resume_args:-${VIBE_AGENT_RESUME_ARGS:-}}"
 # Extra args appended to a loop's agent invocation ONLY when it is started with
 # --dangerously-allow-all: the agent's "skip every permission prompt" mode.
 # Empty by default; see docs/vibe-loop.md for the blast radius before setting it.
@@ -141,7 +150,7 @@ VIBE_NTFY_TOPIC="${_env_ntfy_topic:-${VIBE_NTFY_TOPIC:-}}"
 # a task is reachable from the Claude app without typing /rc first. Server only.
 VIBE_RC_ON_START="${_env_rc_on_start:-${VIBE_RC_ON_START:-0}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_headless_args \
-  _env_loop_permissive_args _env_loop_sandbox_args \
+  _env_agent_resume_args _env_loop_permissive_args _env_loop_sandbox_args \
   _env_tmux_prefix _env_server_hostname \
   _env_ntfy_topic _env_rc_on_start
 
@@ -481,12 +490,41 @@ drain_tty() {
   return 0
 }
 
+# tmux_pane_cmd SESS — the command running in SESS's active pane. Empty when
+# tmux cannot say, which includes a session that does not exist: it reports
+# that on stderr and still exits 0, so this can never be used as an existence
+# check. Ask 'has-session' for that.
+tmux_pane_cmd() {
+  tmux display-message -p -t "$1" '#{pane_current_command}' 2>/dev/null || true
+}
+
+# pane_is_idle_shell CMD — true when a pane is sitting at a shell prompt with
+# nothing of ours running in it. This is the one condition under which vibe may
+# type into a pane: anything else running there (an agent, an editor, a build)
+# would receive the keystrokes as input. An empty CMD counts as idle — tmux
+# only leaves it empty for a session it cannot see, and every caller has
+# already confirmed the session exists.
+pane_is_idle_shell() {
+  case "${1:-}" in
+    "" | bash | -bash | zsh | -zsh | sh | dash | fish) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # tmux_attach_or_switch SESS — bring SESS to the foreground. Inside an existing
 # tmux client, attach would nest a session; switch the client instead. Outside
 # tmux, attach.
 tmux_attach_or_switch() {
-  local sess="$1"
+  local sess="$1" cur
   if [[ -n "${TMUX:-}" ]]; then
+    # Switching a client to the session it is already in is a silent no-op, so
+    # 'vibe attach <this task>' from inside the task looked like it did
+    # nothing at all. Say so instead.
+    cur="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
+    if [[ -n "$cur" && "$cur" == "$sess" ]]; then
+      info "already in this session: $sess"
+      return 0
+    fi
     tmux switch-client -t "$sess"
   else
     # Only the attach path takes the terminal away and hands it back, so only
@@ -1352,13 +1390,9 @@ cmd_loop() {
     if tmux has-session -t "$sess" 2>/dev/null; then
       sess_exists=1
       local pane_cmd
-      pane_cmd="$(tmux display-message -p -t "$sess" '#{pane_current_command}' 2>/dev/null || true)"
-      case "$pane_cmd" in
-        "" | bash | -bash | zsh | -zsh | sh | dash | fish) ;; # idle shell — reusable
-        *)
-          die "tmux session '$sess' is busy running '$pane_cmd' — watch it (vibe attach ${task}) or kill it (tmux kill-session -t $sess), then re-run vibe loop"
-          ;;
-      esac
+      pane_cmd="$(tmux_pane_cmd "$sess")"
+      pane_is_idle_shell "$pane_cmd" || # an idle shell is reusable
+        die "tmux session '$sess' is busy running '$pane_cmd' — watch it (vibe attach ${task}) or kill it (tmux kill-session -t $sess), then re-run vibe loop"
     fi
   fi
 
@@ -1573,6 +1607,25 @@ open_session() {
     [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
     if tmux_ensure_session "$sess" "$dir" "$launch"; then
       info "attaching to existing tmux session: $sess"
+      # The session outlives the agent. When the agent exits, the pane falls
+      # back to a shell and the session keeps running — so attaching alone
+      # hands over a bare prompt in the worktree instead of the task's agent,
+      # silently and with no error. Start it again. VIBE_AGENT_RESUME_ARGS,
+      # when set, picks the previous conversation back up rather than opening
+      # an empty one. A pane running anything else is left strictly alone: the
+      # agent may still be working, and send-keys would type into it.
+      local pane_cmd relaunch
+      pane_cmd="$(tmux_pane_cmd "$sess")"
+      if pane_is_idle_shell "$pane_cmd"; then
+        relaunch="$launch"
+        if [[ -n "$VIBE_AGENT_RESUME_ARGS" ]]; then
+          relaunch="$launch $VIBE_AGENT_RESUME_ARGS"
+          info "agent not running there — resuming it: $relaunch"
+        else
+          info "agent not running there — starting it: $relaunch"
+        fi
+        tmux send-keys -t "$sess" "$relaunch" C-m
+      fi
     else
       info "starting persistent tmux session: $sess"
     fi
@@ -2438,6 +2491,12 @@ cmd_doctor() {
   fi
 
   d_ok "headless    park/loop run '$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS'"
+
+  if [[ -n "$VIBE_AGENT_RESUME_ARGS" ]]; then
+    d_ok "resume      attach restarts a dead agent as '$VIBE_AGENT_CMD $VIBE_AGENT_RESUME_ARGS'"
+  else
+    d_ok "resume      attach restarts a dead agent with a fresh context (set VIBE_AGENT_RESUME_ARGS to continue the old one)"
+  fi
 
   if [[ -n "$VIBE_LOOP_PERMISSIVE_ARGS" ]]; then
     d_wn "loop perms  VIBE_LOOP_PERMISSIVE_ARGS set — 'vibe loop --dangerously-allow-all' will skip the agent's permission prompts"
