@@ -138,6 +138,18 @@ line and attaches anyway. **`attach` never refuses:** arriving at a machine has
 exactly one answer, and it is this. It declines to *guess about git*, never to
 attach.
 
+On the server, `attach` also makes sure the agent is actually running there.
+A tmux session outlives the agent inside it: when the agent exits, the pane
+falls back to a shell and the session keeps running, so plain attaching used to
+hand you a bare prompt in the worktree — no error, just no agent. Now an idle
+pane gets the agent started again. Set `VIBE_AGENT_RESUME_ARGS` (Claude Code:
+`--continue`) and that restart continues the task's previous conversation
+instead of opening an empty one; unset, you get a fresh agent and `HANDOFF.md`
+carries the state, which is what the workflow assumes anyway.
+
+A pane running anything else — the agent still working, an editor, a build — is
+never typed into and simply attached to.
+
 **The handoff travels through git.** Nothing uncommitted crosses machines —
 which is exactly why `vibe sync` (and therefore `park`) commits `HANDOFF.md`
 and `PROJECT_STATUS.md` as their own `chore: handoff` commit before committing
@@ -245,6 +257,7 @@ vibe doctor        # validates the file and shows the resulting values
 | `VIBE_WORKTREE_ROOT`       | `~/git/worktrees` | Where worktrees are created          |
 | `VIBE_AGENT_CMD`           | `claude`          | The agent to launch                  |
 | `VIBE_AGENT_HEADLESS_ARGS` | `-p`              | Args that make the agent run one-shot (`vibe park`, `vibe loop`) |
+| `VIBE_AGENT_RESUME_ARGS`   | unset             | Args that continue the previous conversation when `attach` restarts a dead agent |
 | `VIBE_LOOP_PERMISSIVE_ARGS` | unset            | Args for `loop --dangerously-allow-all` |
 | `VIBE_LOOP_SANDBOX_ARGS`   | unset             | Args for `loop --sandbox`            |
 | `VIBE_TMUX_PREFIX`         | `vibe`            | tmux session name prefix             |

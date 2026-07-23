@@ -776,6 +776,110 @@ remote_ahead() {
   [[ "$output" == *"no worktree"* ]]
 }
 
+# attach_tmux_stub DIR — a tmux stub whose session always exists and whose
+# pane reports $VIBE_TEST_PANE_CMD (default: an idle shell). Echoes DIR so it
+# can be prepended to PATH.
+attach_tmux_stub() {
+  local dir="$1"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+  display-message)
+    case "$*" in
+      *pane_current_command*) printf '%s\n' "${VIBE_TEST_PANE_CMD-bash}" ;;
+      *session_name*) printf '%s\n' "${VIBE_TEST_CLIENT_SESS-}" ;;
+    esac
+    ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+  printf '%s' "$dir"
+}
+
+@test "attach: starts the agent again when the session outlived it (server)" {
+  # The bug this guards: a tmux session outlives the agent running in it, so a
+  # session whose agent exited is back at a shell. has-session says yes, attach
+  # succeeds, and you land on a bare prompt in the worktree with no error.
+  cd "$(make_repo proj)"
+  run_vibe start "task dead" >/dev/null
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-dead")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=bash \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task dead"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"agent not running there"* ]]
+  grep -q "send-keys -t vibe-proj-task-dead stub-agent" "$VIBE_TEST_TMUX_LOG"
+  grep -q "attach-session -t vibe-proj-task-dead" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: resumes the old conversation when VIBE_AGENT_RESUME_ARGS is set" {
+  cd "$(make_repo proj)"
+  run_vibe start "task resume" >/dev/null
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-resume")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=bash \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_AGENT_RESUME_ARGS=--stub-continue \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task resume"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"resuming it"* ]]
+  grep -q "send-keys -t vibe-proj-task-resume stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: never types into a pane that is still running something" {
+  # send-keys into a live agent would be typed *at* it as a prompt, and into a
+  # build or an editor as whatever those make of it.
+  cd "$(make_repo proj)"
+  run_vibe start "task busy" >/dev/null
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-busy")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=stub-agent \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_AGENT_RESUME_ARGS=--stub-continue \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task busy"
+  [ "$status" -eq 0 ]
+  run ! grep -q "send-keys" "$VIBE_TEST_TMUX_LOG"
+  grep -q "attach-session -t vibe-proj-task-busy" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: says so instead of silently switching a client to its own session" {
+  # Inside the task's own session, switch-client -t <that session> is a no-op:
+  # vibe printed "attaching" and appeared to do nothing at all.
+  cd "$(make_repo proj)"
+  run_vibe start "task here" >/dev/null
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-here")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    TMUX="/tmp/fake-tmux-socket,1,0" \
+    VIBE_TEST_PANE_CMD=stub-agent \
+    VIBE_TEST_CLIENT_SESS=vibe-proj-task-here \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task here"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already in this session"* ]]
+  run ! grep -q "switch-client" "$VIBE_TEST_TMUX_LOG"
+}
+
 # ---------------------------------------------------------------------------
 # cwd inference — sync/done/park operate on the worktree you are standing in
 # ---------------------------------------------------------------------------
