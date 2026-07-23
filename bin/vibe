@@ -232,6 +232,15 @@ warn() { printf '%s⚠%s %s\n' "$c_yel" "$c_off" "$*"; }
 ok() { printf '%s✓%s %s\n' "$c_grn" "$c_off" "$*"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."; }
 
+# shq STRING — STRING wrapped in single quotes, safe to paste into a command
+# line that /bin/sh will parse. Not the same job as printf '%q': that quotes
+# for *bash*, and renders a control byte as $'\033', which dash reads as four
+# literal characters. Anything carrying colour escapes — which is anything
+# built by info/ok/warn — has to be quoted this way instead.
+shq() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
 # rule TITLE — a dim horizontal-rule section header ('── Title ────…'),
 # used wherever a bold standalone header used to stand alone: help, status,
 # doctor. One shared implementation so section headers read consistently.
@@ -550,17 +559,71 @@ pane_is_idle_shell() {
   esac
 }
 
+# in_this_tmux_session SESS — true when this very process is running inside
+# SESS. Two commands turn on it: 'vibe attach <this task>', where switching a
+# client to where it already is would be a no-op, and 'vibe done', where
+# killing SESS SIGHUPs the process doing the killing.
+in_this_tmux_session() {
+  [[ -n "${TMUX:-}" ]] || return 1
+  local cur
+  cur="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
+  [[ -n "$cur" && "$cur" == "$1" ]]
+}
+
+# end_task_session SESS SUMMARY — kill a finished task's tmux session, and make
+# sure SUMMARY is still readable once it is gone.
+#
+# On the server 'vibe done' is normally run from inside the very session it
+# ends, and that is where its output went. A tmux client owns the terminal's
+# alternate screen, so when it goes away the terminal restores what was there
+# *before* the attach: the pane's output is not scrolled off, it is erased.
+# What the user is left staring at is the 'vibe start' output from hours ago,
+# followed by tmux's own '[exited]' — which reads as though 'vibe done' had
+# just started a session. Printing earlier cannot fix that; there is no
+# ordering that survives the screen being swapped out from under it.
+#
+# 'detach-client -E' is the way out. It replaces the departing client with a
+# command of our choosing, and that command runs in the *outer* terminal, on
+# its normal screen, so what it prints lands in the scrollback the user keeps.
+# It prints the summary and then kills the session from there — from outside,
+# with the client already gone.
+end_task_session() {
+  local sess="$1" summary="$2"
+  command -v tmux >/dev/null 2>&1 || return 0
+  tmux has-session -t "$sess" 2>/dev/null || return 0
+
+  info "killing tmux session $sess"
+  if in_this_tmux_session "$sess"; then
+    # One printf argument per line, rather than one string with newlines in
+    # it: the command is handed to tmux as a single argv element and to the
+    # shell verbatim, and keeping it to one line keeps both parsers boring.
+    local cmd line
+    cmd="printf '%s\\n'"
+    while IFS= read -r line; do
+      cmd="$cmd $(shq "$line")"
+    done <<<"$summary
+$(info "ended tmux session $sess")"
+    if tmux detach-client -s "$sess" -E "$cmd; tmux kill-session -t $(shq "$sess")"; then
+      return 0
+    fi
+    # tmux older than 2.4 has no -E: it rejects the whole command, leaving the
+    # client attached and the session alive. Fall through to the plain kill
+    # rather than strand either — the summary is lost, as it was before.
+    warn "this tmux cannot hand the summary back to the outer terminal (needs 2.4+)"
+  fi
+  tmux kill-session -t "$sess"
+}
+
 # tmux_attach_or_switch SESS — bring SESS to the foreground. Inside an existing
 # tmux client, attach would nest a session; switch the client instead. Outside
 # tmux, attach.
 tmux_attach_or_switch() {
-  local sess="$1" cur
+  local sess="$1"
   if [[ -n "${TMUX:-}" ]]; then
     # Switching a client to the session it is already in is a silent no-op, so
     # 'vibe attach <this task>' from inside the task looked like it did
     # nothing at all. Say so instead.
-    cur="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
-    if [[ -n "$cur" && "$cur" == "$sess" ]]; then
+    if in_this_tmux_session "$sess"; then
       info "already in this session: $sess"
       return 0
     fi
@@ -2067,7 +2130,24 @@ cmd_done() {
   # would leave every later attempt starting from a deleted cwd, where the
   # repo/worktree resolution dies before that task's guards even run.
   cd "$(main_repo_root)"
-  local failed=0 t
+
+  # Then put the task that owns *this* session last, if one of them does.
+  # Killing it SIGHUPs vibe itself, so every task named after it would never be
+  # attempted — silently, with a zero exit, because the shell is gone before
+  # anything can report it. Deferring is enough: the kill only ever cuts off
+  # work that comes after it.
+  local repo_here ordered=() deferred=() t
+  repo_here="$(repo_name)"
+  for t in "${tasks[@]}"; do
+    if in_this_tmux_session "$(tmux_session_name "$repo_here" "$(slug "$t")")"; then
+      deferred+=("$t")
+    else
+      ordered+=("$t")
+    fi
+  done
+  tasks=("${ordered[@]+"${ordered[@]}"}" "${deferred[@]+"${deferred[@]}"}")
+
+  local failed=0
   for t in "${tasks[@]}"; do
     if (done_one "$force" "$stop" "$discard_handoff" "$keep_brief" "$rm_branch" "$t"); then
       :
@@ -2189,12 +2269,22 @@ done_one() {
     git -C "$main" worktree remove "$dir" ||
       die "could not remove worktree $dir (see git's message above)"
   fi
+  # The outcome is composed into a variable and then printed, rather than
+  # printed directly: run from inside the task's own session, this pane is
+  # about to be erased, and end_task_session needs a copy of what was on it to
+  # replay in the terminal the user is left with. Capturing rather than
+  # re-wording keeps the two identical, including delete_branch's verdict —
+  # which is not knowable up front, since it keeps an unmerged branch.
+  local summary
   if [[ "$rm_branch" == 1 ]]; then
-    info "removed worktree $dir"
-    delete_branch "$main" "$branch" "$force"
+    summary="$(
+      info "removed worktree $dir"
+      delete_branch "$main" "$branch" "$force"
+    )"
   else
-    info "removed worktree $dir (branch '$branch' kept)"
+    summary="$(info "removed worktree $dir (branch '$branch' kept)")"
   fi
+  printf '%s\n' "$summary"
 
   # The tmux kill goes last, and every message above it is already printed.
   # On the server 'vibe done' is normally run from inside the task's own
@@ -2203,19 +2293,13 @@ done_one() {
   # never removed and not a byte was printed — not even the refusals above,
   # which all die further down the same doomed pane.
   #
-  # In multi-task 'vibe done a b', each done_one runs in its own subshell and
-  # 'vibe' itself runs from the main repo root (cmd_done cd's there first), not
-  # from any task's session — so killing task a's session does not take down
-  # the loop that still has task b to do. The self-SIGHUP case is only the
-  # single-task run started from inside that one task's pane.
+  # In multi-task 'vibe done a b', each done_one runs in its own subshell, so a
+  # kill only ends the whole command when the session being killed is the one
+  # vibe is running in. cmd_done defers that task to last for exactly that
+  # reason.
   local sess
   sess="$(tmux_session_name "$repo" "$branch")"
-  if command -v tmux >/dev/null 2>&1 && tmux has-session -t "$sess" 2>/dev/null; then
-    # Announce before killing, for the same reason: when the session is our
-    # own, a message printed afterwards dies with the pane.
-    info "killing tmux session $sess"
-    tmux kill-session -t "$sess"
-  fi
+  end_task_session "$sess" "$summary"
 }
 
 # default_base_ref MAIN — the ref a finished task's work should have landed in.
