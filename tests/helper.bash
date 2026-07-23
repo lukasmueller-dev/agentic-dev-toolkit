@@ -25,6 +25,11 @@ export VIBE="$REPO_ROOT/bin/vibe"
 unset SSH_CONNECTION SSH_TTY SSH_CLIENT
 # No hostname can contain a slash, so this never matches.
 export VIBE_SERVER_HOSTNAME="vibe-tests/never-a-real-host"
+# $TMUX is how vibe knows it is already inside a client: set, it switches the
+# client instead of attaching. Run the suite from inside tmux — which is where
+# this toolkit's own work happens — and every server-path test silently takes
+# the switch-client branch, so anything the attach branch does goes untested.
+unset TMUX TMUX_PANE
 
 # ---------------------------------------------------------------------------
 # Isolation from the real HOME
