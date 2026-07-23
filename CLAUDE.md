@@ -272,12 +272,25 @@ fresh checkout) needs it run once.
 shfmt -f . | xargs shellcheck     # lint
 shfmt -d -i 2 -ci .               # formatting
 bats tests/                       # tests
+./bin/skill-lint --strict skills  # skills, if you touched one
 ./install.sh doctor               # the live machine still resolves
 ```
 
 `doctor` is only meaningful from the checkout the symlinks point at
 (normally the main clone). Run from a worktree it reports every link as
 "not ours" — that is the ownership check working, not breakage.
+
+**Pass `skills` to `skill-lint` explicitly.** With no argument it prefers
+`./.claude/skills` over `./skills`, so a bare run at this repo's root
+checks the one skill in *this repo's own* Claude config and reports
+success — green, having linted none of the 13 skills you shipped.
+
+**Stage a new file under `skills/` before running `bats`.** The suite's
+`the suite creates and deletes nothing under skills/` guard greps
+`git status --porcelain` for `??` and `D` entries there, since a test that
+leaves a file behind or removes a tracked one is always a bug. It cannot
+tell that stray file from a skill file you just wrote, so authoring one
+turns the suite red until `git add`.
 
 Conventional Commits. The body should say *why* — a commit that fixes a
 data-loss bug should explain what was being lost.
