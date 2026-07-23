@@ -5,6 +5,11 @@ name: CI
 # default branch always runs, so a merge is always verified. On a repo with
 # free minutes, delete the `if:` line on each job and the `labeled` activity
 # type below.
+#
+# Assumes the default branch is `main`. If the repo's default is something else
+# (master, trunk, develop), replace `main` in the push trigger and the
+# concurrency line below — GitHub expands no variable there, and an unreplaced
+# `main` means no run ever fires on merge, contradicting the promise above.
 on:
   push:
     branches: [main]
@@ -33,7 +38,17 @@ jobs:
           go-version: stable
 
       - name: Format
-        run: test -z "$(gofmt -l .)"
+        # Report which files need formatting, rather than failing with an
+        # empty log — `test -z "$(gofmt -l .)"` swallows the file list into the
+        # substitution. For a vendoring repo, scope this to the module's own
+        # packages (see references/go.md) so committed vendor/ is not flagged.
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Vet
         run: go vet ./...

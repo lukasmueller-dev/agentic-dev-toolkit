@@ -29,6 +29,17 @@ REPO_DIR="$(git -C "$SELF_DIR" rev-parse --show-toplevel 2>/dev/null)" ||
     exit 1
   }
 
+# Stand in the checkout before doing anything else. `vibe` resolves the repo
+# from the *current directory*, not from an argument, and cron runs the job
+# from $HOME — which is not a git repo, so the loop would die "not a git repo."
+# the moment it started. Deriving REPO_DIR and never entering it is what made
+# that failure silent: the launch is wrapped in `|| rc=$?`, so the script went
+# on to log "done" and exit 0 every week without ever running a digest.
+cd "$REPO_DIR" || {
+  echo "sota-weekly: cannot enter $REPO_DIR" >&2
+  exit 1
+}
+
 # cron's PATH is famously minimal, and both `vibe` and the agent CLI are
 # normally installed into a home-directory bin.
 PATH="$HOME/bin:$HOME/.local/bin:$PATH"
@@ -74,14 +85,22 @@ TASK="sota $WEEK"
 # costs nothing extra. Re-running for a week whose worktree already exists
 # resumes that loop rather than starting a second one — which is exactly the
 # behaviour wanted after a crashed run.
-log "launching: vibe loop '$TASK' --pr --max 3"
+set -- --prompt "$BRIEF" --until "test -f docs/sota/$WEEK.md" --max 3 --pr
+
+# --no-attach only where it belongs: on a server the loop detaches into tmux
+# and cron has no tty to attach from, so it is required. On a local machine
+# 'vibe loop' runs in the foreground and REFUSES --no-attach outright — passing
+# it unconditionally made the by-hand run (docs/sota-watch.md) die instantly
+# rather than run. So ask vibe which environment this is and add the flag only
+# for a server. 'vibe where' prints "<env> (reason)"; the first word is env.
+env="$(vibe where | awk '{print $1}')"
+if [[ "$env" == "server" ]]; then
+  set -- "$@" --no-attach
+fi
+
+log "launching (env: ${env:-unknown}): vibe loop '$TASK' $*"
 rc=0
-vibe loop "$TASK" \
-  --prompt "$BRIEF" \
-  --until "test -f docs/sota/$WEEK.md" \
-  --max 3 \
-  --pr \
-  --no-attach || rc=$?
+vibe loop "$TASK" "$@" || rc=$?
 
 # On a server the loop detaches into tmux and this exit status only reports the
 # launch, not the run; on a local machine a non-zero status is the loop's own

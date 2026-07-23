@@ -211,14 +211,29 @@ jobs:
               exit 1
             }
           done
+          # The scaffold emits whole directories into other repos too, so ci/
+          # and gitignore/ fall under the same rule. A directory rename would
+          # make a glob match nothing and pass silently, so assert each is
+          # non-empty before grepping it.
+          for d in templates/ci templates/gitignore; do
+            test -n "$(find "$d" -type f 2>/dev/null | head -1)" || {
+              echo "::error::$d is empty or missing — this guard cannot run"
+              exit 1
+            }
+          done
           # 'vibe' unanchored on purpose: \bvibe\b misses $VIBE_WORKTREE_ROOT
           # (underscore is a word character, so \b never fires there). Agent
           # CLI names are part of the same rule — a template saying "ask
           # claude to review" is coupled just as surely as one naming vibe.
-          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac\b|\bVPS\b' \
+          # 'mac' carries an explicit (os|book)? rather than a bare \bmac\b:
+          # O and B are word characters, so \b never fires after "mac" in
+          # "macOS" or "MacBook" — the two spellings a real violation uses.
+          # Left anchored either side, so "machine" and "macro" still pass.
+          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
             templates/HANDOFF.md templates/LOOP.md \
             templates/LOOP_PR.md templates/PROJECT_STATUS.md \
-            templates/PROJECT_ROADMAP.md templates/repo/pre-push; then
+            templates/PROJECT_ROADMAP.md templates/repo/pre-push \
+            templates/ci templates/gitignore; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi

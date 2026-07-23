@@ -15,8 +15,9 @@
 #   - each pipeline segment's command word must be on the allowlist below;
 #     `git` additionally needs a read-only subcommand
 #   - no redirection except fd duplication (2>&1) and >/dev/null
-#   - no command substitution ($(...) or backticks) — the inner command is
-#     invisible to this vet, so run it as its own Bash call instead
+#   - no command substitution ($(...) or backticks) and no process
+#     substitution (<(...) or >(...)) — the inner command is invisible to
+#     this vet, so run it as its own Bash call instead
 #   - per-tool teeth: sed -i, sort -o, shfmt -w/-s, find -delete/-exec,
 #     tee, and awk programs that redirect or call system() are denied
 #
@@ -61,6 +62,10 @@ deny() {
 #   - marks unquoted '>' as \001 (quoted '>' — a grep pattern — stays '>')
 #   - marks '$(' and '`' as \002 wherever they are live (i.e. outside single
 #     quotes; both expand inside double quotes)
+#   - marks '<(' and '>(' as \002: process substitution runs a command as
+#     surely as $(...), but only outside all quoting (unlike $(...), it does
+#     not expand inside double quotes). '>(' is matched before the '>'
+#     redirect rule below, or it would read as a redirect to a file named '('
 # so the shell below can judge redirection and substitution without ever
 # mistaking quoted text for syntax. POSIX awk only: BSD and GNU agree here.
 # ---------------------------------------------------------------------------
@@ -80,6 +85,11 @@ segments="$(printf '%s\n' "$cmd" | awk '
         if (c == "$" && substr(line, i + 1, 1) == "(") { seg = seg "\002"; i++; continue }
       }
       if (!insq && !indq) {
+        # process substitution: a < or > immediately before ( runs a command,
+        # so mark it \002 before the redirect rule below can claim the > byte.
+        # (No apostrophes in this comment: it lives inside a single-quoted awk
+        # program, and one would close the string.)
+        if ((c == "<" || c == ">") && substr(line, i + 1, 1) == "(") { seg = seg "\002"; i++; continue }
         if (c == ">") { seg = seg "\001"; continue }
         # ">&" / "2>&1": & directly after a redirect is part of it
         if (c == "&" && substr(seg, length(seg), 1) == "\001") { seg = seg "&"; continue }
@@ -177,8 +187,11 @@ vet_word() { # vet_word FIRST-WORD SEGMENT — the per-command allowlist
       vet_flags "$seg" '-delete|-exec*|-ok*|-fprint*' "find"
       ;;
     awk)
+      # getline joins the list: `"cmd" | getline` runs a command whose text
+      # the pre-pass never sees (the pipe is inside the awk program's quotes,
+      # so it was not split into its own segment).
       case "$seg" in
-        *system\(* | *print*\>*) deny "this awk program writes (system() or a '>' redirect inside the script)" ;;
+        *system\(* | *print*\>* | *getline*) deny "this awk program can run a command or write (system(), 'cmd | getline', or a '>' redirect inside the script)" ;;
       esac
       ;;
     xargs)
@@ -224,7 +237,7 @@ vet_word() { # vet_word FIRST-WORD SEGMENT — the per-command allowlist
 # ---------------------------------------------------------------------------
 while IFS= read -r seg; do
   # substitution first: its payload is invisible to every later check
-  [[ "$seg" == *"$S"* ]] && deny 'command substitution — run the inner command as its own Bash call'
+  [[ "$seg" == *"$S"* ]] && deny 'command or process substitution — run the inner command as its own Bash call'
 
   # redirection: walk to each unquoted '>' and judge what follows. Only fd
   # duplication (2>&1) and /dev/null targets pass. Glob matching and prefix
@@ -238,7 +251,12 @@ while IFS= read -r seg; do
       : # fd duplication, harmless
     else
       target="${after#"${after%%[![:space:]]*}"}" # ltrim
-      [[ "$target" == /dev/null* ]] ||
+      # Compare the whole first word, not a /dev/null* prefix: the prefix form
+      # also accepted '/dev/nullx' (a real file) and anything else starting
+      # with those nine bytes. The word ends at the next redirect or space, so
+      # '>/dev/null 2>&1' still leaves '/dev/null' as the first word.
+      target_word="${target%%[[:space:]]*}"
+      [[ "$target_word" == /dev/null ]] ||
         deny "output redirection — only >/dev/null and 2>&1 pass"
     fi
     probe="$after"

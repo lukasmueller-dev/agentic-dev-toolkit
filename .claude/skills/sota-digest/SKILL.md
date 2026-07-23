@@ -1,6 +1,7 @@
 ---
 name: sota-digest
 description: "Writes the weekly state-of-the-art digest for this repo — surveys agentic-development sources by web search, diffs what it finds against PROJECT_ROADMAP.md and PROJECT_STATUS.md, and emits docs/sota/<YYYY-Www>.md with 1-3 recommendations formatted as ready-to-add roadmap items. Use when the unattended weekly run invokes it, or when the user asks for a SOTA digest, a state-of-the-art sweep, or 'what changed in agentic dev this week'. Repo-local: it only ever runs against this toolkit."
+disable-model-invocation: true
 ---
 
 # Weekly SOTA digest

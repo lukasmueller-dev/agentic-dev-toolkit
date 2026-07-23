@@ -276,6 +276,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   "$INSTALL" >/dev/null
   rm "$HOME/bin/vibe"
   run "$INSTALL" doctor
+  # Exit status too, not just the word: every sibling doctor test asserts
+  # status 1, and a regression that downgrades a missing managed link from
+  # FAIL to a warning (doctor still exits 0) would keep printing "missing"
+  # while silently reporting the checkout as healthy.
+  [ "$status" -eq 1 ]
   [[ "$(printf '%s\n' "$output" | plain)" == *"missing"* ]]
 }
 
@@ -352,8 +357,67 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # Mirrors ci.yml's guard — update both together. Bare 'Claude'/'Gemini'
   # stay allowed (the file names the instruction files CLAUDE.md/GEMINI.md);
   # vendor names, product compounds, and per-agent config paths do not.
+  #
+  # Existence check first, mirroring ci.yml: grep exits 2 on a missing file,
+  # which '-ne 0' accepts just as happily as "no match". Without this, renaming
+  # or deleting memory/GLOBAL.md turns the guard green forever instead of
+  # failing — the exact silent drift it exists to catch.
+  [ -f "$REPO_ROOT/memory/GLOBAL.md" ]
   run grep -niE 'Claude Code|Anthropic|OpenAI|ChatGPT|\bGPT\b|Copilot|Cursor|Codex|Gemini CLI|~/\.claude|~/\.codex|~/\.gemini' "$REPO_ROOT/memory/GLOBAL.md"
   [ "$status" -ne 0 ]
+}
+
+@test "templates stay tool-neutral" {
+  # Mirrors ci.yml's "templates stay tool-neutral" guard — update both
+  # together. CI is opt-in per PR here, so the bats suite is the real gate; a
+  # template that names a CLI, agent or machine re-couples the emitted document
+  # to one workflow. The CI templates and gitignores ship into other repos too.
+  local f d
+  for f in templates/HANDOFF.md templates/LOOP.md templates/LOOP_PR.md \
+    templates/PROJECT_STATUS.md templates/PROJECT_ROADMAP.md \
+    templates/repo/pre-push; do
+    # existence first: grep exits 2 on a missing file, which '-ne 0' accepts as
+    # readily as "no match", so a rename would retire the check silently.
+    [ -f "$REPO_ROOT/$f" ]
+  done
+  for d in templates/ci templates/gitignore; do
+    [ -n "$(find "$REPO_ROOT/$d" -type f 2>/dev/null | head -1)" ]
+  done
+  run grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
+    "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/LOOP.md \
+    "$REPO_ROOT"/templates/LOOP_PR.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
+    "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/repo/pre-push \
+    "$REPO_ROOT"/templates/ci "$REPO_ROOT"/templates/gitignore
+  [ "$status" -ne 0 ] || {
+    echo "a template names a specific tool or machine: $output" >&2
+    return 1
+  }
+}
+
+@test "repo-scaffold: every template it emits is present and parseable" {
+  # The skill copies these by path and must never write one from memory
+  # (SKILL.md). Nothing else asserts they exist, so a rename would surface only
+  # as an agent failing mid-scaffold in someone else's repo. Keep this list in
+  # step with skills/repo-scaffold/references/*.md.
+  local f have_yaml=0
+  python3 -c 'import yaml' 2>/dev/null && have_yaml=1
+  for f in go node python rust shell; do
+    [ -f "$REPO_ROOT/templates/ci/$f.yml" ]
+    # each CI workflow must be valid YAML, or it lands broken in a real repo.
+    # Degrade to existence-only where PyYAML is unavailable, rather than fail.
+    if [ "$have_yaml" -eq 1 ]; then
+      run python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" \
+        "$REPO_ROOT/templates/ci/$f.yml"
+      [ "$status" -eq 0 ] || {
+        echo "templates/ci/$f.yml is not valid YAML: $output" >&2
+        return 1
+      }
+    fi
+  done
+  for f in common go node python rust; do
+    [ -f "$REPO_ROOT/templates/gitignore/$f.gitignore" ]
+  done
+  [ -f "$REPO_ROOT/templates/repo/pre-push" ]
 }
 
 @test "install: rejects an unknown target" {

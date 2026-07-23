@@ -41,7 +41,7 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 
 | ID   | Tag      | Criterion | Why |
 | ---- | -------- | --------- | --- |
-| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. Recorded exceptions: a skill whose every side effect sits behind an explicit in-skill approval gate may stay model-invocable (`codebase-health` — findings are reported first, fixes need the user's category-by-category go-ahead; `repo-scaffold` — the audit is read-only and every write waits on the phase-3 gate). | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. When the human's approval is built into the flow itself, the gate is already there. |
+| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. Recorded exceptions: (a) a skill whose every side effect sits behind an explicit in-skill approval gate may stay model-invocable (`codebase-health` — findings are reported first, fixes need the user's category-by-category go-ahead; `repo-scaffold` — the audit is read-only and every write waits on the phase-3 gate); (b) a skill whose only side effect is idempotent, never-destructive scaffolding of files it owns and that is meant to run proactively (`project-status-scaffold` — creates the status/handoff files only when missing, never overwrites, and the workflow depends on it firing unasked at the end of a session). | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. When the human's approval is built into the flow itself, or the side effect cannot destroy anything and is wanted proactively, the gate is unnecessary. |
 
 ## Bundled files and portability
 

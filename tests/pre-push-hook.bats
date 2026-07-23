@@ -42,6 +42,38 @@ install_hook() {
   [ "$status" -eq 0 ]
 }
 
+@test "pre-push: protects a non-main default branch resolved from origin/HEAD" {
+  # A hardcoded 'main' protected nothing on a repo whose default is 'trunk'.
+  # The hook resolves the real default from the remote's HEAD at push time.
+  local bare work
+  bare="$BATS_TEST_TMPDIR/trunk-remote.git"
+  work="$BATS_TEST_TMPDIR/trunk-work"
+  git init -q --bare -b trunk "$bare"
+  git init -q -b trunk "$work"
+  git -C "$work" config user.email t@t
+  git -C "$work" config user.name t
+  echo a >"$work/a"
+  git -C "$work" add a
+  git -C "$work" commit -q -m init
+  git -C "$work" remote add origin "$bare"
+  git -C "$work" push -q -u origin trunk
+  git -C "$work" remote set-head origin -a
+  install_hook "$work"
+
+  echo b >>"$work/a"
+  git -C "$work" commit -q -am more
+  run git -C "$work" push origin trunk
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"blocked"* ]]
+
+  # a topic branch on the same repo still pushes
+  git -C "$work" checkout -q -b topic
+  echo c >>"$work/a"
+  git -C "$work" commit -q -am topic
+  run git -C "$work" push origin topic
+  [ "$status" -eq 0 ]
+}
+
 @test "pre-push: a clone without core.hooksPath set can still push main" {
   local r
   r="$(make_repo proj)"

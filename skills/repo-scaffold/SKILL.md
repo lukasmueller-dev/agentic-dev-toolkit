@@ -84,11 +84,22 @@ and go two levels up; templates are at `<toolkit>/templates/`.
   before merging into the default branch. The local hook stays regardless:
   it works offline and on every clone.
 - **CI** — copy `templates/ci/<type>.yml` to `.github/workflows/ci.yml`,
-  then adapt it to the repo's actual tooling per the reference file. If
-  minutes are billed, keep the opt-in `run-ci` label gate; otherwise strip
-  it as the template's header comment describes. Several types → one
-  workflow, one job per type. An existing workflow is left alone; report
-  what it lacks instead of replacing it.
+  then adapt it to the repo's actual tooling per the reference file.
+  - **Default branch** — the template hardcodes `main` in the push trigger
+    and the concurrency line. If the repo's default branch (resolved in
+    phase 1) is not `main`, replace it in both places; GitHub expands no
+    variable there, and an unreplaced `main` means CI never runs on merge.
+  - **The `run-ci` label** — if minutes are billed and you keep the label
+    gate, create the label too (`gh label create run-ci -c '#0e8a16'
+    -d 'Run CI on this PR'`), or the gate is unusable: `run-ci` is not one
+    of GitHub's default labels, so `gh pr edit --add-label run-ci` fails
+    until it exists. If minutes are free, strip the gate as the template's
+    header comment describes.
+  - Several types → one workflow, one job per type — and give each job a
+    distinct id (`check-python`, `check-shell`), not the template's shared
+    `check`, or the merged workflow has a duplicate mapping key and one job
+    silently vanishes. An existing workflow is left alone; report what it
+    lacks instead of replacing it.
 - **Status files** — run the sibling skill's script:
   `bash <toolkit>/skills/project-status-scaffold/scaffold.sh`. It is
   idempotent and owns those two files; do not reimplement it.
