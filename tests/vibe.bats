@@ -220,6 +220,13 @@ finish_task() {
   local wt
   wt="$(finish_task task-merged)"
   git merge -q --no-ff -m "merge task-merged" task-merged
+  # default_base_ref() prefers origin/HEAD, which real clones set but this
+  # fixture's init+push does not — so whether the ancestor check lands on
+  # local 'main' or 'origin/main' depends on git version/behavior, not on
+  # anything this test controls. Push the merge too, so it is an ancestor of
+  # both: this is also the real shape (a merged PR advances origin/main,
+  # which the local main checkout may not have pulled yet).
+  git push -q origin main
 
   run run_vibe "done" --rm-branch task-merged
   [ "$status" -eq 0 ]
