@@ -234,6 +234,18 @@ runner's `VIBE_*` variables and redirects `VIBE_CONFIG_FILE`, so the developer's
 own config cannot flip an assertion. A test that exercises the server path
 asserts against `$VIBE_TEST_TMUX_LOG`, never the live tmux server.
 
+**And it must never look like it is already inside tmux.** `$TMUX` is how
+`vibe` tells an attach from a switch-client, so a suite run from inside a tmux
+session — which is where this toolkit's own work happens — silently sends every
+server-path test down the switch-client branch, and whatever the attach branch
+does goes untested while still reporting green. `helper.bash` unsets it for
+that reason.
+
+A test that needs a real terminal — the only way to reach anything gated on
+`[[ -t 0 ]]` — runs its command under `tests/pty-run.py`, which allocates a pty
+and plays the terminal, answering queries after a delay the way a real one does
+over a laggy link. It skips itself where `python3` is missing.
+
 ## Protecting main
 
 This repo is private on GitHub Free, which has no branch protection or

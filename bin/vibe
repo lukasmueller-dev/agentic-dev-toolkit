@@ -445,6 +445,42 @@ tmux_ensure_session() {
   return 1
 }
 
+# drain_tty — discard whatever the terminal sent us while a child owned the
+# screen, before the shell gets the prompt back.
+#
+# tmux asks the terminal for its foreground and background colours (OSC 10 and
+# OSC 11) on *every* attach. The terminal answers on the tty input side, and
+# over a laggy SSH link the answer can still be in flight when the client goes
+# away — a quick detach, or a session whose program just exited. It then lands
+# in the shell that inherited the terminal, which shows it sitting on the
+# prompt as "10;rgb:cccc/cccc/cccc11;rgb:1818/1818/1818" (readline eats the
+# ESC as a meta prefix and echoes the rest). That is one Enter away from being
+# run as a command, so it is worth swallowing rather than living with.
+#
+# Flushing what has already arrived is not enough: over a slow link the answer
+# is still in flight when we look, and any fixed grace period is a guess about
+# the latency. So ask a question of our own instead — DSR 6, "where is the
+# cursor" — and read until its answer's terminating 'R'. A terminal answers in
+# order, so every stale answer queued ahead of ours is swallowed on the way,
+# however long the round trip takes. Colour answers are lowercase ("rgb:"), so
+# they can never be mistaken for the terminator.
+#
+# The read is silent (-s) so nothing it swallows is echoed onto the prompt,
+# and its timeout is a whole second because bash 3.2 — still what macOS ships
+# — rejects a fractional one. That second is only ever spent on a terminal
+# that does not answer DSR, which is a terminal that would not have answered
+# the colour query either: nothing to drain, nothing lost.
+drain_tty() {
+  [[ -t 0 ]] || return 0
+  local junk
+  # To /dev/tty, not stdout: 'vibe attach >log' must not get the query in it.
+  printf '\033[6n' >/dev/tty 2>/dev/null || return 0
+  # shellcheck disable=SC2034 # 'junk' is a sink, and 'R' is -d's terminator:
+  # both are meant to go unread — the point is the discarding, not the value.
+  read -r -s -t 1 -d R junk 2>/dev/null || true
+  return 0
+}
+
 # tmux_attach_or_switch SESS — bring SESS to the foreground. Inside an existing
 # tmux client, attach would nest a session; switch the client instead. Outside
 # tmux, attach.
@@ -453,7 +489,14 @@ tmux_attach_or_switch() {
   if [[ -n "${TMUX:-}" ]]; then
     tmux switch-client -t "$sess"
   else
-    tmux attach-session -t "$sess"
+    # Only the attach path takes the terminal away and hands it back, so only
+    # it can be left holding a stale answer to tmux's colour query. Keep
+    # attach's own status: draining is cleanup, and must not turn a failed
+    # attach into a silent success.
+    local rc=0
+    tmux attach-session -t "$sess" || rc=$?
+    drain_tty
+    return "$rc"
   fi
 }
 
