@@ -220,6 +220,13 @@ finish_task() {
   local wt
   wt="$(finish_task task-merged)"
   git merge -q --no-ff -m "merge task-merged" task-merged
+  # default_base_ref() prefers origin/HEAD, which real clones set but this
+  # fixture's init+push does not — so whether the ancestor check lands on
+  # local 'main' or 'origin/main' depends on git version/behavior, not on
+  # anything this test controls. Push the merge too, so it is an ancestor of
+  # both: this is also the real shape (a merged PR advances origin/main,
+  # which the local main checkout may not have pulled yet).
+  git push -q origin main
 
   run run_vibe "done" --rm-branch task-merged
   [ "$status" -eq 0 ]
@@ -768,6 +775,87 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "start: --no-attach kicks off a fresh session with the handoff when it carries real content (server)" {
+  # The bug this guards: the SessionStart hook only injects HANDOFF.md as
+  # context, nobody submits it as a turn, so an agent started with no
+  # attached tty sat idle with the handoff loaded but never acted on.
+  cd "$(make_repo proj)"
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "kick server" --no-attach
+  [ "$status" -eq 0 ]
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/kick-server/HANDOFF.md"
+  : >"$VIBE_TEST_TMUX_LOG"
+
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "kick server" --no-attach
+  [ "$status" -eq 0 ]
+  local kickoff
+  kickoff="$(printf '%q' 'Begin per HANDOFF.md.')"
+  grep -qF "send-keys -t vibe-proj-kick-server true $kickoff C-m" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "start: --no-attach sends no kickoff when the handoff is only the template (server)" {
+  cd "$(make_repo proj)"
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "no kick server" --no-attach
+  [ "$status" -eq 0 ]
+  grep -q "send-keys -t vibe-proj-no-kick-server true C-m" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "start: local exec appends the kickoff prompt as its own argv element when the handoff carries real content" {
+  cd "$(make_repo proj)"
+  local agent="$BATS_TEST_TMPDIR/agent.sh"
+  cat >"$agent" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$ARGV_LOG"
+EOF
+  chmod +x "$agent"
+
+  run_vibe start "kick local" >/dev/null
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/kick-local/HANDOFF.md"
+
+  run env ARGV_LOG="$BATS_TEST_TMPDIR/argv" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$agent" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "kick local"
+  [ "$status" -eq 0 ]
+  # A genuine argv element, not a string the agent has to re-split: the
+  # embedded spaces in "Begin per HANDOFF.md." must survive as one line.
+  [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "Begin per HANDOFF.md." ]
+}
+
+@test "start: local exec sends no kickoff when the handoff is only the template" {
+  cd "$(make_repo proj)"
+  local agent="$BATS_TEST_TMPDIR/agent.sh"
+  cat >"$agent" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >"$ARGV_LOG"
+EOF
+  chmod +x "$agent"
+
+  run env ARGV_LOG="$BATS_TEST_TMPDIR/argv" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$agent" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "no kick local"
+  [ "$status" -eq 0 ]
+  # printf '%s\n' with zero args still writes one blank line — assert no
+  # argv content rather than an empty file.
+  [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "" ]
+}
+
 @test "start: --no-attach refuses on local before creating anything" {
   cd "$(make_repo proj)"
   run run_vibe start "det start" --no-attach
@@ -1122,6 +1210,47 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"resuming it"* ]]
   grep -q "send-keys -t vibe-proj-task-resume stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: kicks off the relaunch with the handoff when it carries real content (server)" {
+  cd "$(make_repo proj)"
+  run_vibe start "task dead kick" >/dev/null
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/task-dead-kick/HANDOFF.md"
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-dead-kick")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=bash \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task dead kick"
+  [ "$status" -eq 0 ]
+  local kickoff
+  kickoff="$(printf '%q' 'Begin per HANDOFF.md.')"
+  grep -qF "send-keys -t vibe-proj-task-dead-kick stub-agent $kickoff" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: resuming an old conversation never adds the kickoff, even with real handoff content" {
+  cd "$(make_repo proj)"
+  run_vibe start "task resume kick" >/dev/null
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/task-resume-kick/HANDOFF.md"
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-resume-kick")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=bash \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_AGENT_RESUME_ARGS=--stub-continue \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "task resume kick"
+  [ "$status" -eq 0 ]
+  grep -q "send-keys -t vibe-proj-task-resume-kick stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
+  run grep -q "Begin per HANDOFF" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
 }
 
 @test "attach: never types into a pane that is still running something" {

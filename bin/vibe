@@ -194,6 +194,16 @@ VIBE_LOOP_BRIEF_ARCHIVE="vibe-loop-brief.md"
 # skills/_lib/vibe-lib.sh — update all three together.
 VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
 
+# open_session's kickoff turn for a genuinely fresh agent launch (new tmux
+# session, a dead pane restarted without VIBE_AGENT_RESUME_ARGS, or the local
+# exec branch) when handoff_carries_content is true. The SessionStart hook
+# only injects HANDOFF.md as context; nobody submits it as a turn, so an
+# agent started with no attached tty (--no-attach, or a script) would
+# otherwise sit at an idle prompt with the handoff loaded but never acted on.
+# Fixed rather than configurable: it names no agent and no CLI flag, just the
+# next thing to do.
+VIBE_HANDOFF_KICKOFF_PROMPT="Begin per HANDOFF.md."
+
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
@@ -1699,7 +1709,7 @@ open_session() {
 
   if [[ "$env" == "server" ]]; then
     need tmux
-    local sess launch
+    local sess launch launch_fresh
     sess="$(tmux_session_name "$repo" "$branch")"
     # VIBE_RC_ON_START launches the agent with Remote Control already on, so
     # the session is reachable from the phone without a later 'vibe rc'. This
@@ -1707,7 +1717,18 @@ open_session() {
     # leave VIBE_RC_ON_START at 0 and use 'vibe rc' instead.
     launch="$VIBE_AGENT_CMD"
     [[ "$VIBE_RC_ON_START" == "1" ]] && launch="$VIBE_AGENT_CMD --remote-control"
-    if tmux_ensure_session "$sess" "$dir" "$launch"; then
+    # launch_fresh is what actually starts a brand-new conversation (a new
+    # tmux session, or a dead pane restarted with no resume args) — launch
+    # itself stays free of the kickoff so it can still be combined with
+    # VIBE_AGENT_RESUME_ARGS below without carrying it into a resumed
+    # conversation. printf %q quotes the prompt as a single shell word, since
+    # tmux send-keys types this string into a live shell rather than
+    # exec'ing an argv.
+    launch_fresh="$launch"
+    if handoff_carries_content "$dir/HANDOFF.md"; then
+      launch_fresh="$launch $(printf '%q' "$VIBE_HANDOFF_KICKOFF_PROMPT")"
+    fi
+    if tmux_ensure_session "$sess" "$dir" "$launch_fresh"; then
       info "attaching to existing tmux session: $sess"
       # The session outlives the agent. When the agent exits, the pane falls
       # back to a shell and the session keeps running — so attaching alone
@@ -1719,7 +1740,7 @@ open_session() {
       local pane_cmd relaunch
       pane_cmd="$(tmux_pane_cmd "$sess")"
       if pane_is_idle_shell "$pane_cmd"; then
-        relaunch="$launch"
+        relaunch="$launch_fresh"
         if [[ -n "$VIBE_AGENT_RESUME_ARGS" ]]; then
           relaunch="$launch $VIBE_AGENT_RESUME_ARGS"
           info "agent not running there — resuming it: $relaunch"
@@ -1748,6 +1769,9 @@ open_session() {
     cd "$dir"
     # shellcheck disable=SC2206
     local -a agent_argv=($VIBE_AGENT_CMD)
+    if handoff_carries_content "$dir/HANDOFF.md"; then
+      agent_argv+=("$VIBE_HANDOFF_KICKOFF_PROMPT")
+    fi
     exec "${agent_argv[@]}"
   fi
 }
