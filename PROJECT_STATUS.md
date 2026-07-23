@@ -89,6 +89,14 @@ the installer's auto-discovery rules.
   `PROJECT_ROADMAP.md` (template + scaffold + `add-roadmap-item` skill,
   which holds new items to the pick-up-cold design bar); this file keeps
   only a pointer. Rationale in the PR for `feat-roadmap`.
+- 2026-07-23: `open_session()` now submits a fixed kickoff prompt
+  (`Begin per HANDOFF.md.`) as the agent's first turn whenever a genuinely
+  fresh launch — a new tmux session, a dead pane restarted with no
+  `VIBE_AGENT_RESUME_ARGS`, or the local exec branch — finds real
+  `HANDOFF.md` content. The `SessionStart` hook only injects the handoff as
+  context and never submits a turn, so `vibe start --no-attach` and any
+  scripted start previously left the agent idle with the handoff loaded but
+  unread. Rationale in the PR for `fix-handoff-start-bug`.
 
 ## Roadmap
 
