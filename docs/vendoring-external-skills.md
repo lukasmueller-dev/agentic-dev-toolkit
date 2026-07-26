@@ -1,8 +1,16 @@
-# Plugins: pulling in external skills (design draft)
+# Vendoring external skills (design draft)
 
 > Status: **draft / not implemented.** This documents the intended
-> architecture for making the toolkit pluggable. Nothing described here
-> exists yet.
+> architecture for pulling external skills *into* the toolkit. Nothing
+> described here exists yet.
+>
+> Direction matters: this is about content coming **in** — third-party
+> skills vendored into this repo and installed by the usual symlink farm.
+> Shipping this toolkit **out** as a Claude Code plugin (`.claude-plugin/`,
+> for web and cloud sessions with no `$HOME` to symlink into) is a separate
+> problem with separate tradeoffs. The two share the word "plugin" and
+> nothing else; this file was originally named `docs/plugins.md`, which is
+> why.
 
 The skills ecosystem has matured: `SKILL.md` is an open standard, and repos
 like `anthropics/skills`, `obra/superpowers-skills`, and the collections
