@@ -134,6 +134,8 @@ Optional: [phone notifications](docs/notifications.md), and
   a PR to mergeable
 - [The SOTA watch](docs/sota-watch.md) — the weekly unattended digest this repo
   runs on itself
+- [Vendoring external skills](docs/vendoring-external-skills.md) — design
+  draft, not implemented
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements
