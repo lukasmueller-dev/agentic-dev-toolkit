@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "agentic-dev-toolkit",
+  "displayName": "Agentic Dev Toolkit",
+  "description": "The skills, subagents and session hooks from agentic-dev-toolkit, for sessions with no $HOME to symlink into — web, cloud and sandboxed runs. install.sh stays the install path on a real machine.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Lukas Mueller"
+  },
+  "repository": "https://github.com/lukasmueller-dev/agentic-dev-toolkit",
+  "license": "MIT",
+  "keywords": ["skills", "subagents", "hooks", "handoff", "workflow"],
+  "agents": [
+    "./claude/agents/diff-reviewer.md",
+    "./claude/agents/docs-drift.md",
+    "./claude/agents/security-sweep.md",
+    "./claude/agents/test-hardener.md"
+  ],
+  "hooks": "./.claude-plugin/hooks.json"
+}

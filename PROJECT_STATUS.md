@@ -104,6 +104,19 @@ the installer's auto-discovery rules.
   know about; requiring both conditions makes it a strict subset of what
   `--uninstall` already removes, so it was made automatic rather than opt-in.
   Rationale in the PR for `prune-orphan-symlinks`.
+- 2026-07-26: The toolkit has a **second install path**, `.claude-plugin/`, for
+  sessions with no `$HOME` to symlink into. Pure addition in both directions —
+  `install.sh` never scans it, it never runs `install.sh`. Two things a plugin
+  cannot do are replaced by session hooks wired only from the plugin side:
+  `memory/GLOBAL.md` is injected as `SessionStart` context (no plugin
+  populates `~/.claude/CLAUDE.md`, and a plugin-root `CLAUDE.md` is not
+  loaded), and the reviewer agents' Bash allowlist is reapplied by
+  `agent_type` from a session-level hook (Claude Code refuses `hooks:` in a
+  plugin agent's frontmatter). The permission/sandbox baseline and the
+  statusline deliberately do not travel — a plugin may not set them, and a
+  permission baseline arriving from a package is the one thing
+  `docs/vendoring-external-skills.md` argues should never happen. See
+  `docs/plugin.md`; rationale in the PR for `claude-plugin-manifest`.
 
 ## Roadmap
 

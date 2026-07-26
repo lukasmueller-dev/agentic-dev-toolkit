@@ -141,6 +141,12 @@ jobs:
       - name: settings.json is valid JSON
         run: jq empty claude/settings.json
 
+      # The plugin manifest is the second install path's whole contract; a
+      # syntax error there fails the load with no symlink to fall back on.
+      # `claude plugin validate` is the schema check, but the CLI is not in CI.
+      - name: plugin manifest and hook config are valid JSON
+        run: jq empty .claude-plugin/plugin.json .claude-plugin/hooks.json
+
       - name: VS Code snippets parse once comments are stripped
         run: |
           for f in vscode/*.jsonc; do

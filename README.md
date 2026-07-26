@@ -27,6 +27,7 @@ Then `./install.sh doctor` to check it landed.
 | [`vscode/`](vscode/) | Terminal profile that opens every window with `vibe status` |
 | [`tmux/`](tmux/) | tmux snippet tuned for detached agent sessions |
 | [`install.sh`](install.sh) | Install, verify and uninstall, per target |
+| [`.claude-plugin/`](.claude-plugin/) | Claude Code plugin manifest — the same skills, agents and hooks for sessions with no `$HOME` to symlink into. [Docs](docs/plugin.md) |
 
 ### Skills
 
@@ -106,6 +107,21 @@ policy, hooks and the statusline; your `model`, `effortLevel` and
 accumulated permission rules are left alone, and the permission and sandbox
 arrays are unioned rather than replaced.
 
+### Without a `$HOME` to install into
+
+A web session, a cloud sandbox or a throwaway container has nowhere to put
+symlinks. Load the repo as a Claude Code plugin instead:
+
+```bash
+claude --plugin-dir ~/git/agentic-dev-toolkit
+```
+
+Same skills, same subagents, same session hooks, loaded in place. Skills arrive
+namespaced (`/agentic-dev-toolkit:handoff-brief`). Two things do not travel: the
+permission and sandbox baseline, which a plugin may not set, and the statusline.
+The global memory does, through a `SessionStart` hook rather than a memory file.
+See [the plugin docs](docs/plugin.md).
+
 ### After installing
 
 Put `~/bin` on your PATH:
@@ -143,6 +159,8 @@ Optional: [phone notifications](docs/notifications.md), and
   runs on itself
 - [Vendoring external skills](docs/vendoring-external-skills.md) — design
   draft, not implemented
+- [The Claude Code plugin](docs/plugin.md) — the second install path, for
+  sessions with no `$HOME`
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements
