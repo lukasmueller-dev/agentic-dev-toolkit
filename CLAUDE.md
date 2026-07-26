@@ -94,6 +94,19 @@ Rules the installer keeps, which any change must preserve:
   out of `~/.claude/skills`.
 - **`claude/*/` is linked only once it holds more than a README**, so an empty
   `agents/` does not drop a stray README where Claude Code scans.
+- **Orphans are pruned, and only orphans.** Because the map is rebuilt from
+  the repo each run, it describes what should exist and nothing about what
+  used to — a renamed skill leaves its old symlink behind in a directory
+  Claude Code scans, invisible to `doctor`, which only walks the map. So
+  every run removes symlinks in a managed directory that both resolve back
+  into this checkout *and* resolve to nothing. Both conditions are load-
+  bearing: together they are a strict subset of what `--uninstall` already
+  removes, so pruning cannot lose anything that was not already lost, and
+  foreign litter stays someone else's to clean. The scan is one level deep by
+  design — `~/.claude/agents` and `~/.claude/hooks` are whole-directory
+  symlinks *into* the repo, so descending would judge repo files by rules
+  meant for install destinations. A dangling link at a *mapped* path is a
+  different diagnosis (`dangling`, its source is missing) and is excluded.
 
 ### The two files that are merged, not symlinked
 

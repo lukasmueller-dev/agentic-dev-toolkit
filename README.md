@@ -86,9 +86,16 @@ Targets: `all` (default), `bin`, `skills`, `claude`, `codex`, `gemini`,
 Adding a tool means dropping a file in `bin/`, or a directory in `skills/`.
 The installer rebuilds its link map every run — no edits needed.
 
-It will not delete anything: a real file at a managed path is moved to
+It will not delete anything you own: a real file at a managed path is moved to
 `~/.agentic-dev-toolkit-backups/<timestamp>/` first, and `--uninstall` removes
 a symlink only after confirming it points back into this checkout.
+
+The one thing it does remove unasked is its own litter. Rename a skill and the
+old symlink stays behind in `~/.claude/skills`, pointing at a directory that no
+longer exists — in a directory Claude Code scans. Every run prunes symlinks
+that both point into this checkout *and* resolve to nothing, so a rename needs
+no manual cleanup on any machine. `--dry` shows them without removing, and
+`doctor` reports them.
 
 Two things are merged rather than symlinked, both with `jq` and both backed up
 first: `vscode/*.jsonc`, because those are fragments; and
