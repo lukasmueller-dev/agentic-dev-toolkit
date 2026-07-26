@@ -104,13 +104,39 @@ the installer's auto-discovery rules.
   know about; requiring both conditions makes it a strict subset of what
   `--uninstall` already removes, so it was made automatic rather than opt-in.
   Rationale in the PR for `prune-orphan-symlinks`.
+- 2026-07-26: The toolkit has a **second install path**, `.claude-plugin/`, for
+  sessions with no `$HOME` to symlink into. Pure addition in both directions —
+  `install.sh` never scans it, it never runs `install.sh`. Two things a plugin
+  cannot do are replaced by session hooks wired only from the plugin side:
+  `memory/GLOBAL.md` is injected as `SessionStart` context (no plugin
+  populates `~/.claude/CLAUDE.md`, and a plugin-root `CLAUDE.md` is not
+  loaded), and the reviewer agents' Bash allowlist is reapplied by
+  `agent_type` from a session-level hook (Claude Code refuses `hooks:` in a
+  plugin agent's frontmatter). The permission/sandbox baseline and the
+  statusline deliberately do not travel — a plugin may not set them, and a
+  permission baseline arriving from a package is the one thing
+  `docs/vendoring-external-skills.md` argues should never happen. See
+  `docs/plugin.md`; rationale in the PR for `claude-plugin-manifest`.
+- 2026-07-26: MCP servers are **documented, never installed**
+  (`docs/mcp-servers.md`). User and local scope both live in `~/.claude.json`,
+  which Claude Code writes to itself — the same file class as
+  `settings.json`'s runtime keys — and the plugin does not ship an `.mcp.json`
+  either, on the same grounds as the permission baseline: what an agent can
+  reach is the user's decision, not a package's. Project-owned servers still
+  have a home, `.mcp.json` at a project root, which is a per-repo choice.
+  The doc's actual content is the curation: three servers worth connecting,
+  and why most reference servers duplicate a built-in tool — with `Memory`
+  singled out, since a per-machine knowledge graph contradicts an artifact
+  architecture that keeps state in git. Rationale in the PR for
+  `mcp-server-list`.
 
 ## Roadmap
 
 Planned work lives in `PROJECT_ROADMAP.md`, one designed item per task —
-this file keeps only the pointer. (Track A — unattended execution — and
-Track C — verification debt — completed and were removed; their trail is
-in the merged PRs.)
+this file keeps only the pointer. (Track A — unattended execution — the
+original Track C — verification debt — and now Track B — portability —
+completed and were removed; their trail is in the merged PRs. The Track C
+still listed is the later `research-*` family, which reused the letter.)
 
 ## Open questions
 

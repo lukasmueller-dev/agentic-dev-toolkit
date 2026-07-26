@@ -11,6 +11,8 @@ directory at `~/.claude/hooks`, and wired up by `../settings.json`.
 | `notify-ntfy.sh`          | `Notification` hook    | Pushes to my phone via ntfy.sh                  |
 | `readonly-bash.sh`        | `PreToolUse(Bash)`, from agent frontmatter | Holds the reviewer subagents' Bash to a read-only allowlist |
 | `statusline.sh`           | `statusLine` command   | Renders `repo · branch · task`                  |
+| `inject-global-memory.sh` | `SessionStart` hook, **plugin only** | Injects `memory/GLOBAL.md` where no `~/.claude/CLAUDE.md` exists |
+| `readonly-bash-for-reviewers.sh` | `PreToolUse(Bash)`, **plugin only** | Narrows a session-wide hook back down to the three read-only agents |
 
 `statusline.sh` is not a hook event — Claude Code calls it through the
 `statusLine` setting. It lives here because it is the same kind of artifact (an
@@ -21,6 +23,14 @@ directory beats two.
 subagents' own frontmatter (`../agents/*.md`), not in `settings.json`, so it
 fires only while one of those agents runs. Blocking works by exiting 2 with
 the reason on stderr, which PreToolUse feeds back to the model.
+
+The last two are wired by `../../.claude-plugin/hooks.json` and by nothing in
+`settings.json`, so on a machine with the symlink install they are inert files
+sitting in `~/.claude/hooks`. Each exists to replace something a plugin cannot
+do — a global memory file, and a hook in a plugin agent's frontmatter — and
+wiring either one here would double up on a job the symlink install already
+does. `tests/plugin.bats` asserts they stay out of the baseline; `docs/plugin.md`
+has the reasoning.
 
 ## Rules for anything added here
 

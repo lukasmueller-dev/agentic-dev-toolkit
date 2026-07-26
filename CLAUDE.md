@@ -22,6 +22,7 @@ every agent. This file is only about changing the toolkit itself.
 | `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |
 | `vscode/`     | VS Code settings fragments                          | Yes            |
 | `tmux/`       | tmux snippet for server sessions                    | Yes            |
+| `.claude-plugin/` | Claude Code plugin manifest + its hook wiring   | Yes            |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
 | `tests/`      | bats suites                                         | —              |
 | `.githooks/`  | Git hooks for developing *this* repo (not installed)| —              |
@@ -62,6 +63,36 @@ symlinked to `~/.claude/CLAUDE.md` and reaches the shared half through an
 Claude Code silently loses the workflow memory while every symlink still
 reports `ok`; `./install.sh doctor` fails on it for that reason. The other two
 agents symlink `memory/GLOBAL.md` directly.
+
+The plugin is the one install path with no `~/.claude/CLAUDE.md` to import
+through, so it injects the same file as `SessionStart` context instead. Details
+in `docs/plugin.md`; the thing to remember here is that `memory/GLOBAL.md` now
+has three consumers, not two, and none of them may be named in it.
+
+## The second install path: `.claude-plugin/`
+
+`install.sh` needs a `$HOME` to symlink into. Web sessions, cloud sandboxes and
+disposable containers have neither that nor a stable checkout, so the repo also
+carries a Claude Code plugin manifest — the same files, loaded in place, with
+nothing written outside the repo. `docs/plugin.md` is the full account; three
+rules matter when changing anything here:
+
+- **It is a pure addition, in both directions.** `install.sh` never scans
+  `.claude-plugin/`, and the plugin loader never runs `install.sh`. A change
+  that makes either depend on the other has broken the property that lets a
+  real machine keep the symlink install unchanged.
+- **The hook wiring exists twice on purpose.** `claude/settings.json` addresses
+  `$HOME/.claude/hooks/…`; `.claude-plugin/hooks.json` addresses
+  `${CLAUDE_PLUGIN_ROOT}/claude/hooks/…`. They cannot be one file, and neither
+  is generated from the other, so `tests/plugin.bats` is what keeps them in
+  step — add a hook to one and the suite tells you about the other.
+- **`agents` in the manifest is a list of files.** The validator rejects a
+  directory, so this is the one place auto-discovery does not apply. A new
+  agent needs a manifest line; the suite fails until it gets one.
+
+`claude plugin validate .` is the schema check. It warns about this repo's own
+`CLAUDE.md` — a plugin root's `CLAUDE.md` is not loaded as context — which is
+expected and unavoidable, so do not run it with `--strict`.
 
 ## Installer auto-discovery contract
 
@@ -136,6 +167,21 @@ Merging must be idempotent in both directions: creating the file from scratch
 and merging into an existing one produce byte-identical output, so a second
 run reports `already applied` and leaves no backup. Creating by copying broke
 this once — the copy's arrays were unsorted while the merge sorts them.
+
+### The file that is neither: `~/.claude.json`
+
+Claude Code keeps MCP servers (user and local scope), per-project server
+approvals and other interactive state there, and writes it constantly. It is
+not symlinked, not merged, and not read — **nothing in this repo touches it**.
+The same reasoning as the runtime keys above, one step further: there is no
+stable baseline to merge, because every line of it is a choice someone made
+in a session.
+
+So MCP servers are documented and never installed — `docs/mcp-servers.md`
+curates which few are worth connecting. A server that belongs to a project
+rather than to a person goes in that project's own `.mcp.json`, which is
+version-controllable by design, and is that repo's business rather than this
+one's.
 
 ## Shell
 

@@ -19,6 +19,16 @@ Bash. Each reviewer therefore carries a frontmatter `PreToolUse` hook running
 Bash command to a read-only allowlist and blocks the rest with a message
 saying what to do instead.
 
+That frontmatter block is dropped when these definitions ship through the
+Claude Code plugin — `hooks:` is refused in a plugin agent's frontmatter, for
+the sound reason that a plugin could otherwise install a hook by shipping an
+agent nobody invokes. The plugin restores the guard from the session side
+instead, through
+[`../hooks/readonly-bash-for-reviewers.sh`](../hooks/readonly-bash-for-reviewers.sh);
+see [`docs/plugin.md`](../../docs/plugin.md). Adding an agent here means adding
+a line to `.claude-plugin/plugin.json` — the manifest lists agent *files*, not
+a directory — and `tests/plugin.bats` fails if you forget.
+
 The roster is composed, not imported. `skills/team-up` reads this directory
 and the repo's `.claude/agents` at the start of a task and drafts who owns
 what; nothing is ever copied between the two, so a repo-local agent stays the
