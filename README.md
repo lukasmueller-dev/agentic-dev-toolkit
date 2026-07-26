@@ -161,6 +161,8 @@ Optional: [phone notifications](docs/notifications.md), and
   draft, not implemented
 - [The Claude Code plugin](docs/plugin.md) — the second install path, for
   sessions with no `$HOME`
+- [MCP servers](docs/mcp-servers.md) — which few to connect, and why most of
+  the popular ones are redundant here
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

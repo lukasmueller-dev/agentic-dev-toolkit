@@ -168,6 +168,21 @@ and merging into an existing one produce byte-identical output, so a second
 run reports `already applied` and leaves no backup. Creating by copying broke
 this once — the copy's arrays were unsorted while the merge sorts them.
 
+### The file that is neither: `~/.claude.json`
+
+Claude Code keeps MCP servers (user and local scope), per-project server
+approvals and other interactive state there, and writes it constantly. It is
+not symlinked, not merged, and not read — **nothing in this repo touches it**.
+The same reasoning as the runtime keys above, one step further: there is no
+stable baseline to merge, because every line of it is a choice someone made
+in a session.
+
+So MCP servers are documented and never installed — `docs/mcp-servers.md`
+curates which few are worth connecting. A server that belongs to a project
+rather than to a person goes in that project's own `.mcp.json`, which is
+version-controllable by design, and is that repo's business rather than this
+one's.
+
 ## Shell
 
 Every shell file must pass **shellcheck** and be formatted with

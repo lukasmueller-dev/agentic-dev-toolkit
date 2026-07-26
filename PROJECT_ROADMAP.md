@@ -13,12 +13,6 @@ One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) or a
 `LOOP.md` (the `loop-brief` skill) can be staged straight from it. Order
 matters within a track; tracks are independent.
 
-Track B — portability and team:
-
-- [ ] Curated MCP server list in `docs/` (docs-first; `~/.claude.json` is
-      Claude-written and stays unmanaged — same file class as
-      `settings.json`'s runtime keys)
-
 Track C — research-codebase skills:
 
 A family of portable skills for working in research codebases (the
