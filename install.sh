@@ -36,6 +36,10 @@
 #   - A real (non-symlink) file is never deleted, only backed up.
 #   - --uninstall removes a symlink only after confirming it points into THIS
 #     repo, so it can never take out something another tool installed.
+#   - Orphans are pruned: a symlink left in a managed directory that points
+#     into this repo at something no longer there — what a renamed skill
+#     leaves behind — is removed. Both conditions are required, so this stays
+#     a strict subset of what --uninstall already removes.
 set -euo pipefail
 
 REPO="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -237,6 +241,93 @@ build_map() {
     [[ -f "$GLOBAL_MEMORY" ]] &&
       map_add "$GLOBAL_MEMORY" "$HOME/.gemini/GEMINI.md" gemini
   fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Orphans
+#
+# The link map is rebuilt from the repo on every run, so it describes what
+# SHOULD exist and knows nothing about what used to. Rename a skill and the old
+# symlink survives in ~/.claude/skills pointing at a directory that is gone —
+# invisible to doctor, which only walks the map, and still scanned by Claude
+# Code. Until this existed, every rename needed manual cleanup on every machine.
+#
+# Pruning deletes a symlink the current repo does not know about, which is the
+# authority --uninstall's ownership check exists to constrain. Two conditions
+# together keep it inside that constraint:
+#
+#   1. the link resolves back into THIS checkout (owned_by_repo), and
+#   2. it resolves to nothing.
+#
+# That is a strict subset of what --uninstall already removes — those links at
+# least still point at real files — so nothing is lost that was not already
+# lost, and the never-delete-a-real-file rule is untouched. Run from a worktree,
+# links into the main checkout are "not ours" and are left alone, the same way
+# doctor reports them.
+# ---------------------------------------------------------------------------
+
+# managed_dirs — the directories this run links into, deduped. Derived from the
+# map, not hardcoded, so a new destination directory never needs an edit here —
+# and a target left out of TARGETS is never scanned.
+managed_dirs() {
+  local rec rest dst
+  for rec in ${MAP[@]+"${MAP[@]}"}; do
+    rest="${rec#*	}"
+    dst="${rest%%	*}"
+    printf '%s\n' "${dst%/*}"
+  done | sort -u
+}
+
+# in_map DST — true when DST is a destination this run manages. A dangling link
+# at a mapped path is a different diagnosis with a different fix — its source
+# is missing, and ./install.sh relinks it — so it is not an orphan, and doctor
+# must not report the same link under both headings.
+in_map() {
+  local rec rest
+  for rec in ${MAP[@]+"${MAP[@]}"}; do
+    rest="${rec#*	}"
+    [[ "${rest%%	*}" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+# orphan_links — one path per line: symlinks sitting directly in a managed
+# directory that this repo owns, that resolve to nothing, and that no map
+# entry claims.
+#
+# Deliberately not recursive. ~/.claude/agents and ~/.claude/hooks are
+# whole-directory symlinks into the repo, so descending would walk repo files
+# and judge them by rules meant for install destinations. No managed basename
+# begins with a dot, so a plain glob covers everything and avoids . and .. .
+orphan_links() {
+  local dir l
+  while IFS= read -r dir; do
+    [[ -d "$dir" ]] || continue
+    for l in "$dir"/*; do
+      [[ -L "$l" ]] || continue # the unmatched glob lands here too
+      if [[ -e "$l" ]]; then continue; fi
+      owned_by_repo "$l" || continue
+      if in_map "$l"; then continue; fi
+      printf '%s\n' "$l"
+    done
+  done < <(managed_dirs)
+}
+
+# prune_orphans — remove them, honouring --dry. Header printed only when there
+# is something to report, so a healthy run stays quiet.
+prune_orphans() {
+  local l n=0
+  while IFS= read -r l; do
+    n=$((n + 1))
+    if ((n == 1)); then hdr "orphans"; fi
+    if ((DRY)); then
+      say "  prune    $l -> $(link_target "$l" 2>/dev/null || true) (gone from the repo)"
+    else
+      rm "$l"
+      ok "  pruned   $l (gone from the repo)"
+    fi
+  done < <(orphan_links)
   return 0
 }
 
@@ -594,6 +685,16 @@ run_doctor() {
     fi
   done
 
+  # Orphans are invisible to the loop above, which only walks the map. A
+  # warning rather than a failure: ./install.sh clears them on its own, and
+  # doctor's job here is to name the thing that needs running, not to declare
+  # the install broken.
+  local orph
+  while IFS= read -r orph; do
+    d_wn '%s -> %s (orphaned: gone from the repo — run ./install.sh to prune)' \
+      "$orph" "$(link_target "$orph" 2>/dev/null || true)"
+  done < <(orphan_links)
+
   hdr "PATH"
   case ":$PATH:" in
     *":$HOME/bin:"*) d_ok '%s is on PATH' "$HOME/bin" ;;
@@ -709,6 +810,11 @@ if ((UNINSTALL)); then
     rest="${rec#*	}"
     do_unlink "${rest%%	*}"
   done
+  # Mapped links are gone by now, so whatever is still owned and dangling is
+  # something an earlier version of this repo left behind. Leaving it would
+  # make "removes only what this repo owns" false in the direction that
+  # matters: it would be OUR litter surviving our own uninstall.
+  prune_orphans
   if want claude; then
     hdr "claude settings"
     say "  not removed: the baseline was merged into your own settings.json."
@@ -746,6 +852,10 @@ for rec in ${MAP[@]+"${MAP[@]}"}; do
   fi
   do_link "$src" "$dst" "$kind"
 done
+
+# After linking, so a path that is both orphaned and re-linked this run (a
+# skill renamed back to its old name) is treated as a link, not litter.
+prune_orphans
 
 want claude && install_claude_settings
 want vscode && install_vscode

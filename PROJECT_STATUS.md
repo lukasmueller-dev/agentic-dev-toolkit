@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-23 · server (srv1841294)_
+_Last updated: 2026-07-26 · server (srv1841294)_
 
 ## Goal
 
@@ -97,6 +97,13 @@ the installer's auto-discovery rules.
   context and never submits a turn, so `vibe start --no-attach` and any
   scripted start previously left the agent idle with the handoff loaded but
   unread. Rationale in the PR for `fix-handoff-start-bug`.
+- 2026-07-26: `install.sh` prunes orphaned symlinks on every run — a link in
+  a managed directory that both resolves into this checkout *and* resolves to
+  nothing, which is what a renamed skill leaves in `~/.claude/skills`. It was
+  posed as a decision because pruning deletes a link the current map does not
+  know about; requiring both conditions makes it a strict subset of what
+  `--uninstall` already removes, so it was made automatic rather than opt-in.
+  Rationale in the PR for `prune-orphan-symlinks`.
 
 ## Roadmap
 

@@ -260,6 +260,142 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
 }
 
+# ---------------------------------------------------------------------------
+# Orphan pruning
+#
+# The map is rebuilt from the repo every run, so it describes what should exist
+# and nothing about what used to. A renamed skill leaves a symlink pointing at
+# a directory that is gone — in a directory Claude Code scans. Pruning deletes
+# a link the current repo does not know about, so every test below is really
+# about the boundary of that authority.
+# ---------------------------------------------------------------------------
+
+@test "prune: removes an owned symlink whose target is gone" {
+  "$INSTALL" >/dev/null
+  # exactly the shape a skill rename leaves behind
+  ln -s "$REPO_ROOT/skills/renamed-away" "$HOME/.claude/skills/renamed-away"
+
+  run "$INSTALL" skills
+  [ "$status" -eq 0 ]
+  [ ! -L "$HOME/.claude/skills/renamed-away" ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"pruned"* ]]
+  # and the real skills are untouched
+  [ -L "$HOME/.claude/skills/project-status-scaffold" ]
+}
+
+@test "prune: leaves a dangling symlink that points outside this repo" {
+  "$INSTALL" >/dev/null
+  ln -s "$BATS_TEST_TMPDIR/elsewhere/some-skill" "$HOME/.claude/skills/foreign"
+
+  run "$INSTALL" skills
+  [ "$status" -eq 0 ]
+  # owned-AND-dangling is the rule; foreign litter is someone else's to clean
+  [ -L "$HOME/.claude/skills/foreign" ]
+}
+
+@test "prune: leaves an owned symlink whose target still exists" {
+  "$INSTALL" >/dev/null
+  # points into the repo at something real, just not where the map puts it
+  ln -s "$REPO_ROOT/README.md" "$HOME/.claude/skills/oddly-placed"
+
+  run "$INSTALL" skills
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.claude/skills/oddly-placed" ]
+}
+
+@test "prune: never touches a real file or directory" {
+  "$INSTALL" >/dev/null
+  printf 'mine\n' >"$HOME/bin/my-own-script"
+  mkdir -p "$HOME/.claude/skills/hand-written"
+  printf 'x\n' >"$HOME/.claude/skills/hand-written/SKILL.md"
+
+  run "$INSTALL"
+  [ "$status" -eq 0 ]
+  [ -f "$HOME/bin/my-own-script" ]
+  [ -f "$HOME/.claude/skills/hand-written/SKILL.md" ]
+}
+
+@test "prune: does not descend into the whole-directory symlinks" {
+  # ~/.claude/agents and ~/.claude/hooks are links INTO the repo, so a
+  # recursive scan would walk repo files and judge them as install
+  # destinations. Nothing inside them may be removed.
+  "$INSTALL" >/dev/null
+  run "$INSTALL"
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.claude/agents" ]
+  [ -f "$HOME/.claude/agents/diff-reviewer.md" ]
+  [ -f "$HOME/.claude/hooks/statusline.sh" ]
+}
+
+@test "prune: only scans the directories of the selected targets" {
+  "$INSTALL" >/dev/null
+  ln -s "$REPO_ROOT/skills/renamed-away" "$HOME/.claude/skills/renamed-away"
+
+  # `bin` maps nothing under ~/.claude/skills, so that orphan is out of scope
+  run "$INSTALL" bin
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.claude/skills/renamed-away" ]
+}
+
+@test "prune: --dry announces the prune but removes nothing" {
+  "$INSTALL" >/dev/null
+  ln -s "$REPO_ROOT/skills/renamed-away" "$HOME/.claude/skills/renamed-away"
+
+  run "$INSTALL" --dry skills
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.claude/skills/renamed-away" ]
+  local plain_out
+  plain_out="$(printf '%s\n' "$output" | plain)"
+  [[ "$plain_out" == *"prune    "* ]]
+  [[ "$plain_out" != *"pruned "* ]]
+}
+
+@test "prune: uninstall takes its own litter with it" {
+  "$INSTALL" >/dev/null
+  ln -s "$REPO_ROOT/skills/renamed-away" "$HOME/.claude/skills/renamed-away"
+
+  run "$INSTALL" --uninstall
+  [ "$status" -eq 0 ]
+  # "removes only what this repo owns" has to include what an older version of
+  # this repo left behind
+  [ "$(find "$HOME" -type l | wc -l | tr -d ' ')" -eq 0 ]
+}
+
+@test "doctor: warns about an orphan without failing" {
+  "$INSTALL" >/dev/null
+  ln -s "$REPO_ROOT/skills/renamed-away" "$HOME/.claude/skills/renamed-away"
+
+  run "$INSTALL" doctor
+  # a warning, not a FAIL: ./install.sh clears it unattended, so the install
+  # is stale rather than broken
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"orphaned"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]]
+}
+
+@test "doctor: reports a dangling managed link as dangling, not as an orphan" {
+  # Same symptom, different diagnosis and different fix — reporting one link
+  # under both headings would send you looking for a rename that never happened.
+  "$INSTALL" >/dev/null
+  rm "$HOME/bin/vibe"
+  ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/vibe"
+
+  run "$INSTALL" doctor
+  [ "$status" -eq 1 ]
+  local plain_out
+  plain_out="$(printf '%s\n' "$output" | plain)"
+  [[ "$plain_out" == *"dangling"* ]]
+  [[ "$plain_out" != *"orphaned"* ]]
+}
+
+@test "prune: install is still idempotent and quiet with no orphans" {
+  "$INSTALL" >/dev/null
+  run "$INSTALL"
+  [ "$status" -eq 0 ]
+  # the header only appears when there is something to report
+  [[ "$(printf '%s\n' "$output" | plain)" != *"orphans"* ]]
+}
+
 @test "doctor: reports healthy right after installing" {
   "$INSTALL" >/dev/null
   run "$INSTALL" doctor
