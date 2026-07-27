@@ -2,7 +2,10 @@
 #
 # vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
 # briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh,
-# codebase-review/review.sh).
+# codebase-review/review.sh). research-cartographer/map.sh sources it too, for
+# render_template and TEMPLATE_DIR alone: the placeholder contract in
+# templates/README.md has one implementation, and a second renderer would be
+# the same drift the templates directory exists to prevent.
 #
 # Sourced, never executed. The caller is expected to run under
 # `set -euo pipefail` and to have resolved its own real location first
