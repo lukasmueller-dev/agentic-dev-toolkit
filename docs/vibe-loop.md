@@ -210,10 +210,13 @@ flag.
   `--no-attach` starts the session and returns instead of attaching — for
   starting a loop from a remote-controlled agent session (say, from the phone)
   or a script, where attaching would nest or hang the caller.
-- **Local** — there is no persistent session to detach into, so the loop
-  runs in the **foreground**. It does not silently fork into the background;
-  you either watch it or start it on the server instead. `vibe loop` says so
-  when it takes the foreground path.
+- **Local** — by default the loop runs in the **foreground**. It does not
+  silently fork into the background; you watch it, or you ask for a detached
+  run explicitly. `vibe loop` says so when it takes the foreground path.
+  `--no-attach` works here too, and means the same thing as on the server: it
+  puts the loop in a tmux session and returns. The flag implies tmux on any
+  machine, so it is refused — before the worktree is scaffolded — where tmux
+  is not installed.
 
 ## Finishing
 

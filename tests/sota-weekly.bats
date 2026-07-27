@@ -76,10 +76,10 @@ run_script() {
   grep -qE -- "--prompt /.*/sota-digest/loop-brief\.md" "$VIBE_LOG"
 }
 
-@test "sota-weekly: omits --no-attach on a local machine, where the loop refuses it" {
-  # Passed unconditionally, --no-attach made a by-hand local run die outright
-  # ('--no-attach needs a server tmux session'). The script now asks 'vibe
-  # where' and adds the flag only for a server.
+@test "sota-weekly: omits --no-attach on a local machine, where the run is watched" {
+  # The by-hand path from docs/sota-watch.md: locally the loop belongs in the
+  # foreground, where you watch it and no tmux is needed. The script asks
+  # 'vibe where' and adds the flag only for a server.
   VIBE_STUB_ENV=local run_script 2026-W29
   [ "$status" -eq 0 ]
   grep -q -- "--pr" "$VIBE_LOG"

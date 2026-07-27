@@ -82,7 +82,7 @@ _vibe() {
             '--prompt[custom brief instead of the LOOP.md template]:file:_files' \
             '--push[push each iteration, guarding against divergence]' \
             '--pr[open the PR when the loop ends, draft unless it passed (implies --push)]' \
-            '--no-attach[start the tmux session and return instead of attaching (server)]' \
+            '--no-attach[start the tmux session and return instead of attaching (needs tmux)]' \
             '--sandbox[confine the agent with the configured sandbox args (see docs)]' \
             '--dangerously-allow-all[skip the agent permission prompts (see docs)]' \
             '*:task:_vibe_tasks'
@@ -97,7 +97,7 @@ _vibe() {
           ;;
         start)
           _arguments \
-            '--no-attach[start the tmux session and return instead of attaching (server)]' \
+            '--no-attach[start the tmux session and return instead of attaching (needs tmux)]' \
             '1:new task name:'
           ;;
         help)

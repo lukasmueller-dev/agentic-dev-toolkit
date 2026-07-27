@@ -51,8 +51,8 @@ the installer's auto-discovery rules.
   disappear. `test-hardener` is the one exception and may write tests
   only. See `claude/agents/README.md`.
 - 2026-07-23: `review-brief` is renamed `skills/codebase-review` and now
-  launches the round it stages (`vibe start --no-attach` on a server;
-  locally the command is printed, since starting needs a terminal). The
+  launches the round it stages (`vibe start --no-attach`; locally the
+  command was printed instead until 2026-07-27 — see below). The
   round still runs in a *separate* session — fresh context is the product,
   so staging was kept and only the launch hop removed. Every staged round
   now carries a scan-only `codebase-health` leg, ordered after blind
@@ -83,7 +83,8 @@ the installer's auto-discovery rules.
   commit body of `d0e6833` and the PR for `review3-followups`.
 - 2026-07-22: `vibe start --no-attach` (server only) mirrors the loop
   flag, so `ssh <host> vibe start <task>` is scriptable instead of dying
-  on the headless attach after the work is done. See `c96cf2c`.
+  on the headless attach after the work is done. See `c96cf2c`. **Widened
+  to every machine 2026-07-27** — see below.
 - 2026-07-22: The repo watches its own state of the art on a weekly cron
   entry — `.claude/skills/sota-digest` (repo-local, never installed
   elsewhere) driven by `vibe loop --pr`, digest at `docs/sota/<YYYY-Www>.md`,
@@ -151,6 +152,18 @@ the installer's auto-discovery rules.
   `handoff-start`, the sibling of `handoff-brief` that stages the same brief
   and then launches the session. Rationale in the PR for
   `skill-handoff-start`.
+- 2026-07-27: **`--no-attach` implies tmux, on any machine**, so `vibe start`
+  and `vibe loop` accept it everywhere and the local default is untouched — a
+  bare start still runs in the foreground with no tmux. What was really a
+  server/local split in `open_session` is now a session-exists/does-not split:
+  `vibe attach` joins a tmux session wherever one is running, without which a
+  locally detached session would be unreachable *and* attaching would start a
+  second agent against the same worktree. A machine with no tmux is refused
+  before scaffolding, and `handoff-start` / `codebase-review` read that
+  refusal as "print the command instead" — the one branch they have left, in
+  place of asking `vibe where`. `vibe rc` stays server-only on purpose: a
+  laptop is not reachable by `ssh <host> vibe rc <task>`. Rationale in the PR
+  for `roadmap-track-d`.
 
 ## Roadmap
 

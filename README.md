@@ -171,7 +171,8 @@ Optional: [phone notifications](docs/notifications.md), and
 ## Requirements
 
 `git` and `bash` are the only hard requirements. `tmux` is needed on the
-server for persistent sessions; `jq` for the VS Code merge and the Claude Code
+server for persistent sessions, and anywhere you use `--no-attach`, which
+detaches into tmux on any machine; `jq` for the VS Code merge and the Claude Code
 hooks; `gh` is optional, for PR info in `vibe status`. Sandboxed Bash (part
 of the settings baseline) needs `bubblewrap` and `socat` on Linux — without
 them Claude Code falls back to unsandboxed commands under the normal

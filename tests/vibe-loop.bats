@@ -370,13 +370,48 @@ EOF
   [ ! -d "$(wt del-brief)" ]
 }
 
-@test "loop: --no-attach refuses on local before creating anything" {
+@test "loop: --no-attach runs the loop detached in tmux locally too" {
+  # Same rule as 'vibe start --no-attach', and it has to be the same rule: a
+  # loop and an interactive session share one session name, so a machine where
+  # one detaches and the other refuses would put them on different paths.
   cd "$(make_repo proj)"
   stub_agent
   run loop_vibe loop "det task" --no-attach --max 1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"loop running detached in tmux session"* ]]
+  # The stub tmux records the launch without running it, so the runner never
+  # actually starts — the state file is left as cmd_loop wrote it.
+  grep -q "new-session -d -s vibe-proj-det-task " "$VIBE_TEST_TMUX_LOG"
+  grep -q "send-keys -t vibe-proj-det-task .*__loop-run" "$VIBE_TEST_TMUX_LOG"
+  run ! grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "loop: --no-attach refuses without tmux, before creating anything" {
+  cd "$(make_repo proj)"
+  stub_agent
+  local notmux
+  notmux="$(path_without tmux)"
+  run env PATH="$notmux" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$BATS_TEST_TMPDIR/agent.sh" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" loop "no tmux det" --no-attach --max 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"server"* ]]
-  [ ! -d "$(wt det-task)" ]
+  [[ "$output" == *"needs tmux"* ]]
+  # Refused before scaffolding: no worktree, and so no state file that
+  # 'vibe status' would report as a live loop forever.
+  [ ! -d "$(wt no-tmux-det)" ]
+}
+
+@test "loop: without --no-attach a local loop still runs in the foreground" {
+  # The local default is untouched — only the explicit "start it and return"
+  # asks for something to hold the session.
+  cd "$(make_repo proj)"
+  stub_agent
+  run loop_ended loop "fg task" --max 1
+  [[ "$output" == *"running the loop in the foreground"* ]]
+  [ "$(loop_state fg-task STATUS)" != running ]
+  run ! grep -q "new-session -d -s vibe-proj-fg-task " "$VIBE_TEST_TMUX_LOG"
 }
 
 @test "loop: attach notes an active loop instead of touching the branch" {

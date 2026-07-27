@@ -119,10 +119,11 @@ Then print the exact start command and stop:
 vibe loop <branch> --until '<UNTIL from Phase 3>' --max <n> [--push] --no-attach
 ```
 
-with three notes: run it on the server for a session that survives
-disconnect; `--no-attach` is what makes the command return instead of
-attaching, which is required when starting it from inside another agent
-session; and a loop that ends on max rounds rather than on the stop check
+with three notes: run it on the server so the loop survives a disconnect;
+`--no-attach` is what makes the command return instead of attaching — it is
+required when starting the loop from inside another agent session, and puts
+the loop in a tmux session on any machine; and a loop that ends on max
+rounds rather than on the stop check
 leaves the PR unmerged — read `LOOP.md`'s iteration log before deciding what
 to do next.
 

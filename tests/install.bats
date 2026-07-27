@@ -229,17 +229,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # Both merge steps depend on jq; without it the installer must still link
   # everything, warn about the two files it could not merge, and exit 0 —
   # hooks have the same rule, and this is the installer's version of it.
-  local nojq="$BATS_TEST_TMPDIR/nojq-bin" d f b
-  mkdir -p "$nojq"
-  for d in ${PATH//:/ }; do
-    [ -d "$d" ] || continue
-    for f in "$d"/*; do
-      [ -x "$f" ] || continue
-      b="${f##*/}"
-      [ "$b" = jq ] && continue
-      [ -e "$nojq/$b" ] || ln -s "$f" "$nojq/$b"
-    done
-  done
+  local nojq
+  nojq="$(path_without jq)"
 
   run env PATH="$nojq" "$INSTALL" claude vscode
   [ "$status" -eq 0 ]

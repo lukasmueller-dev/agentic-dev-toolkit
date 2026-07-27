@@ -1,6 +1,6 @@
 ---
 name: handoff-start
-description: "Distills the current conversation into a HANDOFF.md brief on its own task branch and then starts the session that picks it up. Use when the user says 'hand this off and start it', 'spin this off and run it', 'kick this off as its own task', or a discussion has produced a plan that should be handed to a separate session and begun now rather than left staged. Stages and pushes the brief exactly as handoff-brief does, then launches the session — detached on a server, or printing the command to run locally."
+description: "Distills the current conversation into a HANDOFF.md brief on its own task branch and then starts the session that picks it up. Use when the user says 'hand this off and start it', 'spin this off and run it', 'kick this off as its own task', or a discussion has produced a plan that should be handed to a separate session and begun now rather than left staged. Stages and pushes the brief exactly as handoff-brief does, then launches the session detached so this conversation keeps its terminal."
 disable-model-invocation: true
 argument-hint: "[<task name>]"
 ---
@@ -24,9 +24,10 @@ someone picks it up — a task for tomorrow, or for another machine.
 - **Never launch against an unpushed brief.** A session started before
   `handoff.sh publish` succeeds cannot be picked up from another machine, and
   the handoff it starts from exists nowhere but this disk.
-- **Never launch a session locally.** Off a server `vibe start` opens an
-  interactive session in the terminal *this* session is using — print the
-  command and let the user run it.
+- **Never launch without `--no-attach`.** A bare `vibe start` opens the agent
+  in the terminal *this* session is using, replacing it. The flag is what
+  makes the launch return; where it is refused, print the command instead of
+  dropping it.
 - **Never keep working on the task after launching.** The launched session
   owns the branch and the worktree from that moment; two agents on one branch
   is a merge conflict with extra steps.
@@ -43,43 +44,40 @@ Stop at the point where it prints the start commands. That is Phase 2's job.
 
 ## Phase 2 — Launch it
 
-Only once `handoff.sh publish` has reported success. Check which kind of
-machine this is — `vibe where` prints the verdict and its reason — and branch
-on it:
+Only once `handoff.sh publish` has reported success. One command, on every
+machine — do not check `vibe where` and do not branch on the answer:
 
-- **Server** (output begins `server`): start the session without attaching,
-  because this session has no terminal to hand over.
+```
+vibe start <task> --no-attach
+```
 
-  ```
-  vibe start <task> --no-attach
-  ```
+It creates the tmux session, launches the agent, and returns. `--no-attach`
+is what keeps this session's terminal: without it `vibe start` would replace
+the very session running this skill. Because nobody is attaching, the new
+session begins from `HANDOFF.md` on its own rather than waiting at an idle
+prompt. Report that it is running and print how to reach it:
 
-  It creates the tmux session, launches the agent, and returns. Because
-  nobody is attaching, that session begins from `HANDOFF.md` on its own
-  rather than waiting at an idle prompt. Report that it is running and print
-  how to reach it:
+```
+vibe attach <task>    # from here or any other machine
+```
 
-  ```
-  vibe attach <task>    # from here or any other machine
-  ```
+**If the command fails saying `--no-attach` needs tmux**, that machine cannot
+hold a detached session. Do not retry without the flag — that would take over
+this terminal. Print the command for the user to run themselves and stop:
 
-- **Local** (output begins `local`): print the command and stop — `vibe
-  start` opens an interactive session, which is the user's to run.
-  `--no-attach` is rejected off a server, so there is no way to launch it
-  from here.
+```
+vibe start <task>
+```
 
-  ```
-  vibe start <task>
-  ```
-
-  A session someone attaches to opens with the handoff already in context and
-  waits for them to say go.
+A session someone attaches to opens with the handoff already in context and
+waits for them to say go.
 
 Close with one note either way: the session that picks this up must promote
 what is durable and delete the handoff before finishing (`vibe done` enforces
 it), so the brief is guaranteed to be consumed and promoted, never silently
 dropped — and never merged onto the default branch as a stray file.
 
-**Done means:** the handoff is pushed, and on a server the session is running
-detached with its attach command printed; locally, the start command is
-printed. Either way this session stops touching the task.
+**Done means:** the handoff is pushed and the session is running detached
+with its attach command printed — or, on a machine with no tmux, the start
+command is printed for the user. Either way this session stops touching the
+task.

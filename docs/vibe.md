@@ -46,10 +46,23 @@ On a **server** this opens a tmux session named `vibe-<repo>-<branch>` and
 starts the agent inside it. On a **local** machine it just drops you into the
 worktree and launches the agent — no tmux, because nothing needs to survive.
 
-`--no-attach` (server only, like `vibe loop`'s flag) starts the tmux session
-and returns instead of attaching — for starts with no tty to attach from,
-so `ssh <host> vibe start <task>` is scriptable. `vibe attach <task>` joins
-the session later.
+`--no-attach` starts the tmux session and returns instead of attaching — for
+starts with no tty to attach from, so `ssh <host> vibe start <task>` is
+scriptable, and so an agent can launch a task without replacing the session
+it is running in. `vibe attach <task>` joins the session later.
+
+**The flag implies tmux, on every machine.** It promises the session outlives
+the command that started it, and tmux is the only thing that can keep that
+promise once this process returns — so a local `--no-attach` opts back into
+tmux, and a machine without tmux is told so before anything is scaffolded.
+What does *not* change is the local default: a bare `vibe start` still runs in
+the foreground with no tmux. Only the explicit "start it and return" asks for
+something to hold the session.
+
+The other half of that rule lives in `vibe attach`: wherever a tmux session
+for the task exists, attach joins it rather than launching an agent of its
+own. Without that, a locally detached session would be unreachable *and*
+attaching would quietly start a second agent against the same worktree.
 
 The flag also decides whether the new session *begins* on its own. A handoff
 reaches an agent as context, injected by the `SessionStart` hook, and context

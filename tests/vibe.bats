@@ -866,12 +866,58 @@ EOF
   [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "" ]
 }
 
-@test "start: --no-attach refuses on local before creating anything" {
+@test "start: --no-attach starts a detached tmux session locally too" {
+  # --no-attach implies tmux on any machine: "start it and return" needs
+  # something other than this process to hold the session, and locally there
+  # is otherwise nothing — the old refusal was what forced every caller
+  # (handoff-start, codebase-review) to branch on 'vibe where'.
   cd "$(make_repo proj)"
   run run_vibe start "det start" --no-attach
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"session running detached"* ]]
+  [[ "$output" == *"vibe attach det-start"* ]]
+  # and the local exec path was not taken
+  [[ "$output" != *"entering worktree"* ]]
+  grep -q "new-session -d -s vibe-proj-det-start " "$VIBE_TEST_TMUX_LOG"
+  # Nobody asked to attach, so nothing attaches — that is the whole flag.
+  run grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "start: --no-attach locally kicks off from a handoff that carries content" {
+  # The kickoff gate is machine-agnostic, so a detached local session begins
+  # from HANDOFF.md exactly as a server one does. Nobody is arriving to say go
+  # in either case; that, not the machine, is what the turn is for.
+  cd "$(make_repo proj)"
+  run run_vibe start "kick detached"
+  [ "$status" -eq 0 ]
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/kick-detached/HANDOFF.md"
+  : >"$VIBE_TEST_TMUX_LOG"
+
+  run run_vibe start "kick detached" --no-attach
+  [ "$status" -eq 0 ]
+  local kickoff
+  kickoff="$(printf '%q' 'Begin per HANDOFF.md.')"
+  grep -qF "send-keys -t vibe-proj-kick-detached true $kickoff C-m" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "start: --no-attach refuses without tmux, before creating anything" {
+  # tmux is the thing that holds a detached session, so on a machine without
+  # it the flag cannot be honoured. Refuse early, name both ways out, and
+  # leave no half-scaffolded worktree behind (handoff-start reads this failure
+  # as "print the command instead").
+  cd "$(make_repo proj)"
+  local notmux
+  notmux="$(path_without tmux)"
+  run env PATH="$notmux" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "no tmux start" --no-attach
   [ "$status" -eq 1 ]
-  [[ "$output" == *"server"* ]]
-  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/det-start" ]
+  [[ "$output" == *"needs tmux"* ]]
+  [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/no-tmux-start" ]
 }
 
 @test "start: a second bare word is an error, not a silently truncated task" {
@@ -1202,6 +1248,56 @@ EOF
   [[ "$output" == *"agent not running there"* ]]
   grep -q "send-keys -t vibe-proj-task-dead stub-agent" "$VIBE_TEST_TMUX_LOG"
   grep -q "attach-session -t vibe-proj-task-dead" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: a local session that exists is attached to, not exec'd over" {
+  # The failure this must never ship with: 'vibe start --no-attach' now leaves
+  # a detached session on a local machine too, and attach's local branch used
+  # to exec a fresh agent unconditionally — so the detached one kept running,
+  # unreachable, while a second agent started against the same worktree. No
+  # SSH_CONNECTION here on purpose: this is the local path, and a live session
+  # is what decides it, not the machine.
+  cd "$(make_repo proj)"
+  run_vibe start "local detached" >/dev/null
+  local stub agent
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-local-detached")"
+  # A stub agent that leaves a mark: exec'ing it is the bug, so its running
+  # at all is the assertion that matters.
+  agent="$BATS_TEST_TMPDIR/second-agent.sh"
+  printf '#!/usr/bin/env bash\ntouch "%s"\n' "$BATS_TEST_TMPDIR/exec-ran" >"$agent"
+  chmod +x "$agent"
+
+  run env PATH="$stub:$PATH" \
+    VIBE_TEST_PANE_CMD=claude \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$agent" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "local detached"
+  [ "$status" -eq 0 ]
+  grep -q "attach-session -t vibe-proj-local-detached" "$VIBE_TEST_TMUX_LOG"
+  # The pane is busy with the agent, so nothing is typed into it either.
+  run grep -q "send-keys" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
+  [ ! -f "$BATS_TEST_TMPDIR/exec-ran" ]
+}
+
+@test "attach: with no session, a local attach still execs into this terminal" {
+  # The other half of the same rule: nothing is holding a session here, so
+  # this terminal becomes it. The stub tmux answers has-session with 1, which
+  # is what a machine with no session for this task looks like.
+  cd "$(make_repo proj)"
+  run_vibe start "local plain" >/dev/null
+  local agent="$BATS_TEST_TMPDIR/exec-agent.sh"
+  printf '#!/usr/bin/env bash\ntouch "%s"\n' "$BATS_TEST_TMPDIR/plain-ran" >"$agent"
+  chmod +x "$agent"
+
+  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$agent" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "local plain"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"entering worktree"* ]]
+  [ -f "$BATS_TEST_TMPDIR/plain-ran" ]
 }
 
 @test "attach: resumes the old conversation when VIBE_AGENT_RESUME_ARGS is set" {
