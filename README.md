@@ -163,6 +163,8 @@ Optional: [phone notifications](docs/notifications.md), and
   sessions with no `$HOME`
 - [MCP servers](docs/mcp-servers.md) — which few to connect, and why most of
   the popular ones are redundant here
+- [The `research-*` skill family](docs/research-skills.md) — the contracts a
+  planned family of research-codebase skills is built on
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

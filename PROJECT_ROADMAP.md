@@ -17,43 +17,17 @@ Track C — research-codebase skills:
 
 A family of portable skills for working in research codebases (the
 motivating case is VLA research, but nothing in them may be VLA-specific).
-The first item fixes the contracts the other eight depend on and must land
-first. After that the waves are ordered: **wave 1 must be dogfooded on a
-real repo before wave 2 is started**, because the `CODEBASE_MAP.md` schema
-will change on first contact. Dogfood target throughout: the π0 / `openpi`
-codebase.
+The contracts every item here consumes — skill-vs-agent, templates,
+artifact location, the two shared detections, the never-launch rule, the
+name prefix — are settled in `docs/research-skills.md`; read it first and
+do not re-decide any of them locally. The waves are ordered: **wave 1 must
+be dogfooded on a real repo before wave 2 is started**, because the
+`CODEBASE_MAP.md` schema will change on first contact. Dogfood target
+throughout: the π0 / `openpi` codebase.
 
 Deliberately rejected, so they are not re-proposed: a generic "optimize my
 model" skill, anything that autonomously launches training, and a
 paper-writing agent.
-
-- [ ] **Contracts for the `research-*` family.** Design-only item; no
-      skill ships from it. Decide and write down, in `docs/`, seven things
-      every later item consumes:
-      (1) skill vs agent — `skills/` by default for portability, with
-      `research-cartographer` the one candidate for `claude/agents/`,
-      justified only if read-only fan-out with isolated context is the
-      real need;
-      (2) a `templates/` entry for every document these skills emit
-      (`CODEBASE_MAP.md`, `RUNBOOK.md`, `FORK_DELTA.md`, an experiment
-      entry) per the layout contract — and CI's template check reads a
-      hardcoded file list, so that list needs extending in the same PR;
-      (3) emitted artifacts land in the target repo's `docs/`, not its
-      root, which the status trio already occupies;
-      (4) shared research-repo detection in `skills/_lib/`;
-      (5) shared execution-context detection, same location — cluster vs
-      workstation vs **ambiguous → ask**, from `sbatch`/`srun` on `PATH`,
-      `SLURM_*` in the env, and `nvidia-smi`. Model it on `vibe`'s
-      `detect_env`: detected per-session, never a fixed label, and it
-      prints its verdict and the reason rather than guessing silently.
-      Ambiguity is the common case (a login node, or a workstation with
-      cluster access) and guessing wrong burns an allocation;
-      (6) the never-launch-the-expensive-thing rule, stated once and
-      referenced by the rest — smoke-scale runs may execute, anything
-      multi-GPU or multi-hour stops and hands over the command;
-      (7) the `research-` name prefix.
-      Done when a later item can be picked up cold without re-deciding any
-      of the seven.
 
 - [ ] **`research-cartographer`** (wave 1) — explains an unfamiliar
       codebase into `docs/CODEBASE_MAP.md` against a *fixed* schema, so
