@@ -21,6 +21,9 @@
 #                         --no-attach (server) starts the tmux session and
 #                         returns instead of attaching — for starts with no
 #                         tty to attach from (ssh <host> vibe start <task>).
+#                         Since nobody is arriving to say go, that session
+#                         begins from HANDOFF.md by itself; an attached one
+#                         loads the handoff and waits for you.
 #   vibe attach [<task>]  Arrive at a task: fast-forward its worktree when that
 #                         is safe (clean + ff-only), then attach. Never refuses
 #                         — a dirty/diverged tree is reported and attached as-is.
@@ -194,12 +197,18 @@ VIBE_LOOP_BRIEF_ARCHIVE="vibe-loop-brief.md"
 # skills/_lib/vibe-lib.sh — update all three together.
 VIBE_HANDOFF_SCAFFOLD_RE='^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$'
 
-# open_session's kickoff turn for a genuinely fresh agent launch (new tmux
-# session, a dead pane restarted without VIBE_AGENT_RESUME_ARGS, or the local
-# exec branch) when handoff_carries_content is true. The SessionStart hook
-# only injects HANDOFF.md as context; nobody submits it as a turn, so an
-# agent started with no attached tty (--no-attach, or a script) would
-# otherwise sit at an idle prompt with the handoff loaded but never acted on.
+# open_session's kickoff turn for a genuinely fresh agent launch under
+# --no-attach (a new tmux session, or a dead pane restarted without
+# VIBE_AGENT_RESUME_ARGS) when handoff_carries_content is true. The
+# SessionStart hook only injects HANDOFF.md as context; nobody submits it as a
+# turn, so a session nobody is attaching to would otherwise sit at an idle
+# prompt with the handoff loaded but never acted on.
+#
+# --no-attach is the whole trigger: it is exactly the case where no human is
+# arriving to say go. A session someone *is* attaching to opens with the
+# handoff already in context and waits for them, rather than spending the
+# first turn on a decision they were about to make themselves.
+#
 # Fixed rather than configurable: it names no agent and no CLI flag, just the
 # next thing to do.
 VIBE_HANDOFF_KICKOFF_PROMPT="Begin per HANDOFF.md."
@@ -1721,11 +1730,12 @@ open_session() {
     # tmux session, or a dead pane restarted with no resume args) — launch
     # itself stays free of the kickoff so it can still be combined with
     # VIBE_AGENT_RESUME_ARGS below without carrying it into a resumed
-    # conversation. printf %q quotes the prompt as a single shell word, since
-    # tmux send-keys types this string into a live shell rather than
-    # exec'ing an argv.
+    # conversation. Only --no-attach kicks off: see
+    # VIBE_HANDOFF_KICKOFF_PROMPT. printf %q quotes the prompt as a single
+    # shell word, since tmux send-keys types this string into a live shell
+    # rather than exec'ing an argv.
     launch_fresh="$launch"
-    if handoff_carries_content "$dir/HANDOFF.md"; then
+    if [[ "$no_attach" == "1" ]] && handoff_carries_content "$dir/HANDOFF.md"; then
       launch_fresh="$launch $(printf '%q' "$VIBE_HANDOFF_KICKOFF_PROMPT")"
     fi
     if tmux_ensure_session "$sess" "$dir" "$launch_fresh"; then
@@ -1765,13 +1775,14 @@ open_session() {
     # Word-split on purpose, like run_loop does: VIBE_AGENT_CMD may carry
     # flags ("claude --model x"), and exec'ing it as one word treats the
     # whole string as a command name.
+    #
+    # No kickoff turn here: cmd_start refuses --no-attach off a server, so
+    # this branch is by construction someone sitting at the terminal it execs
+    # into. The SessionStart hook puts the handoff in context and they say go.
     info "local environment — entering worktree (no tmux)."
     cd "$dir"
     # shellcheck disable=SC2206
     local -a agent_argv=($VIBE_AGENT_CMD)
-    if handoff_carries_content "$dir/HANDOFF.md"; then
-      agent_argv+=("$VIBE_HANDOFF_KICKOFF_PROMPT")
-    fi
     exec "${agent_argv[@]}"
   fi
 }
@@ -2892,7 +2903,9 @@ cmd_help() {
     "then open a claude session (in tmux on server)." \
     "--no-attach (server) starts the tmux session and" \
     "returns instead of attaching — for starts with no" \
-    "tty to attach from (ssh <host> vibe start <task>)."
+    "tty to attach from (ssh <host> vibe start <task>)." \
+    "That session begins from HANDOFF.md by itself; an" \
+    "attached one loads the handoff and waits for you."
   help_cmd "attach [<task>]" "" \
     "Arrive at a task: fast-forward its worktree when that" \
     "is safe (clean + ff-only), then attach. Never refuses" \

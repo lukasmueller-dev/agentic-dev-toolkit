@@ -40,6 +40,7 @@ Then `./install.sh doctor` to check it landed.
 | [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
 | [`babysit-pr`](skills/babysit-pr/) | Stages an unattended-loop brief that drives a pull request to mergeable — green checks, no unresolved threads. [Docs](docs/babysit-pr.md) |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
+| [`handoff-start`](skills/handoff-start/) | The same brief, then starts the session that picks it up — detached on a server |
 | [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved, resolving textual and semantic conflicts |
 | [`skill-audit`](skills/skill-audit/) | Grades a repo's skills against the quality criteria in [`docs/skill-quality.md`](docs/skill-quality.md), read-only until fixes are approved |
