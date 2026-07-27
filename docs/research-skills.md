@@ -25,8 +25,8 @@ does not decide locally and leave the family inconsistent.
 
 ## 1. Skills, not agents
 
-**All nine items ship as skills under `skills/`, including
-`research-cartographer`.**
+**All nine items ship as skills under `skills/`, including `codebase-map`**
+(named `research-cartographer` when this file was written — see §7).
 
 The exception was worth considering: mapping an unfamiliar repo is a broad,
 read-heavy sweep, which is exactly the shape the reviewer agents in
@@ -40,7 +40,7 @@ against it:
   repo; an agent is not.
 - **The reviewer agents are read-only by tool allowlist**, and that allowlist
   is what makes them trustworthy — an agent that can edit can make its own
-  findings disappear. The cartographer's product is a *written file*, so it
+  findings disappear. `codebase-map`'s product is a *written file*, so it
   does not fit the pattern that keeps those agents safe.
 - **Isolated context is available to a skill anyway.** A skill body may say
   "delegate the per-subsystem reads to subagents if the host offers them,
@@ -48,7 +48,7 @@ against it:
   skill in the family may *require* a subagent to exist.
 
 If dogfooding shows context bloat is the real bottleneck, the escape hatch is
-a thin `claude/agents/research-cartographer.md` that **invokes the skill**
+a thin `claude/agents/codebase-map.md` that **invokes the skill**
 (plus its line in `.claude-plugin/plugin.json`, since `agents` there is a list
 of files) — never a second copy of the workflow. That needs evidence from a
 real run and a note in this section, not a preference.
@@ -61,7 +61,7 @@ never-destructive scaffolding of files it owns. The line for this family:
 
 | Skill | `disable-model-invocation` | Why |
 | ----- | -------------------------- | --- |
-| `research-cartographer`, `research-train-doctor`, `research-run-archaeology`, `research-ablation-planner`, `research-paper-to-code` | absent (model-invocable) | They read, and write only their own artifact under `docs/`. A re-run diffs against the existing artifact rather than overwriting it, which is what keeps this inside SQ13(b). |
+| `codebase-map`, `research-train-doctor`, `research-run-archaeology`, `research-ablation-planner`, `research-paper-to-code` | absent (model-invocable) | They read, and write only their own artifact under `docs/`. A re-run diffs against the existing artifact rather than overwriting it, which is what keeps this inside SQ13(b). |
 | `research-lab-notebook` | absent (model-invocable) | Append-only into its own file; it must fire proactively at the end of an experiment or the entry is never written. |
 | `research-first-run` | **`true`** | It mutates the environment — installs packages, builds wheels, executes commands. |
 | `research-fork-delta` | **`true`** | It rewrites git history (rebase onto upstream). |
@@ -72,15 +72,18 @@ output file and never clobbering it.
 
 ## 2. One template per emitted document
 
-Every document these skills emit has exactly one copy, in
-**`templates/research/`**, rendered through the placeholder contract in
+Every document these skills emit has exactly one copy under `templates/`, in
+**`templates/research/`** — or, for a document emitted by a skill that is not
+part of the family, the directory matching that skill (`templates/codebase/`
+for `CODEBASE_MAP.md`). Either way it is rendered through the placeholder
+contract in
 `templates/README.md`. Never a heredoc, never pasted into a `SKILL.md` as an
 example — that is how three divergent copies of `HANDOFF.md` came about
 (SQ16).
 
 | Document            | Template                             | Emitted by |
 | ------------------- | ------------------------------------ | ---------- |
-| `CODEBASE_MAP.md`   | `templates/research/CODEBASE_MAP.md` | `research-cartographer` |
+| `CODEBASE_MAP.md`   | `templates/codebase/CODEBASE_MAP.md` | `codebase-map` (outside the family — §7) |
 | `RUNBOOK.md`        | `templates/research/RUNBOOK.md`      | `research-first-run` (appended to by any skill that discovers a workaround) |
 | `FORK_DELTA.md`     | `templates/research/FORK_DELTA.md`   | `research-fork-delta` |
 | `LAB_NOTEBOOK.md`   | `templates/research/LAB_NOTEBOOK.md` | `research-lab-notebook` |
@@ -271,11 +274,39 @@ rule: the thing that may run gets a name, a budget and a home in the repo.
 
 ## 7. Naming and scope
 
-**Every skill in the family is named `research-<thing>`.** `skills/` is a flat
-global namespace shared with every other repo's skills and with vendored
-third-party ones, so a prefix is the only grouping mechanism there is — and
-`ls ~/.claude/skills | grep '^research-'` is the family roster. It also keeps
-the nine from colliding with a future skill called `first-run` or `notebook`.
+**Every skill *whose workflow is research-specific* is named
+`research-<thing>`.** `skills/` is a flat global namespace shared with every
+other repo's skills and with vendored third-party ones, so a prefix is the only
+grouping mechanism there is — and `ls ~/.claude/skills | grep '^research-'` is
+the family roster. It also keeps them from colliding with a future skill called
+`first-run` or `notebook`.
+
+### The one carve-out: `codebase-map`
+
+Written as `research-cartographer`, renamed on landing. Two reasons, and the
+first is the one that matters:
+
+- **Its workflow is not research-specific.** It has an explicit `application`
+  mode, ships both middle sections of its schema, and was verified producing
+  an `application` verdict on a plain web repo. A `research-` prefix on a skill
+  that maps any codebase advertises a narrower thing than it is, and the next
+  person mapping a web service has no reason to look for it under `research-`.
+- **`-er` names an actor, which is what agents are.** The skills here are named
+  for the task or the artifact (`codebase-health`, `codebase-review`,
+  `add-roadmap-item`); a cartographer is a *someone*. `codebase-map` names the
+  document it writes and sorts beside the two `codebase-*` skills already in
+  `skills/`, which is the grouping it actually belongs to.
+
+So the prefix rule is about the *workflow*, not about who consumes the output:
+`research-train-doctor` reads `CODEBASE_MAP.md` (§3) and stays in the family,
+because triaging a run that is not learning is research-shaped and mapping a
+repo is not. The other eight items keep the prefix. A future item that turns
+out to be general-purpose in the same way takes the same exit, and records it
+here.
+
+The cost is accepted knowingly: the family roster is now
+`grep '^research-'` **plus** `codebase-map`, and this section is where that is
+written down.
 
 The prefix is `research-`, not `vla-` or `ml-`, because **nothing in the family
 may be domain-specific**:
@@ -298,7 +329,7 @@ a name (SQ3, SQ4).
 
 ## What this file deliberately does not decide
 
-- **The `CODEBASE_MAP.md` schema.** Owned by `research-cartographer` and
+- **The `CODEBASE_MAP.md` schema.** Owned by `codebase-map` and
   expected to change on first contact with `openpi`; that is why wave 1 is
   dogfooded before wave 2 begins.
 - **Whether the family gets its own `references/` shared between skills.** No
@@ -311,7 +342,7 @@ a name (SQ3, SQ4).
 
 | Item | Consumes |
 | ---- | -------- |
-| `research-cartographer` | §1 (skill, model-invocable), §2, §3, §4, §7 |
+| `codebase-map` | §1 (skill, model-invocable), §2, §3, §4, §7 — the one item outside the `research-` prefix |
 | `research-first-run` | §2 (`RUNBOOK.md`), §3, §5, §6, §7 |
 | `research-train-doctor` | §3 (reads the map), §5, §6, §7 |
 | `research-run-archaeology` | §3, §7 |

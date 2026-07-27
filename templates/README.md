@@ -16,12 +16,16 @@ copy.
 | `repo/pre-push`      | `<repo>/.githooks/pre-push` | Long — git hook blocking direct pushes to the default branch |
 | `gitignore/*.gitignore` | `<repo>/.gitignore` | Long — fragments concatenated per project type (`common` + each detected type) |
 | `ci/*.yml`           | `<repo>/.github/workflows/ci.yml` | Long — starting-point workflow per project type, adapted to the repo's tooling |
-| `research/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
+| `codebase/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
 | `research/RUNBOOK.md` | `<repo>/docs/RUNBOOK.md` | Long — one per repo; appended to for the repo's whole life, never regenerated |
 
-`research/` holds the documents the `research-*` skill family emits into a
-target repo's `docs/` (`docs/research-skills.md` §2 and §3). Each lands in the
-PR of the skill that emits it, not up front.
+Those last two both go into *another* repo's `docs/`, never into this one
+(`docs/research-skills.md` §3), and each lands in the PR of the skill that
+emits it rather than up front. They sit in different directories because the
+directory follows the emitting skill, not the destination: `research/` holds
+what the `research-*` family emits, and `codebase/` holds what a skill outside
+that family emits — `codebase-map` has an explicit `application` mode and is
+not a research skill (§7).
 
 The `repo/`, `gitignore/`, and `ci/` files carry no placeholder tokens — they
 are copied (and then adapted in place by their consumer), not rendered. The
@@ -61,8 +65,8 @@ render still produces a readable file.
 | `<status>`    | The loop's final state — `success`, `maxed`, … (`LOOP_PR.md` only) |
 | `<iter>`      | Rounds actually run (`LOOP_PR.md` only)              |
 | `<last>`      | Result of the last stop check — `pass`/`fail`/`none` (`LOOP_PR.md` only) |
-| `<mode>`      | Which half of a fixed schema gets depth — `research`/`application` (`research/CODEBASE_MAP.md` only) |
-| `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`research/CODEBASE_MAP.md` only) |
+| `<mode>`      | Which half of a fixed schema gets depth — `research`/`application` (`codebase/CODEBASE_MAP.md` only) |
+| `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/CODEBASE_MAP.md` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -98,8 +102,8 @@ tokens in.
   `skills/_lib/vibe-lib.sh`, shared by the brief scripts)
 - `skills/repo-scaffold` — copies `repo/pre-push`, concatenates
   `gitignore/*`, and adapts `ci/*` into the repo being scaffolded
-- `skills/research-cartographer/map.sh` — renders `research/CODEBASE_MAP.md`
-  into the target repo's `docs/`, and never overwrites an existing one
+- `skills/codebase-map/map.sh` — renders `codebase/CODEBASE_MAP.md` into the
+  target repo's `docs/`, and never overwrites an existing one
 - `skills/research-first-run/env.sh` — renders `research/RUNBOOK.md` into the
   target repo's `docs/`, and never overwrites an existing one
 

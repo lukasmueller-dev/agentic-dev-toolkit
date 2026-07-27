@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# map.sh — the two mechanical steps of research-cartographer: classify the
+# map.sh — the two mechanical steps of codebase-map: classify the
 # repo, and seed the artifact the skill then fills in.
 #
 #   bash map.sh detect [DIR]        repo kind + the evidence behind it
@@ -8,7 +8,7 @@
 #
 # Both are deliberately dumb. The verdict comes from the shared detection in
 # _lib/research-lib.sh so that two skills in the family classify a repo the
-# same way, and the document comes from templates/research/CODEBASE_MAP.md so
+# same way, and the document comes from templates/codebase/CODEBASE_MAP.md so
 # there is one copy of the schema. Nothing here decides anything the SKILL.md
 # should be deciding: `seed` takes MODE as an argument rather than calling
 # `detect` itself, because an ambiguous verdict is resolved by asking the
@@ -40,7 +40,7 @@ script_dir() {
 SKILL_DIR="$(script_dir)"
 LIB_DIR="$(dirname "$SKILL_DIR")/_lib"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
-LIB_PROG=cartographer
+LIB_PROG=codebase-map
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
 . "$LIB_DIR/research-lib.sh"
 # vibe-lib.sh is sourced for render_template and TEMPLATE_DIR only — the
@@ -97,7 +97,7 @@ case "$cmd" in
       exit 0
     fi
 
-    tpl="$TEMPLATE_DIR/research/CODEBASE_MAP.md"
+    tpl="$TEMPLATE_DIR/codebase/CODEBASE_MAP.md"
     [ -f "$tpl" ] || die "template not found: $tpl"
 
     # The commit the map describes, so a later re-run knows what it is
