@@ -106,7 +106,8 @@ the installer's auto-discovery rules.
   `HANDOFF.md` content. The `SessionStart` hook only injects the handoff as
   context and never submits a turn, so `vibe start --no-attach` and any
   scripted start previously left the agent idle with the handoff loaded but
-  unread. Rationale in the PR for `fix-handoff-start-bug`.
+  unread. Rationale in the PR for `fix-handoff-start-bug`. **Narrowed
+  2026-07-27** — see below.
 - 2026-07-26: `install.sh` prunes orphaned symlinks on every run — a link in
   a managed directory that both resolves into this checkout *and* resolves to
   nothing, which is what a renamed skill leaves in `~/.claude/skills`. It was
@@ -139,6 +140,17 @@ the installer's auto-discovery rules.
   singled out, since a per-machine knowledge graph contradicts an artifact
   architecture that keeps state in git. Rationale in the PR for
   `mcp-server-list`.
+- 2026-07-27: The kickoff prompt above is **narrowed to `--no-attach`**. It
+  now fires only for a fresh launch nobody is attaching to; an attached
+  session — server or local — opens with the handoff in context and waits
+  for the person who is sitting there. The 2026-07-23 entry read "no tty to
+  attach from" as the problem and then keyed on handoff content instead, so
+  it also spent the first turn of every attended session on a decision the
+  person was about to make. `--no-attach` is the signal for "nobody is
+  arriving" and, unlike a tty check, survives a bats run. Shipped with
+  `handoff-start`, the sibling of `handoff-brief` that stages the same brief
+  and then launches the session. Rationale in the PR for
+  `skill-handoff-start`.
 
 ## Roadmap
 
