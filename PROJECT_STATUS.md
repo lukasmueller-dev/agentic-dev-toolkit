@@ -22,6 +22,16 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-07-26: The planned `research-*` skill family is settled as **skills,
+  not agents** — including `research-cartographer`, whose read-only fan-out
+  was the one candidate for `claude/agents/` but loses to portability, since
+  an agent directory is Claude-Code-only and a written artifact does not fit
+  the read-only-by-allowlist pattern that makes the reviewer agents safe. The
+  family's other six contracts (a `templates/research/` entry per emitted
+  document, artifacts into the target repo's `docs/`, two shared detections in
+  `skills/_lib/`, the smoke-scale never-launch rule, the `research-` prefix)
+  are fixed in the same place. See `docs/research-skills.md`; rationale in the
+  PR for `roadmap-track-c`.
 - 2026-07-21: `local` and `server` are **roles a session plays**, not two
   named machines or two operating systems — the same box is local when you
   sit at it and a server when you SSH in, and any number of machines can
