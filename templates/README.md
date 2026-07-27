@@ -17,6 +17,7 @@ copy.
 | `gitignore/*.gitignore` | `<repo>/.gitignore` | Long — fragments concatenated per project type (`common` + each detected type) |
 | `ci/*.yml`           | `<repo>/.github/workflows/ci.yml` | Long — starting-point workflow per project type, adapted to the repo's tooling |
 | `research/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
+| `research/RUNBOOK.md` | `<repo>/docs/RUNBOOK.md` | Long — one per repo; appended to for the repo's whole life, never regenerated |
 
 `research/` holds the documents the `research-*` skill family emits into a
 target repo's `docs/` (`docs/research-skills.md` §2 and §3). Each lands in the
@@ -99,6 +100,8 @@ tokens in.
   `gitignore/*`, and adapts `ci/*` into the repo being scaffolded
 - `skills/research-cartographer/map.sh` — renders `research/CODEBASE_MAP.md`
   into the target repo's `docs/`, and never overwrites an existing one
+- `skills/research-first-run/env.sh` — renders `research/RUNBOOK.md` into the
+  target repo's `docs/`, and never overwrites an existing one
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

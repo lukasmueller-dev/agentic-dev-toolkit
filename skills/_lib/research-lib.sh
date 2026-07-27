@@ -266,3 +266,118 @@ $sig
 EOF
   return 0
 }
+
+# ---------------------------------------------------------------------------
+# §5 Execution-context detection
+#
+#   detect_exec_context    -> cluster | workstation | ambiguous
+#   exec_context_evidence  -> one "signal: detail" line per probe
+#
+# Detected per session, never a fixed label: the same machine is a workstation
+# when you sit at it and a cluster login node when you reach it over SSH.
+# Nothing here reads or writes a configured role — the caller prints the
+# verdict and its reason before acting, because a silent guess here burns an
+# allocation.
+#
+# Takes no argument: this describes the machine, not a directory.
+# ---------------------------------------------------------------------------
+
+# _ec_gpu — echo the GPU state and return 0 only when a device is actually
+# usable:
+#   none     nvidia-smi is not installed
+#   broken   installed but failing — no driver, no permission, or a container
+#            without device passthrough. Counts as *no GPU visible* per §5,
+#            and says so, because that state looks like a GPU box and is not.
+#   <n>      that many devices listed
+_ec_gpu() {
+  command -v nvidia-smi >/dev/null 2>&1 || {
+    echo none
+    return 1
+  }
+  local out n
+  out="$(nvidia-smi -L 2>/dev/null)" || {
+    echo broken
+    return 1
+  }
+  # grep -c reads all of its input, so nothing upstream dies of SIGPIPE; a
+  # zero count exits 1, which the fallback absorbs.
+  n="$(printf '%s\n' "$out" | grep -c '^GPU [0-9]')" || n=0
+  [ "$n" -gt 0 ] || {
+    echo broken
+    return 1
+  }
+  echo "$n"
+  return 0
+}
+
+# _ec_scheduler — echo the first scheduler submitter on PATH, or "" .
+_ec_scheduler() {
+  local c
+  for c in sbatch srun salloc qsub bsub; do
+    if command -v "$c" >/dev/null 2>&1; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# detect_exec_context -> cluster | workstation | ambiguous
+#
+# The §5 table, in order. The ambiguous row is the one that matters: a
+# scheduler *and* a visible GPU is either an interactive allocation or a
+# workstation with cluster access, and those want opposite things. Ambiguity
+# is the common case here, so the ask is a normal path, not an error path.
+detect_exec_context() {
+  if [ -n "${SLURM_JOB_ID:-}" ] || [ -n "${SLURM_JOB_NODELIST:-}" ]; then
+    echo cluster
+    return 0
+  fi
+  local sched="" gpus=""
+  sched="$(_ec_scheduler)" || sched=""
+  gpus="$(_ec_gpu)" || gpus=""
+  if [ -n "$sched" ]; then
+    # A GPU count only lands in $gpus when _ec_gpu succeeded; "none" and
+    # "broken" both leave it empty, which is the "nothing GPU-shaped runs
+    # here" half of the table.
+    if [ -n "$gpus" ]; then
+      echo ambiguous
+    else
+      echo cluster
+    fi
+  else
+    echo workstation
+  fi
+  return 0
+}
+
+# exec_context_evidence — one line per probe, whether or not it matched.
+#
+# Unlike repo_kind_evidence, every probe reports: "no scheduler on PATH" is
+# itself the evidence for `workstation`, and a reader resolving an ambiguous
+# verdict needs the negatives as much as the positives.
+exec_context_evidence() {
+  local sched gpus
+  if [ -n "${SLURM_JOB_ID:-}" ]; then
+    echo "scheduler environment: SLURM_JOB_ID=${SLURM_JOB_ID} — inside an allocation"
+  elif [ -n "${SLURM_JOB_NODELIST:-}" ]; then
+    echo "scheduler environment: SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST} — inside an allocation"
+  else
+    echo "scheduler environment: no SLURM_JOB_ID or SLURM_JOB_NODELIST set"
+  fi
+
+  sched="$(_ec_scheduler)" || sched=""
+  if [ -n "$sched" ]; then
+    echo "scheduler on PATH: $sched"
+  else
+    echo "scheduler on PATH: none of sbatch, srun, salloc, qsub, bsub"
+  fi
+
+  gpus="$(_ec_gpu)" || true
+  case "$gpus" in
+    none) echo "GPU: nvidia-smi not installed — no GPU visible" ;;
+    broken) echo "GPU: nvidia-smi present but listed no device — no driver, no permission, or no device passthrough; counts as no GPU visible" ;;
+    *) echo "GPU: nvidia-smi lists $gpus device(s)" ;;
+  esac
+  return 0
+}
