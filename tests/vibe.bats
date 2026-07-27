@@ -812,7 +812,35 @@ EOF
   grep -q "send-keys -t vibe-proj-no-kick-server true C-m" "$VIBE_TEST_TMUX_LOG"
 }
 
-@test "start: local exec appends the kickoff prompt as its own argv element when the handoff carries real content" {
+@test "start: a server start someone is attaching to sends no kickoff, even with real handoff content" {
+  # The kickoff exists for sessions nobody is arriving at. Attaching, you get
+  # the handoff as context from the SessionStart hook and say go yourself —
+  # spending the first turn on that decision takes it away from you.
+  cd "$(make_repo proj)"
+  run_vibe start "kick attached" >/dev/null
+  printf '# Handoff\n\nreal work to do\n' \
+    >"$BATS_TEST_TMPDIR/worktrees/proj/kick-attached/HANDOFF.md"
+  : >"$VIBE_TEST_TMUX_LOG"
+
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "kick attached"
+  [ "$status" -eq 0 ]
+  grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
+  # 'Begin', not the whole sentence: send-keys carries the prompt through
+  # printf %q, so it reaches the log as 'Begin\ per\ HANDOFF.md.' and an
+  # absence assertion spelled the readable way matches nothing and passes
+  # no matter what the code does.
+  run grep -q "Begin" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "start: local exec never appends the kickoff prompt, even with real handoff content" {
+  # Locally 'vibe start' execs into the terminal you are sitting at —
+  # cmd_start refuses --no-attach off a server — so this is always an
+  # attached session, and an attached session waits for you.
   cd "$(make_repo proj)"
   local agent="$BATS_TEST_TMPDIR/agent.sh"
   cat >"$agent" <<'EOF'
@@ -831,28 +859,10 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" start "kick local"
   [ "$status" -eq 0 ]
-  # A genuine argv element, not a string the agent has to re-split: the
-  # embedded spaces in "Begin per HANDOFF.md." must survive as one line.
-  [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "Begin per HANDOFF.md." ]
-}
-
-@test "start: local exec sends no kickoff when the handoff is only the template" {
-  cd "$(make_repo proj)"
-  local agent="$BATS_TEST_TMPDIR/agent.sh"
-  cat >"$agent" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$@" >"$ARGV_LOG"
-EOF
-  chmod +x "$agent"
-
-  run env ARGV_LOG="$BATS_TEST_TMPDIR/argv" \
-    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD="$agent" \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" start "no kick local"
-  [ "$status" -eq 0 ]
   # printf '%s\n' with zero args still writes one blank line — assert no
-  # argv content rather than an empty file.
+  # argv content rather than an empty file. Real handoff content is the
+  # strong case here, so there is no separate template-only local test: the
+  # branch has no condition left to take.
   [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "" ]
 }
 
@@ -1212,7 +1222,10 @@ EOF
   grep -q "send-keys -t vibe-proj-task-resume stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
 }
 
-@test "attach: kicks off the relaunch with the handoff when it carries real content (server)" {
+@test "attach: relaunching a dead pane sends no kickoff, even with real handoff content" {
+  # 'vibe attach' shares open_session with 'vibe start', and this is its
+  # fresh-launch path — a dead pane restarted with no resume args. You are
+  # attaching, so it must wait for you like any other attached session.
   cd "$(make_repo proj)"
   run_vibe start "task dead kick" >/dev/null
   printf '# Handoff\n\nreal work to do\n' \
@@ -1227,9 +1240,12 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" attach "task dead kick"
   [ "$status" -eq 0 ]
-  local kickoff
-  kickoff="$(printf '%q' 'Begin per HANDOFF.md.')"
-  grep -qF "send-keys -t vibe-proj-task-dead-kick stub-agent $kickoff" "$VIBE_TEST_TMUX_LOG"
+  # The relaunch still happens — it is only the kickoff turn that is gone.
+  grep -q "send-keys -t vibe-proj-task-dead-kick stub-agent C-m" "$VIBE_TEST_TMUX_LOG"
+  # 'Begin' rather than the sentence: printf %q escapes the spaces on the way
+  # into send-keys, so the readable spelling can never match.
+  run grep -q "Begin" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
 }
 
 @test "attach: resuming an old conversation never adds the kickoff, even with real handoff content" {
@@ -1249,7 +1265,9 @@ EOF
     "$VIBE" attach "task resume kick"
   [ "$status" -eq 0 ]
   grep -q "send-keys -t vibe-proj-task-resume-kick stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
-  run grep -q "Begin per HANDOFF" "$VIBE_TEST_TMUX_LOG"
+  # 'Begin' rather than the sentence: printf %q escapes the spaces on the way
+  # into send-keys, so the readable spelling can never match.
+  run grep -q "Begin" "$VIBE_TEST_TMUX_LOG"
   [ "$status" -ne 0 ]
 }
 
