@@ -12,7 +12,7 @@ load helper
 
 setup() { git_env; }
 
-MAP="$REPO_ROOT/skills/research-cartographer/map.sh"
+MAP="$REPO_ROOT/skills/codebase-map/map.sh"
 
 # kind_of DIR — the verdict alone, so a test reads as the rule it checks.
 kind_of() {

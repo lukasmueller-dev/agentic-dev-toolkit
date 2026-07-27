@@ -516,9 +516,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
     # readily as "no match", so a rename would retire the check silently.
     [ -f "$REPO_ROOT/$f" ]
   done
-  # Directories rather than files: the research-* family adds a document per
-  # skill, and each is covered here without another edit.
-  for d in templates/ci templates/gitignore templates/research; do
+  # Directories rather than files: a family that adds a document per skill is
+  # covered here without another edit. A directory joins this list once it
+  # holds something — the non-empty assertion below is not satisfiable by an
+  # empty one, and git does not track an empty directory anyway.
+  for d in templates/ci templates/gitignore templates/codebase; do
     [ -n "$(find "$REPO_ROOT/$d" -type f 2>/dev/null | head -1)" ]
   done
   run grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
@@ -526,7 +528,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
     "$REPO_ROOT"/templates/LOOP_PR.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/repo/pre-push \
     "$REPO_ROOT"/templates/ci "$REPO_ROOT"/templates/gitignore \
-    "$REPO_ROOT"/templates/research
+    "$REPO_ROOT"/templates/codebase
   [ "$status" -ne 0 ] || {
     echo "a template names a specific tool or machine: $output" >&2
     return 1

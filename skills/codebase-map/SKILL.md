@@ -1,9 +1,9 @@
 ---
-name: research-cartographer
+name: codebase-map
 description: Maps an unfamiliar codebase into docs/CODEBASE_MAP.md against a fixed schema — entry points, config resolution, dependency graph, how to run it, and the landmines that cost an afternoon. Use when picking up a codebase nobody in the session knows, when asked to explain, orient in, or onboard onto a repo, when asked where the data path, training loop, request lifecycle or config actually lives, and to refresh an existing map after an upstream pull. Reads and writes only its own map; never runs the expensive thing.
 ---
 
-# Research cartographer
+# Codebase map
 
 ## Boundaries
 
@@ -53,7 +53,7 @@ bash map.sh seed research|application [DIR]
 Creates the repo's `docs/CODEBASE_MAP.md` from the toolkit's template — an
 empty schema with the mode and the commit recorded in its frontmatter. Never
 write this document from memory: one copy of the schema lives in
-`templates/research/CODEBASE_MAP.md`, and copies drift.
+`templates/codebase/CODEBASE_MAP.md`, and copies drift.
 
 If it prints `exists:`, the repo already has a map. **Skip to phase 6** — the
 job is now an update, not a mapping.
