@@ -22,6 +22,14 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-07-27: The `CODEBASE_MAP.md` schema is **dogfooded and fixed**, which
+  is the gate Track C's wave 2 was waiting on. First contact with a real
+  research repo changed it twice: the shallow half of the schema keeps its
+  headings rather than collapsing to a bullet list (otherwise two maps stop
+  lining up), and the config section no longer presumes a config *file* tree,
+  since a repo whose configuration is code has resolution layers too. See
+  `templates/research/CODEBASE_MAP.md`; rationale in the PR for
+  `implement-first-track-c-items`.
 - 2026-07-26: The planned `research-*` skill family is settled as **skills,
   not agents** — including `research-cartographer`, whose read-only fan-out
   was the one candidate for `claude/agents/` but loses to portability, since
