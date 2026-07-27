@@ -29,16 +29,25 @@ Deliberately rejected, so they are not re-proposed: a generic "optimize my
 model" skill, anything that autonomously launches training, and a
 paper-writing agent.
 
-- [ ] **`research-first-run`** (wave 1) — gets an unfamiliar research
-      codebase running. Resolve the environment first (python, torch,
-      CUDA, and the flash-attn wheel that matches both), then reach the
-      smallest thing that proves the training loop works — one batch, a
-      tiny subset, a single GPU — before anything real is launched.
-      Done is concrete: a committed `scripts/smoke.sh` that runs in under
-      about two minutes. Every undocumented workaround gets logged into
-      `docs/RUNBOOK.md` as it is discovered, since research repos always
-      need several fixes that exist in no README and that knowledge
-      otherwise dies in a scrollback.
+- [ ] **`research-first-run`** (wave 1) — **the skill has landed; what
+      remains is the proof, and it needs a GPU box.** `skills/research-first-run/`,
+      its `env.sh`, §5's execution-context detection in
+      `skills/_lib/research-lib.sh` and `templates/research/RUNBOOK.md` are
+      all merged and tested. None of that was provable on a machine with no
+      GPU and no scheduler, which is the whole of what is left:
+      run the skill against a real research codebase on real hardware, and
+      commit the `scripts/smoke.sh` it produces — one process, one device,
+      under about two minutes, measured rather than estimated, exiting
+      non-zero on failure.
+      Two things to watch for, since they are what the skill exists to get
+      right and neither can be checked here: the environment resolution
+      order (runtime → framework build → accelerator toolkit → any wheel
+      compiled against both — that last link is where first runs actually
+      die), and whether workarounds really do land in `docs/RUNBOOK.md` as
+      they are found rather than at the end, when the one change that
+      mattered is indistinguishable from the three that did not.
+      Delete this item once `scripts/smoke.sh` exists in a real repo and
+      has been run.
 
 - [ ] **`research-train-doctor`** (wave 2) — triages a run that is not
       learning. The value is the ordering, by prior probability rather
