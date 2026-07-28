@@ -12,6 +12,14 @@ rendering, and the handoff content filter. Before the lib existed each script
 carried its own copy of these, with a "kept in lockstep with bin/vibe"
 comment doing the work a single definition does now.
 
+`research-lib.sh` holds the detections the `research-*` skill family shares —
+repo kind, and (as the family grows) execution context. It belongs to none of
+those skills: the contracts in `docs/research-skills.md` §4 and §5 fix the
+signals and the verdict rules, so that two skills classifying the same repo
+cannot disagree. Each pair is a verdict function plus a reason function,
+modelled on `detect_env`/`env_reason` in `bin/vibe`, and both always exit 0 —
+"cannot tell" is a verdict, not an error.
+
 `bin/vibe` still has its own copies — it is deliberately a single
 self-contained file. If its behavior changes (worktree paths, config keys,
 the loop state format), this lib must change with it; the bats suites for

@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-26 · server (srv1841294)_
+_Last updated: 2026-07-27 · server (srv1841294)_
 
 ## Goal
 
@@ -22,8 +22,19 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-07-27: The `CODEBASE_MAP.md` schema is **dogfooded and fixed**, which
+  is the gate Track C's wave 2 was waiting on. First contact with a real
+  research repo changed it twice: the shallow half of the schema keeps its
+  headings rather than collapsing to a bullet list (otherwise two maps stop
+  lining up), and the config section no longer presumes a config *file* tree,
+  since a repo whose configuration is code has resolution layers too. The
+  skill shipped as `codebase-map`, not `research-cartographer`: it has an
+  explicit `application` mode, so the family prefix advertised a narrower
+  thing than it is — the carve-out and its cost are recorded in
+  `docs/research-skills.md` §7. See `templates/codebase/CODEBASE_MAP.md`;
+  rationale in the PR for `implement-first-track-c-items`.
 - 2026-07-26: The planned `research-*` skill family is settled as **skills,
-  not agents** — including `research-cartographer`, whose read-only fan-out
+  not agents** — including the codebase mapper, whose read-only fan-out
   was the one candidate for `claude/agents/` but loses to portability, since
   an agent directory is Claude-Code-only and a written artifact does not fit
   the read-only-by-allowlist pattern that makes the reviewer agents safe. The

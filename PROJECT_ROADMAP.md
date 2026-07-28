@@ -74,30 +74,6 @@ Deliberately rejected, so they are not re-proposed: a generic "optimize my
 model" skill, anything that autonomously launches training, and a
 paper-writing agent.
 
-- [ ] **`research-cartographer`** (wave 1) — explains an unfamiliar
-      codebase into `docs/CODEBASE_MAP.md` against a *fixed* schema, so
-      output is comparable across repos and re-runs can diff against the
-      existing map. One skill, two branches, auto-detected with an
-      explicit override; `mode:` goes in the artifact's frontmatter.
-      Detection: `train.py` + `configs/*.yaml` + hydra/gin/draccus +
-      wandb + torch/jax → research; `package.json`, route definitions,
-      Dockerfile-serving → application; ambiguous → ask. The mode picks
-      which middle sections get depth, not which exist — a research repo
-      with a serving path is normal.
-      Shared sections: entry points, config resolution chain (including
-      keys that are silently ignored), dependency graph, how to run it,
-      and **landmines** — globals, monkeypatches, hardcoded paths, dead
-      config branches.
-      Research middle: data path with real shapes/dtypes/ranges, model
-      forward (tokenizer, vision encoder, action head, action
-      tokenization), loss and what is masked out of it, eval hook,
-      checkpoint format.
-      Application middle: request lifecycle, state and persistence,
-      external services, auth boundaries, build and deploy.
-      Done when a map generated for `openpi` fills every schema section
-      with a `file:line` pointer, and a re-run after an upstream pull
-      reports a diff rather than a fresh map.
-
 - [ ] **`research-first-run`** (wave 1) — gets an unfamiliar research
       codebase running. Resolve the environment first (python, torch,
       CUDA, and the flash-attn wheel that matches both), then reach the
