@@ -9,7 +9,8 @@
 #     own persistent tmux session, so the agent keeps working when you
 #     disconnect SSH.
 #   - On a LOCAL machine — one you are sitting at — no tmux is forced; you just
-#     get dropped into the worktree.
+#     get dropped into the worktree. Asking for a detached session there
+#     (--no-attach) opts back into tmux, since something has to hold it.
 #   - Every worktree gets a HANDOFF.md so machines can hand off cleanly.
 #
 # Commands, in the order you reach for them:
@@ -18,16 +19,20 @@
 #   vibe start <task> [--no-attach]
 #                         Create branch+worktree for <task>, seed HANDOFF.md,
 #                         then open a claude session (in tmux on server).
-#                         --no-attach (server) starts the tmux session and
-#                         returns instead of attaching — for starts with no
-#                         tty to attach from (ssh <host> vibe start <task>).
-#                         Since nobody is arriving to say go, that session
-#                         begins from HANDOFF.md by itself; an attached one
-#                         loads the handoff and waits for you.
+#                         --no-attach starts the tmux session and returns
+#                         instead of attaching — for starts with no tty to
+#                         attach from (ssh <host> vibe start <task>, or an
+#                         agent launching a task from inside another session).
+#                         It implies tmux on any machine, so it needs tmux
+#                         installed. Since nobody is arriving to say go, that
+#                         session begins from HANDOFF.md by itself; an
+#                         attached one loads the handoff and waits for you.
 #   vibe attach [<task>]  Arrive at a task: fast-forward its worktree when that
 #                         is safe (clean + ff-only), then attach. Never refuses
 #                         — a dirty/diverged tree is reported and attached as-is.
-#                         With no task, pick from a menu.
+#                         Attaches to the task's tmux session wherever one is
+#                         running, so a detached start is reachable on any
+#                         machine. With no task, pick from a menu.
 #   vibe park [<task>]    Leave a machine: refresh HANDOFF.md by running the
 #                         agent headlessly, then sync. Degrades to a plain sync
 #                         if the agent is missing or the headless call fails.
@@ -61,9 +66,11 @@
 #                         --pr opens the pull request when it ends (implies
 #                         --push); a run that did not pass opens a draft.
 #                         Re-running on an existing loop worktree resumes it.
-#                         --no-attach (server) starts the tmux session and
-#                         returns instead of attaching — for starting a loop
-#                         from a remote-controlled session or a script.
+#                         --no-attach starts the tmux session and returns
+#                         instead of attaching — for starting a loop from a
+#                         remote-controlled session or a script. Like start's
+#                         flag it implies tmux on any machine; without it a
+#                         local loop runs in the foreground.
 #
 # Phone:
 #   vibe rc <task>        Enable Remote Control on a running task by sending /rc
@@ -504,6 +511,49 @@ ensure_worktree() {
 tmux_session_name() {
   # vibe-<repo>-<branch>, tmux disallows dots in session names
   echo "${VIBE_TMUX_PREFIX}-$1-$2" | tr '.' '-'
+}
+
+# tmux_live_session SESS — true when tmux is installed here *and* SESS is
+# running. The local paths have to be able to ask that question on a machine
+# with no tmux at all, where a bare 'tmux has-session' is a command-not-found
+# rather than an answer.
+tmux_live_session() {
+  command -v tmux >/dev/null 2>&1 || return 1
+  tmux has-session -t "$1" 2>/dev/null
+}
+
+# session_in_tmux SESS NO_ATTACH — true when this task's session belongs in
+# tmux rather than in the terminal the command was typed into. Three cases,
+# and the split is deliberately *not* local-vs-server:
+#
+#   - a server, where the work has to outlive the SSH connection;
+#   - --no-attach on any machine: "start it and return" needs something other
+#     than this process to hold the session, and tmux is what the server path
+#     already uses. The local default is untouched — a bare 'vibe start' still
+#     runs in the foreground with no tmux, because nothing there needs to
+#     survive;
+#   - a session that already exists, wherever it exists. This one is what
+#     makes a local --no-attach start reachable again: without it 'vibe
+#     attach' would exec a second agent against the same worktree while the
+#     detached one kept running, silently, with no error.
+session_in_tmux() {
+  local sess="$1" no_attach="${2:-0}"
+  if [[ "$(detect_env)" == "server" || "$no_attach" == "1" ]]; then
+    return 0
+  fi
+  tmux_live_session "$sess"
+}
+
+# no_attach_needs_tmux — refuse --no-attach on a machine with no tmux. The flag
+# promises the session outlives the command that started it, and tmux is the
+# only thing here that can keep that promise: this process cannot, since it
+# returns. On a server tmux is required anyway; locally it is optional, so this
+# is where a machine without it finds out — before anything is scaffolded, and
+# with both ways out named.
+no_attach_needs_tmux() {
+  command -v tmux >/dev/null 2>&1 || die "--no-attach needs tmux — it is what holds
+  the session once nobody is attached, and this machine has none. Install tmux,
+  or drop --no-attach and let the session open in this terminal."
 }
 
 # tmux_ensure_session SESS DIR CMD — make sure a detached session SESS exists
@@ -1420,12 +1470,9 @@ loop_parse_args() {
   if [[ "$LP_sandbox" == "1" && -z "$VIBE_LOOP_SANDBOX_ARGS" ]]; then
     die "--sandbox needs VIBE_LOOP_SANDBOX_ARGS set (see docs/vibe-loop.md)."
   fi
-  # Checked before any scaffolding: locally the loop runs in the foreground,
-  # so a late refusal would leave a seeded worktree and a stale state file.
-  if [[ "$LP_no_attach" == "1" && "$(detect_env)" != "server" ]]; then
-    die "--no-attach needs a server tmux session — locally the loop runs in
-  the foreground, so there is nothing to detach from. Start it on the server."
-  fi
+  # Checked before any scaffolding: a late refusal would leave a seeded
+  # worktree and a stale state file behind.
+  if [[ "$LP_no_attach" == "1" ]]; then no_attach_needs_tmux; fi
 }
 
 # loop_effective_settings DIR RESUMING — resolve the settings a loop actually
@@ -1497,17 +1544,19 @@ cmd_loop() {
     info "resuming loop for '$branch' from saved state (iter $(loop_get "$dir" ITER))"
   fi
 
-  # Where the runner will go, decided before anything is written. On the
-  # server the loop runs inside tmux, and the task's session may already
-  # exist: idle after a finished or killed run (its pane back at a shell), or
-  # busy with an interactive 'vibe start' agent — same session name. The busy
-  # case must refuse HERE, before the state file is rewritten to "running",
-  # or a refused loop leaves state that vibe status reports as live forever.
-  local env sess="" sess_exists=0
-  env="$(detect_env)"
-  if [[ "$env" == "server" ]]; then
+  # Where the runner will go, decided before anything is written. Inside tmux
+  # whenever session_in_tmux says so — the same rule 'vibe start' follows, so
+  # a loop and an interactive session are never split across the two paths on
+  # one machine. There the task's session may already exist: idle after a
+  # finished or killed run (its pane back at a shell), or busy with an
+  # interactive 'vibe start' agent — same session name. The busy case must
+  # refuse HERE, before the state file is rewritten to "running", or a refused
+  # loop leaves state that vibe status reports as live forever.
+  local sess use_tmux=0 sess_exists=0
+  sess="$(tmux_session_name "$repo" "$branch")"
+  if session_in_tmux "$sess" "$LP_no_attach"; then
+    use_tmux=1
     need tmux
-    sess="$(tmux_session_name "$repo" "$branch")"
     if tmux has-session -t "$sess" 2>/dev/null; then
       sess_exists=1
       local pane_cmd
@@ -1548,7 +1597,7 @@ cmd_loop() {
     UNTIL "$LE_until" PUSH "$LE_push" PR "$LE_pr" PERMISSIVE "$LE_perm" SANDBOX "$LE_sandbox" \
     DEADLINE "$LE_deadline" PID "" STARTED "$LE_started"
 
-  if [[ "$env" == "server" ]]; then
+  if ((use_tmux)); then
     local run_cmd
     # Run the loop inside tmux so it survives disconnect. __loop-run resolves
     # the round bookkeeping from the state file just written — but it
@@ -1595,7 +1644,7 @@ cmd_loop() {
     fi
   else
     warn "local environment — running the loop in the foreground (Ctrl-C to stop)."
-    warn "run it on the server for a detached session that survives disconnect."
+    warn "pass --no-attach to run it detached in tmux instead, here or on the server."
     run_loop "$dir" "$repo" "$branch"
     # Foreground only: surface how the loop ended as the exit code, so
     # 'vibe loop … && next-step' can branch on the outcome. A detached
@@ -1685,10 +1734,7 @@ cmd_start() {
   [[ -n "$task" ]] || die "$usage"
   # Checked before any scaffolding, like 'vibe loop' does: a late refusal
   # would leave a seeded worktree behind.
-  if [[ "$no_attach" == "1" && "$(detect_env)" != "server" ]]; then
-    die "--no-attach needs a server tmux session — locally 'vibe start' opens
-  the agent in the foreground, so there is nothing to detach from."
-  fi
+  if [[ "$no_attach" == "1" ]]; then no_attach_needs_tmux; fi
   local branch
   branch="$(slug "$task")"
   local repo
@@ -1709,17 +1755,19 @@ cmd_start() {
 }
 
 # open_session REPO BRANCH DIR [NO_ATTACH] — bring the task's session to the
-# foreground: tmux on the server, exec the agent locally. NO_ATTACH=1 (server
-# only) leaves the tmux session running detached instead of attaching.
+# foreground. Which half runs is session_in_tmux's call, not a machine's:
+# wherever something is holding the session (a server, --no-attach, a session
+# already running) tmux owns it and we attach to it; otherwise the agent is
+# exec'd into this terminal. NO_ATTACH=1 leaves the tmux session running
+# detached instead of attaching.
 open_session() {
   local repo="$1" branch="$2" dir="$3" no_attach="${4:-0}"
-  local env
-  env="$(detect_env)"
+  local sess
+  sess="$(tmux_session_name "$repo" "$branch")"
 
-  if [[ "$env" == "server" ]]; then
+  if session_in_tmux "$sess" "$no_attach"; then
     need tmux
-    local sess launch launch_fresh
-    sess="$(tmux_session_name "$repo" "$branch")"
+    local launch launch_fresh
     # VIBE_RC_ON_START launches the agent with Remote Control already on, so
     # the session is reachable from the phone without a later 'vibe rc'. This
     # appends Claude Code's --remote-control flag; agents without it should
@@ -1771,14 +1819,15 @@ open_session() {
       tmux_attach_or_switch "$sess"
     fi
   else
-    # local: no forced tmux, just move into the worktree and launch agent.
-    # Word-split on purpose, like run_loop does: VIBE_AGENT_CMD may carry
-    # flags ("claude --model x"), and exec'ing it as one word treats the
-    # whole string as a command name.
+    # Nothing is holding a session here, so this terminal becomes it: move
+    # into the worktree and launch the agent in place. Word-split on purpose,
+    # like run_loop does: VIBE_AGENT_CMD may carry flags ("claude --model x"),
+    # and exec'ing it as one word treats the whole string as a command name.
     #
-    # No kickoff turn here: cmd_start refuses --no-attach off a server, so
-    # this branch is by construction someone sitting at the terminal it execs
-    # into. The SessionStart hook puts the handoff in context and they say go.
+    # No kickoff turn here: --no-attach takes the tmux branch above on every
+    # machine, so this branch is by construction someone sitting at the
+    # terminal it execs into. The SessionStart hook puts the handoff in
+    # context and they say go.
     info "local environment — entering worktree (no tmux)."
     cd "$dir"
     # shellcheck disable=SC2206
@@ -2558,16 +2607,20 @@ wait_for_pane_idle() {
 
 # vibe rc <task> — turn on Remote Control for a running task by sending '/rc'
 # into its tmux session, so it can be driven from the Claude app on a phone.
-# Server only: there is no persistent session to reach on local. This is what
-# makes 'ssh <host> vibe rc <task>' work from anywhere.
+#
+# Server only, and deliberately so even though --no-attach can now leave a
+# detached session on a local machine too. Remote Control is about reaching a
+# machine you are not at, and a laptop is a different problem from a server:
+# there is no 'ssh <host> vibe rc <task>' to reach it with. This is what makes
+# that one line work from anywhere.
 cmd_rc() {
   local task="${1:-}"
   [[ -n "$task" ]] || die "usage: vibe rc <task>"
 
   if [[ "$(detect_env)" != "server" ]]; then
-    warn "vibe rc is a no-op on local: Remote Control reaches a persistent tmux
-  session on the server, and there is none here. Run it on the server, e.g.
-  'ssh <host> vibe rc $task'."
+    warn "vibe rc is a no-op on local: Remote Control is for reaching a machine
+  you are not sitting at, and there is no way in to this one. Run it on the
+  server, e.g. 'ssh <host> vibe rc $task'."
     return 0
   fi
 
@@ -2683,7 +2736,7 @@ cmd_doctor() {
   elif [[ "$(detect_env)" == "server" ]]; then
     d_no "tmux        not installed — sessions will not survive disconnect"
   else
-    d_wn "tmux        not installed (only needed on the server)"
+    d_wn "tmux        not installed — needed on the server, and by --no-attach anywhere; a foreground 'vibe start' works without it"
   fi
 
   if command -v gh >/dev/null 2>&1; then
@@ -2901,15 +2954,18 @@ cmd_help() {
   help_cmd "start <task>" "[--no-attach]" \
     "Create branch+worktree for <task>, seed HANDOFF.md," \
     "then open a claude session (in tmux on server)." \
-    "--no-attach (server) starts the tmux session and" \
-    "returns instead of attaching — for starts with no" \
-    "tty to attach from (ssh <host> vibe start <task>)." \
+    "--no-attach starts the tmux session and returns" \
+    "instead of attaching — for starts with no tty to" \
+    "attach from (ssh <host> vibe start <task>). It" \
+    "implies tmux on any machine, so tmux must be there." \
     "That session begins from HANDOFF.md by itself; an" \
     "attached one loads the handoff and waits for you."
   help_cmd "attach [<task>]" "" \
     "Arrive at a task: fast-forward its worktree when that" \
     "is safe (clean + ff-only), then attach. Never refuses" \
     "— a dirty/diverged tree is reported and attached as-is." \
+    "Attaches to the task's tmux session wherever one runs," \
+    "so a detached start is reachable on any machine." \
     "With no task, pick from a menu."
   help_cmd "park [<task>]" "" \
     "Leave a machine: refresh HANDOFF.md by running the" \
@@ -2944,9 +3000,11 @@ cmd_help() {
     "--pr opens the pull request when it ends (implies" \
     "--push); a run that did not pass opens a draft." \
     "Re-running on an existing loop worktree resumes it." \
-    "--no-attach (server) starts the tmux session and" \
-    "returns instead of attaching — for starting a loop" \
-    "from a remote-controlled session or a script."
+    "--no-attach starts the tmux session and returns" \
+    "instead of attaching — for starting a loop from a" \
+    "remote-controlled session or a script. It implies" \
+    "tmux anywhere; without it a local loop runs in the" \
+    "foreground."
   blank
 
   help_section "Phone:"

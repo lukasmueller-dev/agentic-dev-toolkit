@@ -88,11 +88,12 @@ TASK="sota $WEEK"
 set -- --prompt "$BRIEF" --until "test -f docs/sota/$WEEK.md" --max 3 --pr
 
 # --no-attach only where it belongs: on a server the loop detaches into tmux
-# and cron has no tty to attach from, so it is required. On a local machine
-# 'vibe loop' runs in the foreground and REFUSES --no-attach outright — passing
-# it unconditionally made the by-hand run (docs/sota-watch.md) die instantly
-# rather than run. So ask vibe which environment this is and add the flag only
-# for a server. 'vibe where' prints "<env> (reason)"; the first word is env.
+# and cron has no tty to attach from, so it is required. Locally the flag is
+# accepted too (it implies tmux anywhere), but the foreground run is what is
+# wanted here — it is the by-hand path from docs/sota-watch.md, where you
+# watch the loop rather than go looking for its session, and it needs no tmux
+# installed. So ask vibe which environment this is and add the flag only for a
+# server. 'vibe where' prints "<env> (reason)"; the first word is env.
 env="$(vibe where | awk '{print $1}')"
 if [[ "$env" == "server" ]]; then
   set -- "$@" --no-attach

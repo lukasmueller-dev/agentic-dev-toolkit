@@ -82,6 +82,27 @@ case ":$PATH:" in
 esac
 export VIBE_TEST_TMUX_LOG="${BATS_TEST_TMPDIR:-$VIBE_TEST_BIN}/tmux.log"
 
+# path_without CMD — echo a PATH that holds everything the current PATH holds
+# except CMD, by symlinking each executable into a fresh directory. For testing
+# what a tool does on a machine that simply does not have one binary — dropping
+# a stub in cannot express that, since the question is what `command -v` says.
+path_without() {
+  local drop="$1"
+  local dir="${BATS_TEST_TMPDIR:-$BATS_FILE_TMPDIR}/path-without-$drop"
+  local d f b
+  mkdir -p "$dir"
+  for d in ${PATH//:/ }; do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do
+      [ -x "$f" ] || continue
+      b="${f##*/}"
+      if [ "$b" = "$drop" ]; then continue; fi
+      [ -e "$dir/$b" ] || ln -s "$f" "$dir/$b"
+    done
+  done
+  printf '%s' "$dir"
+}
+
 # git refuses to commit without an identity, and the CI runner has none.
 git_env() {
   export GIT_AUTHOR_NAME="test"
