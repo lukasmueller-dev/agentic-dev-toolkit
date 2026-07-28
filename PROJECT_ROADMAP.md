@@ -13,6 +13,51 @@ One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) or a
 `LOOP.md` (the `loop-brief` skill) can be staged straight from it. Order
 matters within a track; tracks are independent.
 
+Track D — one launch path regardless of machine:
+
+- [ ] **`--no-attach` works off a server, so `handoff-start` stops
+      branching** — today the skill launches the session on a server and
+      merely *prints* `vibe start <task>` locally. That asymmetry is not a
+      preference; it is forced by `open_session`'s local branch, which
+      `exec`s the agent into the caller's terminal, so a skill that ran
+      `vibe start` locally would replace the very session running it.
+      `cmd_start` refuses `--no-attach` off a server for the same reason
+      (`bin/vibe:1688`), and `cmd_loop_args` carries the identical refusal
+      (`:1425`).
+      The mechanism: **`--no-attach` implies tmux, on any machine.** The
+      local default does not change — a bare `vibe start` still runs in the
+      foreground with no tmux, because nothing there needs to survive. Only
+      the explicit "start it and return" asks for something to hold the
+      session, and tmux is what the server path already uses. Do not make
+      local starts tmux-backed in general; that is a different, much larger
+      change to what `local` means.
+      The real work is `vibe attach`, not the refusal. Its local branch
+      `exec`s a fresh agent unconditionally, so a detached local session
+      would be unreachable *and* attaching would silently start a second
+      agent against the same worktree — the failure this must not ship
+      with. Attach has to prefer an existing tmux session over `exec`
+      wherever one exists, which makes `open_session`'s server/local split
+      a session-exists/does-not split instead.
+      Three smaller edges, each to be decided rather than discovered:
+      tmux may be absent locally, where `doctor` currently downgrades that
+      to "only needed on the server" (`:2686`) — `--no-attach` must fail
+      with a clear message and `handoff-start` degrade to printing the
+      command; `vibe loop --no-attach` gets the same treatment or is
+      explicitly ruled out, but not left silently inconsistent; and
+      `vibe rc` stays server-only (`:2567`) even though a local detached
+      session weakens its stated reason, since reaching a laptop from a
+      phone is a different problem. `vibe status` needs nothing — it
+      already lists tmux sessions without consulting `detect_env`.
+      Note this also settles the kickoff turn locally for free: the
+      `--no-attach` gate added in the PR for `skill-handoff-start` is
+      machine-agnostic, so a detached local start begins from `HANDOFF.md`
+      on its own, exactly as it does on a server.
+      Done when `handoff-start`'s Phase 2 is one code path with no `vibe
+      where` branch, `vibe attach` on a local detached session attaches
+      instead of launching a second agent (with a test that fails against
+      today's `exec`), and `bats tests/` covers a local `--no-attach` start
+      through the stub tmux rather than the real one.
+
 Track C — research-codebase skills:
 
 A family of portable skills for working in research codebases (the

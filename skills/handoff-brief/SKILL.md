@@ -122,5 +122,8 @@ and delete the handoff before finishing (`vibe done` enforces it), so the
 brief is guaranteed to be consumed and promoted, never silently dropped —
 and never merged onto the default branch as a stray file.
 
+If the user wanted the session started rather than staged, that is
+`handoff-start` — same brief, same phases, one launch step on the end.
+
 **Done means:** the handoff is pushed and the command is printed. Do not
 start the session, and do not keep refining after approval.

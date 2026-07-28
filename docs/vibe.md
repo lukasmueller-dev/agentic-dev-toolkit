@@ -51,12 +51,24 @@ and returns instead of attaching — for starts with no tty to attach from,
 so `ssh <host> vibe start <task>` is scriptable. `vibe attach <task>` joins
 the session later.
 
+The flag also decides whether the new session *begins* on its own. A handoff
+reaches an agent as context, injected by the `SessionStart` hook, and context
+is not a turn — something has to say go. Attached, that is you: the session
+opens with the brief loaded and waits, because you are right there and the
+first move is yours to make. Under `--no-attach` nobody is arriving, so the
+session takes the first turn itself, from `HANDOFF.md`, rather than idling at
+a prompt until someone notices. A relaunch that resumes an old conversation
+(`VIBE_AGENT_RESUME_ARGS`) never kicks off either way — it already has a
+conversation to continue.
+
 When the task grew out of a discussion in another agent session, the
 `handoff-brief` skill ([`skills/handoff-brief/`](../skills/handoff-brief/))
 bridges the two: it distills that conversation into the task's `HANDOFF.md`,
 stages it on the branch, and pushes — so the session `vibe start` opens picks
-up the plan instead of starting cold. It is the interactive sibling of
-[`loop-brief`](vibe-loop.md).
+up the plan instead of starting cold. Its sibling
+[`handoff-start`](../skills/handoff-start/) does the same and then launches
+the session, using exactly the split above. Both are the interactive
+counterpart of [`loop-brief`](vibe-loop.md).
 
 ## Commands
 
