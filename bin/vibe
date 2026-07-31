@@ -923,23 +923,36 @@ loop_active() {
   kill -0 "$pid" 2>/dev/null
 }
 
-# loop_summary DIR — one-line "iter N/M · last R · status" for vibe status.
-loop_summary() {
-  local dir="$1" it mx la st pid
-  it="$(loop_get "$dir" ITER)"
-  mx="$(loop_get "$dir" MAX)"
-  la="$(loop_get "$dir" LAST)"
+# loop_effective_status DIR — the recorded STATUS with the dead-runner
+# correction applied, or empty when there is no state file. "running" with a
+# dead recorded runner is a killed loop — the same test loop_active applies —
+# and reporting it as running reads as healthy forever. An EMPTY pid stays
+# "running": cmd_loop writes the state before tmux has started the runner, and
+# that launch window is genuinely live.
+#
+# Every consumer that shows a loop's status goes through here, so the text
+# status line and the --json document can never disagree about whether a loop
+# is alive — the same reason git_sync_state exists.
+loop_effective_status() {
+  local dir="$1" st pid
   st="$(loop_get "$dir" STATUS)"
-  # "running" with a dead recorded runner is a killed loop — the same test
-  # loop_active applies — and reporting it as running reads as healthy
-  # forever. An EMPTY pid stays "running": cmd_loop writes the state before
-  # tmux has started the runner, and that launch window is genuinely live.
   if [[ "$st" == "running" ]]; then
     pid="$(loop_get "$dir" PID)"
     if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
-      st="interrupted (vibe loop resumes)"
+      st="interrupted"
     fi
   fi
+  echo "$st"
+}
+
+# loop_summary DIR — one-line "iter N/M · last R · status" for vibe status.
+loop_summary() {
+  local dir="$1" it mx la st
+  it="$(loop_get "$dir" ITER)"
+  mx="$(loop_get "$dir" MAX)"
+  la="$(loop_get "$dir" LAST)"
+  st="$(loop_effective_status "$dir")"
+  if [[ "$st" == "interrupted" ]]; then st="interrupted (vibe loop resumes)"; fi
   printf 'iter %s/%s · last %s · %s' "${it:-0}" "${mx:-?}" "${la:-none}" "${st:-?}"
 }
 
@@ -1975,37 +1988,56 @@ git_sync_state() {
   printf '%s %s %s %s\n' "$dirty" "$ahead" "$behind" "$(upstream_ref_state "$dir")"
 }
 
-# worktree_state_dot DIR REPO BRANCH — a colored ● summarizing one worktree
-# for 'vibe status': dim ○ when tmux is installed but no session is running
-# for this task; otherwise green clean+synced, cyan finished (the upstream
-# branch is gone and nothing is left unpushed — a merged PR, ready for 'vibe
-# done'), yellow dirty or ahead/behind, red diverged (ahead and behind at
-# once). Locally, where tmux is never forced, a missing tmux binary just falls
-# through to the git-only states.
-worktree_state_dot() {
+# worktree_state_word DIR REPO BRANCH — one word summarizing a worktree, the
+# single place that verdict is decided:
+#
+#   idle      tmux is installed here but no session is running for this task
+#   dirty     uncommitted changes
+#   merged    the upstream branch is gone and nothing is left unpushed — a
+#             merged PR, ready for 'vibe done'
+#   diverged  unpushed commits *and* commits to pull
+#   unsynced  one or the other
+#   clean     nothing to do
+#
+# Locally, where tmux is never forced, a missing tmux binary just falls
+# through to the git-only states. The colored dot and the --json document are
+# both renderings of this word, so they cannot drift apart.
+worktree_state_word() {
   local dir="$1" repo="$2" branch="$3"
   if command -v tmux >/dev/null 2>&1; then
     local sess
     sess="$(tmux_session_name "$repo" "$branch")"
     if ! tmux has-session -t "$sess" 2>/dev/null; then
-      printf '%s○%s' "$c_dim" "$c_off"
+      echo idle
       return
     fi
   fi
   local dirty ahead behind upstream
   read -r dirty ahead behind upstream <<<"$(git_sync_state "$dir")"
   if [[ "$dirty" == "1" ]]; then
-    printf '%s●%s' "$c_yel" "$c_off"
+    echo dirty
   elif [[ "$upstream" == "gone" && "$ahead" == "0" ]]; then
-    # merged and pruned: nothing left to push, nothing left to merge into
-    printf '%s●%s' "$c_cyn" "$c_off"
+    echo merged
   elif ((ahead > 0 && behind > 0)); then
-    printf '%s●%s' "$c_red" "$c_off"
+    echo diverged
   elif ((ahead > 0 || behind > 0)); then
-    printf '%s●%s' "$c_yel" "$c_off"
+    echo unsynced
   else
-    printf '%s●%s' "$c_grn" "$c_off"
+    echo clean
   fi
+}
+
+# worktree_state_dot DIR REPO BRANCH — worktree_state_word as the colored ●
+# 'vibe status' prints: dim ○ idle, green clean, cyan merged, yellow dirty or
+# out of sync, red diverged.
+worktree_state_dot() {
+  case "$(worktree_state_word "$@")" in
+    idle) printf '%s○%s' "$c_dim" "$c_off" ;;
+    dirty | unsynced) printf '%s●%s' "$c_yel" "$c_off" ;;
+    merged) printf '%s●%s' "$c_cyn" "$c_off" ;;
+    diverged) printf '%s●%s' "$c_red" "$c_off" ;;
+    *) printf '%s●%s' "$c_grn" "$c_off" ;;
+  esac
 }
 
 # sync_state_line DIR — one dim detail line under a worktree's entry, joined
@@ -2034,58 +2066,74 @@ sync_state_line() {
     "$c_dim" "$c_off" "$dirty_c" "$dirty_word" "$c_off" "$c_dim" "$sync" "$(handoff_age "$dir")" "$loop" "$c_off"
 }
 
-# print_worktrees — the current repo's worktrees, one per line, each with a
-# sync-state line. git's list starts with the main checkout itself; label
-# anything that is not a vibe task so this never suggests a task 'vibe done'
-# would not find. git prints physical paths, so resolve ours the same way
-# before comparing (cd/pwd -P: no readlink -f on macOS).
-print_worktrees() {
-  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
-    echo "  (not in a repo — try 'vibe status --all')"
-    return
-  fi
-  local mainroot vroot wt="" br="" repo
+# ---------------------------------------------------------------------------
+# Worktree enumeration
+#
+# The two scopes 'vibe status' offers — this repo, or every repo under the
+# worktree root — are *discovery*, and nothing about them is tied to how a
+# worktree is then displayed. So each is a generator emitting one
+# tab-separated record per worktree, and the human listing and the --json
+# document are two consumers of the same records. A field added here reaches
+# both; a scope fixed here is fixed in both.
+#
+# Record fields, in order:
+#   PATH      the worktree directory
+#   BRANCH    as it should be displayed (see DETACHED)
+#   REPO      repository name, which with BRANCH gives the tmux session name
+#   KIND      task | main (the repo's own checkout) | unmanaged (outside the
+#             worktree root — a worktree 'vibe done' would not find)
+#   DETACHED  1 when HEAD is detached, in which case BRANCH is a placeholder
+#             and not a branch name at all
+# ---------------------------------------------------------------------------
+
+# worktree_records — the current repo's worktrees, from 'git worktree list'.
+# That list starts with the main checkout itself, so label anything that is
+# not a vibe task rather than presenting it as one. git prints physical paths,
+# so resolve ours the same way before comparing (cd/pwd -P: no readlink -f on
+# macOS).
+worktree_records() {
+  local mainroot vroot wt="" br="" repo line kind det
   mainroot="$(main_repo_root 2>/dev/null || true)"
-  [[ -d "$mainroot" ]] && mainroot="$(cd "$mainroot" && pwd -P)"
+  if [[ -d "$mainroot" ]]; then mainroot="$(cd "$mainroot" && pwd -P)"; fi
   vroot="$VIBE_WORKTREE_ROOT"
-  [[ -d "$vroot" ]] && vroot="$(cd "$vroot" && pwd -P)"
+  if [[ -d "$vroot" ]]; then vroot="$(cd "$vroot" && pwd -P)"; fi
   repo="$(repo_name)"
 
   while IFS= read -r line; do
     case "$line" in
-      "worktree "*) wt="${line#worktree }" ;;
+      "worktree "*)
+        wt="${line#worktree }"
+        continue
+        ;;
       "branch "*)
         br="${line#branch }"
         br="${br#refs/heads/}"
-        print_one_worktree "$wt" "$br" "$mainroot" "$vroot" "$repo"
+        det=0
         ;;
-      "detached") print_one_worktree "$wt" "(detached)" "$mainroot" "$vroot" "$repo" ;;
+      "detached")
+        br="(detached)"
+        det=1
+        ;;
+      *) continue ;;
     esac
+    kind=task
+    if [[ -n "$mainroot" && "$wt" == "$mainroot" ]]; then
+      kind=main
+    elif [[ -n "$vroot" && "$wt" != "$vroot"/* ]]; then
+      kind=unmanaged
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$wt" "$br" "$repo" "$kind" "$det"
   done < <(git worktree list --porcelain 2>/dev/null)
 }
 
-print_one_worktree() {
-  local wt="$1" br="$2" mainroot="$3" vroot="$4" repo="$5" tag="" dot
-  if [[ -n "$mainroot" && "$wt" == "$mainroot" ]]; then
-    tag="  (main checkout, not a vibe task)"
-  elif [[ -n "$vroot" && "$wt" != "$vroot"/* ]]; then
-    tag="  (not managed by vibe)"
-  fi
-  dot="$(worktree_state_dot "$wt" "$repo" "$br")"
-  printf '  %s %s%s%s  %s%s%s%s\n' "$dot" "$c_cyn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
-  sync_state_line "$wt"
-}
-
-# print_all_worktrees — every vibe worktree under $VIBE_WORKTREE_ROOT, across
+# worktree_records_all — every vibe worktree under $VIBE_WORKTREE_ROOT, across
 # all repos. Walks the directory tree rather than 'git worktree list', so it
-# works from outside any git repository.
-print_all_worktrees() {
-  local vroot repo_dir wt_dir repo br found=0 dot
+# works from outside any git repository. Everything it finds is a task by
+# construction, so KIND is always 'task'.
+worktree_records_all() {
+  local vroot repo_dir wt_dir repo br det
   vroot="$VIBE_WORKTREE_ROOT"
-  if [[ ! -d "$vroot" ]]; then
-    echo "  (no worktree root at $vroot)"
-    return
-  fi
+  [[ -d "$vroot" ]] || return 0
   vroot="$(cd "$vroot" && pwd -P)"
   for repo_dir in "$vroot"/*/; do
     [[ -d "$repo_dir" ]] || continue
@@ -2093,25 +2141,233 @@ print_all_worktrees() {
     for wt_dir in "$repo_dir"*/; do
       [[ -d "$wt_dir" ]] || continue
       git -C "$wt_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || continue
-      found=1
       br="$(git -C "$wt_dir" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
-      dot="$(worktree_state_dot "${wt_dir%/}" "$repo" "$br")"
-      printf '  %s %s%s/%s%s  %s%s%s\n' \
-        "$dot" "$c_cyn" "$repo" "$br" "$c_off" "$c_dim" "${wt_dir%/}" "$c_off"
-      sync_state_line "${wt_dir%/}"
+      det=0
+      git -C "$wt_dir" symbolic-ref --quiet HEAD >/dev/null 2>&1 || det=1
+      printf '%s\t%s\t%s\t%s\t%s\n' "${wt_dir%/}" "$br" "$repo" task "$det"
     done
   done
+}
+
+# print_worktrees — the current repo's worktrees, one per line, each with a
+# sync-state line.
+print_worktrees() {
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "  (not in a repo — try 'vibe status --all')"
+    return
+  fi
+  local wt br repo kind det
+  while IFS=$'\t' read -r wt br repo kind det; do
+    print_one_worktree "$wt" "$br" "$repo" "$kind"
+  done < <(worktree_records)
+}
+
+print_one_worktree() {
+  local wt="$1" br="$2" repo="$3" kind="$4" tag="" dot
+  case "$kind" in
+    main) tag="  (main checkout, not a vibe task)" ;;
+    unmanaged) tag="  (not managed by vibe)" ;;
+  esac
+  dot="$(worktree_state_dot "$wt" "$repo" "$br")"
+  printf '  %s %s%s%s  %s%s%s%s\n' "$dot" "$c_cyn" "$br" "$c_off" "$c_dim" "$wt" "$tag" "$c_off"
+  sync_state_line "$wt"
+}
+
+# print_all_worktrees — the --all listing: repo/branch rather than a bare
+# branch, since one glance covers every repo.
+print_all_worktrees() {
+  local vroot wt br repo kind det found=0 dot
+  vroot="$VIBE_WORKTREE_ROOT"
+  if [[ ! -d "$vroot" ]]; then
+    echo "  (no worktree root at $vroot)"
+    return
+  fi
+  vroot="$(cd "$vroot" && pwd -P)"
+  while IFS=$'\t' read -r wt br repo kind det; do
+    found=1
+    dot="$(worktree_state_dot "$wt" "$repo" "$br")"
+    printf '  %s %s%s/%s%s  %s%s%s\n' \
+      "$dot" "$c_cyn" "$repo" "$br" "$c_off" "$c_dim" "$wt" "$c_off"
+    sync_state_line "$wt"
+  done < <(worktree_records_all)
   ((found)) || echo "  (no vibe worktrees under $vroot)"
+}
+
+# ---------------------------------------------------------------------------
+# 'vibe status --json' — the same status, as one machine-readable document
+#
+# What it is for: a monitor that wants every machine's tasks at a glance polls
+# `ssh <host> ~/bin/vibe status --all --json` and renders the answers. That is
+# the whole transport — no daemon, no port, no new auth — so this command is
+# the entire contract such a client depends on, and everything it needs has to
+# be *in* the document rather than parsed back out of the human listing.
+#
+# Consequences worth knowing before changing anything here:
+#
+#   - One invocation describes ONE host, so the document is host-scoped:
+#     a "host" object, then a "tasks" array. Not a flat array of tasks each
+#     carrying a host field — that shape cannot represent a machine with no
+#     tasks running, and a monitor that renders "reachable but idle" the same
+#     as "did not answer" reports nothing-running precisely when something is.
+#     Whether a host answered at all is the caller's finding, not ours; by the
+#     time this runs the answer is yes.
+#   - "schema" is a version, so a client can refuse a document it does not
+#     understand instead of guessing. Bump it when a field's meaning changes
+#     or one is removed; adding a field is not a bump.
+#   - Written by hand, not with jq. git and tmux are vibe's only hard
+#     dependencies and this is not worth a third — see json_str.
+#   - Open PRs are deliberately absent. They cost a network round trip through
+#     gh, and a client polling every few seconds must not pay it.
+# ---------------------------------------------------------------------------
+
+# json_str VALUE — VALUE as a JSON string literal, quotes included. Escapes by
+# walking the string rather than piping through sed, both to avoid a jq
+# dependency and because a pipeline here would need the pipefail guard the
+# rest of this script keeps tripping over.
+json_str() {
+  local s="$1" out="" i=0 n c
+  n=${#s}
+  while ((i < n)); do
+    c="${s:i:1}"
+    case "$c" in
+      '"') out="$out\\\"" ;;
+      \\) out="$out\\\\" ;;
+      $'\n') out="$out\\n" ;;
+      $'\r') out="$out\\r" ;;
+      $'\t') out="$out\\t" ;;
+      # every other C0 control has no shorthand, so spell it out
+      [[:cntrl:]]) out="$out$(printf '\\u%04x' "'$c")" ;;
+      *) out="$out$c" ;;
+    esac
+    i=$((i + 1))
+  done
+  printf '"%s"' "$out"
+}
+
+# json_str_or_null VALUE — json_str, but an empty VALUE becomes null. An
+# absent field and an empty one are different facts to a client.
+json_str_or_null() {
+  if [[ -z "$1" ]]; then
+    printf 'null'
+  else
+    json_str "$1"
+  fi
+}
+
+# json_num VALUE — VALUE as a JSON number, or null if it is not one. The loop
+# state file is written by whatever vibe wrote it, so MAX may be absent (an
+# unbounded loop) or junk from a hand edit; either way a client gets null
+# rather than a document it cannot parse.
+json_num() {
+  if [[ "$1" =~ ^-?[0-9]+$ ]]; then
+    printf '%s' "$1"
+  else
+    printf 'null'
+  fi
+}
+
+json_bool() {
+  if [[ "$1" == "1" ]]; then printf 'true'; else printf 'false'; fi
+}
+
+# json_task PATH BRANCH REPO KIND DETACHED — one task object, indented into
+# the "tasks" array and with no trailing newline, so the caller owns the
+# comma. Takes a worktree record verbatim.
+json_task() {
+  local dir="$1" br="$2" repo="$3" kind="$4" det="$5"
+  local dirty unpushed behind upstream age sess branch_json sf
+
+  read -r dirty unpushed behind upstream <<<"$(git_sync_state "$dir")"
+  age="$(handoff_age "$dir")"
+  # "none" means there is no HANDOFF.md, which is null rather than an age
+  if [[ "$age" == "none" ]]; then age=""; fi
+  sess="$(tmux_session_name "$repo" "$br")"
+  tmux_live_session "$sess" || sess=""
+  branch_json=null
+  if [[ "$det" != "1" ]]; then branch_json="$(json_str "$br")"; fi
+
+  printf '    {\n'
+  printf '      "repo": %s,\n' "$(json_str "$repo")"
+  printf '      "branch": %s,\n' "$branch_json"
+  printf '      "path": %s,\n' "$(json_str "$dir")"
+  printf '      "kind": %s,\n' "$(json_str "$kind")"
+  printf '      "detached": %s,\n' "$(json_bool "$det")"
+  printf '      "state": %s,\n' "$(json_str "$(worktree_state_word "$dir" "$repo" "$br")")"
+  printf '      "dirty": %s,\n' "$(json_bool "$dirty")"
+  # "unpushed" is what the text listing labels "ahead": commits that exist on
+  # no remote at all, which for a never-pushed branch is all of them.
+  printf '      "unpushed": %s,\n' "$(json_num "$unpushed")"
+  printf '      "behind": %s,\n' "$(json_num "$behind")"
+  printf '      "upstream": %s,\n' "$(json_str "$upstream")"
+  printf '      "handoff_age": %s,\n' "$(json_str_or_null "$age")"
+  printf '      "tmux_session": %s,\n' "$(json_str_or_null "$sess")"
+
+  sf="$(loop_state_path "$dir")"
+  if [[ -f "$sf" ]]; then
+    printf '      "loop": {\n'
+    printf '        "status": %s,\n' "$(json_str_or_null "$(loop_effective_status "$dir")")"
+    printf '        "iter": %s,\n' "$(json_num "$(loop_get "$dir" ITER)")"
+    printf '        "max": %s,\n' "$(json_num "$(loop_get "$dir" MAX)")"
+    printf '        "last": %s,\n' "$(json_str_or_null "$(loop_get "$dir" LAST)")"
+    printf '        "updated": %s\n' "$(json_str_or_null "$(loop_get "$dir" UPDATED)")"
+    printf '      }\n'
+  else
+    printf '      "loop": null\n'
+  fi
+  printf '    }'
+}
+
+# status_json ALL — the whole document. Pretty-printed on purpose: it is read
+# by people debugging the monitor as often as by the monitor.
+status_json() {
+  local all="$1" scope=repo wt br repo kind det first=1 tmux_ok=0
+  ((all)) && scope=all
+  command -v tmux >/dev/null 2>&1 && tmux_ok=1
+
+  printf '{\n'
+  printf '  "schema": 1,\n'
+  printf '  "generated_at": %s,\n' "$(json_str "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+  printf '  "host": {\n'
+  printf '    "hostname": %s,\n' "$(json_str "$(hostname)")"
+  printf '    "environment": %s,\n' "$(json_str "$(detect_env)")"
+  printf '    "environment_reason": %s,\n' "$(json_str "$(env_reason)")"
+  printf '    "worktree_root": %s,\n' "$(json_str "$VIBE_WORKTREE_ROOT")"
+  # With no tmux, every session reads as null for a reason that has nothing to
+  # do with whether work is running — say so rather than let a client conclude
+  # the machine is idle.
+  printf '    "tmux": %s,\n' "$(json_bool "$tmux_ok")"
+  printf '    "scope": %s\n' "$(json_str "$scope")"
+  printf '  },\n'
+  printf '  "tasks": [\n'
+  while IFS=$'\t' read -r wt br repo kind det; do
+    ((first)) || printf ',\n'
+    first=0
+    json_task "$wt" "$br" "$repo" "$kind" "$det"
+  done < <(if ((all)); then
+    worktree_records_all
+  elif git rev-parse --show-toplevel >/dev/null 2>&1; then
+    worktree_records
+  fi)
+  ((first)) || printf '\n'
+  printf '  ]\n'
+  printf '}\n'
 }
 
 cmd_status() {
   need git
-  local all=0
-  case "${1:-}" in
-    --all) all=1 ;;
-    "") ;;
-    *) die "unknown option '$1' (usage: vibe status [--all])" ;;
-  esac
+  local all=0 json=0
+  while (($#)); do
+    case "$1" in
+      --all) all=1 ;;
+      --json) json=1 ;;
+      *) die "unknown option '$1' (usage: vibe status [--all] [--json])" ;;
+    esac
+    shift
+  done
+  if ((json)); then
+    status_json "$all"
+    return
+  fi
   printf '%sEnvironment:%s %s (%s)\n\n' "$c_bld" "$c_off" "$(detect_env)" "$(env_reason)"
 
   rule "Worktrees"
@@ -2773,6 +3029,22 @@ cmd_doctor() {
     d_no "templates   no HANDOFF.md under $TEMPLATE_DIR — new worktrees will not be seeded"
   fi
 
+  # 'ssh <host> <command>' runs a non-login, non-interactive shell that
+  # sources no rc file, so ~/bin is not on PATH there and a bare 'vibe' comes
+  # back "command not found" on a machine that has it installed perfectly
+  # well. Every remote caller — a status monitor polling --json, a remote
+  # 'vibe start --no-attach' — needs an absolute path, so print the one to
+  # use rather than leaving it to be rediscovered.
+  local self_name self
+  self_name="$(basename "$0")"
+  self="$HOME/bin/$self_name"
+  if [[ ! -x "$self" ]]; then self="$(script_dir)/$self_name"; fi
+  if [[ -x "$self" ]]; then
+    d_ok "remote      ssh <host> '$self status --all --json'"
+  else
+    d_wn "remote      cannot resolve an absolute path to vibe — an ssh command needs one, since ~/bin is not on PATH there"
+  fi
+
   printf '\n'
   rule "Config"
   if [[ ! -e "$VIBE_CONFIG_FILE" ]]; then
@@ -3015,10 +3287,16 @@ cmd_help() {
   blank
 
   help_section "Visibility:"
-  help_cmd "status [--all]" "" \
+  help_cmd "status [--all]" "[--json]" \
     "Show worktrees with per-worktree sync state (dirty," \
     "ahead/behind, HANDOFF.md age), tmux state, PRs. --all" \
-    "scans every repo under \$VIBE_WORKTREE_ROOT."
+    "scans every repo under \$VIBE_WORKTREE_ROOT." \
+    "--json prints the same worktree state as one document" \
+    "for this host instead — what a cross-machine monitor" \
+    "polls over ssh. No PRs in it: they cost a network" \
+    "round trip. Needs the absolute path over ssh, since" \
+    "that shell sources no rc file: ssh <host> ~/bin/vibe" \
+    "status --all --json."
   help_cmd "doctor" "" "Check tools, paths, config and upstream state."
   blank
 
