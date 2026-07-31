@@ -1623,6 +1623,22 @@ EOF
   [[ "$output" == *"vibe doctor"* ]]
 }
 
+# 'ssh <host> vibe …' fails on a machine where vibe is installed and working,
+# because that shell sources no rc file and ~/bin is not on its PATH. Anything
+# reaching this machine remotely — a monitor polling 'status --all --json', a
+# remote 'vibe start' — hits it, so doctor spells out the absolute path.
+@test "doctor: prints an absolute path for invoking vibe over ssh" {
+  cd "$(make_repo proj)"
+  run run_vibe doctor
+  [ "$status" -eq 0 ]
+  local line
+  line="$(printf '%s\n' "$output" | grep -F "remote ")"
+  [[ "$line" == *"ssh <host>"* ]]
+  [[ "$line" == *"/bin/vibe status --all --json"* ]]
+  # an absolute path, not a bare command name
+  [[ "$line" != *"'vibe status"* ]]
+}
+
 @test "doctor: fails on a config file that is not plain KEY=VALUE" {
   cd "$(make_repo proj)"
   local cfg="$BATS_TEST_TMPDIR/bad-config"

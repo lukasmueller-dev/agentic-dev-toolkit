@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-27 · server (srv1841294)_
+_Last updated: 2026-07-30 · server (srv1841294)_
 
 ## Goal
 
@@ -22,6 +22,17 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-07-30: A cross-machine monitor reads `vibe status --all --json` over
+  SSH — **pull, not push**: no daemon, no open port, no new auth, and no
+  snapshot files duplicating what park/attach already carry over git. The
+  document is **host-scoped** (one `host` object, then `tasks`), because one
+  invocation describes one machine and a flat task array cannot represent a
+  host that answered with nothing running — a client that renders that the
+  same as "did not answer" reports nothing-running exactly when something is.
+  Reachability is therefore the client's finding, never a field here. The
+  client itself lives in a separate repo; this repo's share is the contract
+  and nothing else. See `docs/vibe.md`; rationale in the PR for
+  `monitor-preparation`.
 - 2026-07-27: The `CODEBASE_MAP.md` schema is **dogfooded and fixed**, which
   is the gate Track C's wave 2 was waiting on. First contact with a real
   research repo changed it twice: the shallow half of the schema keeps its

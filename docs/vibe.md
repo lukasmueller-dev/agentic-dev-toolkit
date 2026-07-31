@@ -112,7 +112,7 @@ The verbs are layered by how often you reach for them.
 
 | Command                        | Does                                                       |
 | ------------------------------ | ---------------------------------------------------------- |
-| `vibe status [--all]`          | Worktrees + sync state, tmux sessions, PRs                 |
+| `vibe status [--all] [--json]` | Worktrees + sync state, tmux sessions, PRs                 |
 | `vibe doctor`                  | Check tools, paths, config, upstream state                 |
 
 **Plumbing** — the git layer `attach` and `park` sit on; reach for it directly
@@ -137,6 +137,9 @@ ahead and behind upstream, and the age of its `HANDOFF.md` — read from local
 refs only, so it never touches the network. `vibe status --all` widens the scan
 to every repo under `$VIBE_WORKTREE_ROOT` and works from outside any repo, which
 is the one-glance "what is in flight everywhere" view.
+
+`--json` prints that same state as one document instead — see
+[the status document](#the-status-document-vibe-status---json).
 
 `vibe start` and `vibe loop` are the two ways in: `start` for interactive work
 you drive, `loop` for a bounded task the agent runs on its own. See
@@ -323,6 +326,87 @@ it on, in increasing remoteness:
 **Push notifications** — so you know *when* to look. See
 [notifications.md](notifications.md); it is a `Notification` hook that pushes
 to ntfy.sh when Claude Code wants your attention.
+
+## The status document (`vibe status --json`)
+
+`vibe status --json` prints what `vibe status` shows, as one machine-readable
+document. It exists so a monitor can answer "what is running, everywhere?"
+without a daemon, an open port or any new auth: it polls each machine over the
+SSH access you already have.
+
+```bash
+ssh <host> '~/bin/vibe status --all --json'
+```
+
+**The absolute path is not optional.** `ssh <host> <command>` runs a
+non-login, non-interactive shell that sources no rc file, so `~/bin` is not on
+`PATH` and a bare `vibe` fails with "command not found" on a machine that has
+it installed perfectly well. `vibe doctor` prints the exact line to use, under
+`remote` in its Paths section.
+
+One invocation describes one host, so the document is host-scoped — a `host`
+object, then a `tasks` array:
+
+```json
+{
+  "schema": 1,
+  "generated_at": "2026-07-30T21:30:47Z",
+  "host": {
+    "hostname": "srv1841294",
+    "environment": "server",
+    "environment_reason": "SSH_CONNECTION is set",
+    "worktree_root": "/root/git/worktrees",
+    "tmux": true,
+    "scope": "all"
+  },
+  "tasks": [
+    {
+      "repo": "agentic-dev-toolkit",
+      "branch": "monitor-preparation",
+      "path": "/root/git/worktrees/agentic-dev-toolkit/monitor-preparation",
+      "kind": "task",
+      "detached": false,
+      "state": "dirty",
+      "dirty": true,
+      "unpushed": 2,
+      "behind": 0,
+      "upstream": "ok",
+      "handoff_age": "6m",
+      "tmux_session": "vibe-agentic-dev-toolkit-monitor-preparation",
+      "loop": {
+        "status": "interrupted",
+        "iter": 3,
+        "max": 10,
+        "last": "fail",
+        "updated": "2026-07-30T19:02:11Z"
+      }
+    }
+  ]
+}
+```
+
+| Field                | Means                                                                 |
+| -------------------- | --------------------------------------------------------------------- |
+| `schema`             | Document version. Bumped when a field's meaning changes or one goes; adding one is not a bump |
+| `host.scope`         | `repo` or `all` — which scan produced `tasks`                          |
+| `host.tmux`          | Whether tmux exists here at all. `false` makes every `tmux_session` null for a reason that has nothing to do with work running |
+| `kind`               | `task`, `main` (the repo's own checkout), or `unmanaged` (outside the worktree root) |
+| `state`              | The colored dot as a word: `idle`, `clean`, `dirty`, `unsynced`, `diverged`, `merged` |
+| `unpushed`           | Commits on no remote at all — what the text listing labels "ahead"     |
+| `upstream`           | `ok`, `gone` (branch deleted on the remote — a merged PR), or `none`   |
+| `branch`             | `null` when `detached` is true                                         |
+| `loop`               | `null` when the worktree has no loop state; `status` already carries the dead-runner correction, so a killed loop reads `interrupted`, never `running` |
+
+Two things it deliberately does not do:
+
+- **No open PRs.** They cost a network round trip through `gh`, and a client
+  polling every few seconds must not pay it. Everything else is read from
+  local refs, so the whole document is offline.
+- **No reachability field.** Whether a host answered is the caller's finding —
+  by the time this runs, the answer is yes. A client must render "answered,
+  nothing running" differently from "did not answer": collapsing the two makes
+  a monitor report nothing-running exactly when something is, which is worse
+  than having no monitor.
 
 ## Configuration
 

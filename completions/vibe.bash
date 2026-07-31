@@ -78,7 +78,7 @@ _vibe() {
       fi
       ;;
     status)
-      [[ "$cur" == -* ]] && _vibe_reply "--all" "$cur"
+      [[ "$cur" == -* ]] && _vibe_reply "--all --json" "$cur"
       ;;
     attach | park | rc | sync)
       _vibe_reply "$(_vibe_tasks)" "$cur"
