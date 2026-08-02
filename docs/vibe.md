@@ -240,6 +240,39 @@ guard only yields to `--stop`, which kills the loop before removing the
 worktree. The branch is kept by default, so even a forced removal leaves the
 commits reachable.
 
+### When the worktree directory is gone
+
+A task outlives its directory more often than you would think: deleted by
+hand, wiped with the volume it sat on, or removed on the machine that shares
+the checkout. Everything else the task owns survives that — git still has the
+worktree registered (`prunable`, and the path is unusable for a new one), the
+branch is still there, and on the server the tmux session is still running.
+
+`vibe done` finishes the task from that state too:
+
+```
+vibe: worktree directory is already gone: ~/git/worktrees/proj/fix-login-bug
+pruned git's worktree record for ~/git/worktrees/proj/fix-login-bug
+finished stale task 'fix-login-bug' (branch kept — the commits are on it)
+killing tmux session vibe-proj-fix-login-bug
+```
+
+None of the guards above apply here — each protects work living *in* the
+worktree, and that is already gone — so this needs no `--force`. It removes
+only records of things that no longer exist: the branch is kept as always
+(`--rm-branch` still applies, with the same landed-work checks), and a
+directory git no longer recognizes is left in place rather than deleted, since
+whatever is in it is nobody's to throw away but yours.
+
+With no worktree registered and no session running, there is nothing to
+finish, and `done` says so rather than reporting a cleanup it never performed.
+
+`vibe status` shows the same state as a red `✗` with `directory is gone`,
+which is worth knowing about: judged by git alone a vanished worktree looks
+clean, in sync and idle — a healthy task that no longer exists. To start the
+task over, finish it first: `vibe done <task>` clears the registration that
+`vibe start` would otherwise trip over.
+
 ### Deleting the branch too
 
 Keeping the branch is the safe default, and over a few dozen tasks it is also
@@ -391,7 +424,7 @@ object, then a `tasks` array:
 | `host.scope`         | `repo` or `all` — which scan produced `tasks`                          |
 | `host.tmux`          | Whether tmux exists here at all. `false` makes every `tmux_session` null for a reason that has nothing to do with work running |
 | `kind`               | `task`, `main` (the repo's own checkout), or `unmanaged` (outside the worktree root) |
-| `state`              | The colored dot as a word: `idle`, `clean`, `dirty`, `unsynced`, `diverged`, `merged` |
+| `state`              | The colored dot as a word: `missing`, `idle`, `clean`, `dirty`, `unsynced`, `diverged`, `merged` |
 | `unpushed`           | Commits on no remote at all — what the text listing labels "ahead"     |
 | `upstream`           | `ok`, `gone` (branch deleted on the remote — a merged PR), or `none`   |
 | `branch`             | `null` when `detached` is true                                         |
