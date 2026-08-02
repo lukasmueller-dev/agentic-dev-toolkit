@@ -457,6 +457,15 @@ worktree_dir() {
   echo "$VIBE_WORKTREE_ROOT/$repo/$branch"
 }
 
+# is_worktree DIR — true when DIR is there *and* git knows it as a working
+# tree. The two questions are one question everywhere vibe asks it: a task
+# directory that has been deleted and one that has been reduced to a husk are
+# the same thing to every command that wants to act on the worktree inside it.
+is_worktree() {
+  [[ -d "$1" ]] || return 1
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
 # ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
 # to its upstream, called right before a brand-new task branch is cut from
 # MAIN's HEAD. Mirrors attach_ff's fetch/ff-only logic but without its
@@ -1991,6 +2000,7 @@ git_sync_state() {
 # worktree_state_word DIR REPO BRANCH — one word summarizing a worktree, the
 # single place that verdict is decided:
 #
+#   missing   git lists the worktree but its directory is gone
 #   idle      tmux is installed here but no session is running for this task
 #   dirty     uncommitted changes
 #   merged    the upstream branch is gone and nothing is left unpushed — a
@@ -2004,6 +2014,14 @@ git_sync_state() {
 # both renderings of this word, so they cannot drift apart.
 worktree_state_word() {
   local dir="$1" repo="$2" branch="$3"
+  # First, because every state below it is a reading of a directory that has
+  # to exist. Judged by git alone a vanished worktree is clean, level with its
+  # upstream and carrying no handoff — it reports as a healthy idle task
+  # forever, which is exactly how one goes unnoticed.
+  if ! is_worktree "$dir"; then
+    echo missing
+    return
+  fi
   if command -v tmux >/dev/null 2>&1; then
     local sess
     sess="$(tmux_session_name "$repo" "$branch")"
@@ -2032,6 +2050,7 @@ worktree_state_word() {
 # out of sync, red diverged.
 worktree_state_dot() {
   case "$(worktree_state_word "$@")" in
+    missing) printf '%s✗%s' "$c_red" "$c_off" ;;
     idle) printf '%s○%s' "$c_dim" "$c_off" ;;
     dirty | unsynced) printf '%s●%s' "$c_yel" "$c_off" ;;
     merged) printf '%s●%s' "$c_cyn" "$c_off" ;;
@@ -2044,6 +2063,14 @@ worktree_state_dot() {
 # to it with a '└─' connector.
 sync_state_line() {
   local dir="$1" dirty ahead behind upstream dirty_word dirty_c
+  # Every number below comes from running git in DIR, and git in a directory
+  # that is not there answers with zeros — a clean, in-sync worktree. Say what
+  # is actually wrong, and name the command that clears it.
+  if ! is_worktree "$dir"; then
+    printf '    %s└─%s %sdirectory is gone%s%s — run %s to clear what is left%s\n' \
+      "$c_dim" "$c_off" "$c_red" "$c_off" "$c_dim" "'vibe done <task>'" "$c_off"
+    return
+  fi
   read -r dirty ahead behind upstream <<<"$(git_sync_state "$dir")"
   if [[ "$dirty" == "1" ]]; then
     dirty_word="dirty"
@@ -2519,7 +2546,19 @@ done_one() {
     dir="$R_dir"
   fi
   main="$(main_repo_root)"
-  [[ -d "$dir" ]] || die "no worktree at $dir"
+
+  # A task routinely outlives its worktree directory: deleted by hand, wiped
+  # with the volume it sat on, or removed on a machine that shares the
+  # checkout. What is left behind — git's worktree registration, the branch,
+  # and the tmux session 'vibe status' keeps listing — is precisely what this
+  # command exists to clear, so hand those cases to done_stale instead of
+  # dying on the missing directory. Dying there left the one command that
+  # finishes a task refusing exactly when there was a mess to finish, with no
+  # other command able to kill the orphaned session.
+  if ! is_worktree "$dir"; then
+    done_stale "$repo" "$branch" "$dir" "$main" "$rm_branch" "$force"
+    return
+  fi
 
   # A running loop owns this worktree; removing it out from under the runner
   # would corrupt the loop. Refuse unless --stop was given to kill it first.
@@ -2639,6 +2678,117 @@ done_one() {
   # reason.
   local sess
   sess="$(tmux_session_name "$repo" "$branch")"
+  end_task_session "$sess" "$summary"
+}
+
+# worktree_registered MAIN DIR — true when git still lists DIR among MAIN's
+# worktrees, whether or not the directory itself is still there. That is the
+# state git calls 'prunable', and it is invisible to a [[ -d ]] test.
+#
+# git records the physical path it resolved at 'worktree add' time, while DIR
+# is built from $VIBE_WORKTREE_ROOT as configured — so a worktree root reached
+# through a symlink makes the two spellings differ. Compare against the
+# resolved form as well (the root still exists even when the task directory
+# does not, which is what makes this resolvable at all).
+worktree_registered() {
+  local main="$1" dir="$2" alt="" vroot line p
+  vroot="$VIBE_WORKTREE_ROOT"
+  if [[ -d "$vroot" ]]; then
+    vroot="$(cd "$vroot" && pwd -P)"
+    case "$dir" in
+      "$VIBE_WORKTREE_ROOT"/*) alt="$vroot/${dir#"$VIBE_WORKTREE_ROOT"/}" ;;
+    esac
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) p="${line#worktree }" ;;
+      *) continue ;;
+    esac
+    if [[ "$p" == "$dir" ]] || [[ -n "$alt" && "$p" == "$alt" ]]; then
+      return 0
+    fi
+  done < <(git -C "$main" worktree list --porcelain 2>/dev/null)
+  return 1
+}
+
+# done_stale REPO BRANCH DIR MAIN RM_BRANCH FORCE — finish a task whose
+# worktree directory is gone (or is no longer a worktree).
+#
+# None of done_one's guards run here, and none of them need to: every one of
+# them protects work that lives *in* the worktree, and that directory is
+# already gone — there is no dirty tree to lose, no HANDOFF.md left to
+# promote. What remains is the bookkeeping that outlives it, and each piece is
+# cleared only if it is actually there:
+#
+#   registration   git still lists the worktree, marked prunable. Pruning is
+#                  the operation git offers for exactly this state, and unlike
+#                  'worktree remove' it can only ever drop the record of a
+#                  directory that is already missing — so a husk directory
+#                  someone still wants is never deleted from under them.
+#   tmux session   the visible symptom: 'vibe status' lists a session for a
+#                  task whose directory does not exist, and before this
+#                  nothing could kill it short of tmux by hand.
+#   branch         kept, exactly as in the normal path, unless --rm-branch.
+#                  The commits live on it, so keeping it is what makes this
+#                  cleanup non-destructive: it removes only records of things
+#                  that are already gone.
+#
+# With none of the three present there is nothing to finish, so refuse rather
+# than report a cleanup that did nothing.
+done_stale() {
+  local repo="$1" branch="$2" dir="$3" main="$4" rm_branch="$5" force="$6"
+  local sess registered=0 session_live=0 branch_here=0 residue=0
+  sess="$(tmux_session_name "$repo" "$branch")"
+  if worktree_registered "$main" "$dir"; then registered=1; fi
+  if tmux_live_session "$sess"; then session_live=1; fi
+  if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then branch_here=1; fi
+
+  # A branch on its own is not residue: every branch in the repo would qualify,
+  # and 'vibe done <any branch name>' would report having cleaned up a task
+  # that never existed. It counts only when --rm-branch gives it something to
+  # do.
+  if ((registered || session_live)); then residue=1; fi
+  if ((rm_branch && branch_here)); then residue=1; fi
+  if ((!residue)); then
+    die "no worktree at $dir
+  Nothing of '$branch' is left here either: git has no worktree registered
+  for it and no tmux session is running. Run 'vibe list' to see this repo's
+  tasks."
+  fi
+
+  if [[ -d "$dir" ]]; then
+    warn "$dir is not a git worktree — leaving the directory alone"
+  else
+    warn "worktree directory is already gone: $dir"
+  fi
+
+  if ((registered)); then
+    git -C "$main" worktree prune >/dev/null 2>&1 || true
+  fi
+
+  # Composed and then printed, for the same reason as done_one's summary: run
+  # from inside the task's own session, this pane is about to be erased, and
+  # end_task_session replays what was on it in the terminal the user keeps.
+  local summary
+  summary="$(
+    if ((registered)) && worktree_registered "$main" "$dir"; then
+      warn "git still lists a worktree at $dir
+  It is not prunable while a directory sits there. Remove that directory if
+  it is junk, or run 'git -C $main worktree repair $dir' if it should still
+  be a worktree."
+    elif ((registered)); then
+      info "pruned git's worktree record for $dir"
+    fi
+    if ((rm_branch)); then
+      info "finished stale task '$branch'"
+      delete_branch "$main" "$branch" "$force"
+    else
+      info "finished stale task '$branch' (branch kept — the commits are on it)"
+    fi
+  )"
+  printf '%s\n' "$summary"
+
+  # Last, as in done_one: this can be the session vibe itself is running in.
   end_task_session "$sess" "$summary"
 }
 
@@ -3253,6 +3403,10 @@ cmd_help() {
     "handoff checks) — or if LOOP.md is still on the branch," \
     "where it would land in the PR diff; delete it and sync," \
     "or --keep-brief to leave it there deliberately." \
+    "A task whose worktree directory is gone is finished" \
+    "from what is left instead — git's worktree record and" \
+    "the orphaned tmux session — with the branch kept, so" \
+    "no guard and no --force is involved." \
     "--rm-branch also deletes the local branch, but only" \
     "once the work has landed — merged into the default" \
     "branch, or its remote branch deleted (a squashed PR);" \
