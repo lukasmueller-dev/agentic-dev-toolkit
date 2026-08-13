@@ -446,3 +446,94 @@ print("ok")
   [ "$status" -eq 0 ]
   [[ "$output" == "ok" ]]
 }
+
+# ---------------------------------------------------------------------------
+# TEMPORARY — diagnostic for the macOS-only failures tracked in this branch's
+# handoff. Reproduces every failing scenario in one test and dumps the full
+# document plus path-resolution facts, so one CI run gives ground truth on
+# both OSes at once instead of guessing blind. Delete this test (and this
+# banner) once the real cause is understood and fixed.
+# ---------------------------------------------------------------------------
+@test "DEBUG: dump path resolution and status --json across scenarios" {
+  cd "$(make_repo proj)"
+
+  echo "== uname: $(uname -a)" >&2
+  echo "== git version: $(git --version)" >&2
+  echo "== bash version: $BASH_VERSION" >&2
+  echo "== raw TMPDIR: ${TMPDIR:-unset}" >&2
+  echo "== raw BATS_TEST_TMPDIR: $BATS_TEST_TMPDIR" >&2
+  echo "== resolved BATS_TEST_TMPDIR (pwd -P): $(cd "$BATS_TEST_TMPDIR" && pwd -P)" >&2
+  echo "== raw HOME: $HOME" >&2
+  echo "== resolved HOME (pwd -P): $(cd "$HOME" && pwd -P)" >&2
+
+  # dirty/unpushed (mirrors the passing 'dirty, unpushed and upstream' test)
+  run_vibe start "task d" >/dev/null
+  local wt_d="$BATS_TEST_TMPDIR/worktrees/proj/task-d"
+  git -C "$wt_d" add -A
+  git -C "$wt_d" commit -q -m "handoff"
+  echo scratch >"$wt_d/x.txt"
+
+  # pushed branch (mirrors a failing test)
+  run_vibe start "task up" >/dev/null
+  local wt_up="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
+  git -C "$wt_up" add -A
+  git -C "$wt_up" commit -q -m "handoff"
+  git -C "$wt_up" push -q -u origin task-up
+
+  # missing directory (mirrors a failing test)
+  run_vibe start "task m" >/dev/null
+  local wt_m="$BATS_TEST_TMPDIR/worktrees/proj/task-m"
+  rm -rf "$wt_m"
+
+  # detached HEAD (mirrors a failing test)
+  run_vibe start "task deta" >/dev/null
+  local wt_deta="$BATS_TEST_TMPDIR/worktrees/proj/task-deta"
+  git -C "$wt_deta" checkout -q --detach
+
+  # loop state (mirrors a failing test)
+  run_vibe start "task lp" >/dev/null
+  local wt_lp="$BATS_TEST_TMPDIR/worktrees/proj/task-lp"
+  write_loop_state "$wt_lp" \
+    STATUS=maxed ITER=3 MAX=10 LAST=fail UPDATED=2026-07-30T19:02:11Z
+
+  # idle, no session (mirrors a failing test) — 'task i' left exactly as
+  # 'vibe start' leaves it, no further mutation.
+  run_vibe start "task i" >/dev/null
+  # shellcheck disable=SC2034 # read back below through the wt_* indirection
+  local wt_i="$BATS_TEST_TMPDIR/worktrees/proj/task-i"
+
+  # unmanaged + main checkout kind (mirrors a passing test)
+  local main_phys stray
+  main_phys="$(cd "$BATS_TEST_TMPDIR/proj" && pwd -P)"
+  stray="$BATS_TEST_TMPDIR/stray-wt"
+  git -C "$BATS_TEST_TMPDIR/proj" worktree add -q -b stray "$stray"
+  stray="$(cd "$stray" && pwd -P)"
+
+  echo "== git worktree list --porcelain (repo scope) ==" >&2
+  git -C "$BATS_TEST_TMPDIR/proj" worktree list --porcelain >&2
+
+  echo "== VIBE_WORKTREE_ROOT (raw): $BATS_TEST_TMPDIR/worktrees ==" >&2
+  echo "== VIBE_WORKTREE_ROOT (resolved): $(cd "$BATS_TEST_TMPDIR/worktrees" && pwd -P) ==" >&2
+
+  run run_vibe status --json
+  echo "== status --json exit: $status ==" >&2
+  echo "== full document ==" >&2
+  printf '%s\n' "$output" >&2
+
+  echo "== task_block per scenario ==" >&2
+  local name wt
+  for name in wt_d wt_up wt_m wt_deta wt_lp wt_i; do
+    wt="${!name}"
+    echo "-- $name = $wt --" >&2
+    printf '%s\n' "$output" | task_block "$wt" >&2
+    echo "-- (end $name; empty above means task_block found no match) --" >&2
+  done
+  echo "-- main_phys = $main_phys --" >&2
+  printf '%s\n' "$output" | task_block "$main_phys" >&2
+  echo "-- stray = $stray --" >&2
+  printf '%s\n' "$output" | task_block "$stray" >&2
+
+  # Force the test to "fail" so bats prints everything above regardless of
+  # whether the platform happens to get every field right.
+  false
+}
