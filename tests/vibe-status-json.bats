@@ -27,6 +27,14 @@ task_block() {
   '
 }
 
+# phys DIR — DIR's absolute path resolved the same way status_json's own
+# "path" field is: git canonicalizes a worktree's path when it records it, so
+# on a machine where $TMPDIR sits behind a symlink (macOS: /var ->
+# /private/var) the literal path a test builds from $BATS_TEST_TMPDIR never
+# equals what git reports, and task_block's exact "path" match finds nothing.
+# Must be called while DIR still exists.
+phys() { (cd "$1" && pwd -P); }
+
 # A tmux stub that reports every session as live, so the git-derived state
 # words (which are reached only past the "is anything running here" gate) can
 # be tested at all. Echoes the directory to put on PATH.
@@ -149,7 +157,8 @@ print("ok")
 @test "status --json: a task with no loop state reports loop null" {
   cd "$(make_repo proj)"
   run_vibe start "task nl" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-nl"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-nl")"
   [ ! -f "$wt/.vibe-loop.state" ]
 
   run run_vibe status --json
@@ -163,7 +172,8 @@ print("ok")
 @test "status --json: reports dirty, unpushed and upstream per task" {
   cd "$(make_repo proj)"
   run_vibe start "task d" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-d"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-d")"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   echo scratch >"$wt/x.txt"
@@ -184,7 +194,8 @@ print("ok")
 @test "status --json: a pushed branch reports its upstream and a zero count" {
   cd "$(make_repo proj)"
   run_vibe start "task up" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-up")"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   git -C "$wt" push -q -u origin task-up
@@ -205,7 +216,8 @@ print("ok")
 @test "status --json: a deleted remote branch reports upstream gone and state merged" {
   cd "$(make_repo proj)"
   run_vibe start "task g" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-g"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-g")"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   git -C "$wt" push -q -u origin task-g
@@ -237,10 +249,12 @@ print("ok")
 @test "status --json: state is idle when no session is running for the task" {
   cd "$(make_repo proj)"
   run_vibe start "task i" >/dev/null
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-i")"
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-i")"
+  block="$(printf '%s\n' "$output" | task_block "$wt")"
   [[ "$block" == *'"state": "idle"'* ]]
   [[ "$block" == *'"tmux_session": null'* ]]
 }
@@ -248,7 +262,11 @@ print("ok")
 @test "status --json: a worktree whose directory is gone reports state missing" {
   cd "$(make_repo proj)"
   run_vibe start "task m" >/dev/null
-  rm -rf "$BATS_TEST_TMPDIR/worktrees/proj/task-m"
+  # phys before rm — there is nothing left to resolve once the directory is
+  # gone, and the JSON's "path" field still reports the physical form.
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-m")"
+  rm -rf "$wt"
 
   # A monitor renders this document and cannot ask a follow-up question. Judged
   # by git alone the vanished worktree is clean and in sync, so without a state
@@ -262,13 +280,15 @@ print("ok")
     "$VIBE" status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-m")"
+  block="$(printf '%s\n' "$output" | task_block "$wt")"
   [[ "$block" == *'"state": "missing"'* ]]
 }
 
 @test "status --json: a live session is named, and a dirty tree says so" {
   cd "$(make_repo proj)"
   run_vibe start "task a" >/dev/null
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-a")"
   local livetmux
   livetmux="$(tmux_stub_live)"
   run env PATH="$livetmux:$PATH" \
@@ -277,7 +297,7 @@ print("ok")
     "$VIBE" status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-a")"
+  block="$(printf '%s\n' "$output" | task_block "$wt")"
   [[ "$block" == *'"tmux_session": "vibe-proj-task-a"'* ]]
   [[ "$block" == *'"state": "dirty"'* ]]
 }
@@ -288,7 +308,8 @@ print("ok")
 @test "status --json: a detached HEAD has a null branch, not a branch called HEAD" {
   cd "$(make_repo proj)"
   run_vibe start "task det" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-det"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-det")"
   git -C "$wt" checkout -q --detach
 
   run run_vibe status --json
@@ -304,7 +325,8 @@ print("ok")
   # from symbolic-ref rather than from a porcelain 'detached' line.
   cd "$(make_repo proj)"
   run_vibe start "task deta" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-deta"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-deta")"
   git -C "$wt" checkout -q --detach
 
   mkdir -p "$BATS_TEST_TMPDIR/elsewhere"
@@ -324,10 +346,10 @@ print("ok")
   cd "$(make_repo proj)"
   run_vibe start "task k" >/dev/null
   local main_phys stray
-  main_phys="$(cd "$BATS_TEST_TMPDIR/proj" && pwd -P)"
+  main_phys="$(phys "$BATS_TEST_TMPDIR/proj")"
   stray="$BATS_TEST_TMPDIR/stray-wt"
   git -C "$BATS_TEST_TMPDIR/proj" worktree add -q -b stray "$stray"
-  stray="$(cd "$stray" && pwd -P)"
+  stray="$(phys "$stray")"
 
   run run_vibe status --json
   [ "$status" -eq 0 ]
@@ -356,7 +378,8 @@ write_loop_state() {
 @test "status --json: reports a loop's iteration, bound and last result" {
   cd "$(make_repo proj)"
   run_vibe start "task lp" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-lp"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-lp")"
   write_loop_state "$wt" \
     STATUS=maxed ITER=3 MAX=10 LAST=fail UPDATED=2026-07-30T19:02:11Z
 
@@ -379,7 +402,8 @@ write_loop_state() {
 @test "status --json: a running loop with a dead runner reports interrupted" {
   cd "$(make_repo proj)"
   run_vibe start "task dead" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-dead" dead
+  local wt dead
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-dead")"
   true &
   dead=$!
   wait "$dead"
@@ -398,7 +422,8 @@ write_loop_state() {
 @test "status --json: a loop with no recorded PID yet still reports running" {
   cd "$(make_repo proj)"
   run_vibe start "task young" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-young"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-young")"
   write_loop_state "$wt" STATUS=running PID= ITER=0 MAX=2
 
   run run_vibe status --json
@@ -414,7 +439,8 @@ write_loop_state() {
 @test "status --json: a missing or non-numeric loop bound becomes null" {
   cd "$(make_repo proj)"
   run_vibe start "task nb" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-nb"
+  local wt
+  wt="$(phys "$BATS_TEST_TMPDIR/worktrees/proj/task-nb")"
   write_loop_state "$wt" STATUS=running ITER=1 MAX=
 
   run run_vibe status --json
