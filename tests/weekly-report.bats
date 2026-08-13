@@ -89,6 +89,74 @@ commit_on() {
 }
 
 # ---------------------------------------------------------------------------
+# The BSD branch
+#
+# The GNU and BSD spellings of date arithmetic share no syntax, so half of
+# report.sh's date handling never runs on the machine it is written on. CI's
+# macOS leg is the real check, but it is opt-in and billed at 10x — and it
+# already caught one bug here that a Linux run reported as green
+# (`-v${n}d` combined with `-f`, which BSD refuses outright).
+#
+# So: put a stand-in BSD date(1) early on PATH and run the same assertions
+# through it. It refuses --version, which is how report.sh decides it is not
+# on GNU, and it refuses every flag the real BSD date refuses.
+# ---------------------------------------------------------------------------
+
+# with_bsd_date — put the stub on PATH for the rest of this test.
+with_bsd_date() {
+  local bin="$BATS_TEST_TMPDIR/bsd-bin"
+  mkdir -p "$bin"
+  cat >"$bin/date" <<EOF
+#!/usr/bin/env bash
+exec python3 "$REPO_ROOT/tests/bsd-date.py" "\$@"
+EOF
+  chmod +x "$bin/date"
+  PATH="$bin:$PATH"
+  export PATH
+}
+
+@test "bsd: the stub is taken for a non-GNU date" {
+  command -v python3 >/dev/null || skip "python3 not available"
+  with_bsd_date
+  run date --version
+  [ "$status" -ne 0 ]
+}
+
+@test "bsd: an explicit ISO week resolves the same as it does on GNU" {
+  # The regression that reached CI: every week resolution died on macOS with
+  # "cannot shift date", including a shift of zero days.
+  command -v python3 >/dev/null || skip "python3 not available"
+  with_bsd_date
+  run bash "$REPORT" week 2026-W33
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qx 'from: 2026-08-10'
+  echo "$output" | grep -qx 'to: 2026-08-16'
+}
+
+@test "bsd: the awkward weeks resolve too" {
+  # Week 1 in both directions, and a zero-day shift, which is the specific
+  # case the old -v0d spelling could not express.
+  command -v python3 >/dev/null || skip "python3 not available"
+  with_bsd_date
+  run bash "$REPORT" week 2027-W01
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qx 'from: 2027-01-04'
+  run bash "$REPORT" week 2026-W01
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qx 'from: 2025-12-29'
+}
+
+@test "bsd: a deck seeds with the right period" {
+  command -v python3 >/dev/null || skip "python3 not available"
+  with_bsd_date
+  local d
+  d="$(make_repo bsddeck)"
+  run bash "$REPORT" seed 2026-W33 "$d"
+  [ "$status" -eq 0 ]
+  grep -q '2026-08-10 to 2026-08-16' "$d/docs/reports/2026-W33.tex"
+}
+
+# ---------------------------------------------------------------------------
 # Evidence
 # ---------------------------------------------------------------------------
 

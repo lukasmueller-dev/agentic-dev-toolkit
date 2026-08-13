@@ -66,26 +66,55 @@ usage() {
 # DST flag" — so feeding it a date string does not fail loudly, it just
 # ignores the argument and prints today. Probing --version once is the only
 # discriminator that cannot silently answer the wrong question.
+#
+# Everything then goes through epoch seconds rather than either date(1)'s own
+# arithmetic. GNU's `-d "$d $n days"` and BSD's `-v${n}d` have no common
+# spelling, and the BSD form additionally refuses the `-v` + `-f` combination
+# this needs — so there is no pair of flags that works on both. Adding
+# n × 86400 to an epoch is the one operation neither implementation can
+# disagree about.
 # ---------------------------------------------------------------------------
 if date --version >/dev/null 2>&1; then DATE_GNU=1; else DATE_GNU=0; fi
 
+# to_epoch DATE — YYYY-MM-DD as epoch seconds, pinned to noon UTC.
+#
+# Noon and UTC are both load-bearing. BSD date fills a missing time field from
+# the current clock, so a bare date parsed near midnight lands on the
+# neighbouring day; and whole-day arithmetic on a local-time epoch lands on the
+# wrong day across a daylight-saving boundary. Both bugs depend on when the
+# code runs, which is exactly the kind a test suite passes straight over.
+to_epoch() {
+  if [ "$DATE_GNU" = 1 ]; then
+    date -u -d "$1 12:00:00 UTC" +%s 2>/dev/null
+  else
+    date -u -j -f '%Y-%m-%d %H:%M:%S' "$1 12:00:00" +%s 2>/dev/null
+  fi
+}
+
+# from_epoch SECONDS FMT — render an epoch back, in UTC to match to_epoch.
+from_epoch() {
+  if [ "$DATE_GNU" = 1 ]; then
+    date -u -d "@$1" "$2" 2>/dev/null
+  else
+    date -u -r "$1" "$2" 2>/dev/null
+  fi
+}
+
 # date_fmt DATE FMT — format a YYYY-MM-DD date.
 date_fmt() {
-  if [ "$DATE_GNU" = 1 ]; then
-    date -d "$1" "$2" 2>/dev/null || die "cannot parse date: $1"
-  else
-    date -j -f '%Y-%m-%d' "$1" "$2" 2>/dev/null || die "cannot parse date: $1"
-  fi
+  local e out
+  e="$(to_epoch "$1")" || die "cannot parse date: $1"
+  out="$(from_epoch "$e" "$2")" || die "cannot format date: $1"
+  printf '%s\n' "$out"
 }
 
 # date_shift DATE DAYS — DATE moved by DAYS, which may be negative.
 date_shift() {
-  if [ "$DATE_GNU" = 1 ]; then
-    date -d "$1 $2 days" +%F 2>/dev/null || die "cannot shift date: $1 by $2"
-  else
-    date -j -v"${2}d" -f '%Y-%m-%d' "$1" +%F 2>/dev/null ||
-      die "cannot shift date: $1 by $2"
-  fi
+  local e out
+  e="$(to_epoch "$1")" || die "cannot parse date: $1"
+  out="$(from_epoch "$((e + $2 * 86400))" '+%F')" ||
+    die "cannot shift date: $1 by $2"
+  printf '%s\n' "$out"
 }
 
 # week_start YYYY-Www — the Monday of an ISO week.
@@ -103,7 +132,7 @@ week_start() {
   n="${w##*-W}"
   jan4="$y-01-04"
   dow="$(date_fmt "$jan4" '+%u')"
-  monday="$(date_shift "$jan4" "-$((dow - 1))")"
+  monday="$(date_shift "$jan4" "$((1 - dow))")"
   date_shift "$monday" "$(((10#$n - 1) * 7))"
 }
 
@@ -157,6 +186,19 @@ repo_root() {
 reports_dir() {
   echo "$(docs_dir "$1")/reports"
 }
+
+# merged_prs REPO FROM TO — pull requests merged in the period, one per line.
+#
+# A subshell function, because gh takes OWNER/REPO and never a path, so it has
+# to run from inside the repo — and the `cd … && gh … || true` this replaces is
+# the A && B || C shape that does not mean what it reads as.
+merged_prs() (
+  cd "$1" || return 1
+  gh pr list --state merged --limit 100 \
+    --search "merged:$2..$3" \
+    --json number,title,author \
+    --jq '.[] | "  #\(.number) \(.title) — \(.author.login)"'
+)
 
 # ---------------------------------------------------------------------------
 # Evidence
@@ -230,12 +272,7 @@ collect() {
   echo "## merged pull requests"
   if command -v gh >/dev/null 2>&1; then
     local prs
-    # Run from inside the repo so gh resolves the host from its remote: the
-    # --repo flag takes OWNER/REPO, never a path.
-    prs="$(cd "$repo" && gh pr list --state merged --limit 100 \
-      --search "merged:$from..$to" \
-      --json number,title,author \
-      --jq '.[] | "  #\(.number) \(.title) — \(.author.login)"' 2>/dev/null || true)"
+    prs="$(merged_prs "$repo" "$from" "$to" 2>/dev/null || true)"
     if [ -n "$prs" ]; then
       printf '%s\n' "$prs"
     else
