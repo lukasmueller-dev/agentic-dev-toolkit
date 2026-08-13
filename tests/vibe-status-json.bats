@@ -448,90 +448,62 @@ print("ok")
 }
 
 # ---------------------------------------------------------------------------
-# TEMPORARY — diagnostic for the macOS-only failures tracked in this branch's
-# handoff. Reproduces every failing scenario in one test and dumps the full
-# document plus path-resolution facts, so one CI run gives ground truth on
-# both OSes at once instead of guessing blind. Delete this test (and this
+# TEMPORARY — round 2 diagnostic. Round 1 (see PR history) proved the paths
+# are not the problem: git's reported worktree path is physical
+# (/private/var/... on macOS) and status_json's "path" field matches it
+# correctly; task_block DOES find the right block by path in the real,
+# individual failing tests. What it ruled IN: reproducing
+# "a pushed branch reports its upstream and a zero count" standalone showed
+# task_block finding "upstream": "ok", "unpushed": 0 and "behind": 0 inside
+# $block, but NOT "dirty": false — even though the full document (dumped by
+# bats on failure) has it, on the same line-order position *before* those
+# three. Same shape in "a task with no loop state reports loop null": "loop":
+# null (last field) matches, "kind": "task" (near the top) does not. A field
+# is vanishing from the middle of an otherwise-correctly-extracted block.
+#
+# This time: reproduce the pushed-branch scenario in isolation (no other
+# worktrees to confuse things), dump $block's raw bytes with od -c, and check
+# every field two ways — bash's own '[[ == *pat* ]]' glob match (what the
+# real tests use) versus 'grep -qF' (fixed-string, no glob engine involved).
+# If grep finds a field that '[[ ]]' misses, the bug is bash 3.2's glob
+# matcher, not the data or task_block's awk. Delete this test (and this
 # banner) once the real cause is understood and fixed.
 # ---------------------------------------------------------------------------
-@test "DEBUG: dump path resolution and status --json across scenarios" {
+@test "DEBUG round 2: byte-exact look at one corrupted block" {
   cd "$(make_repo proj)"
+  echo "== awk: $(command -v awk); $(awk --version 2>&1 | head -1 || awk -W version 2>&1 | head -1 || echo 'no version flag')" >&2
 
-  echo "== uname: $(uname -a)" >&2
-  echo "== git version: $(git --version)" >&2
-  echo "== bash version: $BASH_VERSION" >&2
-  echo "== raw TMPDIR: ${TMPDIR:-unset}" >&2
-  echo "== raw BATS_TEST_TMPDIR: $BATS_TEST_TMPDIR" >&2
-  echo "== resolved BATS_TEST_TMPDIR (pwd -P): $(cd "$BATS_TEST_TMPDIR" && pwd -P)" >&2
-  echo "== raw HOME: $HOME" >&2
-  echo "== resolved HOME (pwd -P): $(cd "$HOME" && pwd -P)" >&2
-
-  # dirty/unpushed (mirrors the passing 'dirty, unpushed and upstream' test)
-  run_vibe start "task d" >/dev/null
-  local wt_d="$BATS_TEST_TMPDIR/worktrees/proj/task-d"
-  git -C "$wt_d" add -A
-  git -C "$wt_d" commit -q -m "handoff"
-  echo scratch >"$wt_d/x.txt"
-
-  # pushed branch (mirrors a failing test)
   run_vibe start "task up" >/dev/null
-  local wt_up="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
-  git -C "$wt_up" add -A
-  git -C "$wt_up" commit -q -m "handoff"
-  git -C "$wt_up" push -q -u origin task-up
-
-  # missing directory (mirrors a failing test)
-  run_vibe start "task m" >/dev/null
-  local wt_m="$BATS_TEST_TMPDIR/worktrees/proj/task-m"
-  rm -rf "$wt_m"
-
-  # detached HEAD (mirrors a failing test)
-  run_vibe start "task deta" >/dev/null
-  local wt_deta="$BATS_TEST_TMPDIR/worktrees/proj/task-deta"
-  git -C "$wt_deta" checkout -q --detach
-
-  # loop state (mirrors a failing test)
-  run_vibe start "task lp" >/dev/null
-  local wt_lp="$BATS_TEST_TMPDIR/worktrees/proj/task-lp"
-  write_loop_state "$wt_lp" \
-    STATUS=maxed ITER=3 MAX=10 LAST=fail UPDATED=2026-07-30T19:02:11Z
-
-  # idle, no session (mirrors a failing test) — 'task i' left exactly as
-  # 'vibe start' leaves it, no further mutation.
-  run_vibe start "task i" >/dev/null
-  # shellcheck disable=SC2034 # read back below through the wt_* indirection
-  local wt_i="$BATS_TEST_TMPDIR/worktrees/proj/task-i"
-
-  # unmanaged + main checkout kind (mirrors a passing test)
-  local main_phys stray
-  main_phys="$(cd "$BATS_TEST_TMPDIR/proj" && pwd -P)"
-  stray="$BATS_TEST_TMPDIR/stray-wt"
-  git -C "$BATS_TEST_TMPDIR/proj" worktree add -q -b stray "$stray"
-  stray="$(cd "$stray" && pwd -P)"
-
-  echo "== git worktree list --porcelain (repo scope) ==" >&2
-  git -C "$BATS_TEST_TMPDIR/proj" worktree list --porcelain >&2
-
-  echo "== VIBE_WORKTREE_ROOT (raw): $BATS_TEST_TMPDIR/worktrees ==" >&2
-  echo "== VIBE_WORKTREE_ROOT (resolved): $(cd "$BATS_TEST_TMPDIR/worktrees" && pwd -P) ==" >&2
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "handoff"
+  git -C "$wt" push -q -u origin task-up
 
   run run_vibe status --json
   echo "== status --json exit: $status ==" >&2
-  echo "== full document ==" >&2
-  printf '%s\n' "$output" >&2
+  local block
+  block="$(printf '%s\n' "$output" | task_block "$wt")"
 
-  echo "== task_block per scenario ==" >&2
-  local name wt
-  for name in wt_d wt_up wt_m wt_deta wt_lp wt_i; do
-    wt="${!name}"
-    echo "-- $name = $wt --" >&2
-    printf '%s\n' "$output" | task_block "$wt" >&2
-    echo "-- (end $name; empty above means task_block found no match) --" >&2
+  echo "== block via od -c ==" >&2
+  printf '%s' "$block" | od -c | head -80 >&2
+
+  echo "== block via grep -A20 (independent extraction, no awk) ==" >&2
+  printf '%s\n' "$output" | grep -A20 -F "\"path\": \"$wt\"," >&2
+
+  local field
+  for field in '"kind": "task"' '"detached": false' '"state": "idle"' \
+    '"dirty": false' '"unpushed": 0' '"behind": 0' '"upstream": "ok"'; do
+    if [[ "$block" == *"$field"* ]]; then
+      echo "GLOB  match: $field" >&2
+    else
+      echo "GLOB  MISS : $field" >&2
+    fi
+    if printf '%s' "$block" | grep -qF -- "$field"; then
+      echo "GREP  match: $field" >&2
+    else
+      echo "GREP  MISS : $field" >&2
+    fi
   done
-  echo "-- main_phys = $main_phys --" >&2
-  printf '%s\n' "$output" | task_block "$main_phys" >&2
-  echo "-- stray = $stray --" >&2
-  printf '%s\n' "$output" | task_block "$stray" >&2
 
   # Force the test to "fail" so bats prints everything above regardless of
   # whether the platform happens to get every field right.
