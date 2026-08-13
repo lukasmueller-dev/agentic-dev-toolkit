@@ -18,14 +18,22 @@ copy.
 | `ci/*.yml`           | `<repo>/.github/workflows/ci.yml` | Long — starting-point workflow per project type, adapted to the repo's tooling |
 | `codebase/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
 | `research/RUNBOOK.md` | `<repo>/docs/RUNBOOK.md` | Long — one per repo; appended to for the repo's whole life, never regenerated |
+| `report/weekly.tex` | `<repo>/docs/reports/YYYY-Www.tex` | Long — one per week reported; an existing week is edited, never regenerated |
+| `report/SOURCES.md` | `<repo>/docs/reports/SOURCES.md` | Long — one per repo, and optional; config, not a document |
 
-Those last two both go into *another* repo's `docs/`, never into this one
-(`docs/research-skills.md` §3), and each lands in the PR of the skill that
-emits it rather than up front. They sit in different directories because the
-directory follows the emitting skill, not the destination: `research/` holds
-what the `research-*` family emits, and `codebase/` holds what a skill outside
-that family emits — `codebase-map` has an explicit `application` mode and is
-not a research skill (§7).
+Those last three directories all go into *another* repo's `docs/`, never into
+this one (`docs/research-skills.md` §3), and each lands in the PR of the skill
+that emits it rather than up front. They sit in separate directories because
+the directory follows the emitting skill, not the destination: `research/`
+holds what the `research-*` family emits, `codebase/` holds what a skill
+outside that family emits — `codebase-map` has an explicit `application` mode
+and is not a research skill (§7) — and `report/` holds what `weekly-report`
+emits.
+
+`report/` is also the one directory holding both halves of a feature: the
+document a skill writes, and the optional per-repo configuration that shapes
+it. `SOURCES.md` is config in the sense `vibe.config.example` is, but it is
+rendered rather than copied, because it carries the target repo's name.
 
 The `repo/`, `gitignore/`, and `ci/` files carry no placeholder tokens — they
 are copied (and then adapted in place by their consumer), not rendered. The
@@ -67,6 +75,8 @@ render still produces a readable file.
 | `<last>`      | Result of the last stop check — `pass`/`fail`/`none` (`LOOP_PR.md` only) |
 | `<mode>`      | Which half of a fixed schema gets depth — `research`/`application` (`codebase/CODEBASE_MAP.md` only) |
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/CODEBASE_MAP.md` only) |
+| `<week>`      | The ISO week a report covers, `YYYY-Www` (`report/weekly.tex` only) |
+| `<period>`    | That week's Monday-to-Sunday range, `YYYY-MM-DD to YYYY-MM-DD` (`report/weekly.tex` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -106,6 +116,9 @@ tokens in.
   target repo's `docs/`, and never overwrites an existing one
 - `skills/research-first-run/env.sh` — renders `research/RUNBOOK.md` into the
   target repo's `docs/`, and never overwrites an existing one
+- `skills/weekly-report/report.sh` — renders `report/weekly.tex` and, on
+  request, `report/SOURCES.md` into the target repo's `docs/reports/`, and
+  never overwrites either
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo
