@@ -11,93 +11,69 @@
 - **Branch:** `fix-status-json-macos`
 - **PR:** #73 (`gh pr view 73`) — carries the `run-ci` label already
 - **Worktree:** /home/mueller/git/worktrees/agentic-dev-toolkit/fix-status-json-macos
-- **Last updated:** 2026-08-13 17:05 CEST · local
+- **Last updated:** 2026-08-13 17:15 CEST · local
 
 ## State
 
-Root cause found and fixed, pushed as commit `c97235d` on top of two now-
-superseded diagnostic commits (`78482eb`, `3162177` — their bodies record the
-two rounds of macOS CI evidence that led here; not reverted, just
-history — no need to read them to continue).
+Fix is pushed (`c97235d`, plus a handoff-only commit `d31c79f` on top) and
+**CI is currently running** on GitHub for the latest commit — not yet
+confirmed. `gh run list --branch fix-status-json-macos` shows the run for
+`d31c79f` `in_progress`/`pending` as of this update.
 
-**Root cause:** the bug was in `tests/vibe-status-json.bats`, not in
-`bin/vibe`. Git canonicalizes a worktree's path when it records it (`git
-worktree list --porcelain` reports the physical path), and `status_json`'s
-own `"path"` field already matches that correctly — `bin/vibe` was doing
-exactly what its own comments say it should. Most tests build the worktree
-path they expect to find in the JSON by concatenating `$BATS_TEST_TMPDIR`
-directly. On Linux that's a no-op (`/tmp` isn't a symlink). On macOS,
-`$TMPDIR` sits behind `/var -> /private/var`, so the literal path never
-equals what git/status_json report, and `task_block`'s exact `"path"` match
-silently finds nothing.
+**Root cause (confirmed, fixed):** the bug was in
+`tests/vibe-status-json.bats`, not in `bin/vibe`. Git canonicalizes a
+worktree's path when it records it, and `status_json`'s own `"path"` field
+already matches that correctly. Most tests built the worktree path they
+expect to find in the JSON by concatenating `$BATS_TEST_TMPDIR` directly —
+a no-op on Linux, but wrong on macOS where `$TMPDIR` sits behind
+`/var -> /private/var`, so the literal path never equalled what
+git/status_json report and the exact `"path"` match silently found nothing.
 
-Why it read as scattered, unrelated field failures (kind, dirty, state, ...)
-rather than one clean "path never matches": bash 3.2's `set -e` does not
-reliably abort a bats test body at the first failing bare `[[ ]]` the way
-bash 5.x does, so a chain of assertions runs to completion regardless, and
-bats names whichever line was executing when the *last* command's exit
-status went non-zero — not necessarily the first genuinely-failing one. A
-couple of tests even reported a false "ok" because their last assertion
-happened to be a negative check (`!= *pattern*`) that an empty `$block`
-trivially satisfies. This is a real, separate finding worth a note in
-`CLAUDE.md`'s shell section once confirmed (see Next action) — bare `[[ ]]`
-assertion chains in a bats test are not reliably fail-fast on macOS's bash
-3.2.
-
-**Fix:** added a `phys` test helper (`cd + pwd -P`, mirroring `bin/vibe`'s
-own "no readlink -f on macOS" resolution) and routed every worktree path a
-test compares against `status_json`'s `"path"` field through it, resolved
-*before* any step that might remove the directory. One test already did
-this by hand for its main/unmanaged-kind comparison — it always passed,
-which was the tell.
-
-**Verified:** all 22 real tests plus the full local suite pass on Linux (446
-pre-existing bats tests; 3 pre-existing unrelated failures in
-`skill-lint.bats` from this sandbox's own shellcheck setup, nothing to do
-with this change). The fix itself can only be confirmed on the macOS leg.
+**Fix:** added a `phys` test helper (`cd + pwd -P`) and routed every
+worktree path a test compares against `status_json`'s `"path"` field
+through it, resolved before any step that might remove the directory.
+Verified locally on Linux: all 22 real tests plus the full suite pass (446
+pre-existing bats tests; 3 pre-existing unrelated `skill-lint.bats`
+failures from this sandbox's shellcheck setup — unrelated to this change).
+The fix itself can only be confirmed on the macOS CI leg.
 
 ## Next action
 
-1. Check PR #73's latest CI run (commit `c97235d`) for the macOS `bats` job
-   result — confirm all `status --json` tests are green.
+1. Poll CI to completion and check the macOS `bats` job specifically:
    `gh pr checks 73` or `gh run list --branch fix-status-json-macos`.
-2. If green: squash/clean up the commit history if desired (three commits —
-   two diagnostics plus the fix — are fine to keep as-is for the audit
-   trail, or squash before merge, reviewer's call), then merge the PR.
-3. Add a note to this repo's `CLAUDE.md` shell-portability section about the
-   bash 3.2 `set -e`/bare-`[[ ]]`-chain masking behavior discovered here —
-   it is a general trap for any bats test in this suite, not just this file,
-   and the existing gotchas list is exactly where it belongs. Only add it
-   once the CI run in step 1 confirms the theory (i.e., the fix alone was
-   sufficient — if some assertion still needs reordering to be fail-fast,
-   fold that into the same note).
+2. If macOS is green: confirms the bash-3.2 `set -e` masking theory below.
+   Add a note to this repo's `CLAUDE.md` shell-portability gotchas section
+   about bare `[[ ]]` assertion chains in bats tests not being reliably
+   fail-fast under macOS's bash 3.2 (see "Gotchas" below for the write-up
+   to adapt). Then squash/clean up history if desired (reviewer's call) and
+   merge the PR.
+3. If macOS is still red: re-fetch the failure log
+   (`gh run view <id> --log-failed`) — the path-resolution fix may not be
+   the whole story, or a different assertion needs reordering to be
+   fail-fast. Don't assume the theory is confirmed until the log says so.
 4. Delete this `HANDOFF.md` from the branch before merging (`git rm
    HANDOFF.md`, `vibe sync`), per the standing rule.
 
 ## Blockers
 
-None currently — root cause is understood and a fix is pushed. Only
-remaining step is reading back the macOS CI result to confirm.
+None — waiting on CI only. Re-run step 1 above; do not guess the result.
 
-## Gotchas (unpromoted — candidate for CLAUDE.md, see Next action #3)
+## Gotchas (unpromoted — candidate for CLAUDE.md, pending CI confirmation)
 
-macOS's bash 3.2 does not reliably fail-fast on a bare `[[ ]]` assertion
-chain inside a bats `@test` body the way later bash does under `set -e`.
-Observed here: a test with four sequential bare `[[ "$block" == *pat* ]]`
-lines had the *first three* silently fail (an empty `$block`, since none of
-the patterns could possibly match) while only the *fourth* was reported by
-bats as the failing line — meaning the first three ran to completion despite
-failing, rather than aborting the test body immediately. Confirmed on Linux
-that an empty `$block` reported at the *first* assertion under bash 5.x/bats
-1.11, so this is not how the suite behaves elsewhere — it is specific to
-whatever combination of bash 3.2 and the macOS runner's bats build is in
-play. Net effect: a bats test on macOS can under-report which of several
-assertions actually failed, and — worse — can report a false "ok" if the
-*last* assertion in the chain happens to be a negative check. Confirmed via
-an independent `grep -qF` re-check (bypassing bash's glob matching and
-`task_block`'s awk entirely) that the underlying data was genuinely absent,
-not a glob-matching quirk — so the masking is about `set -e` propagation,
-not string matching. Worth generalizing into a rule (e.g., "wrap
-multi-assertion bats checks in `run` + explicit exit-status checks, or use
-`assert_*` helpers, rather than bare chained `[[ ]]`") once confirmed this
-is really the mechanism and not merely correlated with the fix above.
+macOS's bash 3.2 did not reliably fail-fast on a bare `[[ ]]` assertion
+chain inside a bats `@test` body the way bash 5.x does under `set -e`: a
+test with four sequential bare `[[ "$block" == *pat* ]]` lines had the
+first three silently fail (empty `$block`) while only the fourth was
+reported by bats as the failing line, meaning the first three ran to
+completion despite failing rather than aborting immediately. Confirmed on
+Linux that an empty `$block` is reported at the *first* assertion under
+bash 5.x/bats 1.11, so this is specific to bash 3.2 + the macOS runner's
+bats build. Net effect: a bats test on macOS can under-report which
+assertion actually failed, and can report a false "ok" if the *last*
+assertion in a chain happens to be a negative check that an empty value
+trivially satisfies. Independently confirmed via `grep -qF` (bypassing
+bash glob matching and `task_block`'s awk) that the underlying data was
+genuinely absent — so this is about `set -e` propagation, not string
+matching. Do not promote to CLAUDE.md until the macOS CI run in step 1
+confirms the fix alone was sufficient (i.e., no assertion also needed
+reordering to be fail-fast).
