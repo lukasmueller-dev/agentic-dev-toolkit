@@ -663,6 +663,27 @@ EOF
   jq -e '.sandbox.excludedCommands | length > 0' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: a command whose credential file is denied is not sandboxed" {
+  # The two lists have to agree, and nothing else in the suite makes them.
+  # Denying a credential file inside the sandbox while leaving the command
+  # that reads it sandboxed does not make that command safer, it makes it
+  # unusable: gh opens ~/.config/gh/hosts.yml before it parses a subcommand,
+  # so under the deny it cannot even build its root command, and the ~20 `gh`
+  # rules in this same baseline's permissions.allow can never fire.
+  #
+  # Found on a fresh install: every gh call started failing with "permission
+  # denied" the moment `gh auth login` created the file, and the failure looks
+  # like a broken gh rather than a policy that contradicts itself. The token
+  # is still protected — Read(**/gh/hosts.yml) keeps an agent from reading it
+  # directly, which is the half of the protection that was doing the work.
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.sandbox.excludedCommands | index("gh *")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.credentials.files | map(.path) | index("~/.config/gh/hosts.yml")' \
+    "$HOME/.claude/settings.json"
+  jq -e '.permissions.deny | index("Read(**/gh/hosts.yml)")' "$HOME/.claude/settings.json"
+}
+
 @test "claude settings: unions sandbox arrays instead of replacing them" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'

@@ -177,6 +177,7 @@
       "git fetch *",
       "git pull *",
       "git push *",
+      "gh *",
       "rsync *",
       "scp *",
       "ssh *"
