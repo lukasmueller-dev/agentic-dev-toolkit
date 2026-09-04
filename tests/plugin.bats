@@ -143,10 +143,10 @@ setup() {
   for src in startup clear; do
     run bash -c "printf '%s' '{\"source\":\"$src\"}' | bash '$h'"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"additionalContext"* ]]
+    [[ "$output" == *"additionalContext"* ]] || false
     # the real memory, not a placeholder
     run bash -c "printf '%s' '{\"source\":\"$src\"}' | bash '$h' | jq -r '.hookSpecificOutput.additionalContext'"
-    [[ "$output" == *"Where information goes"* ]]
+    [[ "$output" == *"Where information goes"* ]] || false
   done
   # sources that already carry context forward must stay silent
   for src in resume compact fork; do

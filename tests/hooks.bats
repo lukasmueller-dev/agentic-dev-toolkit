@@ -44,8 +44,8 @@ setup() {
 
   run bash -c "echo '{\"cwd\":\"$r\"}' | '$HOOKS/session-end-handoff.sh' 2>&1"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"HANDOFF.md"* ]]
-  [[ "$output" == *"stale"* ]]
+  [[ "$output" == *"HANDOFF.md"* ]] || false
+  [[ "$output" == *"stale"* ]] || false
 }
 
 @test "handoff: editing only the handoff does not make it stale" {
@@ -205,7 +205,7 @@ mk_edit_skill() {
   mk_edit_skill "$BATS_TEST_TMPDIR" bad Wrong
   run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/skills/bad/SKILL.md\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"[SQ3]"* ]]
+  [[ "$output" == *"[SQ3]"* ]] || false
 }
 
 @test "on-edit: triggers when a sibling file in the skill is edited" {
@@ -215,7 +215,7 @@ mk_edit_skill() {
   printf '#!/usr/bin/env bash\n' >"$BATS_TEST_TMPDIR/skills/bad/scripts/run.sh"
   run bash -c "echo '{\"tool_input\":{\"file_path\":\"$BATS_TEST_TMPDIR/skills/bad/scripts/run.sh\"}}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"[SQ3]"* ]]
+  [[ "$output" == *"[SQ3]"* ]] || false
 }
 
 @test "on-edit: resolves a relative file_path against cwd" {
@@ -223,7 +223,7 @@ mk_edit_skill() {
   mk_edit_skill "$BATS_TEST_TMPDIR" bad Wrong
   run bash -c "echo '{\"tool_input\":{\"file_path\":\"skills/bad/SKILL.md\"},\"cwd\":\"$BATS_TEST_TMPDIR\"}' | '$HOOKS/skill-lint-on-edit.sh' 2>&1"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"[SQ3]"* ]]
+  [[ "$output" == *"[SQ3]"* ]] || false
 }
 
 @test "on-edit: never exits with a code other than 0 or 2" {
@@ -300,8 +300,8 @@ EOF
   r="$(make_repo proj)"
   run bash -c "echo '{\"workspace\":{\"current_dir\":\"$r\"}}' | '$HOOKS/statusline.sh'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"proj"* ]]
-  [[ "$output" == *"main"* ]]
+  [[ "$output" == *"proj"* ]] || false
+  [[ "$output" == *"main"* ]] || false
 }
 
 @test "statusline: reports the main repo name from inside a worktree" {
@@ -315,8 +315,8 @@ EOF
     bash -c "echo '{\"workspace\":{\"current_dir\":\"$wt\"}}' | '$HOOKS/statusline.sh'"
   [ "$status" -eq 0 ]
   # the repo, not the task directory
-  [[ "$output" == *"proj"* ]]
-  [[ "$output" == *"feat-x"* ]]
+  [[ "$output" == *"proj"* ]] || false
+  [[ "$output" == *"feat-x"* ]] || false
 }
 
 @test "statusline: shows the task only when it differs from the branch" {
@@ -339,8 +339,8 @@ EOF
   run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
     bash -c "echo '{\"workspace\":{\"current_dir\":\"$wt\"}}' | '$HOOKS/statusline.sh'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"hotfix"* ]]
-  [[ "$output" == *"feat-x"* ]]
+  [[ "$output" == *"hotfix"* ]] || false
+  [[ "$output" == *"feat-x"* ]] || false
 }
 
 @test "statusline: never errors on empty stdin" {

@@ -85,7 +85,7 @@ set_state() {
   cd "$(make_repo proj)"
   stub_agent
   run ! loop_vibe loop "bad for" --for 90x --max 1
-  [[ "$output" == *"--for must be a duration"* ]]
+  [[ "$output" == *"--for must be a duration"* ]] || false
 }
 
 @test "loop: a second bare word is an error, not a silently truncated task" {
@@ -93,7 +93,7 @@ set_state() {
   cd "$(make_repo proj)"
   stub_agent
   run ! loop_vibe loop sota 2026-W30 --max 1
-  [[ "$output" == *"one task at a time"* ]]
+  [[ "$output" == *"one task at a time"* ]] || false
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/2026-w30" ]
 }
 
@@ -102,7 +102,7 @@ set_state() {
   stub_agent
   run loop_vibe loop "timed task" --until false --for=0s --max 10
   [ "$status" -eq 4 ]
-  [[ "$output" == *"time budget spent"* ]]
+  [[ "$output" == *"time budget spent"* ]] || false
   [ "$(loop_state timed-task STATUS)" = timeup ]
   [ "$(loop_state timed-task ITER)" = 1 ]
 }
@@ -140,7 +140,7 @@ set_state() {
   run loop_vibe loop "until task" \
     --until '[ -f progress.txt ] && [ "$(wc -l <progress.txt)" -ge 2 ]' --max 10
   [ "$status" -eq 0 ]
-  [[ "$output" == *"stop check passed on iteration 2"* ]]
+  [[ "$output" == *"stop check passed on iteration 2"* ]] || false
   [ "$(loop_state until-task STATUS)" = success ]
   [ "$(loop_state until-task ITER)" = 2 ]
 }
@@ -150,7 +150,7 @@ set_state() {
   stub_agent
   run loop_vibe loop "max task" --until false --max 3
   [ "$status" -eq 3 ]
-  [[ "$output" == *"hit max 3 iterations"* ]]
+  [[ "$output" == *"hit max 3 iterations"* ]] || false
   [ "$(loop_state max-task STATUS)" = maxed ]
   [ "$(loop_state max-task ITER)" = 3 ]
 }
@@ -160,7 +160,7 @@ set_state() {
   stub_agent
   STUB_MODE=noop run loop_vibe loop "stall task" --max 10
   [ "$status" -eq 2 ]
-  [[ "$output" == *"stalled"* ]]
+  [[ "$output" == *"stalled"* ]] || false
   [ "$(loop_state stall-task STATUS)" = stalled ]
   [ "$(loop_state stall-task ITER)" = 2 ]
 }
@@ -196,7 +196,7 @@ EOF
 
   run loop_vibe loop "quiet task" --until false --max 1
   [ "$status" -eq 3 ]
-  [[ "$output" != *AGENT-CHATTER* ]]
+  [[ "$output" != *AGENT-CHATTER* ]] || false
 
   local log
   log="$(git -C "$(wt quiet-task)" rev-parse --absolute-git-dir)/vibe-agent.log"
@@ -225,7 +225,7 @@ EOF
 
   run loop_vibe loop "resume task" --until false --max 4
   [ "$status" -eq 3 ]
-  [[ "$output" == *"resuming loop"* ]]
+  [[ "$output" == *"resuming loop"* ]] || false
   # continued at 3 and 4, did not restart at 1
   [ "$(loop_state resume-task ITER)" = 4 ]
   [ "$(wc -l <"$(wt resume-task)/progress.txt")" -eq 4 ]
@@ -246,7 +246,7 @@ EOF
   run loop_vibe loop "busy task" --until false --max 4
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"already running"* ]]
+  [[ "$output" == *"already running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ EOF
   set_state "$sf" PID 99999999
   run loop_vibe loop "div task" --until false --max 4 --push
   [ "$status" -eq 5 ]
-  [[ "$output" == *"diverged"* ]]
+  [[ "$output" == *"diverged"* ]] || false
   [ "$(loop_state div-task STATUS)" = stopped ]
 }
 
@@ -317,7 +317,7 @@ EOF
   run loop_vibe "done" "guard task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"still running"* ]]
+  [[ "$output" == *"still running"* ]] || false
   [ -d "$(wt guard-task)" ]
 }
 
@@ -344,7 +344,7 @@ EOF
   loop_ended loop "brief task" --until false --max 1 --push
   run loop_vibe "done" "brief task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"LOOP.md"* ]]
+  [[ "$output" == *"LOOP.md"* ]] || false
   [ -d "$(wt brief-task)" ]
 }
 
@@ -378,7 +378,7 @@ EOF
   stub_agent
   run loop_vibe loop "det task" --no-attach --max 1
   [ "$status" -eq 0 ]
-  [[ "$output" == *"loop running detached in tmux session"* ]]
+  [[ "$output" == *"loop running detached in tmux session"* ]] || false
   # The stub tmux records the launch without running it, so the runner never
   # actually starts — the state file is left as cmd_loop wrote it.
   grep -q "new-session -d -s vibe-proj-det-task " "$VIBE_TEST_TMUX_LOG"
@@ -397,7 +397,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" loop "no tmux det" --no-attach --max 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"needs tmux"* ]]
+  [[ "$output" == *"needs tmux"* ]] || false
   # Refused before scaffolding: no worktree, and so no state file that
   # 'vibe status' would report as a live loop forever.
   [ ! -d "$(wt no-tmux-det)" ]
@@ -409,7 +409,7 @@ EOF
   cd "$(make_repo proj)"
   stub_agent
   run loop_ended loop "fg task" --max 1
-  [[ "$output" == *"running the loop in the foreground"* ]]
+  [[ "$output" == *"running the loop in the foreground"* ]] || false
   [ "$(loop_state fg-task STATUS)" != running ]
   run ! grep -q "new-session -d -s vibe-proj-fg-task " "$VIBE_TEST_TMUX_LOG"
 }
@@ -428,7 +428,7 @@ EOF
   run loop_vibe attach "watch task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 0 ]
-  [[ "$output" == *"loop is active"* ]]
+  [[ "$output" == *"loop is active"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -440,8 +440,8 @@ EOF
   loop_ended loop "shown task" --until false --max 2
   run loop_vibe status
   [ "$status" -eq 0 ]
-  [[ "$output" == *"loop iter 2/2"* ]]
-  [[ "$output" == *"maxed"* ]]
+  [[ "$output" == *"loop iter 2/2"* ]] || false
+  [[ "$output" == *"maxed"* ]] || false
 }
 
 @test "loop: status calls a running loop with a dead runner interrupted" {
@@ -461,15 +461,15 @@ EOF
   set_state "$sf" PID "$dead"
   run loop_vibe status
   [ "$status" -eq 0 ]
-  [[ "$output" == *"interrupted"* ]]
-  [[ "$output" != *"· running"* ]]
+  [[ "$output" == *"interrupted"* ]] || false
+  [[ "$output" != *"· running"* ]] || false
 
   # An empty PID is the launch window — cmd_loop writes the state before
   # tmux starts the runner — and that must still read as running.
   set_state "$sf" PID ""
   run loop_vibe status
   [ "$status" -eq 0 ]
-  [[ "$output" == *"· running"* ]]
+  [[ "$output" == *"· running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -545,7 +545,7 @@ EOF
   # the worktree's branch tracks origin and contains the pushed commit
   git -C "$(wt remote-task)" rev-parse '@{u}' >/dev/null
   run git -C "$(wt remote-task)" log --oneline
-  [[ "$output" == *"brief"* ]]
+  [[ "$output" == *"brief"* ]] || false
 }
 
 @test "loop: --dangerously-allow-all refuses without permissive args configured" {
@@ -553,7 +553,7 @@ EOF
   stub_agent
   run loop_vibe loop "danger task" --dangerously-allow-all --max 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"VIBE_LOOP_PERMISSIVE_ARGS"* ]]
+  [[ "$output" == *"VIBE_LOOP_PERMISSIVE_ARGS"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -565,7 +565,7 @@ EOF
   stub_agent
   run loop_vibe loop "boxed task" --sandbox --max 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"VIBE_LOOP_SANDBOX_ARGS"* ]]
+  [[ "$output" == *"VIBE_LOOP_SANDBOX_ARGS"* ]] || false
 }
 
 @test "loop: --sandbox appends VIBE_LOOP_SANDBOX_ARGS to the agent invocation" {
@@ -607,7 +607,7 @@ EOF
     VIBE_LOOP_SANDBOX_ARGS="--stub-box" \
     run loop_vibe loop "resume boxed" --until false --max 2
   [ "$status" -eq 3 ]
-  [[ "$output" == *"resuming loop"* ]]
+  [[ "$output" == *"resuming loop"* ]] || false
   grep -qx -- "--stub-box" "$BATS_TEST_TMPDIR/argv"
   [ "$(loop_state resume-boxed SANDBOX)" = 1 ]
 }
@@ -672,7 +672,7 @@ EOF
   run loop_vibe loop "pr task" --until true --max 1 --pr
   [ "$status" -eq 0 ]
   [ "$(loop_state pr-task STATUS)" = success ]
-  [[ "$output" == *"opened PR: https://github.test/proj/pull/7"* ]]
+  [[ "$output" == *"opened PR: https://github.test/proj/pull/7"* ]] || false
   grep -qx -- "create" "$GH_LOG"
   # ready for review, not a draft
   run ! grep -qx -- "--draft" "$GH_LOG"
@@ -685,7 +685,7 @@ EOF
   run loop_vibe loop "draft task" --until false --max 1 --pr
   [ "$status" -eq 3 ]
   [ "$(loop_state draft-task STATUS)" = maxed ]
-  [[ "$output" == *"opened draft PR"* ]]
+  [[ "$output" == *"opened draft PR"* ]] || false
   grep -qx -- "--draft" "$GH_LOG"
 }
 
@@ -728,7 +728,7 @@ EOF
   GH_EXISTING="https://github.test/proj/pull/7" \
     run loop_vibe loop "restored task" --until false --max 2
   [ "$status" -eq 3 ]
-  [[ "$output" == *"restored LOOP.md from the archived brief"* ]]
+  [[ "$output" == *"restored LOOP.md from the archived brief"* ]] || false
   # The resumed rounds ran against the refined brief, and the end of the run
   # stripped it off the branch again — re-archived, not lost.
   grep -q "The refined goal." \
@@ -744,7 +744,7 @@ EOF
   GH_EXISTING="https://github.test/proj/pull/3" \
     run loop_vibe loop "second pr" --until true --max 1 --pr
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PR already open"* ]]
+  [[ "$output" == *"PR already open"* ]] || false
   run ! grep -qx -- "create" "$GH_LOG"
   # The brief is still stripped and pushed: a merge from GitHub never passes
   # vibe done's guards, so leaving LOOP.md here would land it on main.
@@ -759,7 +759,7 @@ EOF
   GH_FAIL=1 run loop_vibe loop "no auth" --until true --max 1 --pr
   [ "$status" -eq 0 ]
   [ "$(loop_state no-auth STATUS)" = success ]
-  [[ "$output" == *"no PR opened"* ]]
+  [[ "$output" == *"no PR opened"* ]] || false
   # The brief is stripped and pushed BEFORE the gh checks give up: the warn
   # says to open the PR by hand, and when the gh checks ran first that
   # advice handed over a branch with LOOP.md still on it — the hand-opened
@@ -826,8 +826,8 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" loop "srv fresh" --no-attach --max 1
   [ "$status" -eq 0 ]
-  [[ "$output" == *"starting loop in tmux session"* ]]
-  [[ "$output" == *"loop running detached"* ]]
+  [[ "$output" == *"starting loop in tmux session"* ]] || false
+  [[ "$output" == *"loop running detached"* ]] || false
   grep -q "new-session -d -s vibe-proj-srv-fresh " "$VIBE_TEST_TMUX_LOG"
   grep -q "send-keys -t vibe-proj-srv-fresh .*__loop-run" "$VIBE_TEST_TMUX_LOG"
   # no attach: started from a script, attaching would hang the caller
@@ -854,9 +854,9 @@ EOF
   [ "$status" -eq 0 ]
   local typed
   typed="$(grep "send-keys -t vibe-proj-env-carry" "$VIBE_TEST_TMUX_LOG")"
-  [[ "$typed" == *"VIBE_AGENT_CMD=$BATS_TEST_TMPDIR/agent.sh"* ]]
-  [[ "$typed" == *"VIBE_LOOP_SANDBOX_ARGS=--sandbox-flag"* ]]
-  [[ "$typed" == *"VIBE_LOOP_PERMISSIVE_ARGS=--yolo-flag"* ]]
+  [[ "$typed" == *"VIBE_AGENT_CMD=$BATS_TEST_TMPDIR/agent.sh"* ]] || false
+  [[ "$typed" == *"VIBE_LOOP_SANDBOX_ARGS=--sandbox-flag"* ]] || false
+  [[ "$typed" == *"VIBE_LOOP_PERMISSIVE_ARGS=--yolo-flag"* ]] || false
 }
 
 @test "loop: __loop-run drives a loop from its saved state" {
@@ -871,7 +871,7 @@ EOF
 
   run loop_vibe __loop-run "$(wt runner-task)"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"hit max 2 iterations"* ]]
+  [[ "$output" == *"hit max 2 iterations"* ]] || false
   [ "$(loop_state runner-task STATUS)" = maxed ]
   [ "$(loop_state runner-task ITER)" = 2 ]
 }
@@ -880,15 +880,15 @@ EOF
   cd "$(make_repo proj)"
   run loop_vibe __loop-run "$BATS_TEST_TMPDIR/proj"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no loop state"* ]]
+  [[ "$output" == *"no loop state"* ]] || false
 
   run loop_vibe __loop-run
   [ "$status" -eq 1 ]
-  [[ "$output" == *"usage: vibe __loop-run"* ]]
+  [[ "$output" == *"usage: vibe __loop-run"* ]] || false
 
   run loop_vibe __loop-run "$BATS_TEST_TMPDIR/does-not-exist"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no worktree at"* ]]
+  [[ "$output" == *"no worktree at"* ]] || false
 }
 
 @test "rc: refuses while the session is running a loop" {
@@ -910,7 +910,7 @@ EOF
     "$VIBE" rc "rc loop"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"running a loop, not an interactive agent"* ]]
+  [[ "$output" == *"running a loop, not an interactive agent"* ]] || false
   # and nothing was typed into the session
   run ! grep -q "send-keys" "$VIBE_TEST_TMUX_LOG"
 }
@@ -944,7 +944,7 @@ EOF
   [ "$status" -eq 0 ]
   # The old path said "already exists", attached, and ran nothing — leaving
   # the state file at STATUS=running with no runner behind it.
-  [[ "$output" == *"restarting loop in existing tmux session"* ]]
+  [[ "$output" == *"restarting loop in existing tmux session"* ]] || false
   grep -q "send-keys -t vibe-proj-idle-sess .*__loop-run" "$VIBE_TEST_TMUX_LOG"
   run ! grep -q "new-session" "$VIBE_TEST_TMUX_LOG"
 }
@@ -960,7 +960,7 @@ EOF
     STUB_COUNT="$BATS_TEST_TMPDIR/count" \
     "$VIBE" loop "busy sess" --no-attach --max 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"busy running 'claude'"* ]]
+  [[ "$output" == *"busy running 'claude'"* ]] || false
   # Refused before anything was written: no worktree, no state saying running.
   [ ! -d "$(wt busy-sess)" ]
 }

@@ -46,7 +46,7 @@ run_script() {
 @test "sota-weekly: rejects a week that is not YYYY-Www" {
   run_script 2026-30
   [ "$status" -eq 1 ]
-  [[ "$output" == *"bad week"* ]]
+  [[ "$output" == *"bad week"* ]] || false
   [ ! -e "$XDG_STATE_HOME/sota-digest" ]
 }
 
@@ -130,5 +130,5 @@ run_script() {
   cp "$SCRIPT" "$BATS_TEST_TMPDIR/loose/"
   PATH="$STUB:$PATH" run "$BATS_TEST_TMPDIR/loose/sota-weekly.sh" 2026-W29
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not inside a git checkout"* ]]
+  [[ "$output" == *"not inside a git checkout"* ]] || false
 }

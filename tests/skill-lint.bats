@@ -47,7 +47,7 @@ min_path() {
   writeskill good good "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"0 error(s), 0 warning(s)"* ]]
+  [[ "$output" == *"0 error(s), 0 warning(s)"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ min_path() {
   printf '# just a heading\n' >"$SKILLS/nofm/SKILL.md"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"must start with YAML frontmatter"* ]]
+  [[ "$output" == *"must start with YAML frontmatter"* ]] || false
 }
 
 @test "unclosed frontmatter is an error" {
@@ -66,7 +66,7 @@ min_path() {
   printf -- '---\nname: open\ndescription: %s\n' "$GOOD_DESC" >"$SKILLS/open/SKILL.md"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not closed by a second"* ]]
+  [[ "$output" == *"not closed by a second"* ]] || false
 }
 
 # A large body after the closing '---' used to false-positive as unclosed:
@@ -88,7 +88,7 @@ min_path() {
   } >"$d/SKILL.md"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"not closed by a second"* ]]
+  [[ "$output" != *"not closed by a second"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -100,14 +100,14 @@ min_path() {
   printf -- '---\ndescription: %s\n---\n' "$GOOD_DESC" >"$d/SKILL.md"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"missing 'name:'"* ]]
+  [[ "$output" == *"missing 'name:'"* ]] || false
 }
 
 @test "name not matching the directory is an error" {
   writeskill mydir otherName "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"does not match directory"* ]]
+  [[ "$output" == *"does not match directory"* ]] || false
 }
 
 @test "uppercase name is an error" {
@@ -115,14 +115,14 @@ min_path() {
   writeskill BadName BadName "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"lowercase letters, digits and single hyphens"* ]]
+  [[ "$output" == *"lowercase letters, digits and single hyphens"* ]] || false
 }
 
 @test "name containing claude is an error" {
   writeskill claude-helper claude-helper "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"must not contain 'claude' or 'anthropic'"* ]]
+  [[ "$output" == *"must not contain 'claude' or 'anthropic'"* ]] || false
 }
 
 @test "name over 64 characters is an error" {
@@ -130,7 +130,7 @@ min_path() {
   writeskill "$n" "$n" "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"exceeds 64 characters"* ]]
+  [[ "$output" == *"exceeds 64 characters"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ min_path() {
   printf -- '---\nname: nodesc\n---\n' >"$d/SKILL.md"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"missing 'description:'"* ]]
+  [[ "$output" == *"missing 'description:'"* ]] || false
 }
 
 @test "over-long description is an error" {
@@ -151,29 +151,29 @@ min_path() {
   writeskill big big "$long"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"over the 1024 limit"* ]]
+  [[ "$output" == *"over the 1024 limit"* ]] || false
 }
 
 @test "first-person description is a warning, not an error" {
   writeskill me me "You should use this whenever you want to analyze the thing in great detail."
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"warn: "* ]]
-  [[ "$output" == *"first-person"* ]]
+  [[ "$output" == *"warn: "* ]] || false
+  [[ "$output" == *"first-person"* ]] || false
 }
 
 @test "short description is a warning" {
   writeskill tiny tiny "Does a thing."
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"too thin to trigger"* ]]
+  [[ "$output" == *"too thin to trigger"* ]] || false
 }
 
 @test "--strict promotes a warning to an error" {
   writeskill tiny tiny "Does a thing."
   run "$LINT" --strict "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"error: "* ]]
+  [[ "$output" == *"error: "* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -189,7 +189,7 @@ min_path() {
     >"$SKILLS/s/scripts/run.sh"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"fails shellcheck"* ]]
+  [[ "$output" == *"fails shellcheck"* ]] || false
 }
 
 @test "a badly formatted bundled script is an error" {
@@ -200,7 +200,7 @@ min_path() {
     >"$SKILLS/s/scripts/run.sh"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not formatted with shfmt"* ]]
+  [[ "$output" == *"not formatted with shfmt"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ min_path() {
   writeskill good good "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checked 1 skill(s)"* ]]
+  [[ "$output" == *"checked 1 skill(s)"* ]] || false
 }
 
 @test "directories without a SKILL.md are ignored" {
@@ -222,7 +222,7 @@ min_path() {
   writeskill good good "$GOOD_DESC"
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checked 1 skill(s)"* ]]
+  [[ "$output" == *"checked 1 skill(s)"* ]] || false
 }
 
 @test "no argument discovers ./.claude/skills" {
@@ -233,7 +233,7 @@ min_path() {
   cd "$BATS_TEST_TMPDIR/proj"
   run "$LINT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checked 1 skill(s)"* ]]
+  [[ "$output" == *"checked 1 skill(s)"* ]] || false
 }
 
 @test "no argument falls back to ./skills" {
@@ -241,7 +241,7 @@ min_path() {
   cd "$BATS_TEST_TMPDIR"
   run "$LINT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checked 1 skill(s)"* ]]
+  [[ "$output" == *"checked 1 skill(s)"* ]] || false
 }
 
 @test "no argument and no skills directory is a usage error" {
@@ -249,7 +249,7 @@ min_path() {
   rm -rf "$SKILLS"
   run "$LINT"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"usage:"* ]]
+  [[ "$output" == *"usage:"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -266,7 +266,7 @@ min_path() {
   p="$(min_path "$BATS_TEST_TMPDIR/pathA" bash env sed grep head basename dirname shfmt)"
   run env PATH="$p" "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shellcheck not found"* ]]
+  [[ "$output" == *"shellcheck not found"* ]] || false
 }
 
 @test "missing shfmt skips the bundled-script checks entirely" {
@@ -278,13 +278,13 @@ min_path() {
   p="$(min_path "$BATS_TEST_TMPDIR/pathB" bash env sed grep head basename dirname)"
   run env PATH="$p" "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shfmt not found"* ]]
+  [[ "$output" == *"shfmt not found"* ]] || false
 }
 
 @test "a nonexistent skills directory is an error" {
   run "$LINT" "$BATS_TEST_TMPDIR/does-not-exist"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no such directory"* ]]
+  [[ "$output" == *"no such directory"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -296,15 +296,15 @@ min_path() {
   run "$LINT" "$SKILLS/one"
   [ "$status" -eq 0 ]
   # Only 'one' was checked; 'two' (which has a warning) was not.
-  [[ "$output" == *"checked 1 skill(s)"* ]]
-  [[ "$output" != *"first-person"* ]]
+  [[ "$output" == *"checked 1 skill(s)"* ]] || false
+  [[ "$output" != *"first-person"* ]] || false
 }
 
 @test "a single skill directory reports its own findings" {
   writeskill bad Wrong "$GOOD_DESC"
   run "$LINT" "$SKILLS/bad"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"does not match directory"* ]]
+  [[ "$output" == *"does not match directory"* ]] || false
 }
 
 @test "pointing at an underscore skill directory checks nothing" {
@@ -312,7 +312,7 @@ min_path() {
   printf 'broken\n' >"$SKILLS/_template/SKILL.md"
   run "$LINT" "$SKILLS/_template"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"checked 0 skill(s)"* ]]
+  [[ "$output" == *"checked 0 skill(s)"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -330,7 +330,7 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'forbid-pattern TODO body still has a TODO marker'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"body still has a TODO marker (.skill-lint.conf)"* ]]
+  [[ "$output" == *"body still has a TODO marker (.skill-lint.conf)"* ]] || false
 }
 
 @test "forbid-pattern ignores a match that is only in the frontmatter" {
@@ -345,7 +345,7 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'require-field allowed-tools'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"missing required field 'allowed-tools' (.skill-lint.conf)"* ]]
+  [[ "$output" == *"missing required field 'allowed-tools' (.skill-lint.conf)"* ]] || false
 }
 
 @test "require-field passes when the key is present" {
@@ -362,7 +362,7 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'ignore-warn tiny SQ7'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" != *"too thin to trigger"* ]]
+  [[ "$output" != *"too thin to trigger"* ]] || false
 }
 
 @test "ignore-warn is scoped to the one skill it names" {
@@ -371,8 +371,8 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'ignore-warn tiny SQ7'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$SKILLS/teeny/SKILL.md: warn"* ]]
-  [[ "$output" != *"$SKILLS/tiny/SKILL.md: warn"* ]]
+  [[ "$output" == *"$SKILLS/teeny/SKILL.md: warn"* ]] || false
+  [[ "$output" != *"$SKILLS/tiny/SKILL.md: warn"* ]] || false
 }
 
 @test "ignore-warn cannot silence an error" {
@@ -380,7 +380,7 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'ignore-warn mydir SQ3'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"[SQ3]"* ]]
+  [[ "$output" == *"[SQ3]"* ]] || false
 }
 
 @test "a silenced warning does not resurface under --strict" {
@@ -395,7 +395,7 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   writeconf 'bogus-directive whatever'
   run "$LINT" "$SKILLS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"unknown directive 'bogus-directive'"* ]]
+  [[ "$output" == *"unknown directive 'bogus-directive'"* ]] || false
 }
 
 @test "the config is found by walking up to the git root" {
@@ -407,5 +407,5 @@ writeconf() { printf '%s\n' "$@" >"$BATS_TEST_TMPDIR/.skill-lint.conf"; }
   printf 'forbid-pattern TODO no TODO markers allowed\n' >"$proj/.skill-lint.conf"
   run "$LINT" "$proj/skills"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no TODO markers allowed (.skill-lint.conf)"* ]]
+  [[ "$output" == *"no TODO markers allowed (.skill-lint.conf)"* ]] || false
 }
