@@ -45,7 +45,7 @@ to reproduce them.
 Run `bash scripts/criteria-path.sh` (resolve the path from this skill's
 directory — the shell's cwd is the audited repo) to get the absolute path to
 `docs/skill-quality.md`, then read that file. Grade against the **judgment**
-rows only — the reader's half of SQ8, and SQ9–SQ13 and SQ15–SQ18. Do not
+rows only — the reader's half of SQ8, and SQ9–SQ13 and SQ15–SQ19. Do not
 restate the criteria from memory; read the current file.
 
 ## Phase 4 — judgment pass
@@ -67,6 +67,8 @@ Concretely, for each skill ask:
   in `references/`, and do sibling references keep parity?
 - **SQ18** — does it avoid naming a specific machine, hostname, or personal
   workflow?
+- **SQ19** — if it writes repo prose, does that prose follow the scanning
+  rule in `memory/GLOBAL.md` (one-liners, no rationale)?
 
 ## Phase 5 — report
 

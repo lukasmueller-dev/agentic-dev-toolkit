@@ -91,4 +91,5 @@ eyeball the judgment rows it cannot:
 - [ ] Emitted documents come from `templates/`, not a heredoc (SQ16)
 - [ ] Shared workflow in `SKILL.md`, ecosystem-specific in `references/` (SQ17)
 - [ ] No reference to a specific machine, hostname, or workflow (SQ18)
+- [ ] Any repo prose it writes follows the scanning rule in `memory/GLOBAL.md` (SQ19)
 - [ ] `bats tests/` and `./install.sh doctor` still pass

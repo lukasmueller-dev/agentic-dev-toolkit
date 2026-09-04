@@ -36,6 +36,7 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 | SQ10 | judgment | The body opens with the skill's boundaries — what it must never do. | A skill that states its limits first is one the model can trust to stop; see `implement-test-suite`. |
 | SQ11 | judgment | Phases are numbered, and any phase needing approval before the next says so in bold. | A procedure the model can follow step by step beats prose it has to re-derive; unmarked gates get skipped. |
 | SQ12 | judgment | The body says what "done" means and where to stop. | Without a stop condition a skill either quits early or runs past the task. |
+| SQ19 | judgment | A skill that writes repo prose (docs, status files, comments, templates) follows the "Write for scanning, not reading" section of `memory/GLOBAL.md`. | What a skill writes lands in the user's repo; a paragraph there is the toolkit's fault. |
 
 ## Invocation and side effects
 
