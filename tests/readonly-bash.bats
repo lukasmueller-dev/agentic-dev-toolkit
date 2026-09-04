@@ -82,7 +82,7 @@ vet() {
       echo "wrongly allowed: $c" >&2
       return 1
     }
-    [[ "$output" == *"read-only reviewer guard"* ]]
+    [[ "$output" == *"read-only reviewer guard"* ]] || false
   done
 }
 
@@ -125,7 +125,7 @@ vet() {
   # shellcheck disable=SC2016  # the literal $(...) is the payload under test
   run vet 'git diff $(git merge-base HEAD main)'
   [ "$status" -eq 2 ]
-  [[ "$output" == *"own Bash call"* ]]
+  [[ "$output" == *"own Bash call"* ]] || false
   # shellcheck disable=SC2016
   run vet 'cat `ls`'
   [ "$status" -eq 2 ]
@@ -137,7 +137,7 @@ vet() {
   # through it. Both directions, and the payload really executing, are the risk.
   run vet 'cat <(sh -c "echo pwned > /tmp/x")'
   [ "$status" -eq 2 ]
-  [[ "$output" == *"own Bash call"* ]]
+  [[ "$output" == *"own Bash call"* ]] || false
   run vet 'diff <(git show HEAD:a) <(git show HEAD:b)'
   [ "$status" -eq 2 ]
   run vet 'tee >(sh -c "rm x")'

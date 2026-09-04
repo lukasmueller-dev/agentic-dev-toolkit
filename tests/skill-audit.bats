@@ -54,5 +54,5 @@ setup() {
   rm -f "$TK/docs/skill-quality.md"
   run bash "$TK/skills/skill-audit/scripts/criteria-path.sh"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"cannot find docs/skill-quality.md"* ]]
+  [[ "$output" == *"cannot find docs/skill-quality.md"* ]] || false
 }

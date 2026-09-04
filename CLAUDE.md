@@ -301,6 +301,15 @@ server-path test down the switch-client branch, and whatever the attach branch
 does goes untested while still reporting green. `helper.bash` unsets it for
 that reason.
 
+**Every `[[ ]]` assertion in a test ends in `|| false`.** bash 3.2 — which
+is what bats runs under on macOS — applies neither errexit nor the ERR trap
+to a failing `[[ ]]` or `(( ))`, so a bare one anywhere but a test's last
+line is a no-op: the test keeps going and passes. That is how a whole
+test file could be red on macOS only at its *last* lines, with every
+assertion above them having silently passed. `tests/suite.bats` fails the
+run on any bare `[[`/`((` statement line in `tests/`; `[ ]` is a plain
+command and needs nothing.
+
 A test that needs a real terminal — the only way to reach anything gated on
 `[[ -t 0 ]]` — runs its command under `tests/pty-run.py`, which allocates a pty
 and plays the terminal, answering queries after a delay the way a real one does

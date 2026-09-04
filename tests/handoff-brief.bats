@@ -38,7 +38,7 @@ finish_handoff() {
   cd "$(make_repo proj)"
   run run_handoff create "Doc Task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=created"* ]]
+  [[ "$output" == *"STATE=created"* ]] || false
   local f
   f="$(wt doc-task)/HANDOFF.md"
   [ -f "$f" ]
@@ -64,7 +64,7 @@ finish_handoff() {
   run_handoff create "twice task"
   run run_handoff create "twice task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-scaffold"* ]]
+  [[ "$output" == *"STATE=existing-scaffold"* ]] || false
 }
 
 @test "create: leaves a handoff with content untouched, and says so" {
@@ -73,7 +73,7 @@ finish_handoff() {
   echo "MY NOTES" >>"$(wt keep-task)/HANDOFF.md"
   run run_handoff create "keep task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-handoff"* ]]
+  [[ "$output" == *"STATE=existing-handoff"* ]] || false
   grep -q "MY NOTES" "$(wt keep-task)/HANDOFF.md"
 }
 
@@ -90,7 +90,7 @@ finish_handoff() {
   # this machine has neither a local 'feat' branch nor a fetched remote ref
   run run_handoff create "feat"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-handoff"* ]]
+  [[ "$output" == *"STATE=existing-handoff"* ]] || false
   grep -q "pushed handoff" "$(wt feat)/HANDOFF.md"
   git -C "$(wt feat)" rev-parse '@{u}' >/dev/null
 }
@@ -105,7 +105,7 @@ finish_handoff() {
   run run_handoff create "busy task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]]
+  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ finish_handoff() {
   run_handoff create "raw task"
   run run_handoff publish "raw task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"State"* ]]
+  [[ "$output" == *"State"* ]] || false
 }
 
 @test "publish: refuses when only Next action is still the placeholder" {
@@ -134,7 +134,7 @@ finish_handoff() {
   ' "$f" >"$f.t" && mv "$f.t" "$f"
   run run_handoff publish "half task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Next action"* ]]
+  [[ "$output" == *"Next action"* ]] || false
 }
 
 @test "publish: refuses when a section heading was lost" {
@@ -145,7 +145,7 @@ finish_handoff() {
   mv "$(wt broken-task)/HANDOFF.md.t" "$(wt broken-task)/HANDOFF.md"
   run run_handoff publish "broken task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Next action"* ]]
+  [[ "$output" == *"Next action"* ]] || false
 }
 
 @test "publish: commits the finished handoff and pushes with an upstream" {
@@ -154,7 +154,7 @@ finish_handoff() {
   finish_handoff "$(wt ship-task)"
   run run_handoff publish "ship task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=published"* ]]
+  [[ "$output" == *"STATE=published"* ]] || false
   [ -z "$(git -C "$(wt ship-task)" status --porcelain)" ]
   git -C "$(wt ship-task)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline ship-task | grep -q "brief 'ship-task'"
@@ -171,7 +171,7 @@ finish_handoff() {
   run run_handoff publish "hot task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]]
+  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -196,7 +196,7 @@ finish_handoff() {
   run_handoff publish "done task"
   run run_vibe "done" "done task"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"HANDOFF"* || "$output" == *"handoff"* ]]
+  [[ "$output" == *"HANDOFF"* || "$output" == *"handoff"* ]] || false
 }
 
 # ---------------------------------------------------------------------------

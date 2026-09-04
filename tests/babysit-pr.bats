@@ -98,28 +98,28 @@ finish_brief() {
 @test "pr-ready: clean PR — green checks, all threads resolved — exits 0" {
   run bash "$PR_READY" 42
   [ "$status" -eq 0 ]
-  [[ "$output" == *"is ready"* ]]
+  [[ "$output" == *"is ready"* ]] || false
 }
 
 @test "pr-ready: a failing check is not ready" {
   echo '[{"bucket":"pass"},{"bucket":"fail"}]' >"$GH_CHECKS_JSON"
   run bash "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"failing or pending"* ]]
+  [[ "$output" == *"failing or pending"* ]] || false
 }
 
 @test "pr-ready: a pending check is not ready" {
   echo '[{"bucket":"pending"}]' >"$GH_CHECKS_JSON"
   run bash "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"failing or pending"* ]]
+  [[ "$output" == *"failing or pending"* ]] || false
 }
 
 @test "pr-ready: an unresolved review thread is not ready" {
   threads true false
   run bash "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"unresolved review thread"* ]]
+  [[ "$output" == *"unresolved review thread"* ]] || false
 }
 
 @test "pr-ready: a PR with no review threads at all is ready" {
@@ -132,27 +132,27 @@ finish_brief() {
   mkdir -p "$BATS_TEST_TMPDIR/empty"
   run env PATH="$BATS_TEST_TMPDIR/empty" "$BASH" "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"'gh' is not installed"* ]]
+  [[ "$output" == *"'gh' is not installed"* ]] || false
 }
 
 @test "pr-ready: gh erroring (unauthenticated) is not ready, never 'done'" {
   export GH_CHECKS_ERR="gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable"
   run bash "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"could not read checks"* ]]
+  [[ "$output" == *"could not read checks"* ]] || false
 }
 
 @test "pr-ready: the review-thread query erroring is not ready" {
   export GH_API_ERR="HTTP 502"
   run bash "$PR_READY" 42
   [ "$status" -ne 0 ]
-  [[ "$output" == *"could not read review threads"* ]]
+  [[ "$output" == *"could not read review threads"* ]] || false
 }
 
 @test "pr-ready: a non-numeric PR argument is rejected" {
   run bash "$PR_READY" "not-a-number"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"usage"* ]]
+  [[ "$output" == *"usage"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -162,8 +162,8 @@ finish_brief() {
   cd "$(make_repo proj)"
   run run_brief create 42
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=created"* ]]
-  [[ "$output" == *"BRANCH=fix-thing"* ]]
+  [[ "$output" == *"STATE=created"* ]] || false
+  [[ "$output" == *"BRANCH=fix-thing"* ]] || false
   local f
   f="$(wt fix-thing)/LOOP.md"
   [ -f "$f" ]
@@ -186,7 +186,7 @@ finish_brief() {
   echo "MY BRIEF" >"$(wt fix-thing)/LOOP.md"
   run run_brief create 42
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-brief"* ]]
+  [[ "$output" == *"STATE=existing-brief"* ]] || false
   [ "$(cat "$(wt fix-thing)/LOOP.md")" = "MY BRIEF" ]
 }
 
@@ -208,7 +208,7 @@ finish_brief() {
   cd "$(make_repo proj)"
   run run_brief create "forty-two"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"usage"* ]]
+  [[ "$output" == *"usage"* ]] || false
   [ ! -d "$BATS_TEST_TMPDIR/worktrees" ]
 }
 
@@ -222,7 +222,7 @@ finish_brief() {
   run run_brief create 42
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]]
+  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ finish_brief() {
   run_brief create 42
   run run_brief publish 42
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Done when"* ]]
+  [[ "$output" == *"Done when"* ]] || false
 }
 
 @test "publish: commits the finished brief and pushes to the PR branch" {
@@ -242,7 +242,7 @@ finish_brief() {
   finish_brief "$(wt fix-thing)"
   run run_brief publish 42
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=published"* ]]
+  [[ "$output" == *"STATE=published"* ]] || false
   [ -z "$(git -C "$(wt fix-thing)" status --porcelain)" ]
   git -C "$(wt fix-thing)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline fix-thing |
@@ -253,5 +253,5 @@ finish_brief() {
   cd "$(make_repo proj)"
   run run_brief publish 42
   [ "$status" -eq 1 ]
-  [[ "$output" == *"brief.sh create 42"* ]]
+  [[ "$output" == *"brief.sh create 42"* ]] || false
 }

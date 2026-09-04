@@ -34,7 +34,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   local l
   while IFS= read -r l; do
     [ -e "$l" ] # not dangling
-    [[ "$(readlink "$l")" == "$REPO_ROOT"/* ]]
+    [[ "$(readlink "$l")" == "$REPO_ROOT"/* ]] || false
   done < <(find "$HOME" -type l)
 }
 
@@ -149,7 +149,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$copy/install.sh" bin
   [ "$status" -eq 0 ]
   [ ! -x "$copy/bin/newtool" ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"not executable"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"not executable"* ]] || false
 }
 
 @test "install: backs up a real file instead of deleting it" {
@@ -197,7 +197,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$INSTALL" --uninstall claude
   [ "$status" -eq 0 ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"points outside this repo"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"points outside this repo"* ]] || false
 }
 
 @test "uninstall: leaves a real file at a managed path" {
@@ -207,7 +207,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
   [ -f "$HOME/bin/vibe" ]
   [ ! -L "$HOME/bin/vibe" ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"not ours to remove"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"not ours to remove"* ]] || false
 }
 
 @test "uninstall: --dry announces removals but removes nothing" {
@@ -236,8 +236,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
   local plain_out
   plain_out="$(printf '%s\n' "$output" | plain)"
-  [[ "$plain_out" == *"jq not installed — cannot merge settings.json."* ]]
-  [[ "$plain_out" == *"jq not installed — cannot merge automatically."* ]]
+  [[ "$plain_out" == *"jq not installed — cannot merge settings.json."* ]] || false
+  [[ "$plain_out" == *"jq not installed — cannot merge automatically."* ]] || false
   # the symlink half of the claude target still happened
   [ -L "$HOME/.claude/CLAUDE.md" ]
   # and no half-merged settings file was invented
@@ -269,7 +269,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$INSTALL" skills
   [ "$status" -eq 0 ]
   [ ! -L "$HOME/.claude/skills/renamed-away" ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"pruned"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"pruned"* ]] || false
   # and the real skills are untouched
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
 }
@@ -337,8 +337,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/.claude/skills/renamed-away" ]
   local plain_out
   plain_out="$(printf '%s\n' "$output" | plain)"
-  [[ "$plain_out" == *"prune    "* ]]
-  [[ "$plain_out" != *"pruned "* ]]
+  [[ "$plain_out" == *"prune    "* ]] || false
+  [[ "$plain_out" != *"pruned "* ]] || false
 }
 
 @test "prune: uninstall takes its own litter with it" {
@@ -360,8 +360,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # a warning, not a FAIL: ./install.sh clears it unattended, so the install
   # is stale rather than broken
   [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"orphaned"* ]]
-  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"orphaned"* ]] || false
+  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]] || false
 }
 
 @test "doctor: reports a dangling managed link as dangling, not as an orphan" {
@@ -375,8 +375,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 1 ]
   local plain_out
   plain_out="$(printf '%s\n' "$output" | plain)"
-  [[ "$plain_out" == *"dangling"* ]]
-  [[ "$plain_out" != *"orphaned"* ]]
+  [[ "$plain_out" == *"dangling"* ]] || false
+  [[ "$plain_out" != *"orphaned"* ]] || false
 }
 
 @test "prune: install is still idempotent and quiet with no orphans" {
@@ -384,7 +384,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$INSTALL"
   [ "$status" -eq 0 ]
   # the header only appears when there is something to report
-  [[ "$(printf '%s\n' "$output" | plain)" != *"orphans"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" != *"orphans"* ]] || false
 }
 
 @test "doctor: reports healthy right after installing" {
@@ -395,8 +395,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # passing vacuously on empty output (a doctor that crashed printed no
   # FAIL either).
   [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"install doctor:"* ]]
-  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"install doctor:"* ]] || false
+  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]] || false
 }
 
 @test "doctor: notices a missing symlink" {
@@ -408,7 +408,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # FAIL to a warning (doctor still exits 0) would keep printing "missing"
   # while silently reporting the checkout as healthy.
   [ "$status" -eq 1 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"missing"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"missing"* ]] || false
 }
 
 @test "doctor: notices a dangling symlink" {
@@ -420,7 +420,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/vibe"
   run "$INSTALL" doctor
   [ "$status" -eq 1 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"dangling"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"dangling"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -458,7 +458,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   printf '# Response style\n' >"$HOME/.claude/CLAUDE.md"
   run "$INSTALL" doctor claude
   [ "$status" -eq 1 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"will not load the shared memory"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"will not load the shared memory"* ]] || false
 }
 
 @test "memory: installing one agent leaves the other agents' homes alone" {
@@ -585,7 +585,7 @@ EOF
   "$INSTALL" vscode >/dev/null
   run "$INSTALL" vscode
   [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
   [ "$(find "$dir" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 0 ]
 }
 
@@ -692,7 +692,7 @@ EOF
   "$INSTALL" claude >/dev/null
   run "$INSTALL" claude
   [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
   [ "$(find "$HOME/.claude" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 0 ]
 }
 
