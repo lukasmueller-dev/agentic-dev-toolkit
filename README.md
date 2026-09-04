@@ -44,6 +44,7 @@ Then `./install.sh doctor` to check it landed.
 | [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved, resolving textual and semantic conflicts |
 | [`skill-audit`](skills/skill-audit/) | Grades a repo's skills against the quality criteria in [`docs/skill-quality.md`](docs/skill-quality.md), read-only until fixes are approved |
+| [`weekly-report`](skills/weekly-report/) | Writes a week's work up as a LaTeX beamer deck, grouped into themes — the repo's history plus any extra sources the repo declares |
 
 Skills use the open [Agent Skills](https://agentskills.io) format, so they are
 not tied to Claude Code. Start a new one from

@@ -1,0 +1,61 @@
+% Weekly report — <repo>, <week>
+%
+% Seeded from the toolkit's template, then filled in. The structure is fixed:
+% title, overview, one frame per theme, what is next. A theme is a strand of
+% work a reader would name — never one bullet per commit, which turns the deck
+% back into the log it was supposed to summarise.
+%
+% Nothing here needs a package beyond a stock TeX install, so the file compiles
+% wherever it is opened. A sibling preamble.tex, if this repo has one, is
+% pulled in below: that is where a project's own theme, colours, fonts and
+% title-page branding belong, so this file can stay generated.
+\documentclass[aspectratio=169]{beamer}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\IfFileExists{preamble.tex}{\input{preamble.tex}}{}
+
+\title{<repo>}
+\subtitle{Weekly report --- <week>}
+\date{<period>}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Overview}
+  % Three to five lines, in the language of the goal rather than of the commit
+  % log: what moved, and how far. Someone who reads only this frame should
+  % know where the project stands.
+  \begin{itemize}
+    \item
+  \end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------------------
+% One frame per theme, three to five in total. Copy the frame per theme, give
+% each a title naming the strand of work, and delete the spare.
+%
+% The footnotesize line at the bottom is the evidence trail — pull request
+% numbers, paths, run identifiers — for the reader who wants to follow a claim
+% back to where it happened. Drop the line rather than leave it empty.
+% ---------------------------------------------------------------------------
+\begin{frame}{Theme}
+  \begin{itemize}
+    \item
+  \end{itemize}
+  \vfill
+  {\footnotesize }
+\end{frame}
+
+\begin{frame}{Next}
+  % What the coming week takes on. Short — this frame is a pointer, not a plan.
+  \begin{itemize}
+    \item
+  \end{itemize}
+\end{frame}
+
+\end{document}

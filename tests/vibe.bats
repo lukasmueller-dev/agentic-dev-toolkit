@@ -453,6 +453,136 @@ EOF
   [[ "${log#*kill-session -t vibe-proj-task-two}" == *"detach-client -s vibe-proj-task-one"* ]]
 }
 
+# ---------------------------------------------------------------------------
+# vibe done — a task whose worktree directory is gone
+#
+# The directory outliving nothing is the normal case; the reverse happens all
+# the time: deleted by hand, wiped with the volume, removed on the machine that
+# shares the checkout. Everything else the task owns survives that — git's
+# registration, the branch, and the tmux session, which nothing but 'vibe done'
+# ever kills. So this is the one state where refusing strands work rather than
+# protecting it, and 'no worktree at ...' used to be all you got.
+# ---------------------------------------------------------------------------
+
+# tmux_stub_live_kills DIR — a tmux that reports every session as running and
+# logs what it is asked to do, so the kill can be asserted on.
+tmux_stub_live_kills() {
+  local dir="$BATS_TEST_TMPDIR/$1"
+  mkdir -p "$dir"
+  cat >"$dir/tmux" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
+case "${1:-}" in
+  has-session) exit 0 ;;
+esac
+exit 0
+EOF
+  chmod +x "$dir/tmux"
+  printf '%s' "$dir"
+}
+
+@test "done: finishes a task whose worktree directory is gone" {
+  cd "$(make_repo proj)"
+  run_vibe start "task lost"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-lost"
+  rm -rf "$wt"
+
+  run run_vibe "done" "task lost"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"already gone"* ]]
+  # git's own bookkeeping is the part that outlives the directory: left
+  # registered, the path is neither a worktree nor available for a new one.
+  [[ "$(git worktree list)" != *"task-lost"* ]]
+  # Non-destructive: the commits live on the branch, so the branch stays.
+  git show-ref --verify --quiet refs/heads/task-lost
+}
+
+@test "done: kills the orphaned tmux session of a task whose worktree is gone" {
+  cd "$(make_repo proj)"
+  run_vibe start "task orph" >/dev/null
+  rm -rf "$BATS_TEST_TMPDIR/worktrees/proj/task-orph"
+
+  # The symptom that makes this worth fixing: 'vibe status' keeps listing a
+  # session for a task with no directory, and before this nothing could end it
+  # short of tmux by hand.
+  local dir
+  dir="$(tmux_stub_live_kills tmuxbin-orph)"
+  run env PATH="$dir:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" "done" "task orph"
+  [ "$status" -eq 0 ]
+  grep -qx "kill-session -t vibe-proj-task-orph" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "done: refuses when nothing of the task is left to clean up" {
+  cd "$(make_repo proj)"
+  # A mistyped task name must not report a cleanup it never performed.
+  run run_vibe "done" "task never-existed"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no worktree at"* ]]
+  [[ "$output" == *"Nothing of 'task-never-existed' is left"* ]]
+}
+
+@test "done: a second run on an already-finished task still refuses" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-twice)"
+  run_vibe "done" task-twice >/dev/null
+  [ ! -d "$wt" ]
+
+  # The branch alone is not residue — otherwise every branch name in the repo
+  # would report a successful cleanup.
+  run run_vibe "done" task-twice
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Nothing of 'task-twice' is left"* ]]
+}
+
+@test "done --rm-branch: deletes the landed branch of a task whose worktree is gone" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-gone-merged)"
+  git merge -q --no-ff -m "merge task-gone-merged" task-gone-merged
+  git push -q origin main
+  rm -rf "$wt"
+
+  run run_vibe "done" --rm-branch task-gone-merged
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"deleted branch 'task-gone-merged'"* ]]
+  run git show-ref --verify --quiet refs/heads/task-gone-merged
+  [ "$status" -ne 0 ]
+}
+
+@test "done --rm-branch: keeps an unlanded branch whose worktree is gone" {
+  cd "$(make_repo proj)"
+  local wt
+  wt="$(finish_task task-gone-open)"
+  rm -rf "$wt"
+
+  # The whole point of keeping the branch: with the worktree gone it is the
+  # only thing the commits are still reachable from.
+  run run_vibe "done" --rm-branch task-gone-open
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"kept"* ]]
+  git show-ref --verify --quiet refs/heads/task-gone-open
+}
+
+@test "done: leaves a directory that is no longer a worktree in place" {
+  cd "$(make_repo proj)"
+  run_vibe start "task husk" >/dev/null
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-husk"
+  # A half-removed worktree: git no longer knows the directory, but whatever
+  # is in it is still someone's. Clearing the record must never delete files.
+  rm -rf "$wt/.git"
+  echo "not vibe's to delete" >"$wt/precious.txt"
+
+  run run_vibe "done" "task husk"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not a git worktree"* ]]
+  [ -f "$wt/precious.txt" ]
+}
+
 @test "done: rejects an unknown option instead of treating it as a task" {
   cd "$(make_repo proj)"
   run run_vibe "done" --bogus "task"
@@ -996,6 +1126,23 @@ EOF
   line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-nu" | tail -1)"
   [[ "$line" == *"no upstream"* ]]
   [[ "$line" != *"behind"* ]]
+}
+
+@test "status: reports a worktree whose directory is gone, instead of calling it clean" {
+  cd "$(make_repo proj)"
+  run_vibe start "task vanished"
+  rm -rf "$BATS_TEST_TMPDIR/worktrees/proj/task-vanished"
+
+  # Every number on this line comes from running git inside the worktree, and
+  # git in a directory that is not there answers with zeros — so a vanished
+  # task read as clean, in sync and idle, forever.
+  run run_vibe status
+  [ "$status" -eq 0 ]
+  local line
+  line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-vanished" | tail -1)"
+  [[ "$line" == *"directory is gone"* ]]
+  [[ "$line" != *"clean"* ]]
+  [[ "$line" == *"vibe done"* ]]
 }
 
 @test "status: reports ahead/behind once the branch tracks a remote" {

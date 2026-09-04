@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-07-30 · server (srv1841294)_
+_Last updated: 2026-08-02 · server (srv1841294)_
 
 ## Goal
 
@@ -22,6 +22,12 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-08-02: A task whose **worktree directory is gone** is still a task, and
+  `vibe done` is the one command that finishes it — it clears git's worktree
+  record and the orphaned tmux session, keeps the branch, and deletes no
+  files. `vibe status` gives that state a word of its own (`missing`), since
+  judged by git alone a vanished worktree reads as clean and idle forever.
+  See `docs/vibe.md`; rationale in the PR for `fix-stale-vibe-sessions`.
 - 2026-07-30: A cross-machine monitor reads `vibe status --all --json` over
   SSH — **pull, not push**: no daemon, no open port, no new auth, and no
   snapshot files duplicating what park/attach already carry over git. The

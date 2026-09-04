@@ -245,6 +245,27 @@ print("ok")
   [[ "$block" == *'"tmux_session": null'* ]]
 }
 
+@test "status --json: a worktree whose directory is gone reports state missing" {
+  cd "$(make_repo proj)"
+  run_vibe start "task m" >/dev/null
+  rm -rf "$BATS_TEST_TMPDIR/worktrees/proj/task-m"
+
+  # A monitor renders this document and cannot ask a follow-up question. Judged
+  # by git alone the vanished worktree is clean and in sync, so without a state
+  # of its own it shows up as a healthy task on a machine where it no longer
+  # exists — and a live session for it would even read as work in progress.
+  local livetmux
+  livetmux="$(tmux_stub_live)"
+  run env PATH="$livetmux:$PATH" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" status --json
+  [ "$status" -eq 0 ]
+  local block
+  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-m")"
+  [[ "$block" == *'"state": "missing"'* ]]
+}
+
 @test "status --json: a live session is named, and a dirty tree says so" {
   cd "$(make_repo proj)"
   run_vibe start "task a" >/dev/null
