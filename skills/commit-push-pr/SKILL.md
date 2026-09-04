@@ -86,11 +86,8 @@ Conventional Commits rules:
 - Types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`.
 - Subject ≤ 72 chars, imperative mood, no trailing period.
 - Add `!` after type/scope for breaking changes and a `BREAKING CHANGE:` footer.
-- The body is the **canonical home of the rationale** — why the change was
-  made, alternatives considered and rejected, the failure the change
-  prevents. Be thorough here (wrapped at ~72 cols): this is what `git blame`
-  surfaces in two years, and detail placed here is detail the chat summary
-  and PR body only need to point at, not restate.
+- Body: one line per fact — why, what it prevents, what to verify. No
+  paragraphs; more rationale only when the user asks. Wrap at ~72 cols.
 - If changes are logically distinct, make multiple commits by staging paths selectively (`git add <paths>`).
 
 ### 5. Push

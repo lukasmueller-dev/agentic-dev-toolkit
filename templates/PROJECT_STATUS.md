@@ -1,9 +1,7 @@
 # Project Status — <repo>
 
-> Long-lived, one per repo. The durable *current* picture of the project:
-> what it is for, how it is built, what was decided, what is open. A
-> snapshot, not a log — git history is the log, so finished work is removed
-> rather than archived here.
+> One per repo. The *current* picture: goal, architecture, decisions, open
+> questions. Finished work is removed; git history is the log.
 
 _Last updated: <date> · <machine>_
 
@@ -17,14 +15,13 @@ _The key components and how they fit together. Update when the structure changes
 
 ## Key decisions
 
-_One line each, dated, with a pointer (commit or PR) to the full rationale. The reasoning lives in the commit or PR body — this list stays skimmable._
+_One line each, dated, with a pointer (commit or PR)._
 
 - <date>: (initial scaffold)
 
 ## Roadmap
 
-Planned work lives in `PROJECT_ROADMAP.md`, one designed item per task —
-this file keeps only the pointer.
+Planned work lives in `PROJECT_ROADMAP.md`; this file keeps only the pointer.
 
 ## Open questions
 

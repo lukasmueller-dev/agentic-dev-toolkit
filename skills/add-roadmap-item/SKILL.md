@@ -1,6 +1,6 @@
 ---
 name: add-roadmap-item
-description: "Distills a discussed idea into a designed item in PROJECT_ROADMAP.md — goal, approach, constraints, what done looks like — queued for a later session instead of started now. Use when the user says 'add this to the roadmap', 'roadmap this', 'add a roadmap item', 'queue this for later', or a discussion has scoped future work that should be captured before the context evaporates. Creates the roadmap file from the canonical template when the repo lacks one."
+description: "Distills a discussed idea into an item in PROJECT_ROADMAP.md — task + done-when, one line each — queued for a later session instead of started now. Use when the user says 'add this to the roadmap', 'roadmap this', 'add a roadmap item', 'queue this for later', or a discussion has scoped future work that should be captured before the context evaporates. Creates the roadmap file from the canonical template when the repo lacks one."
 disable-model-invocation: true
 argument-hint: "[<item name>]"
 ---
@@ -8,10 +8,8 @@ argument-hint: "[<item name>]"
 # Add a roadmap item
 
 Turn the idea that was just discussed into an item in `PROJECT_ROADMAP.md`
-(repo root) that a future session can pick up cold. The bar for an item: it
-carries enough design that a task brief — a handoff for a supervised session
-or a loop brief for an unattended one — can be staged from it *without the
-discussion that produced it*.
+(repo root) that a future session can pick up cold. The bar for an item:
+task + done-when, readable without the discussion that produced it.
 
 ## Hard boundaries — never do these
 
@@ -38,23 +36,20 @@ discussion that produced it*.
 
 The raw material is the discussion that just happened. If the skill was
 invoked with an item name in `$ARGUMENTS`, that is the item's name — use it
-and harvest the design around it, rather than asking for a name the user
-already typed. Collect what was actually concluded: the goal, the approach
-chosen, alternatives rejected and why, constraints, files or modules
-identified, and how the result would be verified. If any of goal, approach,
-or verification is missing, ask — inventing design the discussion never
+and harvest around it, rather than asking for a name the user already
+typed. Collect what was actually concluded: the task and how the result is
+verified. If either is missing, ask — inventing what the discussion never
 settled produces an item that lies to the session that picks it up.
 
-## Phase 2 — Design the item
+## Phase 2 — Shape the item
 
 Shape the harvest into one checkbox item:
 
-- **Name and one-line goal** first — what exists when the item is done.
-- **Design bullets** — approach, constraints, touchpoints, and rejected
-  alternatives worth a line so they are not re-litigated.
-- **What "done" looks like** — observable, not aspirational; if the work
-  could run unattended, this is its stop check.
-- **A pointer** to fuller rationale (PR, commit, issue) when one exists.
+- **Task** — one line: what exists when the item is done.
+- **Done-when** — one line, observable; if the work could run unattended,
+  this is its stop check.
+- **A pointer** (PR, commit, issue, discussion) when one exists. Approach,
+  constraints and rejected alternatives live there, not in the item.
 
 One item is one task, sized for a single PR. If the harvest describes more
 than that, split it and say so.

@@ -1,6 +1,6 @@
 ---
 name: project-status-scaffold
-description: Ensures every repo has an up-to-date PROJECT_STATUS.md (long-lived project state) and PROJECT_ROADMAP.md (planned work, one designed item per task), and each worktree a HANDOFF.md (short-lived session handoff), and keeps all three current. Use this skill whenever starting work in a repo that lacks these files, when the user says "scaffold status files", "set up handoff", "update project status", or "update the roadmap", AND proactively at the end of a work session to record what changed. Always check for and maintain these files when work moves between machines, worktrees, or sessions, even if the user does not explicitly ask.
+description: Ensures every repo has an up-to-date PROJECT_STATUS.md (long-lived project state) and PROJECT_ROADMAP.md (planned work, one item per task), and each worktree a HANDOFF.md (short-lived session handoff), and keeps all three current. Use this skill whenever starting work in a repo that lacks these files, when the user says "scaffold status files", "set up handoff", "update project status", or "update the roadmap", AND proactively at the end of a work session to record what changed. Always check for and maintain these files when work moves between machines, worktrees, or sessions, even if the user does not explicitly ask.
 ---
 
 # Project Status & Handoff Scaffold
@@ -18,11 +18,10 @@ without re-reading the whole diff to work out where things stand.
   rationale; the reasoning itself lives in the commit/PR body, never here.
   Survives across all tasks and branches. Committed to git.
 - **PROJECT_ROADMAP.md** — lives at the **repo root**, long-lived. Planned
-  work, one item per task, each designed well enough that a session can pick
-  it up cold. Same snapshot discipline as the status file: finished items are
-  deleted, not checked off and kept — their trail is git history and the
-  merged PR. Adding a well-designed item is the `add-roadmap-item` skill's
-  job; this skill creates the file and prunes it.
+  work, one item per task: task + done-when. Same snapshot discipline as the
+  status file: finished items are deleted, not checked off and kept — their
+  trail is git history and the merged PR. Adding an item is the
+  `add-roadmap-item` skill's job; this skill creates the file and prunes it.
 - **HANDOFF.md** — lives at the **worktree root**, short-lived: the baton
   between sessions on one task. Strictly present tense — current state, next
   concrete action, blockers, unresolved gotchas. **Overwrite it each session,

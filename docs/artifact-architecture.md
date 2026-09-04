@@ -25,10 +25,9 @@ Two consequences, deliberately asymmetric:
 - **Read-now surfaces are short.** Chat summaries, the top of a PR
   description, the "Key decisions" list — anything a human reads in the
   moment carries only what changes their next action, plus pointers.
-- **Pointed-to surfaces are verbose.** Commit bodies, `<details>` blocks,
-  `docs/` files — anything reached by following a pointer should be as
-  detailed as it needs to be. Verbosity is only a cost when it sits between
-  the reader and their answer.
+- **Pointed-to surfaces hold the detail, still as one-liners.** Commit
+  bodies, `<details>` blocks, `docs/` files — reached by a pointer, scanned
+  on arrival: facts, commands, tables, not paragraphs.
 
 Nothing critical may exist *only* in a short surface's omitted detail, and
 nothing may exist *only* in chat. Skimming is safe precisely because the
@@ -113,10 +112,9 @@ task-scoped rationale belongs here or in commit bodies rather than in chat.
 ### Diff and commit body (layer 2)
 
 The diff answers *what changed* and is never restated elsewhere. The commit
-body is the canonical home of *why*: the reasoning, alternatives considered
-and rejected, the bug class a guard prevents. This is where the paragraphs
-that used to live in chat belong — `git blame` finds them in two years, and
-they cost nothing to skim past today. Verbose is correct here.
+body is the home of *why*: one line per reason, rejected alternative, or bug
+class a guard prevents. `git blame` finds it in two years; nobody reads
+paragraphs there either.
 
 ### `PROJECT_STATUS.md` (layer 3)
 
@@ -131,21 +129,18 @@ because it never absorbs the reasoning, only the conclusion and the pointer.
 
 ### `PROJECT_ROADMAP.md` (layer 3)
 
-The queue of planned work, one item per task. Each item carries enough
-design — goal, approach chosen, constraints, what "done" looks like — that a
-session can pick it up cold and stage a task brief from it without the
-discussion that produced it; the `add-roadmap-item` skill is the gate that
-holds new items to that bar. Same snapshot discipline as the status file:
+The queue of planned work, one item per task: task + done-when, plus a
+pointer. No design discussion in the item; the `add-roadmap-item` skill
+holds new items to that shape. Same snapshot discipline as the status file:
 finished items are deleted, not checked off and kept — their trail is git
-history and the merged PR. Rationale stays at layer 2; an item holds the
-conclusion and a pointer.
+history and the merged PR.
 
 ### Repo `CLAUDE.md` and `docs/` (layer 3)
 
 `CLAUDE.md` gets only what should change agent *behavior*: conventions,
 commands, pitfalls that recur. `docs/` gets a file when a topic outgrows a
 paragraph in `PROJECT_STATUS.md` — move the content, leave a link. Both are
-pointed-to surfaces: depth is welcome.
+scanned, not read: commands, tables, one-line traps.
 
 ## Promotion — how information moves up
 
@@ -158,9 +153,8 @@ durable:
   `CLAUDE.md`.
 - Decision made mid-task → commit/PR body, plus a one-line pointer entry in
   `PROJECT_STATUS.md` when it shapes future work.
-- Work scoped in discussion but not started → a designed
-  `PROJECT_ROADMAP.md` item (the `add-roadmap-item` skill), so the design
-  survives the chat that produced it.
+- Work scoped in discussion but not started → a `PROJECT_ROADMAP.md` item
+  (the `add-roadmap-item` skill): task + done-when.
 - `PROJECT_STATUS.md` section outgrowing a paragraph → `docs/` file plus a
   link.
 
@@ -178,5 +172,5 @@ the guard catches the cases where that discipline was skipped.
 | Summary contract, routing table             | `memory/GLOBAL.md` (agent instructions)  |
 | Handoff baton semantics                     | `templates/HANDOFF.md` + scaffold skill  |
 | Handoff empty at task end                   | `vibe done` guard (`bin/vibe`)           |
-| Commit body carries rationale, PR is skim+`<details>` | `skills/commit-push-pr`       |
+| Commit body is one-line facts, PR is skim+`<details>` | `skills/commit-push-pr`       |
 | Templates stay tool-neutral                 | CI (`.github/workflows/ci.yml`)          |

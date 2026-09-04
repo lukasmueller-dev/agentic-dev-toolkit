@@ -258,7 +258,8 @@ Start from `skills/_template/SKILL.md`. The quality bar every skill is held to â
 each rule with a stable ID and its rationale â€” lives in `docs/skill-quality.md`;
 that is the one file to edit when a criterion changes. `bin/skill-lint` enforces
 the mechanical rules (run it, or let CI's `--strict` pass catch you); the
-`skill-audit` skill grades the judgment ones.
+`skill-audit` skill grades the judgment ones. A skill that writes repo prose
+follows the "Write for scanning, not reading" section of `memory/GLOBAL.md` (SQ19).
 
 ## Claude Code config
 
