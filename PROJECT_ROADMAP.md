@@ -13,6 +13,16 @@ One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) or a
 `LOOP.md` (the `loop-brief` skill) can be staged straight from it. Order
 matters within a track; tracks are independent.
 
+Track D — fixes:
+
+- [ ] **Fix `vibe status --json` on HEAD** — 11 tests in
+  `tests/vibe-status-json.bats` fail on clean `main` (e.g. `"dirty": false`,
+  `"state": "merged"`, `"tmux_session": null` assertions). Done when
+  `bats tests/vibe-status-json.bats` is green on macOS bash 3.2.
+- [ ] **Audit older suites for mid-test `[[ … ]]`** — they cannot fail on
+  bash 3.2 (see CLAUDE.md Testing). Done when every mid-test `[[ ]]` in
+  `tests/*.bats` ends in `|| false` and the suite is still green.
+
 Track C — research-codebase skills:
 
 A family of portable skills for working in research codebases (the
