@@ -22,6 +22,11 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-02: External skills are **vendored by copy and committed**
+  (`bin/plug`, `plugins.conf`, `plugins.lock`, `vendor/skills/`), pinned by
+  SHA, verified offline by tree hash in CI. See
+  `docs/vendoring-external-skills.md`; rationale in the PR for
+  `feat-skills-repo-integration`.
 - 2026-08-02: A task whose **worktree directory is gone** is still a task, and
   `vibe done` is the one command that finishes it — it clears git's worktree
   record and the orphaned tmux session, keeps the branch, and deletes no

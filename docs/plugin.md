@@ -25,7 +25,8 @@ with the layout Claude Code expects at a plugin root:
 | Plugin default | This repo         | Result                                    |
 | -------------- | ----------------- | ----------------------------------------- |
 | `skills/`      | `skills/`         | Every skill, no manifest entry needed     |
-| `bin/`         | `bin/`            | `vibe` and `skill-lint` join the Bash `PATH` |
+| —              | `vendor/skills/`  | Listed in the manifest's `skills`, loaded in addition to `skills/` |
+| `bin/`         | `bin/`            | `vibe`, `skill-lint` and `plug` join the Bash `PATH` |
 | `agents/`      | `claude/agents/`  | Listed in the manifest                    |
 | `hooks/hooks.json` | —             | `.claude-plugin/hooks.json`               |
 
@@ -104,8 +105,9 @@ reference either file, so on a real machine they are inert scripts sitting in
 
 - **`skills/_template` loads as a skill.** `install.sh` skips `skills/_*`, and
   that skip is the only thing keeping the template out of `~/.claude/skills`.
-  The plugin loader has no equivalent — the manifest's `skills` field *adds to*
-  the default `skills/` scan and cannot subtract from it. The template carries
+  The plugin loader has no equivalent — the manifest's `skills` field (which
+  carries `./vendor/skills/`) *adds to* the default `skills/` scan and cannot
+  subtract from it. The template carries
   `disable-model-invocation: true`, so the cost is one extra entry in the slash
   picker, not a skill Claude might act on. `skills/_lib` has no `SKILL.md` and
   is ignored.

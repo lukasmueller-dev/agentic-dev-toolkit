@@ -20,6 +20,7 @@ Then `./install.sh doctor` to check it landed.
 | Component | What it is |
 | --- | --- |
 | [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with `park`/`attach` handoff between machines over git — and `vibe loop` to run a task unattended. [Docs](docs/vibe.md) · [Loops](docs/vibe-loop.md) |
+| [`bin/plug`](bin/plug) | Vendors selected external skills into `vendor/skills/`, pinned by SHA in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`skills/`](skills/) | Agent Skills — portable `SKILL.md`, not Claude Code-specific |
 | [`templates/`](templates/) | The documents the tools emit — handoff, loop brief, loop PR body, project status — single source of truth for each |
 | [`claude/`](claude/) | Claude Code config: permissions, hooks, statusline, global memory |
@@ -87,6 +88,8 @@ Targets: `all` (default), `bin`, `skills`, `claude`, `codex`, `gemini`,
 `vscode`.
 
 Adding a tool means dropping a file in `bin/`, or a directory in `skills/`.
+External skills go through `plugins.conf` and `bin/plug sync` into
+`vendor/skills/`, which the installer links too.
 The installer rebuilds its link map every run — no edits needed.
 
 It will not delete anything you own: a real file at a managed path is moved to
@@ -159,8 +162,8 @@ Optional: [phone notifications](docs/notifications.md), and
   a PR to mergeable
 - [The SOTA watch](docs/sota-watch.md) — the weekly unattended digest this repo
   runs on itself
-- [Vendoring external skills](docs/vendoring-external-skills.md) — design
-  draft, not implemented
+- [Vendoring external skills](docs/vendoring-external-skills.md) — `plug`,
+  `plugins.conf`, `plugins.lock`, `vendor/skills/`
 - [The Claude Code plugin](docs/plugin.md) — the second install path, for
   sessions with no `$HOME`
 - [MCP servers](docs/mcp-servers.md) — which few to connect, and why most of

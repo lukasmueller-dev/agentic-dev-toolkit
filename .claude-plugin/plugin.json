@@ -16,5 +16,6 @@
     "./claude/agents/security-sweep.md",
     "./claude/agents/test-hardener.md"
   ],
+  "skills": "./vendor/skills/",
   "hooks": "./.claude-plugin/hooks.json"
 }

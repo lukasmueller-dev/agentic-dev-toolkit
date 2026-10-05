@@ -8,6 +8,9 @@
 .vibe-loop.state
 .vibe-loop.state.tmp.*
 
+# bin/plug staging dir; removed on exit, left only by a kill mid-sync
+.plug-stage.*
+
 # OS / editor cruft
 .DS_Store
 *.swp
@@ -19,3 +22,6 @@
 *.pem
 *.key
 *credentials*
+
+# Vendored upstream files are committed whatever the patterns above say (plug hashes them).
+!vendor/**

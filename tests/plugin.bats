@@ -57,6 +57,15 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
+@test "plugin: vendored skills are wired in addition to skills/" {
+  # `skills` adds to the default skills/ scan; vendor/skills/ must always
+  # exist, or the loader reports a load failure — its README keeps it in git.
+  run jq -e '.skills == "./vendor/skills/"' "$MANIFEST"
+  [ "$status" -eq 0 ]
+  [ -d "$REPO_ROOT/vendor/skills" ]
+  [ -f "$REPO_ROOT/vendor/skills/README.md" ]
+}
+
 @test "plugin: every hook command resolves to a file in the repo" {
   local cmd path
   while IFS= read -r cmd; do

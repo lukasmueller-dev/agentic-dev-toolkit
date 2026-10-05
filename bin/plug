@@ -1,0 +1,749 @@
+#!/usr/bin/env bash
+#
+# plug — vendor selected external skills into vendor/skills/, pinned by SHA.
+#
+# Usage:
+#   plug sync            make vendor/ match plugins.conf + plugins.lock
+#   plug sync --check    verify vendor/ against the lock, offline; exit 1 on drift
+#   plug update [src]    re-resolve refs (every source, or one), then sync
+#   plug list            sources, pins and skills
+#   plug doctor          the --check verdict, item by item, plus cache state
+#   plug help            this text
+#
+# Env: PLUG_REPO_ROOT (default: this script's repo), PLUG_CACHE_DIR.
+# Reference: docs/vendoring-external-skills.md
+set -euo pipefail
+
+# Walk the symlink chain: ~/bin/plug is a link into the repo.
+script_dir() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [[ -L "$src" ]]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"
+  done
+  cd -P "$(dirname "$src")" && pwd
+}
+
+SELF_DIR="$(script_dir)"
+ROOT="${PLUG_REPO_ROOT:-$(dirname "$SELF_DIR")}"
+CONF="$ROOT/plugins.conf"
+LOCK="$ROOT/plugins.lock"
+VENDOR="$ROOT/vendor/skills"
+CACHE="${PLUG_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/agentic-dev-toolkit/plug}"
+LINT="$SELF_DIR/skill-lint"
+
+# Never prompt: a missing credential is an error, not a hang.
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}"
+# No ext::/fd:: transports, whatever the user's protocol.allow says.
+export GIT_ALLOW_PROTOCOL="https:ssh:file"
+
+WORK=""
+STAGE=""
+APPLYING=0
+FINISHED=0
+# bash 3.2 enters an EXIT trap with $?=0 after an unbound-variable abort: FINISHED tells them apart.
+cleanup() {
+  local rc=$?
+  if ((rc == 0 && FINISHED == 0)); then rc=1; fi
+  if ((rc != 0 && APPLYING)); then rollback_apply || STAGE=""; fi
+  if [[ -n "$WORK" ]]; then rm -rf "$WORK"; fi
+  if [[ -n "$STAGE" ]]; then rm -rf "$STAGE"; fi
+  exit "$rc"
+}
+trap cleanup EXIT
+
+say() { printf 'plug: %s\n' "$*"; }
+die() {
+  printf 'plug: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  printf '%s\n' \
+    'usage: plug <command>' \
+    '' \
+    '  sync            make vendor/ match plugins.conf + plugins.lock' \
+    '  sync --check    verify vendor/ against the lock, offline; exit 1 on drift' \
+    '  verify          sync --check, plus each lock tree against its pinned commit (network on cache miss)' \
+    '  update [src]    re-resolve refs (every source, or one), then sync' \
+    '  list            sources, pins and skills' \
+    '  doctor          the --check verdict, item by item, plus cache state' \
+    '  help            this text' \
+    '' \
+    '  Env: PLUG_REPO_ROOT (repo to operate on), PLUG_CACHE_DIR (bare-clone cache).'
+}
+
+# ---------------------------------------------------------------------------
+# plugins.conf
+# ---------------------------------------------------------------------------
+SRC_NAME=()
+SRC_URL=()
+SRC_REF=()
+SK_SRC=()
+SK_PATH=()
+SK_NAME=()
+
+valid_name() {
+  case "$1" in
+    '' | .* | _* | *[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  return 0
+}
+
+# norm_path PATH — strip ./ and trailing /; reject absolute paths and '..'.
+norm_path() {
+  local p="$1"
+  while [[ "$p" == ./* ]]; do p="${p#./}"; done
+  while [[ "$p" == */ ]]; do p="${p%/}"; done
+  case "$p" in
+    '' | /* | .. | ../* | */../* | */..) return 1 ;;
+  esac
+  printf '%s' "$p"
+}
+
+# src_index NAME — print the conf index of source NAME; 1 when undeclared.
+src_index() {
+  local i
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    if [[ "${SRC_NAME[$i]}" == "$1" ]]; then
+      printf '%s' "$i"
+      return 0
+    fi
+  done
+  return 1
+}
+
+parse_conf() {
+  [[ -f "$CONF" ]] || return 0 # no conf: nothing vendored
+  local line n=0 kw a b c rest path
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    line="${line%$'\r'}" # tolerate CRLF
+    kw="" a="" b="" c="" rest=""
+    read -r kw a b c rest <<<"$line" || true
+    case "$kw" in
+      '' | '#'*) continue ;;
+      source)
+        [[ -n "$c" && -z "$rest" ]] ||
+          die "plugins.conf:$n: expected 'source <name> <git-url> <ref>'"
+        valid_name "$a" || die "plugins.conf:$n: bad source name '$a'"
+        if src_index "$a" >/dev/null; then die "plugins.conf:$n: source '$a' declared twice"; fi
+        SRC_NAME+=("$a")
+        SRC_URL+=("$b")
+        SRC_REF+=("$c")
+        ;;
+      skill)
+        [[ -n "$b" && -z "$c" ]] ||
+          die "plugins.conf:$n: expected 'skill <source> <path-in-repo>'"
+        src_index "$a" >/dev/null ||
+          die "plugins.conf:$n: source '$a' is not declared above this line"
+        path="$(norm_path "$b")" || die "plugins.conf:$n: bad path '$b'"
+        SK_SRC+=("$a")
+        SK_PATH+=("$path")
+        SK_NAME+=("${path##*/}")
+        ;;
+      *) die "plugins.conf:$n: unknown directive '$kw'" ;;
+    esac
+  done <"$CONF"
+}
+
+# conf_problems — one line per conf entry that sync must refuse.
+conf_problems() {
+  local i j n
+  for ((i = 0; i < ${#SK_NAME[@]}; i++)); do
+    n="${SK_NAME[$i]}"
+    if ! valid_name "$n"; then
+      printf "installed name '%s' (%s:%s) is invalid or '_'-prefixed — install.sh would skip it\n" \
+        "$n" "${SK_SRC[$i]}" "${SK_PATH[$i]}"
+    fi
+    if [[ -e "$ROOT/skills/$n" ]]; then
+      printf "'%s' (%s:%s) collides with local skills/%s — local wins; drop the skill line\n" \
+        "$n" "${SK_SRC[$i]}" "${SK_PATH[$i]}" "$n"
+    fi
+    for ((j = i + 1; j < ${#SK_NAME[@]}; j++)); do
+      [[ "${SK_NAME[$j]}" == "$n" ]] || continue
+      printf "installed name '%s' claimed twice: %s:%s and %s:%s\n" "$n" \
+        "${SK_SRC[$i]}" "${SK_PATH[$i]}" "${SK_SRC[$j]}" "${SK_PATH[$j]}"
+    done
+  done
+}
+
+# ---------------------------------------------------------------------------
+# plugins.lock
+# ---------------------------------------------------------------------------
+L_SRC_NAME=()
+L_SRC_SHA=()
+L_SRC_DATE=()
+L_SK_SRC=()
+L_SK_PATH=()
+L_SK_NAME=()
+L_SK_TREE=()
+
+# is_oid S — true when S is a full 40-hex object id (a branch name would un-pin the lock).
+is_oid() {
+  case "$1" in *[!0-9a-f]*) return 1 ;; esac
+  if [[ ${#1} -eq 40 ]]; then return 0; fi
+  return 1
+}
+
+parse_lock() {
+  [[ -f "$LOCK" ]] || return 0
+  local line n=0 kw a b c d rest
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    n=$((n + 1))
+    line="${line%$'\r'}" # tolerate CRLF
+    kw="" a="" b="" c="" d="" rest=""
+    read -r kw a b c d rest <<<"$line" || true
+    case "$kw" in
+      '' | '#'*) continue ;;
+      source)
+        { [[ -n "$c" && -z "$d" ]] && is_oid "$b"; } || die "plugins.lock:$n: malformed — delete it and run plug sync"
+        L_SRC_NAME+=("$a")
+        L_SRC_SHA+=("$b")
+        L_SRC_DATE+=("$c")
+        ;;
+      skill)
+        { [[ -n "$d" && -z "$rest" ]] && is_oid "$d"; } || die "plugins.lock:$n: malformed — delete it and run plug sync"
+        L_SK_SRC+=("$a")
+        L_SK_PATH+=("$b")
+        L_SK_NAME+=("$c")
+        L_SK_TREE+=("$d")
+        ;;
+      *) die "plugins.lock:$n: malformed — delete it and run plug sync" ;;
+    esac
+  done <"$LOCK"
+}
+
+# lock_src NAME — print "<sha> <date>" for a locked source; 1 when unlocked.
+lock_src() {
+  local i
+  for ((i = 0; i < ${#L_SRC_NAME[@]}; i++)); do
+    if [[ "${L_SRC_NAME[$i]}" == "$1" ]]; then
+      printf '%s %s' "${L_SRC_SHA[$i]}" "${L_SRC_DATE[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# lock_skill SRC PATH — print "<name> <tree>" for a locked skill; 1 when unlocked.
+lock_skill() {
+  local i
+  for ((i = 0; i < ${#L_SK_SRC[@]}; i++)); do
+    if [[ "${L_SK_SRC[$i]}" == "$1" && "${L_SK_PATH[$i]}" == "$2" ]]; then
+      printf '%s %s' "${L_SK_NAME[$i]}" "${L_SK_TREE[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Local tree hash — offline, no cache, byte-exact (no filters, no attributes).
+# ---------------------------------------------------------------------------
+setup_work() {
+  if [[ -n "$WORK" ]]; then return 0; fi
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/plug.XXXXXX")"
+  GIT_DEFAULT_HASH=sha1 git init -q --bare "$WORK/hash.git"
+}
+
+hgit() { git --git-dir="$WORK/hash.git" "$@"; }
+
+# tree_hash DIR — print the git tree id DIR would have; empty for an empty DIR.
+tree_hash() {
+  local dir="$1" list e b sha mode type
+  list="$(mktemp "$WORK/tree.XXXXXX")" || return 1
+  for e in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    if [[ ! -e "$e" && ! -L "$e" ]]; then continue; fi # unmatched glob
+    b="${e##*/}"
+    if [[ -L "$e" ]]; then
+      mode=120000 type=blob
+      sha="$(printf '%s' "$(readlink "$e")" | hgit hash-object -w --no-filters --stdin)" || return 1
+    elif [[ -d "$e" ]]; then
+      if [[ "$b" == .git ]]; then continue; fi
+      sha="$(tree_hash "$e")" || return 1
+      if [[ -z "$sha" ]]; then continue; fi # git trees hold no empty dirs
+      mode=040000 type=tree
+    else
+      mode=100644 type=blob
+      if [[ -x "$e" ]]; then mode=100755; fi
+      sha="$(hgit hash-object -w --no-filters -- "$e")" || return 1
+    fi
+    [[ -n "$sha" ]] || return 1
+    printf '%s %s %s\t%s\0' "$mode" "$type" "$sha" "$b" >>"$list"
+  done
+  if [[ -s "$list" ]]; then hgit mktree -z <"$list"; fi
+}
+
+# vendor_hash NAME — tree hash of vendor/skills/NAME, or empty when absent.
+vendor_hash() {
+  if [[ -d "$VENDOR/$1" && ! -L "$VENDOR/$1" ]]; then tree_hash "$VENDOR/$1"; fi
+}
+
+# ---------------------------------------------------------------------------
+# Cache: one bare clone per source
+# ---------------------------------------------------------------------------
+cache_of() { printf '%s/%s.git' "$CACHE" "$1"; }
+
+# fetch_cache IDX — clone or fetch source IDX. Returns 1 on failure (no die):
+# callers run it as a condition, which switches errexit off inside.
+fetch_cache() {
+  local i="$1" c tmp
+  c="$(cache_of "${SRC_NAME[$i]}")"
+  if [[ ! -d "$c" ]]; then
+    mkdir -p "$CACHE" || return 1
+    tmp="$c.tmp.$$"
+    rm -rf "$tmp"
+    if ! git -c transfer.fsckObjects=true clone -q --bare -- "${SRC_URL[$i]}" "$tmp" 2>"$WORK/git.err"; then
+      rm -rf "$tmp"
+      return 1
+    fi
+    mv "$tmp" "$c" || return 1
+    return 0
+  fi
+  git -C "$c" config remote.origin.url "${SRC_URL[$i]}" 2>"$WORK/git.err" || return 1
+  git -C "$c" -c transfer.fsckObjects=true fetch -q --force --prune origin \
+    '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' 2>"$WORK/git.err" || return 1
+}
+
+git_err() { sed 's/^/    /' "$WORK/git.err" >&2 2>/dev/null || true; }
+
+# resolve_ref IDX — fetch, then print the commit the conf ref names.
+resolve_ref() {
+  local i="$1" c sha
+  if ! fetch_cache "$i"; then
+    git_err
+    die "cannot fetch ${SRC_URL[$i]} (network? auth?) — vendor/ untouched"
+  fi
+  c="$(cache_of "${SRC_NAME[$i]}")"
+  sha="$(git -C "$c" rev-parse --verify -q "${SRC_REF[$i]}^{commit}")" ||
+    die "ref '${SRC_REF[$i]}' not found in ${SRC_URL[$i]} — vendor/ untouched"
+  printf '%s' "$sha"
+}
+
+# ensure_commit IDX SHA — make SHA available in the cache, fetching only on a miss.
+ensure_commit() {
+  local i="$1" sha="$2" c
+  c="$(cache_of "${SRC_NAME[$i]}")"
+  if [[ -d "$c" ]] && git -C "$c" cat-file -e "$sha^{commit}" 2>/dev/null; then return 0; fi
+  if ! fetch_cache "$i"; then
+    git_err
+    die "cannot fetch ${SRC_URL[$i]} and $sha is not cached (network?) — vendor/ untouched"
+  fi
+  git -C "$c" cat-file -e "$sha^{commit}" 2>/dev/null ||
+    die "$sha not found in ${SRC_URL[$i]} — run: plug update ${SRC_NAME[$i]}"
+}
+
+# extract_tree CACHE TREE DIR — unpack TREE into DIR, byte-exact: no eol/ident/filter conversion.
+# info/attributes outranks in-tree .gitattributes; export-ignore/-subst still apply, so the hash check catches them.
+extract_tree() {
+  mkdir -p "$1/info" || return 1
+  printf '%s\n' '* -text -eol -crlf -ident -filter -working-tree-encoding' >"$1/info/attributes" || return 1
+  git -C "$1" -c core.autocrlf=false archive --format=tar "$2" | tar -xf - -C "$3"
+}
+
+# tree_at CACHE SHA PATH — print the tree id of PATH at SHA; 1 when not a directory.
+tree_at() {
+  local id
+  id="$(git -C "$1" rev-parse --verify -q "$2:$3")" || return 1
+  [[ "$(git -C "$1" cat-file -t "$id")" == tree ]] || return 1
+  printf '%s' "$id"
+}
+
+# inert_tree CACHE TREE — 1 when TREE holds a symlink or submodule (a link can point at ~/.ssh).
+inert_tree() {
+  local entries
+  entries="$(git -C "$1" ls-tree -r "$2")" || return 1
+  if grep -qE '^(120000|160000) ' <<<"$entries"; then return 1; fi
+  return 0
+}
+
+# commit_cached IDX SHA — true when SHA is already in the source's cache.
+commit_cached() {
+  local c
+  c="$(cache_of "${SRC_NAME[$1]}")"
+  [[ -d "$c" ]] && git -C "$c" cat-file -e "$2^{commit}" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# sync / update
+# ---------------------------------------------------------------------------
+APPLY_NAMES=()
+APPLY_IN=()
+
+# rollback_apply — undo a half-applied step 4; 1 (keep the stage) when that fails too.
+rollback_apply() {
+  local b ok=0
+  for b in ${APPLY_NAMES[@]+"${APPLY_NAMES[@]}"}; do
+    if [[ -e "$STAGE/old/$b" || -L "$STAGE/old/$b" ]]; then
+      if ! { rm -rf "${VENDOR:?}/$b" && mv "$STAGE/old/$b" "$VENDOR/$b"; }; then ok=1; fi
+    elif in_list "$b" ${APPLY_IN[@]+"${APPLY_IN[@]}"} && [[ ! -e "$STAGE/skills/$b" ]]; then
+      if ! rm -rf "${VENDOR:?}/$b"; then ok=1; fi # newly added, already moved in
+    fi
+  done
+  if ((ok)); then printf 'plug: rollback incomplete — previous copies kept in %s/old\n' "$STAGE" >&2; fi
+  return "$ok"
+}
+
+in_list() {
+  local needle="$1" x
+  shift
+  for x in "$@"; do
+    if [[ "$x" == "$needle" ]]; then return 0; fi
+  done
+  return 1
+}
+
+render_lock() {
+  local i
+  printf '%s\n' \
+    '# plugins.lock — generated by bin/plug from plugins.conf. Never edit by hand.' \
+    '# source <name> <sha> <date>' \
+    '# skill <source> <path> <installed-name> <tree-sha>'
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    printf 'source %s %s %s\n' "${SRC_NAME[$i]}" "${NEW_SHA[$i]}" "${NEW_DATE[$i]}"
+  done
+  for ((i = 0; i < ${#SK_NAME[@]}; i++)); do
+    printf 'skill %s %s %s %s\n' "${SK_SRC[$i]}" "${SK_PATH[$i]}" "${SK_NAME[$i]}" "${SK_TREE[$i]}"
+  done
+}
+
+cmd_sync() {
+  local mode="$1" only="${2:-}"
+  local i j si locked lsha ldate lname ltree sha tree have c probs today
+  [[ -f "$CONF" ]] || die "no plugins.conf at $ROOT"
+  parse_conf
+  probs="$(conf_problems)"
+  [[ -z "$probs" ]] || die "plugins.conf: $probs"
+  parse_lock
+  if [[ -n "$only" ]]; then
+    src_index "$only" >/dev/null || die "no source '$only' in plugins.conf"
+  fi
+  setup_work
+  STAGE="$(mktemp -d "$ROOT/.plug-stage.XXXXXX")"
+  mkdir -p "$STAGE/skills" "$STAGE/old"
+  today="$(date -u +%Y-%m-%d)"
+
+  # 1. Pin every source. Nothing under vendor/ changes until step 4.
+  NEW_SHA=()
+  NEW_DATE=()
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    locked="$(lock_src "${SRC_NAME[$i]}" || true)"
+    lsha="${locked%% *}" ldate="${locked#* }"
+    if [[ "$mode" == update && (-z "$only" || "$only" == "${SRC_NAME[$i]}") ]] || [[ -z "$locked" ]]; then
+      sha="$(resolve_ref "$i")" || exit 1
+    else
+      sha="$lsha"
+    fi
+    NEW_SHA+=("$sha")
+    if [[ -n "$locked" && "$sha" == "$lsha" ]]; then NEW_DATE+=("$ldate"); else NEW_DATE+=("$today"); fi
+  done
+
+  # 2. Resolve each skill's tree; stage the ones vendor/ does not already hold.
+  SK_TREE=()
+  local added=() updated=() removed=() incoming=()
+  for ((j = 0; j < ${#SK_NAME[@]}; j++)); do
+    si="$(src_index "${SK_SRC[$j]}")"
+    sha="${NEW_SHA[$si]}"
+    have="$(vendor_hash "${SK_NAME[$j]}")" || die "cannot hash vendor/skills/${SK_NAME[$j]}"
+    locked="$(lock_src "${SK_SRC[$j]}" || true)"
+    tree=""
+    if [[ "${locked%% *}" == "$sha" ]] && locked="$(lock_skill "${SK_SRC[$j]}" "${SK_PATH[$j]}")"; then
+      lname="${locked%% *}" ltree="${locked#* }"
+      # Offline fast path: pin unchanged and vendor/ already matches it.
+      if [[ "$lname" == "${SK_NAME[$j]}" && -n "$have" && "$have" == "$ltree" ]]; then tree="$ltree"; fi
+      # A cached commit is free to check: a lock tree edited to match a hand-edited vendor/ fails here.
+      if [[ -n "$tree" ]] && commit_cached "$si" "$sha"; then
+        [[ "$(tree_at "$(cache_of "${SK_SRC[$j]}")" "$sha" "${SK_PATH[$j]}" || true)" == "$ltree" ]] ||
+          die "plugins.lock: ${SK_NAME[$j]} tree $ltree is not ${SK_PATH[$j]} at ${sha:0:12} (lock edited by hand?) — run: plug update ${SK_SRC[$j]}"
+      fi
+    fi
+    if [[ -z "$tree" ]]; then
+      ensure_commit "$si" "$sha"
+      c="$(cache_of "${SK_SRC[$j]}")"
+      tree="$(tree_at "$c" "$sha" "${SK_PATH[$j]}")" ||
+        die "${SK_SRC[$j]}: no directory '${SK_PATH[$j]}' at ${sha:0:12} — vendor/ untouched"
+      inert_tree "$c" "$tree" ||
+        die "${SK_SRC[$j]}: '${SK_PATH[$j]}' contains a symlink or submodule; refusing to vendor it — vendor/ untouched"
+      if [[ "$have" != "$tree" ]]; then
+        mkdir "$STAGE/skills/${SK_NAME[$j]}"
+        if ! extract_tree "$c" "$tree" "$STAGE/skills/${SK_NAME[$j]}"; then
+          die "${SK_SRC[$j]}: extracting '${SK_PATH[$j]}' failed — vendor/ untouched"
+        fi
+        [[ "$(tree_hash "$STAGE/skills/${SK_NAME[$j]}")" == "$tree" ]] ||
+          die "${SK_SRC[$j]}: extracted '${SK_PATH[$j]}' does not hash to $tree (export-ignore/export-subst attributes?) — vendor/ untouched"
+        incoming+=("${SK_NAME[$j]}")
+        if [[ -n "$have" ]]; then updated+=("${SK_NAME[$j]}"); else added+=("${SK_NAME[$j]}"); fi
+      fi
+    fi
+    SK_TREE+=("$tree")
+  done
+
+  # 3. Anything in vendor/skills/ the conf no longer names goes.
+  local d b
+  if [[ -d "$VENDOR" ]]; then
+    for d in "$VENDOR"/* "$VENDOR"/.[!.]* "$VENDOR"/..?*; do
+      if [[ ! -e "$d" && ! -L "$d" ]]; then continue; fi # unmatched glob
+      b="${d##*/}"
+      if [[ "$b" == README.md && -f "$d" && ! -L "$d" ]]; then continue; fi
+      if [[ -d "$d" && ! -L "$d" ]] && in_list "$b" ${SK_NAME[@]+"${SK_NAME[@]}"}; then continue; fi
+      removed+=("$b")
+    done
+  fi
+
+  # 4. Apply: renames only, all on one filesystem. A failure here rolls back (cleanup).
+  if ((${#incoming[@]} + ${#removed[@]})); then mkdir -p "$VENDOR"; fi
+  APPLY_IN=(${incoming[@]+"${incoming[@]}"})
+  APPLY_NAMES=(${incoming[@]+"${incoming[@]}"} ${removed[@]+"${removed[@]}"})
+  APPLYING=1
+  for b in ${APPLY_NAMES[@]+"${APPLY_NAMES[@]}"}; do
+    if [[ -e "$VENDOR/$b" || -L "$VENDOR/$b" ]]; then mv "$VENDOR/$b" "$STAGE/old/$b"; fi
+  done
+  for b in ${incoming[@]+"${incoming[@]}"}; do
+    mv "$STAGE/skills/$b" "$VENDOR/$b"
+  done
+  APPLYING=0
+  if [[ -d "$VENDOR" ]]; then rmdir "$VENDOR" "$ROOT/vendor" 2>/dev/null || true; fi
+
+  local lock_changed=0
+  if ((${#SRC_NAME[@]})); then
+    render_lock >"$STAGE/lock"
+    if ! cmp -s "$STAGE/lock" "$LOCK" 2>/dev/null; then
+      mv "$STAGE/lock" "$LOCK"
+      lock_changed=1
+    fi
+  elif [[ -e "$LOCK" ]]; then
+    rm "$LOCK"
+    lock_changed=1
+  fi
+
+  # 5. Report.
+  for b in ${added[@]+"${added[@]}"}; do say "+ $b"; done
+  for b in ${updated[@]+"${updated[@]}"}; do say "~ $b"; done
+  for b in ${removed[@]+"${removed[@]}"}; do say "- $b"; done
+  if ((${#incoming[@]} + ${#removed[@]} + lock_changed == 0)); then
+    say "up to date"
+  elif ((lock_changed)); then
+    say "wrote plugins.lock"
+  fi
+  if ((${#added[@]} + ${#removed[@]})); then
+    say "vendored skill set changed — run: ./install.sh skills"
+  fi
+  if ((${#incoming[@]})); then advisory_lint "${incoming[@]}"; fi
+  return 0
+}
+
+# advisory_lint NAME... — skill-lint findings on incoming skills; never fails sync.
+advisory_lint() {
+  local args=() b
+  if [[ ! -x "$LINT" ]]; then return 0; fi
+  for b in "$@"; do args+=("$VENDOR/$b"); done
+  say "advisory skill-lint over incoming skills (information for review, never a failure):"
+  "$LINT" "${args[@]}" 2>&1 | sed "s|$ROOT/||; s/^/  /" || true
+}
+
+# ---------------------------------------------------------------------------
+# check / doctor
+# ---------------------------------------------------------------------------
+# verify VERBOSE — print one line per finding ("ok …" or "FAIL …"); sets FAILS.
+FAILS=0
+ok_line() { if ((VERBOSE)); then printf '  ok    %s\n' "$*"; fi; }
+fail_line() {
+  printf '  FAIL  %s\n' "$*"
+  FAILS=$((FAILS + 1))
+}
+
+verify() {
+  VERBOSE="$1"
+  local i n locked lname ltree have p d b
+  parse_conf
+  parse_lock
+  setup_work
+  while IFS= read -r p; do
+    if [[ -n "$p" ]]; then fail_line "plugins.conf: $p"; fi
+  done < <(conf_problems)
+  if ((${#SK_NAME[@]})) && [[ ! -f "$LOCK" ]]; then
+    fail_line "plugins.conf lists ${#SK_NAME[@]} skill(s) but there is no plugins.lock — run: plug sync"
+  fi
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    if locked="$(lock_src "${SRC_NAME[$i]}")"; then
+      ok_line "source ${SRC_NAME[$i]} pinned at ${locked:0:12}"
+    elif [[ -f "$LOCK" ]]; then
+      fail_line "source ${SRC_NAME[$i]} is not in plugins.lock — run: plug sync"
+    fi
+  done
+  for ((i = 0; i < ${#L_SRC_NAME[@]}; i++)); do
+    if ! src_index "${L_SRC_NAME[$i]}" >/dev/null; then
+      fail_line "plugins.lock pins source ${L_SRC_NAME[$i]}, which plugins.conf no longer names — run: plug sync"
+    fi
+  done
+  for ((i = 0; i < ${#SK_NAME[@]}; i++)); do
+    n="${SK_NAME[$i]}"
+    if ! locked="$(lock_skill "${SK_SRC[$i]}" "${SK_PATH[$i]}")"; then
+      if [[ -f "$LOCK" ]]; then fail_line "$n (${SK_SRC[$i]}:${SK_PATH[$i]}) is not in plugins.lock — run: plug sync"; fi
+      continue
+    fi
+    lname="${locked%% *}" ltree="${locked#* }"
+    if [[ "$lname" != "$n" ]]; then
+      fail_line "$n: plugins.lock names it '$lname' — run: plug sync"
+      continue
+    fi
+    have="$(vendor_hash "$n")" || have="?"
+    if [[ -z "$have" ]]; then
+      fail_line "vendor/skills/$n is missing — run: plug sync"
+    elif [[ "$have" != "$ltree" ]]; then
+      fail_line "vendor/skills/$n differs from plugins.lock (hand edit or half-committed sync) — run: plug sync to restore"
+    else
+      ok_line "vendor/skills/$n matches ${ltree:0:12}"
+    fi
+  done
+  for ((i = 0; i < ${#L_SK_NAME[@]}; i++)); do
+    if ! in_list "${L_SK_NAME[$i]}" ${SK_NAME[@]+"${SK_NAME[@]}"}; then
+      fail_line "plugins.lock lists ${L_SK_NAME[$i]}, which plugins.conf no longer names — run: plug sync"
+    fi
+  done
+  if [[ -d "$VENDOR" ]]; then
+    for d in "$VENDOR"/* "$VENDOR"/.[!.]* "$VENDOR"/..?*; do
+      if [[ ! -e "$d" && ! -L "$d" ]]; then continue; fi
+      b="${d##*/}"
+      if [[ -d "$d" && ! -L "$d" ]] && in_list "$b" ${SK_NAME[@]+"${SK_NAME[@]}"}; then continue; fi
+      if [[ "$b" == README.md && -f "$d" && ! -L "$d" ]]; then continue; fi
+      fail_line "vendor/skills/$b is not in plugins.conf — run: plug sync to remove it"
+    done
+  fi
+}
+
+cmd_check() {
+  verify 0
+  if ((FAILS)); then
+    printf 'plug: vendor/ does not match plugins.conf + plugins.lock (%d problem(s))\n' "$FAILS" >&2
+    exit 1
+  fi
+  say "vendor/ matches plugins.lock (${#SK_NAME[@]} skill(s))"
+}
+
+# cmd_verify — --check, plus: every lock tree really is its path at the pinned commit (fetches on a cache miss).
+cmd_verify() {
+  local j si sha c up
+  verify 0
+  for ((j = 0; j < ${#L_SK_NAME[@]}; j++)); do
+    si="$(src_index "${L_SK_SRC[$j]}")" || continue # already reported by verify
+    sha="$(lock_src "${L_SK_SRC[$j]}" || true)"
+    sha="${sha%% *}"
+    if [[ -z "$sha" ]]; then continue; fi
+    ensure_commit "$si" "$sha"
+    c="$(cache_of "${L_SK_SRC[$j]}")"
+    up="$(tree_at "$c" "$sha" "${L_SK_PATH[$j]}" || true)"
+    if [[ "$up" != "${L_SK_TREE[$j]}" ]]; then
+      fail_line "plugins.lock: ${L_SK_NAME[$j]} tree ${L_SK_TREE[$j]:0:12} is not ${L_SK_PATH[$j]} at ${sha:0:12} (lock edited by hand?)"
+    elif ! inert_tree "$c" "$up"; then
+      fail_line "${L_SK_NAME[$j]}: contains a symlink or submodule"
+    fi
+  done
+  if ((FAILS)); then
+    printf 'plug: vendor/ does not match the pinned upstream commits (%d problem(s))\n' "$FAILS" >&2
+    exit 1
+  fi
+  say "vendor/ matches plugins.lock and the pinned upstream commits (${#SK_NAME[@]} skill(s))"
+}
+
+cmd_doctor() {
+  local i c locked
+  printf 'Vendored skills (%s)\n' "$ROOT"
+  verify 1
+  printf 'Cache (%s)\n' "$CACHE"
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    c="$(cache_of "${SRC_NAME[$i]}")"
+    locked="$(lock_src "${SRC_NAME[$i]}" || true)"
+    if [[ ! -d "$c" ]]; then
+      printf '  --    %s not cached (fetched on the next sync that needs it)\n' "${SRC_NAME[$i]}"
+    elif [[ -n "$locked" ]] && git -C "$c" cat-file -e "${locked%% *}^{commit}" 2>/dev/null; then
+      printf '  ok    %s cached, holds the pinned commit\n' "${SRC_NAME[$i]}"
+    else
+      printf '  --    %s cached, pinned commit not in it (fetched on the next sync)\n' "${SRC_NAME[$i]}"
+    fi
+  done
+  if ((FAILS)); then
+    printf 'plug doctor: %d problem(s)\n' "$FAILS" >&2
+    exit 1
+  fi
+  say "doctor: healthy"
+}
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+cmd_list() {
+  local i n locked state ltree p
+  parse_conf
+  parse_lock
+  setup_work
+  if ((${#SRC_NAME[@]} == 0)); then
+    say "no sources in $CONF"
+    return 0
+  fi
+  for ((i = 0; i < ${#SRC_NAME[@]}; i++)); do
+    locked="$(lock_src "${SRC_NAME[$i]}" || true)"
+    if [[ -n "$locked" ]]; then
+      printf 'source %s  %s @ %s  pinned %s (%s)\n' "${SRC_NAME[$i]}" "${SRC_URL[$i]}" \
+        "${SRC_REF[$i]}" "${locked:0:12}" "${locked#* }"
+    else
+      printf 'source %s  %s @ %s  not locked\n' "${SRC_NAME[$i]}" "${SRC_URL[$i]}" "${SRC_REF[$i]}"
+    fi
+  done
+  for ((i = 0; i < ${#SK_NAME[@]}; i++)); do
+    n="${SK_NAME[$i]}"
+    state="not synced"
+    if locked="$(lock_skill "${SK_SRC[$i]}" "${SK_PATH[$i]}")"; then
+      ltree="${locked#* }"
+      if [[ "$(vendor_hash "$n" || true)" == "$ltree" ]]; then state="vendored"; else state="differs from lock"; fi
+    fi
+    printf 'skill  %-24s %s:%s  %s\n' "$n" "${SK_SRC[$i]}" "${SK_PATH[$i]}" "$state"
+  done
+  while IFS= read -r p; do
+    if [[ -n "$p" ]]; then printf 'warn   %s\n' "$p"; fi
+  done < <(conf_problems)
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+command -v git >/dev/null 2>&1 || die "git is required"
+[[ -d "$ROOT" ]] || die "no repo at $ROOT"
+
+case "${1:-help}" in
+  sync)
+    if [[ "${2:-}" == --check && $# -eq 2 ]]; then
+      cmd_check
+    elif [[ $# -eq 1 ]]; then
+      cmd_sync sync
+    else
+      usage >&2
+      exit 2
+    fi
+    ;;
+  update)
+    [[ $# -le 2 ]] || {
+      usage >&2
+      exit 2
+    }
+    cmd_sync update "${2:-}"
+    ;;
+  verify)
+    [[ $# -eq 1 ]] || {
+      usage >&2
+      exit 2
+    }
+    cmd_verify
+    ;;
+  list) cmd_list ;;
+  doctor) cmd_doctor ;;
+  help | -h | --help) usage ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+FINISHED=1

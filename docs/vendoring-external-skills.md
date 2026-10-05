@@ -1,236 +1,105 @@
-# Vendoring external skills (design draft)
+# Vendoring external skills
 
-> Status: **draft / not implemented.** This documents the intended
-> architecture for pulling external skills *into* the toolkit. Nothing
-> described here exists yet.
->
-> Direction matters: this is about content coming **in** — third-party
-> skills vendored into this repo and installed by the usual symlink farm.
-> Shipping this toolkit **out** as a Claude Code plugin (`.claude-plugin/`,
-> for web and cloud sessions with no `$HOME` to symlink into) is a separate
-> problem with separate tradeoffs. The two share the word "plugin" and
-> nothing else; this file was originally named `docs/plugins.md`, which is
-> why.
+`bin/plug` copies selected skills from external git repos into
+`vendor/skills/<name>/`, pinned by SHA. The copies are committed, so every
+machine gets them from `git pull`, and `install.sh` links them like local
+skills. An update is a readable diff of the instructions that changed.
 
-The skills ecosystem has matured: `SKILL.md` is an open standard, and repos
-like `anthropics/skills`, `obra/superpowers-skills`, and the collections
-indexed by `VoltAgent/awesome-agent-skills` hold skills worth using as-is.
-This design lets the toolkit *pull selected skills from external repos*
-without giving up the properties that make it trustworthy: everything
-installed by symlink, reproducible on both machines from `git pull` alone,
-and no content reaching an agent that was never reviewed.
+This is content coming **in**. Shipping the toolkit **out** as a plugin is
+`docs/plugin.md`.
 
-## Why not the obvious alternatives
+## Commands
 
-Three existing mechanisms were considered and rejected before designing
-anything new:
+| Command | Effect |
+| --- | --- |
+| `plug sync` | Make `vendor/` match conf + lock. New skills fetch at the locked SHA (the ref's tip if unlocked); dropped lines delete their copy. |
+| `plug sync --check` | Offline verdict: conf, lock and `vendor/` agree. Exit 1 on drift. |
+| `plug verify` | `--check`, plus each lock tree against its pinned commit (fetches on a cache miss). CI runs this. |
+| `plug update [src]` | Re-resolve refs (all sources, or one), re-vendor, rewrite the lock. Review the `git diff`. |
+| `plug list` | Sources, pins, per-skill state, collision warnings. |
+| `plug doctor` | `--check` item by item, plus cache state. |
 
-- **Claude Code plugin marketplaces** (`/plugin marketplace add …`) install
-  into Claude Code only. The whole point of top-level `skills/` is that it is
-  agent-portable; a marketplace bypasses that layer, and its updates arrive
-  without review.
-- **Git submodules** pin correctly but fail everywhere else: you take a whole
-  repo when you want two skills out of it, every clone needs
-  `submodule update --init` (the same "every clone, one time" trap as
-  `core.hooksPath`, but with worse failure modes), and — decisive — a
-  submodule bump is an opaque SHA change in `git diff`. A skill is
-  *instructions an agent will follow*; an update whose diff you cannot read
-  in review is exactly the thing this repo's conventions exist to prevent.
-- **`npx skills add` style installers** write third-party content straight
-  into the skills directory, mixing external and local provenance, and add a
-  Node dependency to a toolkit that deliberately requires nothing but bash
-  and git.
+After a sync that adds or removes a skill: `./install.sh skills`.
 
-## The design in one paragraph
+## Files
 
-External skills are **vendored by copy, committed to git**. A manifest
-(`plugins.conf`) names source repos and the skills wanted from each; a small
-CLI (`bin/plug`) materializes them into `vendor/skills/<name>/` at a
-SHA pinned in `plugins.lock`; the installer learns — once — to scan
-`vendor/skills/` alongside `skills/`. Because the vendored copies are
-ordinary committed files, the other machine gets byte-identical state from
-`git pull`, installs work offline, `--uninstall` ownership checks work
-unchanged, and every update is a readable diff of the actual instructions
-that changed.
-
-## Layout
-
-| Path                     | Holds                                        | Committed? |
-| ------------------------ | -------------------------------------------- | ---------- |
-| `plugins.conf`           | What to pull: sources and skill selections   | yes        |
-| `plugins.lock`           | Resolved SHAs per source, tree hash per skill| yes        |
-| `vendor/skills/<name>/`  | The vendored skill directories               | yes        |
-| `~/.cache/agentic-dev-toolkit/plug/<source>/` | Bare clone cache, per source | no (per machine) |
-
-`vendor/` gets a row in the CLAUDE.md layout table: *external content,
-written only by `bin/plug`, never edited by hand* — a hand edit disappears
-on the next `plug sync`, which is the same reason templates have one copy.
+| Path | Holds | Committed |
+| --- | --- | --- |
+| `plugins.conf` | What to pull (hand-edited) | yes |
+| `plugins.lock` | Resolved SHAs and tree hashes (generated) | yes |
+| `vendor/skills/<name>/` | The copies (written only by `plug`) | yes |
+| `vendor/skills/README.md` | Keeps the dir in git for the plugin manifest | yes |
+| `${PLUG_CACHE_DIR:-~/.cache/agentic-dev-toolkit/plug}/<src>.git` | Bare clone per source; disposable | no |
 
 ## `plugins.conf`
 
-Line-based and bash-3.2 parseable, same as `.skill-lint.conf` — no YAML, no
-jq required:
-
 ```
 # source <name> <git-url> <ref>
-# skill  <source-name> <path-in-repo>
-source superpowers https://github.com/obra/superpowers-skills main
-skill  superpowers skills/debugging/systematic-debugging
-skill  superpowers skills/testing/test-driven-development
-
-source anthropic https://github.com/anthropics/skills main
-skill  anthropic document-skills/pdf
+# skill  <source> <path-in-repo>
+source mattpocock https://github.com/mattpocock/skills main
+skill  mattpocock skills/productivity/grilling
 ```
 
-`ref` is what `plug update` chases (a branch or tag). What actually gets
-installed is always the SHA recorded in `plugins.lock` — the conf expresses
-intent, the lock expresses state.
+- Installed name = basename of the path.
+- A `source` must appear above its `skill` lines.
+- `ref` is what `update` chases; the lock is what gets installed.
 
 ## `plugins.lock`
 
-Generated, never hand-edited:
-
 ```
-source superpowers 4f2a9c1d… 2026-07-21
-skill  superpowers skills/debugging/systematic-debugging systematic-debugging <tree-sha>
+source <name> <commit-sha> <date-pinned>
+skill  <source> <path> <installed-name> <tree-sha>
 ```
 
-Per skill it records the *installed name* (the basename, see collisions
-below) and the **git tree hash** of the skill directory at the pinned
-commit. Git is already a hard dependency and `git rev-parse <sha>:<path>`
-is portable, unlike choosing between `sha256sum` and `shasum -a 256`. The
-tree hash is what lets `plug doctor` and CI prove that `vendor/` matches
-the lock — i.e. that nobody edited vendored content by hand and no sync was
-half-committed.
+- `tree-sha` is `git rev-parse <sha>:<path>` upstream.
+- `--check` recomputes it from `vendor/` with `git hash-object --no-filters` + `git mktree`: no network, no cache.
+- The date changes only when the SHA does.
 
-## `bin/plug`
+## Sync errors (vendor/ left untouched)
 
-| Command             | Effect |
-| ------------------- | ------ |
-| `plug sync`         | Make `vendor/` match conf + lock. New skills are fetched at the locked SHA (or the ref's current SHA if not yet locked), removed conf entries delete their vendor copy, and the lock is rewritten. Prints a reminder to run `./install.sh skills` when the skill *set* changed. |
-| `plug update [src]` | Re-resolve refs to new SHAs, re-materialize, rewrite the lock. The point of the command is the `git diff` it leaves behind. |
-| `plug list`         | Sources, pins, and skills, with local-collision warnings. |
-| `plug doctor`       | Verify vendor tree hashes against the lock; report drift, hand edits, and conf/lock/vendor disagreement. |
-| `plug sync --check` | Doctor's core check, exit-code only — this is what CI runs. |
+| Message | Fix |
+| --- | --- |
+| `installed name 'x' claimed twice` | Two skill lines share a basename; drop one |
+| `collides with local skills/x` | Local wins; drop the skill line |
+| `no directory '<path>' at <sha>` | Fix the path, or `plug update <src>` |
+| `cannot fetch <url>` | Network or auth; a locked SHA already in the cache still syncs offline |
+| `does not hash to <tree>` | Upstream `export-ignore`/`export-subst` attributes; copy the skill into `skills/` as a local skill and drop its line |
+| `contains a symlink or submodule` | Refused: a link can point at `~/.ssh`; same fix as above |
+| `lock edited by hand?` | Lock tree ≠ upstream at the pinned SHA; `plug update <src>` |
 
-Fetch mechanism: one cached bare clone per source under
-`~/.cache/agentic-dev-toolkit/plug/`, then
-`git archive <sha> <path> | tar -x` into a temp dir and move into place.
-`git archive` from a local clone works for any reachable SHA on both BSD and
-GNU userlands and needs no shallow-fetch-by-SHA server support. The cache is
-per machine and disposable; losing it costs one re-clone, never state.
+## Install and plugin paths
 
-Like every `bin/` script, `plug` resolves its repo root by walking its own
-symlink chain (`script_dir()` from `bin/vibe`) and must pass shellcheck and
-`shfmt -i 2 -ci` under bash 3.2.
+- `install.sh skills` links `vendor/skills/*/` beside `skills/*/`; `_*` skipped; a local `skills/<name>` wins with a warning.
+- A dropped skill's dangling link is pruned by the installer's orphan rule.
+- Plugin path: `.claude-plugin/plugin.json` `"skills": "./vendor/skills/"`, loaded in addition to `skills/`.
 
-## Installer changes — once, then never again
+## Gates
 
-`build_map`'s skills section additionally scans `$REPO/vendor/skills/*/`
-with the same `_*` skip, mapping to the same `~/.claude/skills/<name>`
-destinations. Precedence: **a local skill in `skills/` always wins** over a
-vendored one with the same basename; the collision is a warning at install
-time and an error at `plug sync` time (two *sources* claiming one name is
-always a sync error). That keeps the auto-discovery contract intact:
-after this one change, adding or removing a plugin never touches
-`install.sh`.
+- CI excludes `vendor/` from shellcheck/shfmt (`.editorconfig` `ignore = true`) and from `skill-lint --strict` (run on `skills/` only).
+- `plug sync` runs `skill-lint` over incoming skills as an advisory report; it never fails the sync.
+- `plug verify` is the one hard gate: integrity, not quality. `--check` alone trusts the lock's tree hashes.
+- Fetches allow only `https`, `ssh`, `file` transports, with `transfer.fsckObjects`.
+- `.gitignore` ends in `!vendor/**`, so an upstream `.env.example` or `*.pem` is committed, not silently dropped.
 
-Because `vendor/` is inside the checkout, `owned_by_repo` already covers
-it — `--uninstall` and the backup rules need no changes. One addition is
-needed for *removal*: dropping a skill from the conf deletes its vendor
-copy, which leaves an owned, dangling symlink in `~/.claude/skills`. The
-skills target learns to prune symlinks that are owned by this repo *and*
-dangling. Both conditions together make this safe under the never-delete
-rule: removing a dangling symlink we own loses nothing.
+## What may be vendored
 
-## Quality gates: external content is graded, not gated
+Inert instruction text only: files an agent reads, executing nothing.
 
-The local quality bar cannot be imposed on upstream skills — they would all
-fail it, and forking them to comply defeats the purpose of pulling them in.
-So the gates split:
+| Content | Verdict |
+| --- | --- |
+| Skills | v1 (this) |
+| Agents, slash commands, output styles | v2 candidate: needs per-file links under `~/.claude/agents/` |
+| Hooks, settings, permission baselines | never: adopt by hand into `claude/` |
+| CLIs, orchestrators, Claude Code plugin bundles | never: package manager or native marketplace |
 
-- **CI excludes `vendor/`** from `shfmt`/`shellcheck`, from
-  `skill-lint --strict`, and from repo-specific rules like the
-  templates-name-no-agent check. It is not our code.
-- **`plug sync` runs `skill-lint` (non-strict) over incoming skills** and
-  prints findings as an advisory report. Seeing `[SQ7] description too
-  short` on an incoming skill is information for the review, not a build
-  failure.
-- **CI runs `plug sync --check`**: conf, lock, and vendor must agree. This
-  is the one hard gate, and it is about integrity, not quality.
+Rejected: plugin marketplaces (Claude-only, unreviewed updates), git
+submodules (opaque SHA bumps), `npx skills add` (Node dependency, mixed
+provenance).
 
-## The review loop is the security model
+## What breaks it
 
-A skill is prompt input to every agent on both machines. The design treats
-skill updates exactly like dependency updates in software that matters:
-
-1. Nothing is fetched at install time. `./install.sh` touches only files
-   already in the checkout — offline-safe, and no network fetch can inject
-   content the review never saw.
-2. Everything is pinned by SHA in the lock. A compromised upstream branch
-   changes nothing here until someone runs `plug update`.
-3. `plug update` produces a plain-text diff of the instructions that
-   changed, reviewed in the same PR flow `.githooks/pre-push` already
-   forces. That diff — not a version bump — is what gets approved.
-
-## Scope: v1 is skills — and one rule for everything else
-
-The ecosystem offers more than skills: subagent definitions, slash
-commands, hooks, settings baselines, whole Claude Code plugin bundles, and
-standalone orchestrator tools. One rule decides what this mechanism may
-ever carry:
-
-> **Vendorable content is inert instruction text: files an agent reads,
-> installed by symlink, executing nothing.**
-
-Everything either passes that rule (and can become a later conf line type)
-or fails it permanently:
-
-| Content | Verdict | Why |
-| ------- | ------- | --- |
-| Skills | **v1** | The case this whole document makes. |
-| Subagent definitions (`claude/agents/*.md`) | v2 candidate | Inert markdown, same review model as skills. Claude-specific, so it vendors under `vendor/claude/agents/` — vendor/ mirrors the top-level portable/agent-specific split. |
-| Slash commands (`claude/commands/*.md`) | v2 candidate | Same as agents in every respect. |
-| Output styles | v2 candidate | Same again. |
-| Hooks | **never** | Executable shell inside live sessions, running with your permissions. They also must honor this repo's exit-0/degrade contract, which upstream code was not written for. An external hook worth having is a hook you *adopt*: read it, copy it into `claude/hooks/`, own it and its degrade path. |
-| Settings / permission baselines | **never** | A third-party file unioned into `permissions.allow` is someone else deciding what runs without prompting. Policy is authored here, never pulled. |
-| `bin/` tools, orchestrators (amux, dmux, agent-deck) | never *vendored* | Ordinary software — install with a package manager. The plug point for these is integration, not vendoring: `vibe` can shell out to one, `doctor` can check one is installed. |
-| Claude Code plugin bundles (e.g. superpowers) | not this mechanism | Bundles are Claude-only by construction and Claude Code ships a native marketplace/installer that coexists with the symlink farm (this repo never touches `~/.claude/plugins`). Use the native system for a Claude-only bundle; use `plug` to cherry-pick the portable skills out of the same repo. |
-| Templates | passes the rule, but no | External templates would be exempt from the placeholder contract and the agent-naming CI check that keep local ones honest — a standing trap for one document nobody has asked for. Revisit on concrete need. |
-| Cross-agent memory | already solved | `memory/GLOBAL.md` and its fixed fan-out *are* the toolkit's Agentlink; there is nothing to pull. |
-
-### What v2 (agents, commands, output styles) would require
-
-The conf and lock generalize trivially — `agent <source> <path>` beside
-`skill <source> <path>`, same SHA pinning, same diff review, local wins on
-basename collision. The real cost is in the installer: `claude/*/`
-directories are linked as *whole-directory* symlinks, so `~/.claude/agents`
-can only ever reflect one source. Merging local and vendored agents means
-switching `agents/` (and `commands/`) to per-file links, the way skills
-are per-directory — touching `build_map`, doctor, and the empty-directory
-README guard. That is a contained change, but it is why v2 waits for an
-external agent actually worth pulling rather than shipping speculatively.
-
-## Tests to add with the implementation
-
-Following the add-a-guard-add-a-test rule:
-
-- `plug sync` fixture flow in a throwaway git "upstream" under
-  `$BATS_TEST_TMPDIR`: add, update, remove; lock correctness; idempotence
-  (second sync changes nothing).
-- Local-over-vendor precedence, and the two-sources-one-name sync error.
-- The dangling-owned-symlink prune: prunes exactly that case, still refuses
-  to touch real files and foreign symlinks.
-- `plug doctor` catching a hand-edited vendor file (tree-hash mismatch).
-- Degrade paths: no network (cache hit still syncs; cache miss fails with a
-  clear message, exit non-zero, vendor untouched).
-
-## When this is *not* worth building
-
-The mechanism is ~200–300 lines of bash plus tests. It pays for itself only
-if external skills are actually adopted — two or three skills from one repo
-can be reviewed and copied into `skills/` by hand in ten minutes, and that
-is the honest alternative. What manual copying loses is provenance ("which
-upstream, which commit?") and a sane update path, which is precisely what
-conf + lock + vendor provide. Build it when the third external skill shows
-up; before that, copy by hand.
+- Hand-editing `vendor/` → `--check` fails; `plug sync` restores the pinned copy.
+- Hand-editing a lock tree hash to match → `--check` passes; `plug verify` (CI) and a cached `plug sync` fail.
+- Committing `vendor/` without `plugins.lock` (or vice versa) → `--check` fails; run `plug sync`, commit both.
+- Deleting `vendor/skills/README.md` → plugin load fails once no skills are vendored.
+- A skill path with spaces → unsupported; the conf is whitespace-split.

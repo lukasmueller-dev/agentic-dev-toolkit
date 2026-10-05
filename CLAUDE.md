@@ -23,6 +23,7 @@ every agent. This file is only about changing the toolkit itself.
 | `vscode/`     | VS Code settings fragments                          | Yes            |
 | `tmux/`       | tmux snippet for server sessions                    | Yes            |
 | `.claude-plugin/` | Claude Code plugin manifest + its hook wiring   | Yes            |
+| `vendor/`     | External skills, written only by `bin/plug`         | No             |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
 | `tests/`      | bats suites                                         | —              |
 | `.githooks/`  | Git hooks for developing *this* repo (not installed)| —              |
@@ -34,6 +35,10 @@ names Claude Code in its trigger description has been put on the wrong side.
 
 `bin/` and `skills/` must stay where they are — live symlinks in `~/bin` and
 `~/.claude/skills` point at those paths.
+
+`vendor/` is never hand-edited: change `plugins.conf`, run `bin/plug sync`,
+commit conf + lock + `vendor/` together. Reference:
+`docs/vendoring-external-skills.md`.
 
 ## Templates live in `templates/`
 
@@ -86,6 +91,9 @@ rules matter when changing anything here:
   `${CLAUDE_PLUGIN_ROOT}/claude/hooks/…`. They cannot be one file, and neither
   is generated from the other, so `tests/plugin.bats` is what keeps them in
   step — add a hook to one and the suite tells you about the other.
+- **`skills` in the manifest adds `./vendor/skills/`** to the default
+  `skills/` scan. A missing path fails the plugin load, so
+  `vendor/skills/README.md` stays committed.
 - **`agents` in the manifest is a list of files.** The validator rejects a
   directory, so this is the one place auto-discovery does not apply. A new
   agent needs a manifest line; the suite fails until it gets one.
@@ -103,6 +111,7 @@ something should never require editing the installer:
 | -------------------------- | --------------------------------------- |
 | a file in `bin/`           | `~/bin/<name>`                          |
 | a directory in `skills/`   | `~/.claude/skills/<name>`               |
+| a directory in `vendor/skills/` | `~/.claude/skills/<name>` (a local `skills/<name>` wins) |
 | a file in `claude/`        | `~/.claude/<name>`                      |
 | a script in `claude/hooks/`| nothing new — the directory is linked   |
 | a file in `codex/`, `gemini/` | `~/.codex/<name>`, `~/.gemini/<name>` |
@@ -285,6 +294,9 @@ Add a test when you add a guard. The `vibe done` guard, the installer's
 ownership check, and every hook's degrade-to-no-op path each have one, because
 each protects against silent data loss.
 
+**A mid-test `[[ … ]]` never fails under bats on bash 3.2** — the macOS leg
+reads it as passing. Write `[[ … ]] || false`, or use `[ … ]`.
+
 **The suite must never look like the server.** `tests/helper.bash` unsets
 `SSH_*`, points `VIBE_SERVER_HOSTNAME` at an unmatchable value, and puts a stub
 `tmux` early on `PATH` — otherwise a run over SSH takes `detect_env`'s server
@@ -333,8 +345,13 @@ shfmt -f . | xargs shellcheck     # lint
 shfmt -d -i 2 -ci .               # formatting
 bats tests/                       # tests
 ./bin/skill-lint --strict skills  # skills, if you touched one
+./bin/plug verify                 # vendor/ matches plugins.lock and upstream
 ./install.sh doctor               # the live machine still resolves
 ```
+
+`.editorconfig` (`[vendor/**] ignore = true`) is what keeps upstream scripts
+out of `shfmt -f .` and `shfmt -d .`; delete it and the lint gate grades
+vendored code.
 
 `doctor` is only meaningful from the checkout the symlinks point at
 (normally the main clone). Run from a worktree it reports every link as
