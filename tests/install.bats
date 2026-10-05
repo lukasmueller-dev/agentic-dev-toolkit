@@ -424,12 +424,104 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 }
 
 # ---------------------------------------------------------------------------
+# Vendored skills (vendor/skills/, written by bin/plug)
+#
+# Run against a minimal fake repo: install.sh plus skills/ and vendor/skills/.
+# ---------------------------------------------------------------------------
+
+# fake_repo — echo a repo holding install.sh, skills/local-one and
+# vendor/skills/{ext-one,_hidden}.
+fake_repo() {
+  local r="$BATS_TEST_TMPDIR/fake"
+  mkdir -p "$r/skills/local-one" "$r/vendor/skills/ext-one" "$r/vendor/skills/_hidden"
+  cp "$INSTALL" "$r/install.sh"
+  printf 'x\n' >"$r/skills/local-one/SKILL.md"
+  printf 'x\n' >"$r/vendor/skills/ext-one/SKILL.md"
+  printf 'x\n' >"$r/vendor/skills/_hidden/SKILL.md"
+  printf 'placeholder\n' >"$r/vendor/skills/README.md"
+  # install.sh resolves its own path physically (macOS: /tmp -> /private/tmp)
+  cd -P "$r" && pwd
+}
+
+@test "vendor: a vendored skill is linked beside the local ones" {
+  local r
+  r="$(fake_repo)"
+  run "$r/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ "$(readlink "$HOME/.claude/skills/ext-one")" = "$r/vendor/skills/ext-one" ]
+  [ "$(readlink "$HOME/.claude/skills/local-one")" = "$r/skills/local-one" ]
+  # the same _* skip as skills/, and the placeholder README is not a skill
+  [ ! -e "$HOME/.claude/skills/_hidden" ]
+  [ ! -e "$HOME/.claude/skills/README.md" ]
+}
+
+@test "vendor: a local skill wins a name collision, with a warning" {
+  local r
+  r="$(fake_repo)"
+  mkdir -p "$r/vendor/skills/local-one"
+  printf 'vendored\n' >"$r/vendor/skills/local-one/SKILL.md"
+  run "$r/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ "$(readlink "$HOME/.claude/skills/local-one")" = "$r/skills/local-one" ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"skipping vendor/skills/local-one/"* ]] || false
+  run "$r/install.sh" doctor
+  [[ "$(printf '%s\n' "$output" | plain)" != *"FAIL"* ]] || false
+}
+
+@test "vendor: a removed vendored skill's symlink is pruned" {
+  local r
+  r="$(fake_repo)"
+  "$r/install.sh" skills >/dev/null
+  [ -L "$HOME/.claude/skills/ext-one" ]
+  rm -rf "$r/vendor/skills/ext-one" # what plug sync does when the conf drops it
+  run "$r/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/.claude/skills/ext-one" ]
+  [ ! -L "$HOME/.claude/skills/ext-one" ]
+  [ -L "$HOME/.claude/skills/local-one" ]
+}
+
+@test "vendor: real files at a vendored name are backed up, never deleted or pruned" {
+  local r
+  r="$(fake_repo)"
+  mkdir -p "$HOME/.claude/skills/ext-one" "$HOME/.claude/skills/ext-gone"
+  printf 'PRECIOUS-VENDOR\n' >"$HOME/.claude/skills/ext-one/SKILL.md"
+  printf 'mine\n' >"$HOME/.claude/skills/ext-gone/SKILL.md"
+  run "$r/install.sh" skills
+  [ "$status" -eq 0 ]
+  [ -L "$HOME/.claude/skills/ext-one" ]
+  run grep -rl PRECIOUS-VENDOR "$HOME/.agentic-dev-toolkit-backups"
+  [ "$status" -eq 0 ]
+  # a real directory is not ours to prune, even with no repo source behind it
+  [ -f "$HOME/.claude/skills/ext-gone/SKILL.md" ]
+}
+
+@test "vendor: uninstall removes vendored links into this checkout, never a sibling checkout's" {
+  local r other
+  r="$(fake_repo)"
+  mkdir -p "$r/vendor/skills/ext-shared"
+  printf 'x\n' >"$r/vendor/skills/ext-shared/SKILL.md"
+  "$r/install.sh" skills >/dev/null
+  # a sibling worktree whose path shares this checkout's prefix now owns ext-shared
+  other="$r-wt"
+  mkdir -p "$other/vendor/skills/ext-shared"
+  rm "$HOME/.claude/skills/ext-shared"
+  ln -s "$other/vendor/skills/ext-shared" "$HOME/.claude/skills/ext-shared"
+  run "$r/install.sh" --uninstall skills
+  [ "$status" -eq 0 ]
+  [ ! -L "$HOME/.claude/skills/ext-one" ]
+  [ ! -L "$HOME/.claude/skills/local-one" ]
+  [ "$(readlink "$HOME/.claude/skills/ext-shared")" = "$other/vendor/skills/ext-shared" ]
+}
+
+# ---------------------------------------------------------------------------
 # Portable global memory
 #
 # One file, three agent homes. The failure this guards against is silent: the
 # symlinks can all be correct while Claude Code still loads none of it, because
 # it reads CLAUDE.md alone and reaches the shared half only through the import.
 # ---------------------------------------------------------------------------
+
 @test "memory: the one file lands in all three agent homes" {
   run "$INSTALL"
   [ "$status" -eq 0 ]

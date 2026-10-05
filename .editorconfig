@@ -1,0 +1,3 @@
+# shfmt honours `ignore`: vendor/ is upstream code, graded by bin/plug, not by CI lint.
+[vendor/**]
+ignore = true

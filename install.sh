@@ -13,7 +13,7 @@
 #
 # Targets:
 #   bin      bin/* -> ~/bin/, plus shell completions
-#   skills   skills/<name>/ -> ~/.claude/skills/<name>
+#   skills   skills/<name>/ and vendor/skills/<name>/ -> ~/.claude/skills/<name>
 #   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
 #            memory/GLOBAL.md -> ~/.claude/global-memory.md, and merges
 #            claude/settings.json into your real settings.json
@@ -199,6 +199,20 @@ build_map() {
       # underscore-prefixed directories — it would load it as a real skill —
       # so the installer has to be the thing that keeps it out of ~/.claude.
       case "$(basename "$d")" in _*) continue ;; esac
+      map_add "$d" "$HOME/.claude/skills/$(basename "$d")" skills
+    done
+  fi
+
+  # Vendored skills (written by bin/plug). A local skills/<name> always wins.
+  if want skills && [[ -d "$REPO/vendor/skills" ]]; then
+    for d in "$REPO"/vendor/skills/*/; do
+      [[ -d "$d" ]] || continue # no subdirectories: the glob stayed literal
+      d="${d%/}"
+      case "$(basename "$d")" in _*) continue ;; esac
+      if [[ -d "$REPO/skills/$(basename "$d")" ]]; then
+        warn "skipping vendor/skills/$(basename "$d")/ — skills/$(basename "$d")/ has the same name and wins"
+        continue
+      fi
       map_add "$d" "$HOME/.claude/skills/$(basename "$d")" skills
     done
   fi

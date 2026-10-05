@@ -42,6 +42,7 @@ jobs:
 
       # Every shell file in the repo, found by extension AND by shebang, so a
       # script added without a .sh suffix (bin/vibe) still gets checked.
+      # vendor/ is skipped via .editorconfig `ignore = true` (shfmt -f and -d both honour it).
       - name: Collect shell files
         id: collect
         run: |
@@ -163,6 +164,11 @@ jobs:
       # shfmt steps degrade to a note here rather than reinstalling the tools.
       - name: skills pass skill-lint
         run: ./bin/skill-lint skills/ --strict
+
+      # Integrity, not quality: conf, lock and vendor/ agree, and each lock tree is
+      # its path at the pinned upstream commit (fetches public upstreams).
+      - name: vendored skills match plugins.lock and upstream
+        run: ./bin/plug verify
 
       # The repo-local skills under .claude/ are never installed anywhere, so
       # they are invisible to the sweep above — and would drift unlinted.
