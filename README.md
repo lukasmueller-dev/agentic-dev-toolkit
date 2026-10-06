@@ -164,6 +164,8 @@ Optional: [phone notifications](docs/notifications.md), and
   runs on itself
 - [Vendoring external skills](docs/vendoring-external-skills.md) — `plug`,
   `plugins.conf`, `plugins.lock`, `vendor/skills/`
+- [Academic writing skills](docs/academic-writing.md) — the vendored
+  writing skills, their requirements and known risks
 - [The Claude Code plugin](docs/plugin.md) — the second install path, for
   sessions with no `$HOME`
 - [MCP servers](docs/mcp-servers.md) — which few to connect, and why most of

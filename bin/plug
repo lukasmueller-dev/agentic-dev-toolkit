@@ -10,6 +10,8 @@
 #   plug doctor          the --check verdict, item by item, plus cache state
 #   plug help            this text
 #
+# plugins.conf: 'source <name> <git-url> <ref>', 'skill <source> <path> [<name>]' ('.' = repo root, name required).
+#
 # Env: PLUG_REPO_ROOT (default: this script's repo), PLUG_CACHE_DIR.
 # Reference: docs/vendoring-external-skills.md
 set -euo pipefail
@@ -92,13 +94,15 @@ valid_name() {
   return 0
 }
 
-# norm_path PATH — strip ./ and trailing /; reject absolute paths and '..'.
+# norm_path PATH — strip ./ and trailing /; the repo root is '.'; reject absolute paths and '..'.
 norm_path() {
   local p="$1"
+  case "$p" in /*) return 1 ;; esac
   while [[ "$p" == ./* ]]; do p="${p#./}"; done
   while [[ "$p" == */ ]]; do p="${p%/}"; done
   case "$p" in
-    '' | /* | .. | ../* | */../* | */..) return 1 ;;
+    '' | .) p=. ;;
+    /* | .. | ../* | */../* | */..) return 1 ;;
   esac
   printf '%s' "$p"
 }
@@ -135,14 +139,17 @@ parse_conf() {
         SRC_REF+=("$c")
         ;;
       skill)
-        [[ -n "$b" && -z "$c" ]] ||
-          die "plugins.conf:$n: expected 'skill <source> <path-in-repo>'"
+        [[ -n "$b" && -z "$rest" ]] ||
+          die "plugins.conf:$n: expected 'skill <source> <path-in-repo> [<name>]'"
         src_index "$a" >/dev/null ||
           die "plugins.conf:$n: source '$a' is not declared above this line"
         path="$(norm_path "$b")" || die "plugins.conf:$n: bad path '$b'"
+        if [[ "$path" == . && -z "$c" ]]; then
+          die "plugins.conf:$n: a repo-root skill needs a name: 'skill $a . <name>'"
+        fi
         SK_SRC+=("$a")
         SK_PATH+=("$path")
-        SK_NAME+=("${path##*/}")
+        SK_NAME+=("${c:-${path##*/}}")
         ;;
       *) die "plugins.conf:$n: unknown directive '$kw'" ;;
     esac
@@ -163,9 +170,13 @@ conf_problems() {
         "$n" "${SK_SRC[$i]}" "${SK_PATH[$i]}" "$n"
     fi
     for ((j = i + 1; j < ${#SK_NAME[@]}; j++)); do
-      [[ "${SK_NAME[$j]}" == "$n" ]] || continue
-      printf "installed name '%s' claimed twice: %s:%s and %s:%s\n" "$n" \
-        "${SK_SRC[$i]}" "${SK_PATH[$i]}" "${SK_SRC[$j]}" "${SK_PATH[$j]}"
+      if [[ "${SK_NAME[$j]}" == "$n" ]]; then
+        printf "installed name '%s' claimed twice: %s:%s and %s:%s\n" "$n" \
+          "${SK_SRC[$i]}" "${SK_PATH[$i]}" "${SK_SRC[$j]}" "${SK_PATH[$j]}"
+      elif [[ "${SK_SRC[$j]}" == "${SK_SRC[$i]}" && "${SK_PATH[$j]}" == "${SK_PATH[$i]}" ]]; then
+        printf "%s:%s vendored twice, as '%s' and '%s'; keep one line\n" \
+          "${SK_SRC[$i]}" "${SK_PATH[$i]}" "$n" "${SK_NAME[$j]}"
+      fi
     done
   done
 }
@@ -344,10 +355,11 @@ extract_tree() {
   git -C "$1" -c core.autocrlf=false archive --format=tar "$2" | tar -xf - -C "$3"
 }
 
-# tree_at CACHE SHA PATH — print the tree id of PATH at SHA; 1 when not a directory.
+# tree_at CACHE SHA PATH — print the tree id of PATH ('.' = root) at SHA; 1 when not a directory.
 tree_at() {
-  local id
-  id="$(git -C "$1" rev-parse --verify -q "$2:$3")" || return 1
+  local id spec="$2:$3"
+  if [[ "$3" == . ]]; then spec="$2^{tree}"; fi
+  id="$(git -C "$1" rev-parse --verify -q "$spec")" || return 1
   [[ "$(git -C "$1" cat-file -t "$id")" == tree ]] || return 1
   printf '%s' "$id"
 }
@@ -504,6 +516,9 @@ cmd_sync() {
   for b in ${incoming[@]+"${incoming[@]}"}; do
     mv "$STAGE/skills/$b" "$VENDOR/$b"
   done
+  for b in ${incoming[@]+"${incoming[@]}"}; do
+    check_not_ignored "$b"
+  done
   APPLYING=0
   if [[ -d "$VENDOR" ]]; then rmdir "$VENDOR" "$ROOT/vendor" 2>/dev/null || true; fi
 
@@ -533,6 +548,19 @@ cmd_sync() {
   fi
   if ((${#incoming[@]})); then advisory_lint "${incoming[@]}"; fi
   return 0
+}
+
+# check_not_ignored NAME — die (rolling back) when git would ignore a file in vendor/skills/NAME.
+# An upstream nested .gitignore or a global excludesFile would drop it from the commit.
+check_not_ignored() {
+  local hidden
+  if ! git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then return 0; fi
+  hidden="$(git -C "$ROOT" ls-files -oi --exclude-standard -- "vendor/skills/$1")" ||
+    die "$1: git ls-files failed — vendor/ rolled back"
+  if [[ -n "$hidden" ]]; then
+    printf '%s\n' "$hidden" | sed 's/^/    /' >&2
+    die "$1: git ignores the files above (upstream .gitignore?), so a commit would drop them — vendor/ rolled back"
+  fi
 }
 
 # advisory_lint NAME... — skill-lint findings on incoming skills; never fails sync.
