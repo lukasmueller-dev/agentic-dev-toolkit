@@ -14,6 +14,14 @@ setup() {
   # wanted it and never reaches the real machine's tools.
   STUB="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$STUB"
+  # $STUB is also the *entire* PATH the probes run with — see context_of — so
+  # it carries a symlink to each real tool the code under test shells out to,
+  # and nothing else. Teach that code to call another one and the failure
+  # lands here, which is the list that needs the extra line.
+  local t
+  for t in bash dirname git grep; do
+    ln -s "$(command -v "$t")" "$STUB/$t"
+  done
   PATH="$STUB:$PATH"
   export PATH
   # The runner's own allocation must not reach the suite: running the tests
@@ -54,8 +62,22 @@ stub_scheduler() {
   chmod +x "$STUB/${1:-sbatch}"
 }
 
+# Both probes are `command -v` lookups, and a stub directory on the front of
+# PATH can add a command but never take one away: on a machine with a real
+# nvidia-smi — or a real sbatch — `command -v` walks straight past $STUB and
+# finds it, so every "no GPU" and "no scheduler" row ends up asserting the host
+# rather than the fixture. Dropping the directory that holds it is no fix
+# either; it is /usr/bin. So the probe runs with $STUB as its whole PATH:
+# stubs still resolve, the real tools cannot, and the assertions afterwards
+# still run with the test's own PATH intact.
+#
+# This is the leak helper.bash already closes for SSH_*, TMUX and VIBE_*, in a
+# place it does not reach — the suite must not be able to see the machine it is
+# running on. CI cannot catch it, because GitHub's runners ship neither tool,
+# while a GPU workstation and a cluster login node — this skill's entire
+# audience — both hit it on the first run.
 context_of() {
-  bash -c '
+  PATH="$STUB" bash -c '
     set -euo pipefail
     . "$1/skills/_lib/research-lib.sh"
     detect_exec_context
@@ -63,7 +85,7 @@ context_of() {
 }
 
 evidence_of() {
-  bash -c '
+  PATH="$STUB" bash -c '
     set -euo pipefail
     . "$1/skills/_lib/research-lib.sh"
     exec_context_evidence
@@ -112,6 +134,10 @@ evidence_of() {
 }
 
 @test "exec context: no scheduler and no GPU is a CPU-only workstation" {
+  # The row that can only be asserted by taking tools away rather than adding
+  # them, and the one that caught the leak: a workstation with the NVIDIA
+  # driver package but no working driver answers "listed no device" here, not
+  # "not installed", and every other row on such a machine shifts with it.
   [ "$(context_of)" = workstation ]
   run evidence_of
   [ "$status" -eq 0 ]
@@ -161,8 +187,11 @@ evidence_of() {
 }
 
 @test "env.sh detect: prints the verdict and its evidence, and runs nothing" {
+  # Same hermetic PATH as context_of, for the same reason: this asserts
+  # `workstation`, which is a claim about there being no scheduler, and a
+  # cluster login node is a place someone will plausibly run this suite.
   stub_gpu 1
-  run bash "$ENV_SH" detect
+  run env PATH="$STUB" bash "$ENV_SH" detect
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '^context: workstation$'
   echo "$output" | grep -q '^GPU: nvidia-smi lists 1 device'
