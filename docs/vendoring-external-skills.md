@@ -35,12 +35,14 @@ After a sync that adds or removes a skill: `./install.sh skills`.
 
 ```
 # source <name> <git-url> <ref>
-# skill  <source> <path-in-repo>
+# skill  <source> <path-in-repo> [<name>]
 source mattpocock https://github.com/mattpocock/skills main
 skill  mattpocock skills/productivity/grilling
+skill  jt-proofreading . proofread
 ```
 
-- Installed name = basename of the path.
+- Installed name = `<name>`, else basename of the path.
+- `.` = the repo root (a repo that is one skill); `<name>` is then required.
 - A `source` must appear above its `skill` lines.
 - `ref` is what `update` chases; the lock is what gets installed.
 
@@ -59,13 +61,15 @@ skill  <source> <path> <installed-name> <tree-sha>
 
 | Message | Fix |
 | --- | --- |
-| `installed name 'x' claimed twice` | Two skill lines share a basename; drop one |
+| `installed name 'x' claimed twice` | Two skill lines share an installed name; rename or drop one |
+| `<src>:<path> vendored twice` | One upstream path under two names; keep one line |
 | `collides with local skills/x` | Local wins; drop the skill line |
 | `no directory '<path>' at <sha>` | Fix the path, or `plug update <src>` |
 | `cannot fetch <url>` | Network or auth; a locked SHA already in the cache still syncs offline |
 | `does not hash to <tree>` | Upstream `export-ignore`/`export-subst` attributes; copy the skill into `skills/` as a local skill and drop its line |
 | `contains a symlink or submodule` | Refused: a link can point at `~/.ssh`; same fix as above |
 | `lock edited by hand?` | Lock tree ≠ upstream at the pinned SHA; `plug update <src>` |
+| `git ignores the files above` | Upstream nested `.gitignore` or your global excludes hide a shipped file; a commit would drop it. Sync is rolled back; copy the skill into `skills/` instead |
 
 ## Install and plugin paths
 
@@ -83,14 +87,17 @@ skill  <source> <path> <installed-name> <tree-sha>
 
 ## What may be vendored
 
-Inert instruction text only: files an agent reads, executing nothing.
+Skills only. A skill may bundle scripts the agent runs on demand; nothing may run automatically (no hooks, settings, install steps).
 
 | Content | Verdict |
 | --- | --- |
-| Skills | v1 (this) |
+| Skills, incl. on-demand scripts | yes |
 | Agents, slash commands, output styles | v2 candidate: needs per-file links under `~/.claude/agents/` |
 | Hooks, settings, permission baselines | never: adopt by hand into `claude/` |
 | CLIs, orchestrators, Claude Code plugin bundles | never: package manager or native marketplace |
+
+Gate: run the `security-sweep` agent over the tree on first add and over the `git diff` of every `plug update`, before committing.
+Dependencies a skill's scripts need are documented, never installed.
 
 Rejected: plugin marketplaces (Claude-only, unreviewed updates), git
 submodules (opaque SHA bumps), `npx skills add` (Node dependency, mixed

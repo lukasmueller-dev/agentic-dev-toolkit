@@ -22,6 +22,10 @@ the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-06: Vendored skills may bundle **on-demand scripts**, never
+  auto-run ones; each add/update passes a `security-sweep` first. See
+  `docs/vendoring-external-skills.md`; rationale in the PR for
+  `vendor-academic-writing`.
 - 2026-10-02: External skills are **vendored by copy and committed**
   (`bin/plug`, `plugins.conf`, `plugins.lock`, `vendor/skills/`), pinned by
   SHA, verified offline by tree hash in CI. See

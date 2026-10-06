@@ -395,13 +395,105 @@ std_lock() { sed -E 's/^(source [^ ]+ [0-9a-f]+) .*/\1/' "$TK/plugins.lock"; }
   [ "$status" -eq 0 ]
 }
 
+# make_root_upstream DIR — a repo that is one skill at its root, with a harmless .gitignore.
+make_root_upstream() {
+  git init -q -b main "$1"
+  mkdir -p "$1/scripts"
+  skill_md rooty >"$1/SKILL.md"
+  printf 'print(1)\n' >"$1/scripts/run.py"
+  printf '__pycache__/\n' >"$1/.gitignore"
+  git -C "$1" add -A
+  git -C "$1" commit -q -m init
+}
+
+@test "plug conf: a repo-root skill ('.' or './') vendors the whole tree under its given name" {
+  local root="$BATS_TEST_TMPDIR/rootup" p
+  make_root_upstream "$root"
+  for p in . ./; do
+    rm -rf "$TK/vendor" "$TK/plugins.lock"
+    conf "source r file://$root main" "skill r $p rooty"
+    run_clean "$PLUG" sync
+    [ -f "$TK/vendor/skills/rooty/SKILL.md" ]
+    [ -f "$TK/vendor/skills/rooty/scripts/run.py" ]
+    [ -f "$TK/vendor/skills/rooty/.gitignore" ]
+    grep -qx "skill r . rooty $(git -C "$root" rev-parse 'HEAD^{tree}')" "$TK/plugins.lock"
+    run_clean "$PLUG" sync
+    [[ "$output" == *"up to date"* ]] || false
+    run_clean "$PLUG" sync --check
+    run_clean "$PLUG" verify
+  done
+}
+
+@test "plug conf: an explicit name overrides the basename and is what collisions check" {
+  conf "source up file://$UP main" "skill up skills/alpha first"
+  run_clean "$PLUG" sync
+  [ -f "$TK/vendor/skills/first/SKILL.md" ]
+  [ ! -e "$TK/vendor/skills/alpha" ]
+  grep -q '^skill up skills/alpha first ' "$TK/plugins.lock"
+  run_clean "$PLUG" sync --check
+
+  conf "source up file://$UP main" "skill up skills/alpha" "skill up skills/beta alpha"
+  run "$PLUG" sync
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"'alpha' claimed twice"* ]] || false
+
+  conf "source up file://$UP main" "skill up skills/alpha a1" "skill up skills/alpha a2"
+  run "$PLUG" sync
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"up:skills/alpha vendored twice"* ]] || false
+  [ -f "$TK/vendor/skills/first/SKILL.md" ] # refusals leave vendor/ alone
+}
+
+@test "plug: a file git would ignore (nested .gitignore or global excludes) rolls the sync back" {
+  local root="$BATS_TEST_TMPDIR/rootup"
+  make_root_upstream "$root"
+  git init -q -b main "$TK"
+  conf "source up file://$UP main" "skill up skills/alpha"
+  run_clean "$PLUG" sync
+  local before
+  before="$(snapshot)"
+
+  # A .gitignore that hides nothing it ships passes.
+  conf "source up file://$UP main" "skill up skills/alpha" "source r file://$root main" "skill r . rooty"
+  run_clean "$PLUG" sync
+  [ -f "$TK/vendor/skills/rooty/SKILL.md" ]
+
+  # One that hides a shipped file is refused, and the whole apply is undone.
+  printf 'scripts/\n' >"$root/.gitignore"
+  git -C "$root" commit -q -am hide
+  rm -rf "$TK/vendor/skills/rooty"
+  conf "source up file://$UP main" "skill up skills/alpha"
+  "$PLUG" sync >/dev/null
+  [ "$(snapshot)" = "$before" ]
+  conf "source up file://$UP main" "skill up skills/alpha" "source r file://$root main" "skill r . rooty"
+  sed -i.bak '/^source r /d; /^skill r /d' "$TK/plugins.lock" && rm -f "$TK/plugins.lock.bak"
+  run "$PLUG" sync
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"vendor/skills/rooty/scripts/run.py"* ]] || false
+  [[ "$output" == *"git ignores the files above"* ]] || false
+  [ "$(snapshot)" = "$before" ]
+
+  # The same guard covers the machine's own excludes.
+  printf '*.md\n' >"$BATS_TEST_TMPDIR/excludes"
+  git config --global core.excludesFile "$BATS_TEST_TMPDIR/excludes"
+  rm -rf "$TK/vendor" "$TK/plugins.lock"
+  conf "source up file://$UP main" "skill up skills/alpha"
+  run "$PLUG" sync
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"vendor/skills/alpha/SKILL.md"* ]] || false
+  [ ! -e "$TK/vendor/skills/alpha" ]
+  [ ! -e "$TK/plugins.lock" ]
+}
+
 @test "plug conf: each malformed line is refused with its line number, nothing written" {
   local bad
   for bad in \
     "skill up skills/alpha|source up file://$UP main|1" \
     "source up file://$UP main|frobnicate up x|2" \
     "source up file://$UP main|skill up|2" \
-    "source up file://$UP main|skill up skills/alpha extra|2" \
+    "source up file://$UP main|skill up skills/alpha name extra|2" \
+    "source up file://$UP main|skill up .|2" \
+    "source up file://$UP main|skill up ./|2" \
     "source up file://$UP main extra|skill up skills/alpha|1" \
     "source up file://$UP main|skill up ../escape|2" \
     "source up file://$UP main|skill up /abs/alpha|2" \

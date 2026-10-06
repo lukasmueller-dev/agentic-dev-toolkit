@@ -2,5 +2,13 @@
 # source <name> <sha> <date>
 # skill <source> <path> <installed-name> <tree-sha>
 source mattpocock 24fe0ef7737efae15c87225755e9f6f5965e4888 2026-10-05
+source jt-proofreading cf2f0d716e7b98434609d2621af4e3b6acd690e2 2026-10-06
+source jt-writing-simple-style 886d9dee45fad6045a23366b4a3a3a5fa3ed4f6d 2026-10-06
+source jt-writing-assistance fcf7efe4e6b627bfb40d066bba06095373eab74b 2026-10-06
+source jt-literature-review 1d5a1b8ac43ec1879ffcfc037b290dfd5bd463e7 2026-10-06
 skill mattpocock skills/productivity/grilling grilling f0732035b8b1b60ae39454e4191caef32fa91903
 skill mattpocock skills/productivity/grill-me grill-me 3df14e2d3a89459bf300614be9247e3ce74798f8
+skill jt-proofreading . proofread 23562a566f47751dbab0a334ce0a1679a796e8ba
+skill jt-writing-simple-style . writing-simple-style 654a6590e600907ea7f48de55d1f53e9c197e1b9
+skill jt-writing-assistance . writing-assistance 08f85a025b0d80f207b245a785c10c58ee73ec4e
+skill jt-literature-review . literature-review 2b6c35a10bb2c759d46578468487f5d50b35071d
