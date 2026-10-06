@@ -26,7 +26,7 @@ install_hook() {
 
   run git -C "$r" push origin main
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blocked"* ]]
+  [[ "$output" == *"blocked"* ]] || false
 }
 
 @test "pre-push: allows pushing a topic branch" {
@@ -64,7 +64,7 @@ install_hook() {
   git -C "$work" commit -q -am more
   run git -C "$work" push origin trunk
   [ "$status" -ne 0 ]
-  [[ "$output" == *"blocked"* ]]
+  [[ "$output" == *"blocked"* ]] || false
 
   # a topic branch on the same repo still pushes
   git -C "$work" checkout -q -b topic

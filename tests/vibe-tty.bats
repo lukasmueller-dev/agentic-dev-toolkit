@@ -81,7 +81,7 @@ EOF
     python3 "$REPO_ROOT/tests/pty-run.py" \
     bash -c '"$VIBE" start "no tty" </dev/null'
   [ "$status" -eq 0 ]
-  [[ "$output" != *$'\033[6n'* ]]
+  [[ "$output" != *$'\033[6n'* ]] || false
 }
 
 @test "tty: a stale colour answer lands on nobody's prompt" {
@@ -104,6 +104,6 @@ EOF
       "$VIBE" start "stale answer"
       sleep 1'
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$ATTACH_MARKER"* ]] # the attach really did happen
-  [[ "$output" != *"rgb:"* ]]
+  [[ "$output" == *"$ATTACH_MARKER"* ]] || false # the attach really did happen
+  [[ "$output" != *"rgb:"* ]] || false
 }

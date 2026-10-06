@@ -40,7 +40,7 @@ SCAFFOLD="$REPO_ROOT/skills/project-status-scaffold/scaffold.sh"
   before="$(cat PROJECT_STATUS.md PROJECT_ROADMAP.md HANDOFF.md)"
   run bash "$SCAFFOLD"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PROJECT_ROADMAP.md already exists"* ]]
+  [[ "$output" == *"PROJECT_ROADMAP.md already exists"* ]] || false
   [ "$(cat PROJECT_STATUS.md PROJECT_ROADMAP.md HANDOFF.md)" = "$before" ]
 }
 
@@ -71,5 +71,5 @@ SCAFFOLD="$REPO_ROOT/skills/project-status-scaffold/scaffold.sh"
   cd "$BATS_TEST_TMPDIR/norepo"
   run bash "$SCAFFOLD"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not inside a git repository"* ]]
+  [[ "$output" == *"not inside a git repository"* ]] || false
 }

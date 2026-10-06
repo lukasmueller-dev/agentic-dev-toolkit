@@ -12,7 +12,15 @@ bats_require_minimum_version 1.5.0
 
 load helper
 
-setup() { git_env; }
+setup() {
+  git_env
+  # Where vibe puts task worktrees, resolved physically. 'vibe status --json'
+  # prints paths as git resolves them (pwd -P), and macOS hands bats a
+  # $BATS_TEST_TMPDIR that is a symlink (/var/folders -> /private/var), so a
+  # per-task path built from the raw variable never matches the document.
+  mkdir -p "$BATS_TEST_TMPDIR/worktrees"
+  WT_ROOT="$(cd "$BATS_TEST_TMPDIR/worktrees" && pwd -P)"
+}
 
 # task_block PATH — the lines of the task object whose "path" is PATH, so a
 # per-task assertion cannot be satisfied by some other task in the array.
@@ -66,7 +74,7 @@ assert d["host"]["environment"] in ("local", "server"), d["host"]["environment"]
 print("ok")
 ' <<<"$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == "ok" ]]
+  [[ "$output" == "ok" ]] || false
 }
 
 @test "status --json: --all widens the scan and works from outside any repo" {
@@ -78,24 +86,24 @@ print("ok")
   cd "$BATS_TEST_TMPDIR/elsewhere"
   run run_vibe status --all --json
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"scope": "all"'* ]]
-  [[ "$output" == *"worktrees/proj/task-a"* ]]
-  [[ "$output" == *"worktrees/proj/task-b"* ]]
+  [[ "$output" == *'"scope": "all"'* ]] || false
+  [[ "$output" == *"worktrees/proj/task-a"* ]] || false
+  [[ "$output" == *"worktrees/proj/task-b"* ]] || false
 }
 
 @test "status --json: accepts the flags in either order" {
   cd "$(make_repo proj)"
   run run_vibe status --json --all
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"scope": "all"'* ]]
+  [[ "$output" == *'"scope": "all"'* ]] || false
 }
 
 @test "status --json: an unknown option still names both flags" {
   cd "$(make_repo proj)"
   run run_vibe status --bogus
   [ "$status" -eq 1 ]
-  [[ "$output" == *"--all"* ]]
-  [[ "$output" == *"--json"* ]]
+  [[ "$output" == *"--all"* ]] || false
+  [[ "$output" == *"--json"* ]] || false
 }
 
 # A machine with nothing running must still answer. If an idle host produced
@@ -108,10 +116,10 @@ print("ok")
   cd "$BATS_TEST_TMPDIR/nowhere"
   run run_vibe status --all --json
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"tasks": ['* ]]
-  [[ "$output" == *'"hostname"'* ]]
+  [[ "$output" == *'"tasks": ['* ]] || false
+  [[ "$output" == *'"hostname"'* ]] || false
   # nothing between the brackets
-  [[ "$output" == *$'"tasks": [\n  ]'* ]]
+  [[ "$output" == *$'"tasks": [\n  ]'* ]] || false
 }
 
 # The colored dot is never in the document, so a client that cannot ask "was
@@ -127,8 +135,8 @@ print("ok")
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" status --json
   [ "$status" -eq 0 ]
-  [[ "$output" == *'"tmux": false'* ]]
-  [[ "$output" == *'"tmux_session": null'* ]]
+  [[ "$output" == *'"tmux": false'* ]] || false
+  [[ "$output" == *'"tmux_session": null'* ]] || false
 }
 
 # JSON is data, never a terminal painting. Forcing color must not reach it.
@@ -140,7 +148,7 @@ print("ok")
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" status --json
   [ "$status" -eq 0 ]
-  [[ "$output" != *$'\033['* ]]
+  [[ "$output" != *$'\033['* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -149,21 +157,21 @@ print("ok")
 @test "status --json: a task with no loop state reports loop null" {
   cd "$(make_repo proj)"
   run_vibe start "task nl" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-nl"
+  local wt="$WT_ROOT/proj/task-nl"
   [ ! -f "$wt/.vibe-loop.state" ]
 
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"loop": null'* ]]
-  [[ "$block" == *'"kind": "task"'* ]]
+  [[ "$block" == *'"loop": null'* ]] || false
+  [[ "$block" == *'"kind": "task"'* ]] || false
 }
 
 @test "status --json: reports dirty, unpushed and upstream per task" {
   cd "$(make_repo proj)"
   run_vibe start "task d" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-d"
+  local wt="$WT_ROOT/proj/task-d"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   echo scratch >"$wt/x.txt"
@@ -172,19 +180,19 @@ print("ok")
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"dirty": true'* ]]
+  [[ "$block" == *'"dirty": true'* ]] || false
   # never pushed: every commit on the branch is unpushed, and there is no
   # upstream to be behind
-  [[ "$block" == *'"unpushed": 1'* ]]
-  [[ "$block" == *'"upstream": "none"'* ]]
-  [[ "$block" == *'"handoff_age"'* ]]
-  [[ "$block" != *'"handoff_age": null'* ]]
+  [[ "$block" == *'"unpushed": 1'* ]] || false
+  [[ "$block" == *'"upstream": "none"'* ]] || false
+  [[ "$block" == *'"handoff_age"'* ]] || false
+  [[ "$block" != *'"handoff_age": null'* ]] || false
 }
 
 @test "status --json: a pushed branch reports its upstream and a zero count" {
   cd "$(make_repo proj)"
   run_vibe start "task up" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-up"
+  local wt="$WT_ROOT/proj/task-up"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   git -C "$wt" push -q -u origin task-up
@@ -193,10 +201,10 @@ print("ok")
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"upstream": "ok"'* ]]
-  [[ "$block" == *'"unpushed": 0'* ]]
-  [[ "$block" == *'"behind": 0'* ]]
-  [[ "$block" == *'"dirty": false'* ]]
+  [[ "$block" == *'"upstream": "ok"'* ]] || false
+  [[ "$block" == *'"unpushed": 0'* ]] || false
+  [[ "$block" == *'"behind": 0'* ]] || false
+  [[ "$block" == *'"dirty": false'* ]] || false
 }
 
 # 'upstream gone' with nothing unpushed is a merged PR — the signal that
@@ -205,7 +213,7 @@ print("ok")
 @test "status --json: a deleted remote branch reports upstream gone and state merged" {
   cd "$(make_repo proj)"
   run_vibe start "task g" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-g"
+  local wt="$WT_ROOT/proj/task-g"
   git -C "$wt" add -A
   git -C "$wt" commit -q -m "handoff"
   git -C "$wt" push -q -u origin task-g
@@ -227,8 +235,8 @@ print("ok")
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"upstream": "gone"'* ]]
-  [[ "$block" == *'"state": "merged"'* ]]
+  [[ "$block" == *'"upstream": "gone"'* ]] || false
+  [[ "$block" == *'"state": "merged"'* ]] || false
 }
 
 # With no session for a task, 'state' is idle whatever git says — the same
@@ -240,15 +248,15 @@ print("ok")
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-i")"
-  [[ "$block" == *'"state": "idle"'* ]]
-  [[ "$block" == *'"tmux_session": null'* ]]
+  block="$(printf '%s\n' "$output" | task_block "$WT_ROOT/proj/task-i")"
+  [[ "$block" == *'"state": "idle"'* ]] || false
+  [[ "$block" == *'"tmux_session": null'* ]] || false
 }
 
 @test "status --json: a worktree whose directory is gone reports state missing" {
   cd "$(make_repo proj)"
   run_vibe start "task m" >/dev/null
-  rm -rf "$BATS_TEST_TMPDIR/worktrees/proj/task-m"
+  rm -rf "$WT_ROOT/proj/task-m"
 
   # A monitor renders this document and cannot ask a follow-up question. Judged
   # by git alone the vanished worktree is clean and in sync, so without a state
@@ -262,8 +270,8 @@ print("ok")
     "$VIBE" status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-m")"
-  [[ "$block" == *'"state": "missing"'* ]]
+  block="$(printf '%s\n' "$output" | task_block "$WT_ROOT/proj/task-m")"
+  [[ "$block" == *'"state": "missing"'* ]] || false
 }
 
 @test "status --json: a live session is named, and a dirty tree says so" {
@@ -277,9 +285,9 @@ print("ok")
     "$VIBE" status --json
   [ "$status" -eq 0 ]
   local block
-  block="$(printf '%s\n' "$output" | task_block "$BATS_TEST_TMPDIR/worktrees/proj/task-a")"
-  [[ "$block" == *'"tmux_session": "vibe-proj-task-a"'* ]]
-  [[ "$block" == *'"state": "dirty"'* ]]
+  block="$(printf '%s\n' "$output" | task_block "$WT_ROOT/proj/task-a")"
+  [[ "$block" == *'"tmux_session": "vibe-proj-task-a"'* ]] || false
+  [[ "$block" == *'"state": "dirty"'* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -288,15 +296,15 @@ print("ok")
 @test "status --json: a detached HEAD has a null branch, not a branch called HEAD" {
   cd "$(make_repo proj)"
   run_vibe start "task det" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-det"
+  local wt="$WT_ROOT/proj/task-det"
   git -C "$wt" checkout -q --detach
 
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"branch": null'* ]]
-  [[ "$block" == *'"detached": true'* ]]
+  [[ "$block" == *'"branch": null'* ]] || false
+  [[ "$block" == *'"detached": true'* ]] || false
 }
 
 @test "status --all --json: a detached HEAD is detached in the --all scan too" {
@@ -304,7 +312,7 @@ print("ok")
   # from symbolic-ref rather than from a porcelain 'detached' line.
   cd "$(make_repo proj)"
   run_vibe start "task deta" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-deta"
+  local wt="$WT_ROOT/proj/task-deta"
   git -C "$wt" checkout -q --detach
 
   mkdir -p "$BATS_TEST_TMPDIR/elsewhere"
@@ -313,8 +321,8 @@ print("ok")
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"branch": null'* ]]
-  [[ "$block" == *'"detached": true'* ]]
+  [[ "$block" == *'"branch": null'* ]] || false
+  [[ "$block" == *'"detached": true'* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -334,10 +342,10 @@ print("ok")
   local main_block stray_block
   main_block="$(printf '%s\n' "$output" | task_block "$main_phys")"
   stray_block="$(printf '%s\n' "$output" | task_block "$stray")"
-  [[ "$main_block" == *'"kind": "main"'* ]]
-  [[ "$stray_block" == *'"kind": "unmanaged"'* ]]
+  [[ "$main_block" == *'"kind": "main"'* ]] || false
+  [[ "$stray_block" == *'"kind": "unmanaged"'* ]] || false
   # the main checkout carries no handoff, which is null rather than "none"
-  [[ "$main_block" == *'"handoff_age": null'* ]]
+  [[ "$main_block" == *'"handoff_age": null'* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -356,7 +364,7 @@ write_loop_state() {
 @test "status --json: reports a loop's iteration, bound and last result" {
   cd "$(make_repo proj)"
   run_vibe start "task lp" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-lp"
+  local wt="$WT_ROOT/proj/task-lp"
   write_loop_state "$wt" \
     STATUS=maxed ITER=3 MAX=10 LAST=fail UPDATED=2026-07-30T19:02:11Z
 
@@ -364,12 +372,12 @@ write_loop_state() {
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"status": "maxed"'* ]]
+  [[ "$block" == *'"status": "maxed"'* ]] || false
   # numbers, not strings — a client should not have to parse them back
-  [[ "$block" == *'"iter": 3,'* ]]
-  [[ "$block" == *'"max": 10,'* ]]
-  [[ "$block" == *'"last": "fail"'* ]]
-  [[ "$block" == *'"updated": "2026-07-30T19:02:11Z"'* ]]
+  [[ "$block" == *'"iter": 3,'* ]] || false
+  [[ "$block" == *'"max": 10,'* ]] || false
+  [[ "$block" == *'"last": "fail"'* ]] || false
+  [[ "$block" == *'"updated": "2026-07-30T19:02:11Z"'* ]] || false
 }
 
 # A killed runner leaves STATUS=running behind with a dead PID. Reported
@@ -379,7 +387,7 @@ write_loop_state() {
 @test "status --json: a running loop with a dead runner reports interrupted" {
   cd "$(make_repo proj)"
   run_vibe start "task dead" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-dead" dead
+  local wt="$WT_ROOT/proj/task-dead" dead
   true &
   dead=$!
   wait "$dead"
@@ -389,8 +397,8 @@ write_loop_state() {
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"status": "interrupted"'* ]]
-  [[ "$block" != *'"status": "running"'* ]]
+  [[ "$block" == *'"status": "interrupted"'* ]] || false
+  [[ "$block" != *'"status": "running"'* ]] || false
 }
 
 # An empty PID is the launch window — the state file is written before tmux
@@ -398,14 +406,14 @@ write_loop_state() {
 @test "status --json: a loop with no recorded PID yet still reports running" {
   cd "$(make_repo proj)"
   run_vibe start "task young" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-young"
+  local wt="$WT_ROOT/proj/task-young"
   write_loop_state "$wt" STATUS=running PID= ITER=0 MAX=2
 
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"status": "running"'* ]]
+  [[ "$block" == *'"status": "running"'* ]] || false
 }
 
 # MAX is absent for an unbounded loop, and a hand-edited state file can hold
@@ -414,15 +422,15 @@ write_loop_state() {
 @test "status --json: a missing or non-numeric loop bound becomes null" {
   cd "$(make_repo proj)"
   run_vibe start "task nb" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-nb"
+  local wt="$WT_ROOT/proj/task-nb"
   write_loop_state "$wt" STATUS=running ITER=1 MAX=
 
   run run_vibe status --json
   [ "$status" -eq 0 ]
   local block
   block="$(printf '%s\n' "$output" | task_block "$wt")"
-  [[ "$block" == *'"max": null'* ]]
-  [[ "$block" == *'"iter": 1,'* ]]
+  [[ "$block" == *'"max": null'* ]] || false
+  [[ "$block" == *'"iter": 1,'* ]] || false
 }
 
 # LAST is free text — it can carry whatever the --until command printed. An
@@ -431,7 +439,7 @@ write_loop_state() {
   command -v python3 >/dev/null 2>&1 || skip "python3 not available"
   cd "$(make_repo proj)"
   run_vibe start "task esc" >/dev/null
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-esc"
+  local wt="$WT_ROOT/proj/task-esc"
   printf 'STATUS=stalled\nLAST=%s\n' 'he said "hi" \ then	quit' >"$wt/.vibe-loop.state"
 
   run run_vibe status --json
@@ -444,5 +452,5 @@ assert last == ["he said \"hi\" \\ then\tquit"], last
 print("ok")
 ' <<<"$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == "ok" ]]
+  [[ "$output" == "ok" ]] || false
 }

@@ -53,11 +53,11 @@ advance_main() {
   cd "$(make_repo proj)"
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=1"* ]]
-  [[ "$output" == *"ROUND_STATE=new"* ]]
-  [[ "$output" == *"BRANCH=fresh-review-1"* ]]
-  [[ "$output" == *"DEFAULT_BRANCH=main"* ]]
-  [[ "$output" == *"STATE=created"* ]]
+  [[ "$output" == *"ROUND=1"* ]] || false
+  [[ "$output" == *"ROUND_STATE=new"* ]] || false
+  [[ "$output" == *"BRANCH=fresh-review-1"* ]] || false
+  [[ "$output" == *"DEFAULT_BRANCH=main"* ]] || false
+  [[ "$output" == *"STATE=created"* ]] || false
   local f
   f="$(wt fresh-review-1)/HANDOFF.md"
   [ -f "$f" ]
@@ -73,9 +73,9 @@ advance_main() {
   advance_main
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=3"* ]]
-  [[ "$output" == *"BRANCH=fresh-review-3"* ]]
-  [[ "$output" == *"LAST_ROUND_BRANCH=fresh-review-2"* ]]
+  [[ "$output" == *"ROUND=3"* ]] || false
+  [[ "$output" == *"BRANCH=fresh-review-3"* ]] || false
+  [[ "$output" == *"LAST_ROUND_BRANCH=fresh-review-2"* ]] || false
 }
 
 @test "create: numbering survives a deleted round branch via merge subjects" {
@@ -84,7 +84,7 @@ advance_main() {
   git push -q origin main
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=4"* ]]
+  [[ "$output" == *"ROUND=4"* ]] || false
 }
 
 @test "create: a fresh-review-* branch without a number is not a round" {
@@ -94,8 +94,8 @@ advance_main() {
   git checkout -q main
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=1"* ]]
-  [[ "$output" == *"BRANCH=fresh-review-1"* ]]
+  [[ "$output" == *"ROUND=1"* ]] || false
+  [[ "$output" == *"BRANCH=fresh-review-1"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -110,8 +110,8 @@ advance_main() {
   advance_main
   run run_review create
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not merged"* ]]
-  [[ "$output" == *"fresh-review"* ]]
+  [[ "$output" == *"not merged"* ]] || false
+  [[ "$output" == *"fresh-review"* ]] || false
 }
 
 @test "create: adopts the latest round when it is staged but unmerged" {
@@ -124,9 +124,9 @@ advance_main() {
   git checkout -q main
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=2"* ]]
-  [[ "$output" == *"ROUND_STATE=existing"* ]]
-  [[ "$output" == *"STATE=existing-handoff"* ]]
+  [[ "$output" == *"ROUND=2"* ]] || false
+  [[ "$output" == *"ROUND_STATE=existing"* ]] || false
+  [[ "$output" == *"STATE=existing-handoff"* ]] || false
   grep -q "already staged" "$(wt fresh-review-2)/HANDOFF.md"
 }
 
@@ -135,9 +135,9 @@ advance_main() {
   run_review create
   run run_review create
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ROUND=1"* ]]
-  [[ "$output" == *"ROUND_STATE=existing"* ]]
-  [[ "$output" == *"STATE=existing-scaffold"* ]]
+  [[ "$output" == *"ROUND=1"* ]] || false
+  [[ "$output" == *"ROUND_STATE=existing"* ]] || false
+  [[ "$output" == *"STATE=existing-scaffold"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ advance_main() {
   run_review create
   run run_review publish fresh-review-1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"State"* ]]
+  [[ "$output" == *"State"* ]] || false
 }
 
 @test "publish: commits the finished brief and pushes with an upstream" {
@@ -157,7 +157,7 @@ advance_main() {
   finish_handoff "$(wt fresh-review-1)"
   run run_review publish fresh-review-1
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=published"* ]]
+  [[ "$output" == *"STATE=published"* ]] || false
   [ -z "$(git -C "$(wt fresh-review-1)" status --porcelain)" ]
   git -C "$(wt fresh-review-1)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline fresh-review-1 |
@@ -168,5 +168,5 @@ advance_main() {
   cd "$(make_repo proj)"
   run run_review publish some-feature
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not a review-round branch"* ]]
+  [[ "$output" == *"not a review-round branch"* ]] || false
 }

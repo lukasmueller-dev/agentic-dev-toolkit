@@ -61,7 +61,7 @@ slug() {
 
   run run_vibe "done" "task one"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"uncommitted changes"* ]]
+  [[ "$output" == *"uncommitted changes"* ]] || false
   [ -d "$BATS_TEST_TMPDIR/worktrees/proj/task-one" ]
 }
 
@@ -84,7 +84,7 @@ slug() {
 
   run run_vibe "done" "task two"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"on no remote"* ]]
+  [[ "$output" == *"on no remote"* ]] || false
   [ -d "$wt" ]
 }
 
@@ -114,8 +114,8 @@ slug() {
 
   run run_vibe "done" "task h"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"HANDOFF.md still carries content"* ]]
-  [[ "$output" == *"resume at step 3"* ]]
+  [[ "$output" == *"HANDOFF.md still carries content"* ]] || false
+  [[ "$output" == *"resume at step 3"* ]] || false
   [ -d "$wt" ]
 }
 
@@ -132,7 +132,7 @@ slug() {
 
   run run_vibe "done" "task hc"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"HANDOFF.md is still on branch"* ]]
+  [[ "$output" == *"HANDOFF.md is still on branch"* ]] || false
   [ -d "$wt" ]
 }
 
@@ -231,7 +231,7 @@ finish_task() {
   run run_vibe "done" --rm-branch task-merged
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
-  [[ "$output" == *"deleted branch 'task-merged'"* ]]
+  [[ "$output" == *"deleted branch 'task-merged'"* ]] || false
   run git show-ref --verify --quiet refs/heads/task-merged
   [ "$status" -ne 0 ]
 }
@@ -247,7 +247,7 @@ finish_task() {
   run run_vibe "done" --rm-branch task-open
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
-  [[ "$output" == *"kept"* ]]
+  [[ "$output" == *"kept"* ]] || false
   git show-ref --verify --quiet refs/heads/task-open
 }
 
@@ -266,7 +266,7 @@ finish_task() {
   run run_vibe "done" --rm-branch task-squashed
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
-  [[ "$output" == *"upstream gone"* ]]
+  [[ "$output" == *"upstream gone"* ]] || false
   run git show-ref --verify --quiet refs/heads/task-squashed
   [ "$status" -ne 0 ]
 }
@@ -342,7 +342,7 @@ EOF
   [ "$status" -eq 0 ]
   # Nothing after the kill is guaranteed to be printed, so the outcome must
   # already be on screen when the kill is announced.
-  [[ "${output#*removed worktree}" == *"killing tmux session"* ]]
+  [[ "${output#*removed worktree}" == *"killing tmux session"* ]] || false
 }
 
 @test "done: replays its outcome in the outer terminal when it ends its own session" {
@@ -376,9 +376,9 @@ EOF
   local sent
   sent="$(grep "detach-client -s vibe-proj-task-self" "$VIBE_TEST_TMUX_LOG")"
   # The outcome travels with the departing client...
-  [[ "$sent" == *"removed worktree"* ]]
+  [[ "$sent" == *"removed worktree"* ]] || false
   # ...and the kill runs from there, once the client is out.
-  [[ "$sent" == *"kill-session -t 'vibe-proj-task-self'"* ]]
+  [[ "$sent" == *"kill-session -t 'vibe-proj-task-self'"* ]] || false
   # It must stay a single line: the string is one tmux argument and one shell
   # command, and an embedded newline gives both parsers something to trip on.
   [ "$(printf '%s\n' "$sent" | wc -l)" -eq 1 ]
@@ -415,7 +415,7 @@ EOF
     "$VIBE" "done" --force "task old"
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
-  [[ "$output" == *"2.4+"* ]]
+  [[ "$output" == *"2.4+"* ]] || false
   grep -qx "kill-session -t vibe-proj-task-old" "$VIBE_TEST_TMUX_LOG"
 }
 
@@ -450,7 +450,7 @@ EOF
 
   local log
   log="$(cat "$VIBE_TEST_TMUX_LOG")"
-  [[ "${log#*kill-session -t vibe-proj-task-two}" == *"detach-client -s vibe-proj-task-one"* ]]
+  [[ "${log#*kill-session -t vibe-proj-task-two}" == *"detach-client -s vibe-proj-task-one"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -489,10 +489,10 @@ EOF
 
   run run_vibe "done" "task lost"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"already gone"* ]]
+  [[ "$output" == *"already gone"* ]] || false
   # git's own bookkeeping is the part that outlives the directory: left
   # registered, the path is neither a worktree nor available for a new one.
-  [[ "$(git worktree list)" != *"task-lost"* ]]
+  [[ "$(git worktree list)" != *"task-lost"* ]] || false
   # Non-destructive: the commits live on the branch, so the branch stays.
   git show-ref --verify --quiet refs/heads/task-lost
 }
@@ -521,8 +521,8 @@ EOF
   # A mistyped task name must not report a cleanup it never performed.
   run run_vibe "done" "task never-existed"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no worktree at"* ]]
-  [[ "$output" == *"Nothing of 'task-never-existed' is left"* ]]
+  [[ "$output" == *"no worktree at"* ]] || false
+  [[ "$output" == *"Nothing of 'task-never-existed' is left"* ]] || false
 }
 
 @test "done: a second run on an already-finished task still refuses" {
@@ -536,7 +536,7 @@ EOF
   # would report a successful cleanup.
   run run_vibe "done" task-twice
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Nothing of 'task-twice' is left"* ]]
+  [[ "$output" == *"Nothing of 'task-twice' is left"* ]] || false
 }
 
 @test "done --rm-branch: deletes the landed branch of a task whose worktree is gone" {
@@ -549,7 +549,7 @@ EOF
 
   run run_vibe "done" --rm-branch task-gone-merged
   [ "$status" -eq 0 ]
-  [[ "$output" == *"deleted branch 'task-gone-merged'"* ]]
+  [[ "$output" == *"deleted branch 'task-gone-merged'"* ]] || false
   run git show-ref --verify --quiet refs/heads/task-gone-merged
   [ "$status" -ne 0 ]
 }
@@ -564,7 +564,7 @@ EOF
   # only thing the commits are still reachable from.
   run run_vibe "done" --rm-branch task-gone-open
   [ "$status" -eq 0 ]
-  [[ "$output" == *"kept"* ]]
+  [[ "$output" == *"kept"* ]] || false
   git show-ref --verify --quiet refs/heads/task-gone-open
 }
 
@@ -579,7 +579,7 @@ EOF
 
   run run_vibe "done" "task husk"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"not a git worktree"* ]]
+  [[ "$output" == *"not a git worktree"* ]] || false
   [ -f "$wt/precious.txt" ]
 }
 
@@ -587,7 +587,7 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe "done" --bogus "task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"unknown option"* ]]
+  [[ "$output" == *"unknown option"* ]] || false
 }
 
 @test "done: removes multiple tasks in one call" {
@@ -610,7 +610,7 @@ EOF
 
   run run_vibe "done" task_a task_b
   [ "$status" -eq 1 ]
-  [[ "$output" == *"uncommitted changes"* ]]
+  [[ "$output" == *"uncommitted changes"* ]] || false
   [ -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
 }
@@ -626,7 +626,7 @@ EOF
 
   run run_vibe "done" task_a task_b
   [ "$status" -eq 1 ]
-  [[ "$output" != *"removed worktree $BATS_TEST_TMPDIR/worktrees/proj/task_a"* ]]
+  [[ "$output" != *"removed worktree $BATS_TEST_TMPDIR/worktrees/proj/task_a"* ]] || false
   [ -d "$BATS_TEST_TMPDIR/worktrees/proj/task_a" ]
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/task_b" ]
 }
@@ -664,8 +664,8 @@ EOF
   run run_vibe sync
   [ "$status" -eq 0 ]
   # newest commit is the code, the one before it is the handoff
-  [[ "$(git log -1 --format=%s)" == "vibe sync:"* ]]
-  [[ "$(git log -2 --format=%s | tail -1)" == "chore: handoff"* ]]
+  [[ "$(git log -1 --format=%s)" == "vibe sync:"* ]] || false
+  [[ "$(git log -2 --format=%s | tail -1)" == "chore: handoff"* ]] || false
 }
 
 @test "sync: refuses when the remote is ahead" {
@@ -680,7 +680,7 @@ EOF
   git fetch -q
   run run_vibe sync
   [ "$status" -eq 1 ]
-  [[ "$output" == *"remote is ahead"* ]]
+  [[ "$output" == *"remote is ahead"* ]] || false
 }
 
 @test "sync: refuses on genuine divergence" {
@@ -698,7 +698,7 @@ EOF
 
   run run_vibe sync
   [ "$status" -eq 1 ]
-  [[ "$output" == *"DIVERGED"* ]]
+  [[ "$output" == *"DIVERGED"* ]] || false
 }
 
 @test "resume: refuses when the working tree is dirty" {
@@ -706,7 +706,7 @@ EOF
   echo "wip" >wip.txt
   run run_vibe resume
   [ "$status" -eq 1 ]
-  [[ "$output" == *"uncommitted changes"* ]]
+  [[ "$output" == *"uncommitted changes"* ]] || false
 }
 
 @test "resume: fast-forwards when the remote is ahead" {
@@ -738,7 +738,7 @@ EOF
 
   run run_vibe resume
   [ "$status" -eq 1 ]
-  [[ "$output" == *"DIVERGED"* ]]
+  [[ "$output" == *"DIVERGED"* ]] || false
 }
 
 @test "resume: reports being ahead rather than pulling" {
@@ -748,7 +748,7 @@ EOF
   git commit -q -m "mine"
   run run_vibe resume
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ahead of remote"* ]]
+  [[ "$output" == *"ahead of remote"* ]] || false
 }
 
 @test "resume --rebase: rebases a diverged branch instead of refusing" {
@@ -766,7 +766,7 @@ EOF
 
   run run_vibe resume --rebase
   [ "$status" -eq 0 ]
-  [[ "$output" == *"rebased"* ]]
+  [[ "$output" == *"rebased"* ]] || false
   # remote work pulled in, and local work kept (replayed on top)
   [ -f theirs.txt ]
   [ -f mine.txt ]
@@ -795,10 +795,10 @@ EOF
 
   run run_vibe resume --rebase
   [ "$status" -ne 0 ]
-  [[ "$output" != *"rebased main onto remote"* ]]
+  [[ "$output" != *"rebased main onto remote"* ]] || false
   # git left the rebase in progress, conflict markers and all
   run git status
-  [[ "$output" == *"rebase in progress"* ]]
+  [[ "$output" == *"rebase in progress"* ]] || false
   git rebase --abort
 }
 
@@ -897,8 +897,8 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" start "srv headless" --no-attach
   [ "$status" -eq 0 ]
-  [[ "$output" == *"session running detached"* ]]
-  [[ "$output" == *"vibe attach srv-headless"* ]]
+  [[ "$output" == *"session running detached"* ]] || false
+  [[ "$output" == *"vibe attach srv-headless"* ]] || false
   grep -q "new-session -d -s vibe-proj-srv-headless " "$VIBE_TEST_TMUX_LOG"
   # no attach: started from a script, attaching would fail or hang the caller
   run grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
@@ -1004,10 +1004,10 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe start "det start" --no-attach
   [ "$status" -eq 0 ]
-  [[ "$output" == *"session running detached"* ]]
-  [[ "$output" == *"vibe attach det-start"* ]]
+  [[ "$output" == *"session running detached"* ]] || false
+  [[ "$output" == *"vibe attach det-start"* ]] || false
   # and the local exec path was not taken
-  [[ "$output" != *"entering worktree"* ]]
+  [[ "$output" != *"entering worktree"* ]] || false
   grep -q "new-session -d -s vibe-proj-det-start " "$VIBE_TEST_TMUX_LOG"
   # Nobody asked to attach, so nothing attaches — that is the whole flag.
   run grep -qE "attach-session|switch-client" "$VIBE_TEST_TMUX_LOG"
@@ -1046,7 +1046,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" start "no tmux start" --no-attach
   [ "$status" -eq 1 ]
-  [[ "$output" == *"needs tmux"* ]]
+  [[ "$output" == *"needs tmux"* ]] || false
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/no-tmux-start" ]
 }
 
@@ -1056,7 +1056,7 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe start sota 2026-W30
   [ "$status" -eq 1 ]
-  [[ "$output" == *"one task at a time"* ]]
+  [[ "$output" == *"one task at a time"* ]] || false
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/2026-w30" ]
   [ ! -d "$BATS_TEST_TMPDIR/worktrees/proj/sota" ]
   # the quoted form is still accepted
@@ -1076,7 +1076,7 @@ EOF
   mkdir -p "$BATS_TEST_TMPDIR/worktrees/proj"
   run run_vibe list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no tasks yet"* ]]
+  [[ "$output" == *"no tasks yet"* ]] || false
 }
 
 @test "list: prints one line per existing task" {
@@ -1085,9 +1085,9 @@ EOF
   run_vibe start "task two" >/dev/null
   run run_vibe list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"task-one"* ]]
-  [[ "$output" == *"task-two"* ]]
-  [[ "$output" != *"no tasks yet"* ]]
+  [[ "$output" == *"task-one"* ]] || false
+  [[ "$output" == *"task-two"* ]] || false
+  [[ "$output" != *"no tasks yet"* ]] || false
 }
 
 @test "list: reports no tasks before the first worktree exists" {
@@ -1096,7 +1096,7 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no tasks yet for proj"* ]]
+  [[ "$output" == *"no tasks yet for proj"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -1108,10 +1108,10 @@ EOF
   echo "scratch" >"$BATS_TEST_TMPDIR/worktrees/proj/task-s/x.txt"
   run run_vibe status
   [ "$status" -eq 0 ]
-  [[ "$output" == *"dirty"* ]]
-  [[ "$output" == *"ahead"* ]]
-  [[ "$output" == *"behind"* ]]
-  [[ "$output" == *"handoff"* ]]
+  [[ "$output" == *"dirty"* ]] || false
+  [[ "$output" == *"ahead"* ]] || false
+  [[ "$output" == *"behind"* ]] || false
+  [[ "$output" == *"handoff"* ]] || false
 }
 
 # The three upstream states a task can be in are what tells you whether it
@@ -1124,8 +1124,8 @@ EOF
   [ "$status" -eq 0 ]
   local line
   line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-nu" | tail -1)"
-  [[ "$line" == *"no upstream"* ]]
-  [[ "$line" != *"behind"* ]]
+  [[ "$line" == *"no upstream"* ]] || false
+  [[ "$line" != *"behind"* ]] || false
 }
 
 @test "status: reports a worktree whose directory is gone, instead of calling it clean" {
@@ -1140,9 +1140,9 @@ EOF
   [ "$status" -eq 0 ]
   local line
   line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-vanished" | tail -1)"
-  [[ "$line" == *"directory is gone"* ]]
-  [[ "$line" != *"clean"* ]]
-  [[ "$line" == *"vibe done"* ]]
+  [[ "$line" == *"directory is gone"* ]] || false
+  [[ "$line" != *"clean"* ]] || false
+  [[ "$line" == *"vibe done"* ]] || false
 }
 
 @test "status: reports ahead/behind once the branch tracks a remote" {
@@ -1155,9 +1155,9 @@ EOF
   [ "$status" -eq 0 ]
   local line
   line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-up" | tail -1)"
-  [[ "$line" == *"0 ahead"* ]]
-  [[ "$line" == *"0 behind"* ]]
-  [[ "$line" != *"upstream"* ]]
+  [[ "$line" == *"0 ahead"* ]] || false
+  [[ "$line" == *"0 behind"* ]] || false
+  [[ "$line" != *"upstream"* ]] || false
 }
 
 @test "status: reports a deleted remote branch as 'upstream gone'" {
@@ -1173,8 +1173,8 @@ EOF
   [ "$status" -eq 0 ]
   local line
   line="$(printf '%s\n' "$output" | grep -A1 "worktrees/proj/task-gone" | tail -1)"
-  [[ "$line" == *"upstream gone"* ]]
-  [[ "$line" != *"behind"* ]]
+  [[ "$line" == *"upstream gone"* ]] || false
+  [[ "$line" != *"behind"* ]] || false
 }
 
 @test "status --all: works from outside any git repository" {
@@ -1186,8 +1186,8 @@ EOF
   cd "$BATS_TEST_TMPDIR/elsewhere"
   run run_vibe status --all
   [ "$status" -eq 0 ]
-  [[ "$output" == *"proj/task-a"* ]]
-  [[ "$output" == *"proj/task-b"* ]]
+  [[ "$output" == *"proj/task-a"* ]] || false
+  [[ "$output" == *"proj/task-b"* ]] || false
 }
 
 @test "status: scopes tmux sessions to the current repo" {
@@ -1215,8 +1215,8 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" status
   [ "$status" -eq 0 ]
-  [[ "$output" == *"vibe-proj-task-a"* ]]
-  [[ "$output" != *"vibe-other-task-b"* ]]
+  [[ "$output" == *"vibe-proj-task-a"* ]] || false
+  [[ "$output" != *"vibe-other-task-b"* ]] || false
 }
 
 @test "status --all: shows tmux sessions from every repo" {
@@ -1243,15 +1243,15 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" status --all
   [ "$status" -eq 0 ]
-  [[ "$output" == *"vibe-proj-task-a"* ]]
-  [[ "$output" == *"vibe-other-task-b"* ]]
+  [[ "$output" == *"vibe-proj-task-a"* ]] || false
+  [[ "$output" == *"vibe-other-task-b"* ]] || false
 }
 
 @test "attach: with no task and no tasks, reports there is nothing to pick" {
   cd "$(make_repo proj)"
   run run_vibe attach
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no tasks yet"* ]]
+  [[ "$output" == *"no tasks yet"* ]] || false
 }
 
 @test "status: labels the main checkout so it is not mistaken for a task" {
@@ -1264,8 +1264,8 @@ EOF
   main_phys="$(cd "$BATS_TEST_TMPDIR/proj" && pwd -P)"
   main_line="$(printf '%s\n' "$output" | grep -F "$main_phys ")"
   task_line="$(printf '%s\n' "$output" | grep "worktrees/proj/task-one")"
-  [[ "$main_line" == *"(main checkout, not a vibe task)"* ]]
-  [[ "$task_line" != *"(main"* && "$task_line" != *"(not"* ]]
+  [[ "$main_line" == *"(main checkout, not a vibe task)"* ]] || false
+  [[ "$task_line" != *"(main"* && "$task_line" != *"(not"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -1297,8 +1297,8 @@ remote_ahead() {
   # from the main checkout; VIBE_AGENT_CMD=true makes the attach itself a no-op
   run run_vibe attach "task f"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"fast-forwarded"* ]]
-  [[ "$output" == *"1 commit"* ]]
+  [[ "$output" == *"fast-forwarded"* ]] || false
+  [[ "$output" == *"1 commit"* ]] || false
   [ -f "$wt/theirs.txt" ]
 }
 
@@ -1311,7 +1311,7 @@ remote_ahead() {
 
   run run_vibe attach "task p"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"uncommitted changes"* ]]
+  [[ "$output" == *"uncommitted changes"* ]] || false
   # pulling was unsafe, so the remote commit was not merged
   [ ! -f "$wt/theirs.txt" ]
 }
@@ -1339,7 +1339,7 @@ remote_ahead() {
 
   run run_vibe attach "task d"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"diverged"* ]]
+  [[ "$output" == *"diverged"* ]] || false
   # local work intact, remote not merged
   [ -f "$wt/mine.txt" ]
   [ ! -f "$wt/theirs.txt" ]
@@ -1349,7 +1349,7 @@ remote_ahead() {
   cd "$(make_repo proj)"
   run run_vibe attach "never-started"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no worktree"* ]]
+  [[ "$output" == *"no worktree"* ]] || false
 }
 
 # attach_tmux_stub DIR — a tmux stub whose session always exists and whose
@@ -1392,7 +1392,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" attach "task dead"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"agent not running there"* ]]
+  [[ "$output" == *"agent not running there"* ]] || false
   grep -q "send-keys -t vibe-proj-task-dead stub-agent" "$VIBE_TEST_TMUX_LOG"
   grep -q "attach-session -t vibe-proj-task-dead" "$VIBE_TEST_TMUX_LOG"
 }
@@ -1443,7 +1443,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" attach "local plain"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"entering worktree"* ]]
+  [[ "$output" == *"entering worktree"* ]] || false
   [ -f "$BATS_TEST_TMPDIR/plain-ran" ]
 }
 
@@ -1461,7 +1461,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" attach "task resume"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"resuming it"* ]]
+  [[ "$output" == *"resuming it"* ]] || false
   grep -q "send-keys -t vibe-proj-task-resume stub-agent --stub-continue" "$VIBE_TEST_TMUX_LOG"
 }
 
@@ -1551,7 +1551,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" attach "task here"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"already in this session"* ]]
+  [[ "$output" == *"already in this session"* ]] || false
   run ! grep -q "switch-client" "$VIBE_TEST_TMUX_LOG"
 }
 
@@ -1585,7 +1585,7 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe "done"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not inside a vibe worktree"* ]]
+  [[ "$output" == *"not inside a vibe worktree"* ]] || false
 }
 
 @test "done: infers the task from the cwd inside a worktree" {
@@ -1620,7 +1620,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" park
   [ "$status" -eq 0 ]
-  [[ "$output" == *"not found"* ]]
+  [[ "$output" == *"not found"* ]] || false
   # degraded, but the work was still synced
   [ "$(git rev-parse park-me)" = "$(git rev-parse origin/park-me)" ]
 }
@@ -1657,7 +1657,7 @@ EOF
   cd "$(make_repo proj)"
   run run_vibe where
   [ "$status" -eq 0 ]
-  [[ "$output" == local* ]]
+  [[ "$output" == local* ]] || false
 }
 
 @test "harness: a server-path command hits the stub tmux, not the real one" {
@@ -1674,7 +1674,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" start "tmux isolation"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"persistent tmux session"* ]]
+  [[ "$output" == *"persistent tmux session"* ]] || false
 
   # The session was created against the stub...
   grep -q "new-session -d -s vibe-proj-tmux-isolation " "$VIBE_TEST_TMUX_LOG"
@@ -1696,14 +1696,14 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" rc "some task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no-op on local"* ]]
+  [[ "$output" == *"no-op on local"* ]] || false
 }
 
 @test "rc: requires a task name" {
   cd "$(make_repo proj)"
   run run_vibe rc
   [ "$status" -eq 1 ]
-  [[ "$output" == *"usage"* ]]
+  [[ "$output" == *"usage"* ]] || false
 }
 
 @test "rc: refuses when the task has no tmux session" {
@@ -1717,7 +1717,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" rc "rc idle"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no tmux session"* ]]
+  [[ "$output" == *"no tmux session"* ]] || false
 }
 
 @test "rc: sends /rc into an idle interactive session" {
@@ -1746,7 +1746,7 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" rc "rc live"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"sending /rc"* ]]
+  [[ "$output" == *"sending /rc"* ]] || false
   grep -q "send-keys -t vibe-proj-rc-live /rc" "$VIBE_TEST_TMUX_LOG"
 }
 
@@ -1760,14 +1760,14 @@ EOF
     VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$VIBE" doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"VIBE_RC_ON_START must be 0 or 1"* ]]
+  [[ "$output" == *"VIBE_RC_ON_START must be 0 or 1"* ]] || false
 }
 
 @test "doctor: exits 0 in a healthy repo" {
   cd "$(make_repo proj)"
   run run_vibe doctor
   [ "$status" -eq 0 ]
-  [[ "$output" == *"vibe doctor"* ]]
+  [[ "$output" == *"vibe doctor"* ]] || false
 }
 
 # 'ssh <host> vibe …' fails on a machine where vibe is installed and working,
@@ -1780,10 +1780,10 @@ EOF
   [ "$status" -eq 0 ]
   local line
   line="$(printf '%s\n' "$output" | grep -F "remote ")"
-  [[ "$line" == *"ssh <host>"* ]]
-  [[ "$line" == *"/bin/vibe status --all --json"* ]]
+  [[ "$line" == *"ssh <host>"* ]] || false
+  [[ "$line" == *"/bin/vibe status --all --json"* ]] || false
   # an absolute path, not a bare command name
-  [[ "$line" != *"'vibe status"* ]]
+  [[ "$line" != *"'vibe status"* ]] || false
 }
 
 @test "doctor: fails on a config file that is not plain KEY=VALUE" {
@@ -1793,7 +1793,7 @@ EOF
   run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
     VIBE_CONFIG_FILE="$cfg" "$VIBE" doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not plain KEY=VALUE"* ]]
+  [[ "$output" == *"not plain KEY=VALUE"* ]] || false
 }
 
 @test "config: environment variable beats the config file" {
@@ -1802,8 +1802,8 @@ EOF
   printf 'VIBE_WORKTREE_ROOT=%s/from-config\n' "$BATS_TEST_TMPDIR" >"$cfg"
   run env VIBE_CONFIG_FILE="$cfg" VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/from-env" \
     "$VIBE" doctor
-  [[ "$output" == *"from-env"* ]]
-  [[ "$output" != *"from-config"* ]]
+  [[ "$output" == *"from-env"* ]] || false
+  [[ "$output" != *"from-config"* ]] || false
 }
 
 @test "config: the config file beats the built-in default" {
@@ -1811,7 +1811,7 @@ EOF
   local cfg="$BATS_TEST_TMPDIR/config"
   printf 'VIBE_WORKTREE_ROOT=%s/from-config\n' "$BATS_TEST_TMPDIR" >"$cfg"
   run env -u VIBE_WORKTREE_ROOT VIBE_CONFIG_FILE="$cfg" "$VIBE" doctor
-  [[ "$output" == *"from-config"* ]]
+  [[ "$output" == *"from-config"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -1828,7 +1828,7 @@ EOF
   ln -s "$VIBE" "$BATS_TEST_TMPDIR/fakebin/vibe"
   run env -u TOOLKIT_TEMPLATE_DIR VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$BATS_TEST_TMPDIR/fakebin/vibe" doctor
-  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]]
+  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]] || false
 }
 
 @test "script_dir: resolves through a chain of symlinks" {
@@ -1838,5 +1838,5 @@ EOF
   ln -s "$BATS_TEST_TMPDIR/l1/vibe" "$BATS_TEST_TMPDIR/l2/vibe"
   run env -u TOOLKIT_TEMPLATE_DIR VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
     "$BATS_TEST_TMPDIR/l2/vibe" doctor
-  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]]
+  [[ "$output" == *"templates   $REPO_ROOT/templates"* ]] || false
 }

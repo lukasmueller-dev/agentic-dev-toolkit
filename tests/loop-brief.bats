@@ -38,7 +38,7 @@ finish_brief() {
   cd "$(make_repo proj)"
   run run_brief create "Doc Task" --until 'false' --max 7
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=created"* ]]
+  [[ "$output" == *"STATE=created"* ]] || false
   local f
   f="$(wt doc-task)/LOOP.md"
   [ -f "$f" ]
@@ -100,7 +100,7 @@ finish_brief() {
   echo "MY BRIEF" >"$(wt keep-task)/LOOP.md"
   run run_brief create "keep task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-brief"* ]]
+  [[ "$output" == *"STATE=existing-brief"* ]] || false
   [ "$(cat "$(wt keep-task)/LOOP.md")" = "MY BRIEF" ]
 }
 
@@ -117,7 +117,7 @@ finish_brief() {
   # this machine has neither a local 'feat' branch nor a fetched remote ref
   run run_brief create "feat"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=existing-brief"* ]]
+  [[ "$output" == *"STATE=existing-brief"* ]] || false
   grep -q "pushed brief" "$(wt feat)/LOOP.md"
   git -C "$(wt feat)" rev-parse '@{u}' >/dev/null
 }
@@ -132,7 +132,7 @@ finish_brief() {
   run run_brief create "busy task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]]
+  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ finish_brief() {
   run_brief create "raw task"
   run run_brief publish "raw task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Done when"* ]]
+  [[ "$output" == *"Done when"* ]] || false
 }
 
 @test "publish: refuses when a section heading was lost" {
@@ -154,7 +154,7 @@ finish_brief() {
   mv "$(wt broken-task)/LOOP.md.t" "$(wt broken-task)/LOOP.md"
   run run_brief publish "broken task"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"Constraints"* ]]
+  [[ "$output" == *"Constraints"* ]] || false
 }
 
 @test "publish: commits the finished brief and pushes with an upstream" {
@@ -163,7 +163,7 @@ finish_brief() {
   finish_brief "$(wt ship-task)"
   run run_brief publish "ship task"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"STATE=published"* ]]
+  [[ "$output" == *"STATE=published"* ]] || false
   [ -z "$(git -C "$(wt ship-task)" status --porcelain)" ]
   git -C "$(wt ship-task)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline ship-task | grep -q "brief 'ship-task'"
@@ -180,7 +180,7 @@ finish_brief() {
   run run_brief publish "hot task"
   kill "$live" 2>/dev/null || true
   [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]]
+  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -208,8 +208,8 @@ EOF
   grep -q "All tests in tests/ pass." "$(wt go-task)/LOOP.md"
   # and vibe found nothing to commit at start (the brief was already committed)
   run git -C "$(wt go-task)" log --oneline
-  [[ "$output" != *"vibe loop: start"* ]]
-  [[ "$output" == *"vibe loop: brief"* ]]
+  [[ "$output" != *"vibe loop: start"* ]] || false
+  [[ "$output" == *"vibe loop: brief"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
