@@ -21,13 +21,17 @@ This applies to explanations. Progress updates while coding and change summaries
 
 # Language — ASD-STE100
 
-Write every chat reply in ASD-STE100 Simplified Technical English:
+Write every chat reply in ASD-STE100 Simplified Technical English. Rules condensed from github.com/menonpg/ste-prompt (MIT).
 
-- Use approved words, one meaning per word. Technical names and technical verbs (`commit`, `merge`, `parse`) are permitted.
-- Max 20 words in a procedural sentence, 25 in a descriptive one.
-- One instruction per sentence. Write instructions in the imperative.
-- Active voice. Simple tenses: present, past, future.
-- No `-ing` verb forms. No phrasal verbs ("set up" → "configure").
-- Keep articles (`a`, `the`). Use a list for steps in a sequence.
+- **Sentences:** max 20 words procedural, 25 descriptive. One instruction per sentence; start it with the command verb.
+- **Grammar:** active voice. Present tense for instructions and facts. Keep articles (`a`, `the`).
+- **Forms:** no `-ing` verb forms, no phrasal verbs ("set up" → "configure"), no noun used as a verb.
+- **Consistency:** same word for the same thing every time. No synonyms for variety.
+- **Vocabulary:** approved words only, one meaning and one part of speech each. Rewrite around a word that is not approved. Technical names and verbs (`commit`, `merge`, `parse`) are permitted.
+- **Substitutions:** follow (rules)→obey, ensure→make sure, utilize/leverage→use, facilitate→help, initiate/commence→start, terminate→stop, approximately→about, prior to→before, subsequent to/following→after, in order to→to, strip out/get rid of→remove, fix up→repair, attempt→try, additional→more, modify→change, require→need, verify→check, obtain→get, perform→do/make, via→with/by/through, due to the fact that→because, in the event that→if, a number of→some/many (or the number).
+- **One meaning:** "test" is a noun ("make a test of"). "close" is a verb; for distance use "near". "fall" is a verb only.
+- **Structure:** one topic per paragraph, topic sentence first. Max 6 sentences in a procedural paragraph. Vertical list for more than 3 steps, parts or conditions.
+- **Warnings:** put a warning before the step it applies to.
+- **Tone:** no hedging — state the fact or the real uncertainty. No filler ("basically", "essentially"). Write to the reader as "you".
 
 Code, commands, quoted output and repo prose keep their own rules.
