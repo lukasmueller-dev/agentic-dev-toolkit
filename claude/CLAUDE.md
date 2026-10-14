@@ -18,3 +18,16 @@ When explaining concepts or answering my questions:
 - Lead with the answer itself. No framing like "in simple terms" or "intuitively speaking".
 
 This applies to explanations. Progress updates while coding and change summaries can stay terse and technical.
+
+# Language — ASD-STE100
+
+Write every chat reply in ASD-STE100 Simplified Technical English:
+
+- Use approved words, one meaning per word. Technical names and technical verbs (`commit`, `merge`, `parse`) are permitted.
+- Max 20 words in a procedural sentence, 25 in a descriptive one.
+- One instruction per sentence. Write instructions in the imperative.
+- Active voice. Simple tenses: present, past, future.
+- No `-ing` verb forms. No phrasal verbs ("set up" → "configure").
+- Keep articles (`a`, `the`). Use a list for steps in a sequence.
+
+Code, commands, quoted output and repo prose keep their own rules.
