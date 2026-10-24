@@ -76,13 +76,12 @@ file or docs, and the staged brief tells the session so.
   criteria the linter cannot check: description says what *and* when,
   body opens with boundaries, "done" defined, side-effecting skills not
   model-invocable.
-- **End-to-end lifecycle execution** *(anchors: `bin/vibe`,
-  `install.sh`)*. Execute, never just read: the full task lifecycle
-  (start → edit → sync → bounded loop with a stub agent → done, every
-  guard exercised) and the installer (install → doctor → idempotent
-  second run → uninstall) — all in throwaway environments, never the
-  real HOME, `~/.claude`, `~/bin`, or the real worktree root. A repo
-  reviewed only statically for two rounds has earned an execution pass.
+- **End-to-end lifecycle execution** *(anchor: `install.sh`)*. Execute,
+  never just read: the installer (install → doctor → idempotent second
+  run → uninstall) and every skill script (stage → publish, every guard
+  exercised) — all in throwaway environments, never the real HOME,
+  `~/.claude` or `~/bin`. A repo reviewed only statically for two rounds
+  has earned an execution pass.
 
 ## Standing rules — baked into every staged round
 

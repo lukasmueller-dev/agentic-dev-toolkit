@@ -36,7 +36,7 @@ SKILL_DIR="$(script_dir)"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
 LIB_PROG=scaffold
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
-. "$(dirname "$SKILL_DIR")/_lib/vibe-lib.sh"
+. "$(dirname "$SKILL_DIR")/_lib/lib.sh"
 
 # ---------------------------------------------------------------------------
 # Where the files go

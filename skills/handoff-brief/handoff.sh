@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # handoff.sh — stage a refined HANDOFF.md on its own task branch, ready for a
-# dedicated interactive session (vibe start / vibe attach) to pick up.
+# new session to check out and pick up.
 #
 #   handoff.sh create <task>
 #       Ensure the task's branch + worktree exist (adopting a branch that
@@ -14,7 +14,8 @@
 #                             place, never overwrite it
 #
 #   handoff.sh publish <task>
-#       Validate that the handoff was actually written, then commit and push.
+#       Validate that the handoff was actually written, commit and push, then
+#       remove the staging worktree so a new session can check the branch out.
 #
 # The refined State / Next action prose never passes through this script:
 # create renders the template, the caller edits the file, publish validates
@@ -38,7 +39,7 @@ SKILL_DIR="$(script_dir)"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
 LIB_PROG=handoff
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
-. "$(dirname "$SKILL_DIR")/_lib/vibe-lib.sh"
+. "$(dirname "$SKILL_DIR")/_lib/lib.sh"
 
 # ---------------------------------------------------------------------------
 # create
@@ -69,21 +70,19 @@ cmd_publish() {
   local task="${1:-}"
   [[ -n "$task" ]] || die "usage: handoff.sh publish <task>"
 
-  local repo branch dir f
-  repo="$(repo_name)"
+  local branch dir f
   branch="$(slug "$task")"
-  dir="$(worktree_dir "$repo" "$branch")"
+  dir="$(worktree_dir "$branch")"
   f="$dir/HANDOFF.md"
 
   [[ -d "$dir" ]] || die "no worktree for '$branch' at $dir — run: handoff.sh create '$task'"
   [[ -f "$f" ]] || die "no HANDOFF.md in $dir — run: handoff.sh create '$task'"
 
-  publish_handoff "$dir" "$branch" "vibe handoff: brief '$branch'" \
+  publish_handoff "$dir" "$branch" "handoff: brief '$branch'" \
     "push failed — resolve it by hand (never force-push a handoff)."
 
   echo "STATE=published"
   echo "BRANCH=$branch"
-  echo "WORKTREE=$dir"
 }
 
 # ---------------------------------------------------------------------------

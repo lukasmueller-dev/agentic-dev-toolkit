@@ -5,9 +5,10 @@ everything in it is installed by symlink into `$HOME`. That
 shapes every convention below: a mistake here does not fail a test suite, it
 quietly changes how every other repo behaves.
 
-For the *personal workflow* this toolkit serves — one workstation reached over
-SSH, handoffs, `vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
-every agent. This file is only about changing the toolkit itself.
+For the *personal workflow* this toolkit serves — one always-on workstation,
+one Remote Control server per repo, handoffs — see `memory/GLOBAL.md` (the
+global memory this repo installs into every agent) and
+`docs/remote-sessions.md`. This file is only about changing the toolkit itself.
 
 ## Layout contract
 
@@ -16,12 +17,9 @@ every agent. This file is only about changing the toolkit itself.
 | `bin/`        | CLIs any agent or human can run                     | No             |
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
-| `completions/`| Shell completions for `bin/` tools                  | No             |
 | `memory/`     | Global memory installed into every agent            | No             |
-| `claude/`     | Claude Code config: settings, hooks, response style | Yes             |
+| `claude/`     | Claude Code config: settings, hooks, response style, systemd unit | Yes |
 | `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |
-| `vscode/`     | VS Code settings fragments                          | Yes            |
-| `tmux/`       | tmux snippet for SSH sessions                       | Yes            |
 | `.claude-plugin/` | Claude Code plugin manifest + its hook wiring   | Yes            |
 | `vendor/`     | External skills, written only by `bin/plug`         | No             |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
@@ -149,17 +147,13 @@ Rules the installer keeps, which any change must preserve:
   meant for install destinations. A dangling link at a *mapped* path is a
   different diagnosis (`dangling`, its source is missing) and is excluded.
 
-### The two files that are merged, not symlinked
+### The file that is merged, not symlinked
 
-`vscode/*.jsonc` and `claude/settings.json` are both merged with `jq` into
-files you already have, because symlinking either one would be wrong:
-
-- **`vscode/*.jsonc`** are *fragments*. Symlinking would replace every
-  unrelated setting in your VS Code config.
-- **`claude/settings.json`** is written by Claude Code itself. `/model`
-  rewrites `model`, "yes, don't ask again" appends to `permissions.allow`, and
-  feature flags appear unprompted. As a symlink, every one of those becomes a
-  git diff in this repo and syncs to every other machine.
+`claude/settings.json` is merged with `jq` into the live file, because
+Claude Code writes that file itself. `/model` rewrites `model`, "yes, don't
+ask again" appends to `permissions.allow`, and feature flags appear
+unprompted. As a symlink, every one of those becomes a git diff in this repo
+and syncs to every other machine.
 
 So the repo holds a **baseline** — permissions, sandbox policy, hooks,
 statusLine — and the installer merges it into the live file. Two rules
@@ -196,7 +190,7 @@ one's.
 
 Every shell file must pass **shellcheck** and be formatted with
 **`shfmt -i 2 -ci`**. CI enforces both over every file `shfmt -f .` discovers,
-which is by shebang — so `bin/vibe` is covered despite having no extension.
+which is by shebang — so `bin/plug` is covered despite having no extension.
 
 Two constraints that are not optional:
 
@@ -218,8 +212,8 @@ under 3.2 the backslash survives into the output — so unset the option around
 the substitution instead, guarding both halves
 (`shopt -u patsub_replacement 2>/dev/null || true`) because 3.2 exits non-zero
 on an option it does not know. The strongest fix is to not use `${var//}` on
-untrusted values at all: `render_template` (both copies — `bin/vibe` and
-`skills/_lib/vibe-lib.sh`) renders by index-slicing for this reason. Note that
+untrusted values at all: `render_template` (`skills/_lib/lib.sh`) renders by
+index-slicing for this reason. Note that
 CI's macOS leg cannot catch the bug, only the Linux one.
 
 Both of these have already caused real bugs. The bats suite runs on macOS in
@@ -239,9 +233,9 @@ condition — `if (myfunc); then …` or `(myfunc) || failed=1` — switches
 errexit off through the *whole* subshell, not just at the call site. Every
 non-`die` failure inside then falls through to the next line, so a command
 whose failure must stop the function needs its own `|| die` when the
-function can be called this way. This produced a real false success:
-multi-task `vibe done` printed "removed worktree" and exited 0 after git
-refused the removal.
+function can be called this way. This produced a real false success: a
+command printed "removed worktree" and exited 0 after git refused the
+removal.
 
 **The `pipefail` sibling of that trap, which has bitten three times here:**
 `x="$(cmd | … | head -1)"`. `head` closes the pipe as soon as it has its line,
@@ -252,14 +246,15 @@ producer only outruns `head` once the input is bigger than a pipe buffer, and
 fixtures are small. The same shape hides in `grep -q` (exits early on match)
 and in `grep -v` (exits **1** when it filters everything out, so a
 blank-but-valid input fails). Any pipeline whose consumer can finish or fail
-early needs `|| true` on the assignment and a fallback for the empty value —
-see `loop_pr_title` and `wait_for_pane_idle` in `bin/vibe`. Where the script
+early needs `|| true` on the assignment and a fallback for the empty value.
+Where the script
 must degrade to bare bash, do it in-process instead: `frontmatter_closed` in
 `bin/skill-lint` reads the file line by line for exactly this reason.
 
 Scripts invoked through a symlink (`bin/*`, skill scripts, hooks) must resolve
 their own location by walking the symlink chain — `$0` and `$PWD` both point
-somewhere useless. Copy the `script_dir()` helper from `bin/vibe`.
+somewhere useless. Copy the `script_dir()` helper from
+`skills/handoff-brief/handoff.sh`.
 
 ## Authoring a skill
 
@@ -287,30 +282,14 @@ dependency is missing rather than failing — see `claude/hooks/README.md`.
 ## Testing
 
 `bats tests/` — everything runs in throwaway git repos and a temp `HOME` under
-`$BATS_TEST_TMPDIR`. No test may touch the real `~/.claude`, `~/bin`, or
-worktree root.
+`$BATS_TEST_TMPDIR`. No test may touch the real `~/.claude` or `~/bin`.
 
-Add a test when you add a guard. The `vibe done` guard, the installer's
+Add a test when you add a guard. The brief-publish validation, the installer's
 ownership check, and every hook's degrade-to-no-op path each have one, because
 each protects against silent data loss.
 
 **A mid-test `[[ … ]]` never fails under bats on bash 3.2** — the macOS leg
 reads it as passing. Write `[[ … ]] || false`, or use `[ … ]`.
-
-**The suite must never look like an SSH session.** `tests/helper.bash` unsets
-`SSH_*` and puts a stub `tmux` early on `PATH` — otherwise a run over SSH takes
-`detect_env`'s SSH path and every `vibe start` leaves a real tmux session, and
-a real agent, running against a worktree bats has already deleted. It also
-unsets the runner's `VIBE_*` variables and redirects `VIBE_CONFIG_FILE`, so the
-developer's own config cannot flip an assertion. A test that exercises the SSH
-path asserts against `$VIBE_TEST_TMUX_LOG`, never the live tmux server.
-
-**And it must never look like it is already inside tmux.** `$TMUX` is how
-`vibe` tells an attach from a switch-client, so a suite run from inside a tmux
-session — which is where this toolkit's own work happens — silently sends every
-SSH-path test down the switch-client branch, and whatever the attach branch
-does goes untested while still reporting green. `helper.bash` unsets it for
-that reason.
 
 **Every `[[ ]]` assertion in a test ends in `|| false`.** bash 3.2 — which
 is what bats runs under on macOS — applies neither errexit nor the ERR trap
@@ -320,11 +299,6 @@ test file could be red on macOS only at its *last* lines, with every
 assertion above them having silently passed. `tests/suite.bats` fails the
 run on any bare `[[`/`((` statement line in `tests/`; `[ ]` is a plain
 command and needs nothing.
-
-A test that needs a real terminal — the only way to reach anything gated on
-`[[ -t 0 ]]` — runs its command under `tests/pty-run.py`, which allocates a pty
-and plays the terminal, answering queries after a delay the way a real one does
-over a laggy link. It skips itself where `python3` is missing.
 
 ## Protecting main
 

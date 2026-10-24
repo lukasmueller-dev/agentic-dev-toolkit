@@ -4,8 +4,8 @@
 # started agent does not need "read HANDOFF.md" as its first prompt.
 #
 # Only fires on sources where the session's own context starts empty:
-# `startup` (a new session, e.g. `vibe start` launching the agent in a task
-# worktree) and `clear` (`/clear` resets to zero). `resume`, `compact`, and
+# `startup` (a new session in a task worktree) and `clear` (`/clear` resets
+# to zero). `resume`, `compact`, and
 # `fork` all carry forward prior conversation history that already reflects
 # the handoff's content, so re-injecting there would duplicate context
 # rather than fill a gap.
@@ -34,11 +34,8 @@ root="$(git -C "$cwd" rev-parse --show-toplevel)"
 handoff="$root/HANDOFF.md"
 [[ -f "$handoff" ]] || exit 0
 
-# Same line filter as VIBE_HANDOFF_SCAFFOLD_RE in bin/vibe, which
-# handoff_carries_content() and the 'vibe done' guard both apply — a third
-# literal copy lives in skills/_lib/vibe-lib.sh; update all three together.
-# Lockstep is by comment, not by sourcing: this hook runs on machines that may
-# not have bin/vibe on PATH, and hooks must not depend on other repo scripts.
+# Same line filter as handoff_carries_content() in skills/_lib/lib.sh; update
+# both together. Hooks must not depend on other repo scripts, so it is copied.
 grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$handoff" || exit 0
 
 content="$(cat "$handoff")"

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # review.sh — stage the brief for an independent repo-review round on its own
-# fresh-review-<n> branch, ready for a dedicated session (vibe start) to pick
-# up.
+# fresh-review-<n> branch, ready for a new session to check out and pick up.
 #
 #   review.sh create
 #       Compute the round number from existing fresh-review-* branches (and
@@ -14,8 +13,8 @@
 #       staged or an existing unfinished one was adopted.
 #
 #   review.sh publish <branch>
-#       Validate that the brief was actually written, then commit and push —
-#       the same contract as handoff-brief's publish.
+#       Validate that the brief was actually written, commit and push, then
+#       remove the staging worktree — the same contract as handoff-brief's.
 #
 # The review mission prose never passes through this script: create renders
 # the template, the caller edits the file, publish validates and ships it.
@@ -38,7 +37,7 @@ SKILL_DIR="$(script_dir)"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
 LIB_PROG=review
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
-. "$(dirname "$SKILL_DIR")/_lib/vibe-lib.sh"
+. "$(dirname "$SKILL_DIR")/_lib/lib.sh"
 
 # One review-round branch namespace, shared with the rounds staged by hand
 # before this skill existed: 'fresh-review' (round 1) and 'fresh-review-<n>'.
@@ -187,18 +186,16 @@ cmd_publish() {
   [[ -n "$(round_number "$branch")" ]] ||
     die "'$branch' is not a review-round branch — publish takes the BRANCH printed by create."
 
-  local repo dir
-  repo="$(repo_name)"
-  dir="$(worktree_dir "$repo" "$branch")"
+  local dir
+  dir="$(worktree_dir "$branch")"
   [[ -d "$dir" ]] || die "no worktree for '$branch' at $dir — run: review.sh create"
   [[ -f "$dir/HANDOFF.md" ]] || die "no HANDOFF.md in $dir — run: review.sh create"
 
-  publish_handoff "$dir" "$branch" "vibe handoff: brief '$branch'" \
+  publish_handoff "$dir" "$branch" "handoff: brief '$branch'" \
     "push failed — resolve it by hand (never force-push a staged round)."
 
   echo "STATE=published"
   echo "BRANCH=$branch"
-  echo "WORKTREE=$dir"
 }
 
 # ---------------------------------------------------------------------------

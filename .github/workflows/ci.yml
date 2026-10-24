@@ -41,7 +41,7 @@ jobs:
           shfmt --version
 
       # Every shell file in the repo, found by extension AND by shebang, so a
-      # script added without a .sh suffix (bin/vibe) still gets checked.
+      # script added without a .sh suffix (bin/plug) still gets checked.
       # vendor/ is skipped via .editorconfig `ignore = true` (shfmt -f and -d both honour it).
       - name: Collect shell files
         id: collect
@@ -55,11 +55,6 @@ jobs:
 
       - name: shellcheck
         run: shfmt -f . | xargs -r shellcheck
-
-      # Completions are sourced, not executed, and have no shebang, so shfmt -f
-      # does not list them. They still have to be valid.
-      - name: shellcheck completions
-        run: shellcheck -s bash completions/vibe.bash
 
       - name: shfmt (check formatting)
         run: shfmt -d -i 2 -ci .
@@ -148,15 +143,6 @@ jobs:
       - name: plugin manifest and hook config are valid JSON
         run: jq empty .claude-plugin/plugin.json .claude-plugin/hooks.json
 
-      - name: VS Code snippets parse once comments are stripped
-        run: |
-          for f in vscode/*.jsonc; do
-            sed 's|^[[:space:]]*//.*$||' "$f" | jq empty || {
-              echo "::error file=$f::not valid JSON after stripping comments"
-              exit 1
-            }
-          done
-
       # The single source of truth for the mechanical skill rules is
       # bin/skill-lint; CI just runs it. --strict so a warning fails the build
       # on this repo's own skills. Bundled-script correctness is already
@@ -235,15 +221,13 @@ jobs:
               exit 1
             }
           done
-          # 'vibe' unanchored on purpose: \bvibe\b misses $VIBE_WORKTREE_ROOT
-          # (underscore is a word character, so \b never fires there). Agent
-          # CLI names are part of the same rule — a template saying "ask
-          # claude to review" is coupled just as surely as one naming vibe.
+          # Agent CLI names count: a template saying "ask claude to review"
+          # is coupled to that agent.
           # 'mac' carries an explicit (os|book)? rather than a bare \bmac\b:
           # O and B are word characters, so \b never fires after "mac" in
           # "macOS" or "MacBook" — the two spellings a real violation uses.
           # Left anchored either side, so "machine" and "macro" still pass.
-          if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
+          if grep -rniE 'claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
             templates/HANDOFF.md templates/PROJECT_STATUS.md \
             templates/PROJECT_ROADMAP.md templates/codebase templates/research; then
             echo "::error::templates must not name a specific tool or machine"
@@ -252,11 +236,10 @@ jobs:
 
       - name: no stray handoff at the repo root
         run: |
-          # HANDOFF.md is start-of-task input, not deliverable.
-          # `vibe done` refuses to finish while it is on the branch, but a
-          # PR merged without it (or with CI down) can still carry one onto
-          # main — that has happened twice (PRs #11 and #14) plus once more
-          # while Actions was disabled by billing. This is the backstop.
+          # HANDOFF.md is start-of-task input, not deliverable. A PR merged
+          # with one still on the branch carries it onto main — that has
+          # happened (PRs #11, #14, and once while Actions was disabled by
+          # billing). This is the backstop.
           for f in HANDOFF.md; do
             if [ -e "$f" ]; then
               echo "::error file=$f::stray $f at the repo root — task briefs must be dropped before merge"

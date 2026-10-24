@@ -51,8 +51,8 @@ Derive `<type>` from the change (feat, fix, chore, docs, refactor…) and `<slug
 ### 3. Handoff
 
 If this repo has a `HANDOFF.md` at its root, check whether it carries
-anything beyond the bare template scaffold — the same check `vibe done`
-uses:
+anything beyond the bare template scaffold — the same filter the
+SessionStart hook uses:
 
 ```bash
 grep -vE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' HANDOFF.md
@@ -64,10 +64,9 @@ that convention exists for, so before committing:
   about to write, or fold it in now — don't let it get lost.
 - `git rm HANDOFF.md` and include the deletion in the same commit. Delete
   it, don't blank it: a finished task hands nothing off, and an emptied
-  husk still merges onto the default branch as a stray file. `vibe done`
-  refuses while the file is on the branch at all, and CI fails a stray
-  `HANDOFF.md` at the repo root — so clearing it in place blocks the merge
-  you are opening the PR for.
+  husk still merges onto the default branch as a stray file. CI fails a
+  stray `HANDOFF.md` at the repo root — so clearing it in place blocks the
+  merge you are opening the PR for.
 
 Skipping this is what causes `HANDOFF.md` merge conflicts between parallel
 task branches: each one fully rewrites the same file with its own

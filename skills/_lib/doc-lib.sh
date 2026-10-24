@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 #
 # doc-lib.sh — seeds a document from templates/ into a target repo's docs dir; never overwrites.
-# Callers source vibe-lib.sh first (die, render_template, TEMPLATE_DIR).
+# Callers source lib.sh first (die, render_template, TEMPLATE_DIR).
 
 # docs_dir REPO — an existing doc/ or documentation/ wins; else docs/ is created.
 docs_dir() {

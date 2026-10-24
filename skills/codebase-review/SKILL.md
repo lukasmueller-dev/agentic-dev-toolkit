@@ -1,25 +1,23 @@
 ---
 name: codebase-review
-description: "Runs the next independent repo-review round by staging it and launching it: a HANDOFF.md brief on a fresh fresh-review-N branch, assembled from the skill's review-dimensions catalog, pushed, then the reviewing session started detached in its own tmux session so this conversation keeps its terminal. The round itself runs in that fresh session — never in this one, which has already read the code. Use when the user says 'run a review round', 'review this codebase', 'stage the next review', 'do a fresh-eyes review', or a review PR has merged and the next round should start. Computes the round number from existing review branches (refusing while an older round is unmerged), weights the catalog by what recent rounds covered and what changed since, and bakes in the standing review rules: rebase first, discover blind then de-duplicate, a scan-only codebase-health leg, ranked findings with failure scenarios, fixes never replacing the report."
+description: "Stages the next independent repo-review round: a HANDOFF.md brief on a fresh fresh-review-N branch, assembled from the skill's review-dimensions catalog, pushed, plus the one message that starts the round in a new session. The round itself runs in that fresh session — never in this one, which has already read the code. Use when the user says 'run a review round', 'review this codebase', 'stage the next review', 'do a fresh-eyes review', or a review PR has merged and the next round should start. Computes the round number from existing review branches (refusing while an older round is unmerged), weights the catalog by what recent rounds covered and what changed since, and bakes in the standing review rules: rebase first, discover blind then de-duplicate, a scan-only codebase-health leg, ranked findings with failure scenarios, fixes never replacing the report."
 disable-model-invocation: true
 argument-hint: "[<extra focus for this round>]"
 ---
 
 # Codebase review
 
-Run one independent review round of the current repo, by staging it and
-launching it. The artifact is `HANDOFF.md` on the round's own
-`fresh-review-<n>` branch, committed and pushed; the round is then executed
-by a *separate* session started on that branch — the review-specialised
-sibling of `handoff-brief`, sharing its staging plumbing.
+Stage one independent review round of the current repo. The artifact is
+`HANDOFF.md` on the round's own `fresh-review-<n>` branch, committed and
+pushed; the round is then executed by a *separate* session that checks out
+that branch — the review-specialised sibling of `handoff-brief`, sharing its
+staging plumbing.
 
 **Why the round runs elsewhere, and not here.** This session has read the
 code and taken part in the design conversation, so a review it performs
 itself is the same agent grading ground it already walked. The staged
-branch exists so a session with no prior context does the round, and so
-the round runs detached — surviving a disconnect, and attachable from
-another machine. Fresh context is the product; do not trade it for one
-fewer hop.
+branch exists so a session with no prior context does the round. Fresh
+context is the product; do not trade it for one fewer hop.
 
 One round per invocation: the human merge gate between rounds is
 deliberate, because a round's value depends on the owner merging the
@@ -28,13 +26,10 @@ previous review PR and deciding its open items first.
 ## Hard boundaries — never do these
 
 - **Never run the review in this session.** No dispatching reviewers, no
-  findings, no fixes. This session's deliverable is the pushed brief and a
-  started (or printed) session — the findings are the *other* session's.
-- **Never start anything before the brief is approved and pushed.** The
-  launch in Phase 5 is the last step, and only after Phase 4's approval.
-- **Never launch a session that needs a terminal.** Always
-  `vibe start <branch> --no-attach`, which returns; a bare `vibe start`
-  opens an interactive session in the terminal this one is using.
+  findings, no fixes. This session's deliverable is the pushed brief and
+  the printed start message — the findings are the *other* session's.
+- **Never print the start message before the brief is approved and
+  pushed.** Phase 5 is the last step, and only after Phase 4's approval.
 - **Never stage past an unmerged round.** `review.sh` refuses on its own —
   do not work around it by creating branches by hand.
 - **Never write HANDOFF.md from memory or a heredoc.** `review.sh create`
@@ -124,45 +119,28 @@ The two hand-staged rounds in this repo's history (`fresh-review-2`,
 Show the drafted brief as one piece and **wait for explicit approval
 before Phase 5**.
 
-## Phase 5 — Publish, then launch the round
+## Phase 5 — Publish, then hand the round over
 
 ```
 bash review.sh publish <branch>
 ```
 
-It validates the brief, commits, and pushes. If validation fails it names
-the unfinished section — fix it and retry. Do not launch anything until
-this has succeeded: a round started against an unpushed brief cannot be
-picked up from another machine.
+It validates the brief, commits, pushes, and removes the staging worktree so
+the branch is free. If validation fails it names the unfinished section —
+fix it and retry. Print nothing to start with until this has succeeded.
 
-Then start the round. One command, on every machine:
-
-```
-vibe start <branch> --no-attach
-```
-
-It creates the tmux session, launches the reviewing agent, and returns.
-`--no-attach` is what keeps this session's terminal. Report that the round
-is running and print how to reach it:
+Then print the message that starts the round, for the user to send as the
+first prompt of a new session in this repo:
 
 ```
-vibe attach <branch>    # from here or any other machine
+git switch <branch>, then begin per HANDOFF.md.
 ```
 
-**If the command fails saying `--no-attach` needs tmux**, that machine
-cannot hold a detached session. Do not retry without the flag — that would
-take over this terminal. Print the command for the user and stop:
+Close with one note: the reviewing session must merge its PR through the
+owner, and any new review dimension it discovers belongs in this skill's
+`references/review-dimensions.md` (or, for repo-specific classes, in that
+repo's own docs) — that is where review knowledge accumulates.
 
-```
-vibe start <branch>
-```
-
-Close with one note either way: the reviewing session must merge its PR
-through the owner, and any new review dimension it discovers belongs in
-this skill's `references/review-dimensions.md` (or, for repo-specific
-classes, in that repo's own docs) — that is where review knowledge
-accumulates.
-
-**Done means:** the brief is pushed, and the round is running in its own
-session — or, where tmux is missing, one printed command away. Do not follow the
-round into the review itself, and do not keep refining after approval.
+**Done means:** the brief is pushed and the start message is printed. Do not
+follow the round into the review itself, and do not keep refining after
+approval.

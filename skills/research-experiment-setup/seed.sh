@@ -21,7 +21,7 @@ LIB_DIR="$(dirname "$SKILL_DIR")/_lib"
 # shellcheck disable=SC2034  # read by the lib's die message prefix
 LIB_PROG=research-experiment-setup
 # shellcheck disable=SC1091  # paths only exist at runtime, resolved above
-. "$LIB_DIR/vibe-lib.sh"
+. "$LIB_DIR/lib.sh"
 # shellcheck disable=SC1091
 . "$LIB_DIR/doc-lib.sh"
 

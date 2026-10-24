@@ -50,8 +50,7 @@ without re-reading the whole diff to work out where things stand.
    commit/PR body with a one-liner in `PROJECT_STATUS.md`. Then delete
    `HANDOFF.md` and sync. A finished task hands nothing off — left on the
    branch, even a cleared handoff merges into the default branch as a stray
-   file, so tooling may refuse to tear the worktree down while the file is
-   still there.
+   file.
 
 ## How to create them
 
@@ -93,5 +92,5 @@ the current state, the next concrete action, and any blockers;
 `PROJECT_STATUS.md` reflects every durable change from this session;
 `PROJECT_ROADMAP.md` carries no finished items. Stop there — committing,
 pushing, and deleting a finished task's handoff belong to the task workflow
-(`git`, `vibe done`), not to this skill. Designing and adding a new
+(`git`, `commit-push-pr`), not to this skill. Designing and adding a new
 roadmap item is the `add-roadmap-item` skill's job, not this one's.

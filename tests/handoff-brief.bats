@@ -10,13 +10,9 @@ setup() { git_env; }
 
 HANDOFF="$REPO_ROOT/skills/handoff-brief/handoff.sh"
 
-run_handoff() {
-  VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    bash "$HANDOFF" "$@"
-}
+run_handoff() { bash "$HANDOFF" "$@"; }
 
-wt() { echo "$BATS_TEST_TMPDIR/worktrees/proj/$1"; }
+wt() { echo "$BATS_TEST_TMPDIR/proj/.claude/worktrees/$1"; }
 
 # finish_handoff DIR — replace the State and Next action placeholders with
 # real content, the way the model would after refinement.
@@ -135,51 +131,39 @@ finish_handoff() {
   [[ "$output" == *"Next action"* ]] || false
 }
 
-@test "publish: commits the finished handoff and pushes with an upstream" {
+@test "publish: commits the finished handoff and pushes it" {
   cd "$(make_repo proj)"
   run_handoff create "ship task"
   finish_handoff "$(wt ship-task)"
   run run_handoff publish "ship task"
   [ "$status" -eq 0 ]
   [[ "$output" == *"STATE=published"* ]] || false
-  [ -z "$(git -C "$(wt ship-task)" status --porcelain)" ]
-  git -C "$(wt ship-task)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline ship-task | grep -q "brief 'ship-task'"
+  git -C "$BATS_TEST_TMPDIR/proj.git" show ship-task:HANDOFF.md | grep -q "Write the first failing test."
 }
 
-# ---------------------------------------------------------------------------
-# fit with vibe: the published handoff is what a session picks up
-# ---------------------------------------------------------------------------
-@test "publish: vibe start adopts the worktree without reseeding the handoff" {
-  cd "$(make_repo proj)"
-  run_handoff create "go task"
-  finish_handoff "$(wt go-task)"
-  run_handoff publish "go task"
+@test "publish: removes the staging worktree so a new session can switch to the branch" {
+  local r
+  r="$(make_repo proj)"
+  cd "$r"
+  run_handoff create "free task"
+  finish_handoff "$(wt free-task)"
+  run_handoff publish "free task"
+  [ ! -d "$(wt free-task)" ]
+  git -C "$r" worktree add -q "$BATS_TEST_TMPDIR/session" -b session-x
+  git -C "$BATS_TEST_TMPDIR/session" switch -q free-task
+  grep -q "Write the first failing test." "$BATS_TEST_TMPDIR/session/HANDOFF.md"
+}
 
-  run run_vibe start "go task"
+@test "create: an untracked .claude/worktrees/ does not stop the fast-forward of main" {
+  local r other
+  r="$(make_repo proj)"
+  cd "$r"
+  run_handoff create "first task"
+  other="$(clone_repo proj other)"
+  git -C "$other" commit -q --allow-empty -m "teammate"
+  git -C "$other" push -q origin main
+  run run_handoff create "second task"
   [ "$status" -eq 0 ]
-  # the refined handoff survived — not re-seeded from the template
-  grep -q "Write the first failing test." "$(wt go-task)/HANDOFF.md"
-}
-
-@test "publish: vibe done refuses while the brief is unconsumed" {
-  cd "$(make_repo proj)"
-  run_handoff create "done task"
-  finish_handoff "$(wt done-task)"
-  run_handoff publish "done task"
-  run run_vibe "done" "done task"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"HANDOFF"* || "$output" == *"handoff"* ]] || false
-}
-
-# ---------------------------------------------------------------------------
-# config: worktree root resolution must mirror vibe (env > config > default)
-# ---------------------------------------------------------------------------
-@test "config: worktree root from the config file is honored" {
-  cd "$(make_repo proj)"
-  printf 'VIBE_WORKTREE_ROOT=%s\n' "$BATS_TEST_TMPDIR/altroot" >"$BATS_TEST_TMPDIR/config"
-  run env -u VIBE_WORKTREE_ROOT VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/config" \
-    bash "$HANDOFF" create "cfg task"
-  [ "$status" -eq 0 ]
-  [ -f "$BATS_TEST_TMPDIR/altroot/proj/cfg-task/HANDOFF.md" ]
+  [ "$(git -C "$(wt second-task)" log -1 --format=%s)" = "teammate" ]
 }
