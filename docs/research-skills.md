@@ -1,7 +1,8 @@
 # Contracts for the `research-*` skill family
 
 Contracts for skills that work in research codebases (`train.py`, a config
-tree, a cluster). Shipped today: `codebase-map` (outside the prefix, §4).
+tree, a cluster). Shipped: `research-experiment-setup`, `research-hardware-trial`, and
+`codebase-map` (outside the prefix, §4).
 Change a contract here, in the same PR, never locally in one skill.
 
 ## 1. Skills, not agents

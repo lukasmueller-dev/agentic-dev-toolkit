@@ -35,6 +35,8 @@ cd ~/git/agentic-dev-toolkit && ./install.sh
 | [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve |
 | [`codebase-review`](skills/codebase-review/) | Stages and launches an independent review round in a fresh session |
 | [`codebase-map`](skills/codebase-map/) | Maps an unfamiliar repo into `docs/CODEBASE_MAP.md`, including how to get it running |
+| [`research-experiment-setup`](skills/research-experiment-setup/) | Makes every run of a research project recorded, comparable and reported: 10 decision cards |
+| [`research-hardware-trial`](skills/research-hardware-trial/) | First hardware runs of a trained policy, through fixed safety gates |
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |

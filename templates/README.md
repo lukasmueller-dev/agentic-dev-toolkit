@@ -12,8 +12,10 @@ copy.
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
 | `codebase/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
+| `research/EXPERIMENT_SETUP.md` | `<repo>/docs/EXPERIMENT_SETUP.md` | Long — one per repo; one row per card |
+| `research/HARDWARE_TRIAL.md` | `<repo>/docs/hardware/<platform>.md` | Long — one per hardware platform |
 
-`codebase/` goes into *another* repo's `docs/`, never into this one
+`codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
 
 How the documents divide information between them — and why the handoff must
@@ -43,7 +45,8 @@ render still produces a readable file.
 | `<worktree>`  | Absolute path to the worktree root                   |
 | `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` and the brief scripts (`scaffold.sh` stays day-only) |
 | `<machine>`   | Hostname of the machine that rendered it |
-| `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/CODEBASE_MAP.md` only) |
+| `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
+| `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -72,6 +75,8 @@ tokens in.
   before a dedicated session picks the task up
 - `skills/codebase-map/map.sh` — renders `codebase/CODEBASE_MAP.md` into the
   target repo's `docs/`, and never overwrites an existing one
+- `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`
+  — render `research/` the same way, through `skills/_lib/doc-lib.sh`
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

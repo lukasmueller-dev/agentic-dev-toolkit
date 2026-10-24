@@ -12,4 +12,7 @@ _Last updated: 2026-10-24 · turing_
 One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) can be
 staged straight from it. Order matters within a track; tracks are independent.
 
-_None._
+- [ ] **Run `research-experiment-setup` on NCBF** — on the author's branch off
+      `pncbf-v2`; apply the retro to `references/cards.md` as one commit.
+      Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
+      end-state date, and the cards carry the retro commit.
