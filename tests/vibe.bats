@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# vibe: slug(), the `done` guard, and sync/resume divergence handling.
+# vibe: slug(), the `done` guard, start/attach, status, doctor.
 
 load helper
 
@@ -647,162 +647,6 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# vibe sync / resume — divergence handling
-# ---------------------------------------------------------------------------
-@test "sync: pushes a clean fast-forward" {
-  cd "$(make_repo proj)"
-  echo "change" >file.txt
-  run run_vibe sync
-  [ "$status" -eq 0 ]
-  [ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ]
-}
-
-@test "sync: commits handoff files as their own commit" {
-  cd "$(make_repo proj)"
-  echo "# Handoff" >HANDOFF.md
-  echo "code" >app.txt
-  run run_vibe sync
-  [ "$status" -eq 0 ]
-  # newest commit is the code, the one before it is the handoff
-  [[ "$(git log -1 --format=%s)" == "vibe sync:"* ]] || false
-  [[ "$(git log -2 --format=%s | tail -1)" == "chore: handoff"* ]] || false
-}
-
-@test "sync: refuses when the remote is ahead" {
-  cd "$(make_repo proj)"
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  git fetch -q
-  run run_vibe sync
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"remote is ahead"* ]] || false
-}
-
-@test "sync: refuses on genuine divergence" {
-  cd "$(make_repo proj)"
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  echo "mine" >mine.txt
-  git add -A
-  git commit -q -m "mine"
-
-  run run_vibe sync
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"DIVERGED"* ]] || false
-}
-
-@test "resume: refuses when the working tree is dirty" {
-  cd "$(make_repo proj)"
-  echo "wip" >wip.txt
-  run run_vibe resume
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"uncommitted changes"* ]] || false
-}
-
-@test "resume: fast-forwards when the remote is ahead" {
-  cd "$(make_repo proj)"
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  run run_vibe resume
-  [ "$status" -eq 0 ]
-  [ -f theirs.txt ]
-}
-
-@test "resume: refuses on genuine divergence" {
-  cd "$(make_repo proj)"
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  echo "mine" >mine.txt
-  git add -A
-  git commit -q -m "mine"
-
-  run run_vibe resume
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"DIVERGED"* ]] || false
-}
-
-@test "resume: reports being ahead rather than pulling" {
-  cd "$(make_repo proj)"
-  echo "mine" >mine.txt
-  git add -A
-  git commit -q -m "mine"
-  run run_vibe resume
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"ahead of remote"* ]] || false
-}
-
-@test "resume --rebase: rebases a diverged branch instead of refusing" {
-  cd "$(make_repo proj)"
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/theirs.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  echo "mine" >mine.txt
-  git add -A
-  git commit -q -m "mine"
-
-  run run_vibe resume --rebase
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"rebased"* ]] || false
-  # remote work pulled in, and local work kept (replayed on top)
-  [ -f theirs.txt ]
-  [ -f mine.txt ]
-}
-
-@test "resume --rebase: a conflicting rebase fails without claiming success" {
-  # Both sides edit the same line, so the rebase must stop on a conflict.
-  # What matters: non-zero exit, no "rebased" success line, and the worktree
-  # left mid-rebase for a human — never a silent half-merge reported as done.
-  cd "$(make_repo proj)"
-  echo "base" >shared.txt
-  git add -A
-  git commit -q -m "base"
-  git push -q
-
-  local other
-  other="$(clone_repo proj other)"
-  echo "theirs" >"$other/shared.txt"
-  git -C "$other" add -A
-  git -C "$other" commit -q -m "theirs"
-  git -C "$other" push -q
-
-  echo "mine" >shared.txt
-  git add -A
-  git commit -q -m "mine"
-
-  run run_vibe resume --rebase
-  [ "$status" -ne 0 ]
-  [[ "$output" != *"rebased main onto remote"* ]] || false
-  # git left the rebase in progress, conflict markers and all
-  run git status
-  [[ "$output" == *"rebase in progress"* ]] || false
-  git rebase --abort
-}
-
-# ---------------------------------------------------------------------------
 # start / templates
 # ---------------------------------------------------------------------------
 @test "start: seeds HANDOFF.md from the shared template" {
@@ -886,8 +730,7 @@ EOF
 }
 
 @test "start: --no-attach starts the tmux session and returns (server)" {
-  # Mirrors "loop: on the server a fresh loop starts detached inside tmux":
-  # the session is created against the stub tmux and never attached, so
+  # The session is created against the stub tmux and never attached, so
   # 'ssh <host> vibe start <task>' exits 0 instead of dying on the headless
   # attach after the agent is already up.
   cd "$(make_repo proj)"
@@ -999,8 +842,7 @@ EOF
 @test "start: --no-attach starts a detached tmux session locally too" {
   # --no-attach implies tmux on any machine: "start it and return" needs
   # something other than this process to hold the session, and locally there
-  # is otherwise nothing — the old refusal was what forced every caller
-  # (handoff-start, codebase-review) to branch on 'vibe where'.
+  # is otherwise nothing.
   cd "$(make_repo proj)"
   run run_vibe start "det start" --no-attach
   [ "$status" -eq 0 ]
@@ -1063,40 +905,6 @@ EOF
   run run_vibe start "sota 2026-W30"
   [ "$status" -eq 0 ]
   [ -d "$BATS_TEST_TMPDIR/worktrees/proj/sota-2026-w30" ]
-}
-
-# ---------------------------------------------------------------------------
-# list
-# ---------------------------------------------------------------------------
-@test "list: an existing but empty worktree dir lists nothing and exits 0" {
-  # The normal state after the last 'vibe done': git worktree remove leaves
-  # the per-repo parent directory behind. The old tail-position '[[ ]] &&'
-  # made cmd_list return 1 here, which set -e turned into a silent exit 1.
-  cd "$(make_repo proj)"
-  mkdir -p "$BATS_TEST_TMPDIR/worktrees/proj"
-  run run_vibe list
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no tasks yet"* ]] || false
-}
-
-@test "list: prints one line per existing task" {
-  cd "$(make_repo proj)"
-  run_vibe start "task one" >/dev/null
-  run_vibe start "task two" >/dev/null
-  run run_vibe list
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"task-one"* ]] || false
-  [[ "$output" == *"task-two"* ]] || false
-  [[ "$output" != *"no tasks yet"* ]] || false
-}
-
-@test "list: reports no tasks before the first worktree exists" {
-  # No worktree root at all — the guard before the glob, not the empty-glob
-  # path (that one has its own test above).
-  cd "$(make_repo proj)"
-  run run_vibe list
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no tasks yet for proj"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
@@ -1345,6 +1153,52 @@ remote_ahead() {
   [ ! -f "$wt/theirs.txt" ]
 }
 
+# diverged_task NAME BRANCH FILE — a pushed task whose local and remote
+# branches each gained a commit touching FILE (mine.txt vs theirs.txt unless
+# both pass the same name, which makes the rebase conflict).
+diverged_task() {
+  local name="$1" branch="$2" mine="$3" theirs="$4"
+  run_vibe start "$name"
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/$branch"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "seed handoff"
+  git -C "$wt" push -q -u origin "$branch"
+  echo "mine" >"$wt/$mine"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "mine"
+  local other
+  other="$(clone_repo proj other)"
+  git -C "$other" fetch -q origin "$branch"
+  git -C "$other" checkout -q "$branch"
+  echo "theirs" >"$other/$theirs"
+  git -C "$other" add -A
+  git -C "$other" commit -q -m "theirs"
+  git -C "$other" push -q origin "$branch"
+}
+
+@test "attach --rebase: rebases a diverged branch before attaching" {
+  cd "$(make_repo proj)"
+  diverged_task "task r" task-r mine.txt theirs.txt
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-r"
+  run run_vibe attach --rebase "task r"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rebased task-r onto remote"* ]] || false
+  [ -f "$wt/mine.txt" ]
+  [ -f "$wt/theirs.txt" ]
+}
+
+@test "attach --rebase: a conflicting rebase is reported, never claimed as done" {
+  cd "$(make_repo proj)"
+  diverged_task "task c" task-c shared.txt shared.txt
+  local wt="$BATS_TEST_TMPDIR/worktrees/proj/task-c"
+  run run_vibe attach --rebase "task c"
+  [[ "$output" == *"rebase of task-c stopped"* ]] || false
+  [[ "$output" != *"rebased task-c onto remote"* ]] || false
+  run git -C "$wt" status
+  [[ "$output" == *"rebase in progress"* ]] || false
+  git -C "$wt" rebase --abort
+}
+
 @test "attach: refuses a task with no worktree" {
   cd "$(make_repo proj)"
   run run_vibe attach "never-started"
@@ -1555,32 +1409,6 @@ EOF
   run ! grep -q "switch-client" "$VIBE_TEST_TMUX_LOG"
 }
 
-# ---------------------------------------------------------------------------
-# cwd inference — sync/done/park operate on the worktree you are standing in
-# ---------------------------------------------------------------------------
-@test "sync: infers the worktree from the cwd (no task argument)" {
-  cd "$(make_repo proj)"
-  run_vibe start "infer me"
-  cd "$BATS_TEST_TMPDIR/worktrees/proj/infer-me"
-  echo "change" >f.txt
-
-  run run_vibe sync
-  [ "$status" -eq 0 ]
-  [ "$(git rev-parse infer-me)" = "$(git rev-parse origin/infer-me)" ]
-}
-
-@test "sync: a task argument targets that worktree from the main checkout" {
-  cd "$(make_repo proj)"
-  run_vibe start "remote task"
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/remote-task"
-  echo "change" >"$wt/f.txt"
-
-  # cwd stays in the main checkout; the argument selects the worktree
-  run run_vibe sync "remote task"
-  [ "$status" -eq 0 ]
-  [ "$(git -C "$wt" rev-parse remote-task)" = "$(git -C "$wt" rev-parse origin/remote-task)" ]
-}
-
 @test "done: refuses with no task argument outside a vibe worktree" {
   cd "$(make_repo proj)"
   run run_vibe "done"
@@ -1606,58 +1434,13 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# park — refresh HANDOFF.md via the agent, then sync; degrade if agent absent
-# ---------------------------------------------------------------------------
-@test "park: warns and still syncs when the agent is missing" {
-  cd "$(make_repo proj)"
-  run_vibe start "park me"
-  cd "$BATS_TEST_TMPDIR/worktrees/proj/park-me"
-  echo "# Handoff" >HANDOFF.md
-  echo "work" >code.txt
-
-  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD="vibe-no-such-agent-xyz" \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" park
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"not found"* ]] || false
-  # degraded, but the work was still synced
-  [ "$(git rev-parse park-me)" = "$(git rev-parse origin/park-me)" ]
-}
-
-@test "park: refreshes HANDOFF.md via the headless agent, then syncs" {
-  cd "$(make_repo proj)"
-  run_vibe start "park two"
-  local wt="$BATS_TEST_TMPDIR/worktrees/proj/park-two"
-
-  # a stub agent that only writes HANDOFF.md, standing in for `claude -p`
-  local stub="$BATS_TEST_TMPDIR/stub-agent"
-  cat >"$stub" <<'EOF'
-#!/usr/bin/env bash
-printf 'refreshed by agent\n' >HANDOFF.md
-EOF
-  chmod +x "$stub"
-
-  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD="$stub" \
-    VIBE_AGENT_HEADLESS_ARGS=" " \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" park "park two"
-  [ "$status" -eq 0 ]
-  [ "$(cat "$wt/HANDOFF.md")" = "refreshed by agent" ]
-  # the refreshed handoff landed on the remote
-  git -C "$wt" cat-file -e "origin/park-two:HANDOFF.md"
-}
-
-# ---------------------------------------------------------------------------
 # Harness isolation — the suite must never touch the real tmux server, even
 # when it runs over SSH on the server itself. See tests/helper.bash.
 # ---------------------------------------------------------------------------
 @test "harness: the suite always looks local, whatever machine it runs on" {
   cd "$(make_repo proj)"
-  run run_vibe where
-  [ "$status" -eq 0 ]
-  [[ "$output" == local* ]] || false
+  run run_vibe doctor
+  [[ "$output" == *"detected    local"* ]] || false
 }
 
 @test "harness: a server-path command hits the stub tmux, not the real one" {
@@ -1684,85 +1467,6 @@ EOF
   fi
 }
 
-# ---------------------------------------------------------------------------
-# rc — Remote Control is a server concern
-# ---------------------------------------------------------------------------
-@test "rc: is a no-op on local, with an explanation" {
-  cd "$(make_repo proj)"
-  # no SSH_CONNECTION and no matching hostname => local
-  run env -u SSH_CONNECTION -u SSH_TTY \
-    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD=true \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" rc "some task"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"no-op on local"* ]] || false
-}
-
-@test "rc: requires a task name" {
-  cd "$(make_repo proj)"
-  run run_vibe rc
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"usage"* ]] || false
-}
-
-@test "rc: refuses when the task has no tmux session" {
-  # Server path against the helper's stub tmux, whose has-session always
-  # fails — exactly the "worktree exists but nothing is running" case.
-  cd "$(make_repo proj)"
-  run_vibe start "rc idle" >/dev/null
-  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
-    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD=true \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" rc "rc idle"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"no tmux session"* ]] || false
-}
-
-@test "rc: sends /rc into an idle interactive session" {
-  cd "$(make_repo proj)"
-  run_vibe start "rc live" >/dev/null
-
-  # A tmux whose session exists and whose pane shows an idle agent prompt,
-  # so wait_for_pane_idle returns immediately instead of polling for 20s.
-  local dir="$BATS_TEST_TMPDIR/tmuxbin"
-  mkdir -p "$dir"
-  cat >"$dir/tmux" <<'EOF'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >>"${VIBE_TEST_TMUX_LOG:?}"
-case "${1:-}" in
-  has-session) exit 0 ;;
-  capture-pane) printf '│ > \n' ;;
-esac
-exit 0
-EOF
-  chmod +x "$dir/tmux"
-
-  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
-    PATH="$dir:$PATH" \
-    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_AGENT_CMD=true \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" rc "rc live"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"sending /rc"* ]] || false
-  grep -q "send-keys -t vibe-proj-rc-live /rc" "$VIBE_TEST_TMUX_LOG"
-}
-
-# ---------------------------------------------------------------------------
-# doctor
-# ---------------------------------------------------------------------------
-@test "doctor: rejects a non-boolean VIBE_RC_ON_START" {
-  cd "$(make_repo proj)"
-  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_RC_ON_START=maybe \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    "$VIBE" doctor
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"VIBE_RC_ON_START must be 0 or 1"* ]] || false
-}
-
 @test "doctor: exits 0 in a healthy repo" {
   cd "$(make_repo proj)"
   run run_vibe doctor
@@ -1770,26 +1474,10 @@ EOF
   [[ "$output" == *"vibe doctor"* ]] || false
 }
 
-# 'ssh <host> vibe …' fails on a machine where vibe is installed and working,
-# because that shell sources no rc file and ~/bin is not on its PATH. Anything
-# reaching this machine remotely — a monitor polling 'status --all --json', a
-# remote 'vibe start' — hits it, so doctor spells out the absolute path.
-@test "doctor: prints an absolute path for invoking vibe over ssh" {
-  cd "$(make_repo proj)"
-  run run_vibe doctor
-  [ "$status" -eq 0 ]
-  local line
-  line="$(printf '%s\n' "$output" | grep -F "remote ")"
-  [[ "$line" == *"ssh <host>"* ]] || false
-  [[ "$line" == *"/bin/vibe status --all --json"* ]] || false
-  # an absolute path, not a bare command name
-  [[ "$line" != *"'vibe status"* ]] || false
-}
-
 @test "doctor: fails on a config file that is not plain KEY=VALUE" {
   cd "$(make_repo proj)"
   local cfg="$BATS_TEST_TMPDIR/bad-config"
-  printf 'VIBE_NTFY_TOPIC=fine\nrm -rf /tmp/nope\n' >"$cfg"
+  printf 'VIBE_TMUX_PREFIX=fine\nrm -rf /tmp/nope\n' >"$cfg"
   run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
     VIBE_CONFIG_FILE="$cfg" "$VIBE" doctor
   [ "$status" -eq 1 ]

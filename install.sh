@@ -441,7 +441,7 @@ CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 #
 # `hooks` needs a union too, and a different one. Plain `*` replaced each event
 # array wholesale, so a hook the user had configured for an event the baseline
-# also defines (Notification, PostToolUse, SessionEnd, SessionStart) was
+# also defines (today only SessionStart) was
 # dropped on every run, silently. But a plain concat is wrong in the other
 # direction: rename a script in claude/hooks/ and the stale entry would live on
 # forever, pointing at a file that no longer exists. So: keep the live entries

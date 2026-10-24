@@ -38,7 +38,7 @@ setup() {
   for f in "$REPO_ROOT"/claude/agents/*.md; do
     b="$(basename "$f")"
     [ "$b" = README.md ] && continue
-    run jq -e --arg p "./claude/agents/$b" 'any(.agents[]; . == $p)' "$MANIFEST"
+    run jq -e --arg p "./claude/agents/$b" 'any((.agents // [])[]; . == $p)' "$MANIFEST"
     [ "$status" -eq 0 ]
   done
 }
@@ -47,13 +47,13 @@ setup() {
   local p
   while IFS= read -r p; do
     [ -f "$REPO_ROOT/${p#./}" ]
-  done < <(jq -r '.agents[]' "$MANIFEST")
+  done < <(jq -r '(.agents // [])[]' "$MANIFEST")
 }
 
 @test "plugin: README.md is not shipped as an agent" {
   # It documents the directory. A directory scan would have loaded it as an
   # agent definition, which is half the reason the manifest lists files.
-  run jq -e 'any(.agents[]; test("README"))' "$MANIFEST"
+  run jq -e 'any((.agents // [])[]; test("README"))' "$MANIFEST"
   [ "$status" -ne 0 ]
 }
 
@@ -100,51 +100,16 @@ setup() {
                   | map(sub(".*/"; "")) | unique[]' "$BASELINE")
 }
 
-@test "plugin: the two hooks the plugin adds are NOT wired in the baseline" {
-  # They exist to replace things a plugin cannot do. Wiring them in the symlink
-  # install would double-inject the global memory and duplicate a guard the
-  # agent frontmatter already applies.
-  local b
-  for b in inject-global-memory.sh readonly-bash-for-reviewers.sh; do
-    run jq -e --arg b "$b" \
-      '[.hooks // {} | to_entries[].value[].hooks[].command] | any(test($b))' \
-      "$BASELINE"
-    [ "$status" -ne 0 ]
-    # and the file they name really is there
-    [ -f "$REPO_ROOT/claude/hooks/$b" ]
-  done
-}
-
-@test "plugin: the reviewer guard fires for the read-only agents, scoped or bare" {
-  local h="$REPO_ROOT/claude/hooks/readonly-bash-for-reviewers.sh" a
-  for a in diff-reviewer docs-drift security-sweep; do
-    for name in "$a" "agentic-dev-toolkit:$a"; do
-      run bash -c "printf '%s' '{\"tool_name\":\"Bash\",\"agent_type\":\"$name\",\"tool_input\":{\"command\":\"rm -rf /tmp/x\"}}' | bash '$h'"
-      [ "$status" -eq 2 ]
-    done
-  done
-}
-
-@test "plugin: the reviewer guard leaves everyone else alone" {
-  local h="$REPO_ROOT/claude/hooks/readonly-bash-for-reviewers.sh" payload
-  # test-hardener may write; the main thread has no agent_type at all; and a
-  # foreign agent whose name merely ends in one of ours must not inherit the
-  # guard — that is what the ':' anchor in the match is for.
-  for payload in \
-    '{"tool_name":"Bash","agent_type":"test-hardener","tool_input":{"command":"rm -rf /tmp/x"}}' \
-    '{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}' \
-    '{"tool_name":"Bash","agent_type":"their-docs-drift","tool_input":{"command":"rm -rf /tmp/x"}}'; do
-    run bash -c "printf '%s' '$payload' | bash '$h'"
-    [ "$status" -eq 0 ]
-  done
-}
-
-@test "plugin: the reviewer guard fails open on junk" {
-  local h="$REPO_ROOT/claude/hooks/readonly-bash-for-reviewers.sh"
-  run bash -c "printf 'not json' | bash '$h'"
-  [ "$status" -eq 0 ]
-  run bash -c "printf '' | bash '$h'"
-  [ "$status" -eq 0 ]
+@test "plugin: the hook the plugin adds is NOT wired in the baseline" {
+  # It replaces the global memory file a plugin cannot install. Wiring it in
+  # the symlink install would double-inject the global memory.
+  local b=inject-global-memory.sh
+  run jq -e --arg b "$b" \
+    '[.hooks // {} | to_entries[].value[].hooks[].command] | any(test($b))' \
+    "$BASELINE"
+  [ "$status" -ne 0 ]
+  # and the file it names really is there
+  [ -f "$REPO_ROOT/claude/hooks/$b" ]
 }
 
 @test "plugin: the memory hook injects on startup and clear only" {

@@ -93,5 +93,5 @@ the current state, the next concrete action, and any blockers;
 `PROJECT_STATUS.md` reflects every durable change from this session;
 `PROJECT_ROADMAP.md` carries no finished items. Stop there — committing,
 pushing, and deleting a finished task's handoff belong to the task workflow
-(`vibe sync` / `vibe done`), not to this skill. Designing and adding a new
+(`git`, `vibe done`), not to this skill. Designing and adding a new
 roadmap item is the `add-roadmap-item` skill's job, not this one's.

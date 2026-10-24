@@ -1,192 +1,88 @@
 # agentic-dev-toolkit
 
-Personal tooling for agentic development across as many machines as you work
-on — the one in front of you, and any you reach over SSH and want to keep
-working after you disconnect. One repo, one `install.sh`, kept in sync on every
-machine with `git pull`. Inspired by [this video](https://www.youtube.com/watch?v=trg1FRbpnys).
-
-Installed by symlink, so updating is just pulling — nothing is ever copied into
-place and left to drift.
+Personal tooling for agentic development on one workstation, reached at the
+keyboard or over SSH. Installed by symlink, so `git pull` updates it in place.
+Inspired by [this video](https://www.youtube.com/watch?v=trg1FRbpnys).
 
 ```bash
 git clone <this-repo-url> ~/git/agentic-dev-toolkit
 cd ~/git/agentic-dev-toolkit && ./install.sh
+./install.sh doctor
 ```
-
-Then `./install.sh doctor` to check it landed.
 
 ## What's in it
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One branch + worktree + tmux session per task, with `park`/`attach` handoff between machines over git — and `vibe loop` to run a task unattended. [Docs](docs/vibe.md) · [Loops](docs/vibe-loop.md) |
-| [`bin/plug`](bin/plug) | Vendors selected external skills into `vendor/skills/`, pinned by SHA in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
-| [`skills/`](skills/) | Agent Skills — portable `SKILL.md`, not Claude Code-specific |
-| [`templates/`](templates/) | The documents the tools emit — handoff, loop brief, loop PR body, project status — single source of truth for each |
-| [`claude/`](claude/) | Claude Code config: permissions, hooks, statusline, global memory |
-| [`completions/`](completions/) | zsh and bash completions for `vibe` |
-| [`vscode/`](vscode/) | Terminal profile that opens every window with `vibe status` |
-| [`tmux/`](tmux/) | tmux snippet tuned for detached agent sessions |
-| [`install.sh`](install.sh) | Install, verify and uninstall, per target |
-| [`.claude-plugin/`](.claude-plugin/) | Claude Code plugin manifest — the same skills, agents and hooks for sessions with no `$HOME` to symlink into. [Docs](docs/plugin.md) |
+| [`bin/vibe`](bin/vibe) | One branch + worktree + agent session per task; `vibe status` is the overview. [Docs](docs/vibe.md) |
+| [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
+| [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
+| [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |
+| [`templates/`](templates/) | The documents the tools emit — one copy each |
+| [`memory/GLOBAL.md`](memory/GLOBAL.md) | Global memory for every agent: where information goes, handoff discipline. [README](memory/README.md) |
+| [`claude/`](claude/) | Claude Code config: settings baseline (merged, not symlinked), `CLAUDE.md`, hooks |
+| [`.claude-plugin/`](.claude-plugin/) | The same skills and hooks as a Claude Code plugin, for sessions with no `$HOME`. [Docs](docs/plugin.md) |
+| [`completions/`](completions/), [`vscode/`](vscode/), [`tmux/`](tmux/) | `vibe` completions, a terminal profile that opens with `vibe status`, a tmux snippet |
 
 ### Skills
 
 | Skill | Does |
 | --- | --- |
-| [`project-status-scaffold`](skills/project-status-scaffold/) | Keeps `HANDOFF.md` and `PROJECT_STATUS.md` current across sessions and machines |
-| [`codebase-health`](skills/codebase-health/) | Non-behavioral health check — duplication, complexity, drifted docs — then fixes only what you approve |
-| [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first, delivered as a PR |
+| [`project-status-scaffold`](skills/project-status-scaffold/) | Keeps `HANDOFF.md`, `PROJECT_STATUS.md`, `PROJECT_ROADMAP.md` current across sessions |
+| [`add-roadmap-item`](skills/add-roadmap-item/) | Turns a discussed idea into one roadmap item: task + done-when |
+| [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch |
+| [`handoff-start`](skills/handoff-start/) | The same brief, then starts the session that picks it up |
+| [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve |
+| [`codebase-review`](skills/codebase-review/) | Stages and launches an independent review round in a fresh session |
+| [`codebase-map`](skills/codebase-map/) | Maps an unfamiliar repo into `docs/CODEBASE_MAP.md`, including how to get it running |
+| [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
-| [`loop-brief`](skills/loop-brief/) | Refines a rough idea into an unattended-loop brief on its own task branch, ready to run |
-| [`babysit-pr`](skills/babysit-pr/) | Stages an unattended-loop brief that drives a pull request to mergeable — green checks, no unresolved threads. [Docs](docs/babysit-pr.md) |
-| [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch, ready for a dedicated session |
-| [`handoff-start`](skills/handoff-start/) | The same brief, then starts the session that picks it up — detached on a server |
-| [`team-up`](skills/team-up/) | Composes a delegation plan from the subagents already installed — who owns what, in what order |
-| [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved, resolving textual and semantic conflicts |
-| [`skill-audit`](skills/skill-audit/) | Grades a repo's skills against the quality criteria in [`docs/skill-quality.md`](docs/skill-quality.md), read-only until fixes are approved |
-| [`weekly-report`](skills/weekly-report/) | Writes a week's work up as a LaTeX beamer deck, grouped into themes — the repo's history plus any extra sources the repo declares |
+| [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
 
-Skills use the open [Agent Skills](https://agentskills.io) format, so they are
-not tied to Claude Code. Start a new one from
+Vendored: `grilling`, `grill-me`, and four academic-writing skills
+([docs](docs/academic-writing.md)). New skill: copy
 [`skills/_template/`](skills/_template/SKILL.md).
-
-### Global memory
-
-[`memory/GLOBAL.md`](memory/GLOBAL.md) is the standing instruction set every
-agent gets in every repo: where each kind of information is written, the
-local/server split across machines, the handoff discipline. One file, installed
-to each agent's global instruction path — `~/.claude/global-memory.md` (imported by
-`~/.claude/CLAUDE.md`), `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`. It names
-no agent, which is what lets one file serve all three; see
-[`memory/README.md`](memory/README.md).
-
-### Claude Code config
-
-| File | Does |
-| --- | --- |
-| [`claude/settings.json`](claude/settings.json) | Baseline permissions, hook wiring, statusline — *merged* into your real settings, not symlinked |
-| [`claude/CLAUDE.md`](claude/CLAUDE.md) | Imports the global memory, then adds the Claude-only response-style rules |
-| [`claude/hooks/`](claude/hooks/) | Session-end handoff reminder, [phone notifications](docs/notifications.md), `repo · branch · task` statusline |
-| [`claude/agents/`](claude/agents/) | Global subagents: `diff-reviewer`, `test-hardener`, `docs-drift`, `security-sweep` |
-
-`codex/` and `gemini/` hold no config yet — each is a one-symlink target,
-taking the shared memory and nothing else. The layout keeps portable things at
-the top level so adding a second agent is a directory, not a rewrite.
 
 ## Installing
 
 ```bash
 ./install.sh                 # everything
-./install.sh --dry           # show what would happen, change nothing
-./install.sh bin skills      # just these targets
+./install.sh --dry           # show what would happen
+./install.sh bin skills      # targets: all bin skills claude codex gemini vscode
 ./install.sh doctor          # verify, report drift
 ./install.sh --uninstall     # remove only the symlinks this repo owns
+claude --plugin-dir ~/git/agentic-dev-toolkit   # no $HOME: load as a plugin
 ```
 
-Targets: `all` (default), `bin`, `skills`, `claude`, `codex`, `gemini`,
-`vscode`.
+- Never deletes a real file: it moves to `~/.agentic-dev-toolkit-backups/<timestamp>/`.
+- Prunes its own dangling symlinks (a renamed skill) on every run.
+- Merges `vscode/*.jsonc` and `claude/settings.json` with `jq`; your `model`,
+  `effortLevel` and permission rules stay.
 
-Adding a tool means dropping a file in `bin/`, or a directory in `skills/`.
-External skills go through `plugins.conf` and `bin/plug sync` into
-`vendor/skills/`, which the installer links too.
-The installer rebuilds its link map every run — no edits needed.
-
-It will not delete anything you own: a real file at a managed path is moved to
-`~/.agentic-dev-toolkit-backups/<timestamp>/` first, and `--uninstall` removes
-a symlink only after confirming it points back into this checkout.
-
-The one thing it does remove unasked is its own litter. Rename a skill and the
-old symlink stays behind in `~/.claude/skills`, pointing at a directory that no
-longer exists — in a directory Claude Code scans. Every run prunes symlinks
-that both point into this checkout *and* resolve to nothing, so a rename needs
-no manual cleanup on any machine. `--dry` shows them without removing, and
-`doctor` reports them.
-
-Two things are merged rather than symlinked, both with `jq` and both backed up
-first: `vscode/*.jsonc`, because those are fragments; and
-`claude/settings.json`, because Claude Code writes to that file itself — a
-symlink would turn every `/model` switch and every "don't ask again" into a
-diff in this repo. The versioned baseline covers permissions, sandbox
-policy, hooks and the statusline; your `model`, `effortLevel` and
-accumulated permission rules are left alone, and the permission and sandbox
-arrays are unioned rather than replaced.
-
-### Without a `$HOME` to install into
-
-A web session, a cloud sandbox or a throwaway container has nowhere to put
-symlinks. Load the repo as a Claude Code plugin instead:
+After installing:
 
 ```bash
-claude --plugin-dir ~/git/agentic-dev-toolkit
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc                       # ~/.bashrc under bash
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc                   # above compinit
+echo 'source-file ~/git/agentic-dev-toolkit/tmux/tmux.conf' >> ~/.tmux.conf
 ```
-
-Same skills, same subagents, same session hooks, loaded in place. Skills arrive
-namespaced (`/agentic-dev-toolkit:handoff-brief`). Two things do not travel: the
-permission and sandbox baseline, which a plugin may not set, and the statusline.
-The global memory does, through a `SessionStart` hook rather than a memory file.
-See [the plugin docs](docs/plugin.md).
-
-### After installing
-
-Put `~/bin` on your PATH:
-
-```bash
-echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc    # ~/.bashrc under bash
-```
-
-On any machine that should count as a **server** — one you reach over SSH,
-where tasks run detached in tmux — help environment detection along:
-
-```bash
-echo 'export VIBE_SERVER_HOSTNAME="$(hostname)"' >> ~/.bashrc
-```
-
-Each machine names *itself* here, so this scales to any number of them.
-
-For zsh completions, add this above `compinit` in `~/.zshrc`:
-
-```bash
-fpath=(~/.zsh/completions $fpath)
-```
-
-Optional: [phone notifications](docs/notifications.md), and
-`source-file ~/git/agentic-dev-toolkit/tmux/tmux.conf` in `~/.tmux.conf`.
 
 ## Docs
 
-- [The vibe workflow](docs/vibe.md) — tasks, machine switching, phone access,
-  configuration
-- [Phone notifications](docs/notifications.md) — ntfy.sh setup
-- [Babysitting a pull request](docs/babysit-pr.md) — staging a loop that drives
-  a PR to mergeable
-- [The SOTA watch](docs/sota-watch.md) — the weekly unattended digest this repo
-  runs on itself
-- [Vendoring external skills](docs/vendoring-external-skills.md) — `plug`,
-  `plugins.conf`, `plugins.lock`, `vendor/skills/`
-- [Academic writing skills](docs/academic-writing.md) — the vendored
-  writing skills, their requirements and known risks
-- [The Claude Code plugin](docs/plugin.md) — the second install path, for
-  sessions with no `$HOME`
-- [MCP servers](docs/mcp-servers.md) — which few to connect, and why most of
-  the popular ones are redundant here
-- [The `research-*` skill family](docs/research-skills.md) — the contracts a
-  planned family of research-codebase skills is built on
+- [vibe](docs/vibe.md) · [artifact architecture](docs/artifact-architecture.md)
+  · [skill quality](docs/skill-quality.md) · [skill-lint](docs/skill-lint.md)
+- [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
+  · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
+  · [research skills](docs/research-skills.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements
 
-`git` and `bash` are the only hard requirements. `tmux` is needed on the
-server for persistent sessions, and anywhere you use `--no-attach`, which
-detaches into tmux on any machine; `jq` for the VS Code merge and the Claude Code
-hooks; `gh` is optional, for PR info in `vibe status`. Sandboxed Bash (part
-of the settings baseline) needs `bubblewrap` and `socat` on Linux — without
-them Claude Code falls back to unsandboxed commands under the normal
-permission rules, so nothing breaks; macOS needs nothing extra.
-
-Everything is bash 3.2 compatible and works on both BSD and GNU userland, so
-the same scripts run unchanged on macOS and Linux. CI checks shellcheck,
-`shfmt`, and the bats suite on both.
+- Hard: `git`, `bash` (3.2+, BSD or GNU userland).
+- `tmux` over SSH and for `--no-attach`; `jq` for the merges and hooks; `gh`
+  (optional) for PRs in `vibe status`.
+- Sandboxed Bash on Linux: `bubblewrap` and `socat`; without them commands run
+  unsandboxed under the normal permission rules.
 
 ## License
 

@@ -118,8 +118,6 @@
       "Bash(echo:*)",
       "Bash(printf:*)",
       "Bash(vibe status:*)",
-      "Bash(vibe list:*)",
-      "Bash(vibe where:*)",
       "Bash(vibe doctor:*)",
       "Bash(vibe help)",
       "Bash(tmux ls)",
@@ -165,7 +163,6 @@
         "crates.io",
         "files.pythonhosted.org",
         "github.com",
-        "ntfy.sh",
         "proxy.golang.org",
         "pypi.org",
         "registry.npmjs.org",
@@ -188,18 +185,6 @@
     "padding": 0
   },
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/skill-lint-on-edit.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
@@ -207,28 +192,6 @@
             "type": "command",
             "command": "$HOME/.claude/hooks/session-start-handoff.sh",
             "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/session-end-handoff.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/hooks/notify-ntfy.sh",
-            "timeout": 15
           }
         ]
       }

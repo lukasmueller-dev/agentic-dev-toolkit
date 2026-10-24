@@ -40,7 +40,6 @@ else is retrievable.
 | ----- | -------------------- | --------------------------------- | ----------------------------- |
 | 0     | Chat                 | dies with the session             | you, right now                |
 | 1     | `HANDOFF.md`         | dies when the task ends           | the next session on this task |
-| 1     | `LOOP.md`            | dies when the loop's task ends    | the loop agent, every round   |
 | 1     | PR description       | read until merge, then history    | the reviewer                  |
 | 2     | Diff                 | permanent                         | anyone, forever               |
 | 2     | Commit body          | permanent (`git log` / `blame`)   | future maintainer             |
@@ -80,24 +79,9 @@ whose `HANDOFF.md` still carries content beyond its own headings — and, once
 cleared, refuses again while the file itself is still on the branch, where a
 merge would land it in the PR diff and stray it onto the default branch.
 Promote what is durable (see below), delete the file (`git rm HANDOFF.md`,
-then sync), then finish. `--discard-handoff` is the explicit override
+commit, push), then finish. `--discard-handoff` is the explicit override
 meaning "I looked; nothing in it is worth keeping — and if the file stays on
 the branch, that is deliberate."
-
-### `LOOP.md` (layer 1)
-
-The brief handed to an unattended loop's agent every round (`vibe loop`),
-plus its iteration log. Task-scoped like the handoff, with the same
-end-of-task discipline. Nothing in it can be silently
-orphaned — brief and log are committed each round — and its content (goal,
-constraints, one-line round notes) is not the kind that gets promoted. But
-the file itself is start-of-task input, not deliverable: left on the branch,
-it lands verbatim in the PR diff. So a finished task deletes it. `vibe done`
-refuses while `LOOP.md` is still on the branch; deletion is a commit
-(`git rm LOOP.md`, then sync), and `--keep-brief` is the explicit override
-meaning "I want the brief in the history." When a loop's agent learns
-something durable, the promotion paths below apply exactly as in an attended
-session.
 
 ### PR description (layer 1)
 

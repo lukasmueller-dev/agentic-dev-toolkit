@@ -1,6 +1,6 @@
 ---
 name: codebase-map
-description: Maps an unfamiliar codebase into docs/CODEBASE_MAP.md against a fixed schema — entry points, config resolution, dependency graph, how to run it, and the landmines that cost an afternoon. Use when picking up a codebase nobody in the session knows, when asked to explain, orient in, or onboard onto a repo, when asked where the data path, training loop, request lifecycle or config actually lives, and to refresh an existing map after an upstream pull. Reads and writes only its own map; never runs the expensive thing.
+description: Maps an unfamiliar codebase into docs/CODEBASE_MAP.md against a fixed schema — entry points, config resolution, dependency graph, how to run it, and the landmines that cost an afternoon. Use when picking up a codebase nobody in the session knows, when asked to explain, orient in, or onboard onto a repo, when asked where the data path, training loop, request lifecycle or config actually lives, when a research repo's install or first run fails on dependency or accelerator errors, and to refresh an existing map after an upstream pull. Reads and writes only its own map; runs at most a bounded smoke step and hands every install and real run over.
 ---
 
 # Codebase map
@@ -84,7 +84,10 @@ requires a subagent.
 4. **Dependency graph.** Only the edges that explain the structure. Note
    cycles explicitly.
 5. **How to run it.** The smallest command that proves each thing works.
-   Anything expensive is listed with its cost, per the boundary above.
+   Anything expensive is listed with its cost, per the boundary above. For a
+   `research` repo, or when an install or first run fails, follow
+   `references/first-run.md`: execution context (`bash map.sh context`),
+   environment chain, then the smallest-proof ladder.
 6. **Landmines.** Sweep deliberately for each category the template lists —
    mutable global state, runtime patching of a library, hardcoded paths,
    hosts and devices, unreachable config branches, a default that differs

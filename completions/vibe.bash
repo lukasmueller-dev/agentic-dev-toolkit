@@ -11,7 +11,7 @@
 
 _vibe_tasks() {
   # Task names are the directory names under <worktree root>/<repo>/. Derived
-  # here rather than shelling out to `vibe list` so completion stays fast and
+  # here rather than shelling out to vibe so completion stays fast and
   # works from anywhere inside the repo, including inside a worktree.
   local root repo common cfg d
   cfg="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
@@ -50,27 +50,19 @@ _vibe() {
 
   # completing the subcommand itself
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start loop attach park rc status list done sync resume where doctor help" "$cur"
+    _vibe_reply "start attach status done doctor help" "$cur"
     return
   fi
 
   case "$cmd" in
-    loop)
-      if [[ "$cur" == -* ]]; then
-        _vibe_reply "--until --max --for --prompt --push --pr --no-attach --sandbox --dangerously-allow-all" "$cur"
-      else
-        # loop usually names a new task, but resuming completes an existing one
-        _vibe_reply "$(_vibe_tasks)" "$cur"
-      fi
-      ;;
     done)
       if [[ "$cur" == -* ]]; then
-        _vibe_reply "--force --stop --discard-handoff --keep-brief --rm-branch" "$cur"
+        _vibe_reply "--force --discard-handoff --rm-branch" "$cur"
       else
         _vibe_reply "$(_vibe_tasks)" "$cur"
       fi
       ;;
-    resume)
+    attach)
       if [[ "$cur" == -* ]]; then
         _vibe_reply "--rebase" "$cur"
       else
@@ -78,13 +70,10 @@ _vibe() {
       fi
       ;;
     status)
-      [[ "$cur" == -* ]] && _vibe_reply "--all --json" "$cur"
-      ;;
-    attach | park | rc | sync)
-      _vibe_reply "$(_vibe_tasks)" "$cur"
+      [[ "$cur" == -* ]] && _vibe_reply "--all" "$cur"
       ;;
     help)
-      _vibe_reply "start loop attach park done rc status list sync resume where doctor" "$cur"
+      _vibe_reply "start attach done status doctor" "$cur"
       ;;
     start)
       # a new task name is free text, so only flags are worth suggesting

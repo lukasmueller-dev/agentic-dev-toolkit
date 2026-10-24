@@ -96,7 +96,7 @@ Skills only. A skill may bundle scripts the agent runs on demand; nothing may ru
 | Hooks, settings, permission baselines | never: adopt by hand into `claude/` |
 | CLIs, orchestrators, Claude Code plugin bundles | never: package manager or native marketplace |
 
-Gate: run the `security-sweep` agent over the tree on first add and over the `git diff` of every `plug update`, before committing.
+Gate: run a security review (built-in `/security-review`) over the tree on first add and over the `git diff` of every `plug update`, before committing.
 Dependencies a skill's scripts need are documented, never installed.
 
 Rejected: plugin marketplaces (Claude-only, unreviewed updates), git

@@ -3,7 +3,8 @@
 `bin/skill-lint` is the mechanical half of the skill quality bar: every rule it
 enforces is checkable by regex or length, with no reader's judgment. The
 judgment half — does a description say *what and when*, does a body open with
-its boundaries — belongs to the `skill-audit` skill, not here.
+its boundaries — is the [judgment checklist](#judgment-checklist) at the end
+of this file.
 
 It lives in `bin/` (not `claude/`) because `SKILL.md` is an open standard. The
 installer symlinks it into `~/bin`, so it runs in every repo, against any
@@ -69,3 +70,22 @@ Config-driven errors are tagged `(.skill-lint.conf)` in the output.
   nothing.
 - **Any other repo** can run `skill-lint` directly once the toolkit is
   installed, against its own `.claude/skills`.
+
+## Judgment checklist
+
+The **judgment** rows of [`skill-quality.md`](skill-quality.md), as questions
+to ask of each `SKILL.md`. Run `skill-lint` first; grade only what it cannot.
+Skip skill directories that are symlinks out of the repo (installed skills).
+One finding per line: `<skill>/SKILL.md — [SQxx] <problem + fix in a clause>`.
+
+| ID | Ask |
+| -- | --- |
+| SQ8 | Third-person catalog entry, beyond the `I `/`You `/`We ` openings lint catches? |
+| SQ9 | Says *what* and *when*, strongest trigger first? |
+| SQ10–SQ12 | Opens with boundaries, numbers its phases, bolds approval gates, defines "done"? |
+| SQ13 | Side effects → `disable-model-invocation: true`, or a recorded exception? |
+| SQ15 | Bundled scripts resolve their own path, never trust `$PWD`? |
+| SQ16 | Emitted documents rendered from `templates/`? |
+| SQ17 | Shared workflow in `SKILL.md`, ecosystem parts in `references/`, siblings at parity? |
+| SQ18 | No machine, hostname or personal workflow named? |
+| SQ19 | Repo prose it writes follows "Write for scanning" in `memory/GLOBAL.md`? |

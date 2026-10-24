@@ -28,8 +28,8 @@ now does natively is the single most valuable find.
 - Context window, pricing, and rate-limit changes
 - Anything affecting long-running unattended agents specifically
 
-**Angle:** this repo runs headless loops. Cost, context, and reliability
-changes hit `vibe loop` before anything else.
+**Angle:** this repo runs long agent sessions in tmux. Cost, context, and
+reliability changes hit those before anything else.
 
 ## 3. Protocol and ecosystem
 

@@ -1,7 +1,6 @@
 ---
 name: add-roadmap-item
 description: "Distills a discussed idea into an item in PROJECT_ROADMAP.md — task + done-when, one line each — queued for a later session instead of started now. Use when the user says 'add this to the roadmap', 'roadmap this', 'add a roadmap item', 'queue this for later', or a discussion has scoped future work that should be captured before the context evaporates. Creates the roadmap file from the canonical template when the repo lacks one."
-disable-model-invocation: true
 argument-hint: "[<item name>]"
 ---
 

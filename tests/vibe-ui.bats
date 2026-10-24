@@ -65,5 +65,5 @@ has_escapes() { [[ "$1" == *$'\033['* ]]; }
       }
   done < <(sed -n 's/^    \([a-z][a-z-]*\)) cmd_.*/\1/p' "$VIBE")
   # and the dispatch was actually parsed — an empty list proves nothing
-  [ "$found" -ge 12 ]
+  [ "$found" -ge 5 ]
 }
