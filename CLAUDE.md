@@ -161,7 +161,9 @@ follow:
 
 1. **Runtime state stays out of the baseline.** `model`, `effortLevel`, and
    feature flags are deliberately absent, which is what stops the merge
-   clobbering the live values. Do not add them back.
+   clobbering the live values. Do not add them back. A standing preference
+   may go in (`remoteControlAtStartup`): the baseline wins, so the next
+   install undoes a UI toggle of it.
 2. **Permission and sandbox arrays are unioned, not replaced.** `jq`'s `*`
    replaces arrays wholesale, which would discard every rule accumulated
    through "don't ask again" and every sandbox domain or exclusion added by
