@@ -11,6 +11,10 @@ handoff content filter. Before the lib existed each script
 carried its own copy of these, with a "kept in lockstep with bin/vibe"
 comment doing the work a single definition does now.
 
+`doc-lib.sh` seeds a document from `templates/` into a target repo's docs
+directory, never overwriting: `codebase-map` and the `research-*` seed scripts
+share it.
+
 `bin/vibe` still has its own copies — it is deliberately a single
 self-contained file. If its behavior changes (worktree paths, config keys),
 this lib must change with it; the bats suites for

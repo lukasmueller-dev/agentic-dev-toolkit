@@ -586,10 +586,14 @@ fake_repo() {
   done
   # A directory is covered whole; assert it is non-empty, or a rename would
   # make the grep below match nothing and pass.
-  [ -n "$(find "$REPO_ROOT/templates/codebase" -type f 2>/dev/null | head -1)" ]
+  local d
+  for d in codebase research; do
+    [ -n "$(find "$REPO_ROOT/templates/$d" -type f 2>/dev/null | head -1)" ]
+  done
   run grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
-    "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/codebase
+    "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/codebase \
+    "$REPO_ROOT"/templates/research
   [ "$status" -ne 0 ] || {
     echo "a template names a specific tool or machine: $output" >&2
     return 1
