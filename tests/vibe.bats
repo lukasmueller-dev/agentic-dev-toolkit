@@ -1368,6 +1368,65 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "start: VIBE_REMOTE_CONTROL=1 names the Remote Control session after the tmux session" {
+  cd "$(make_repo proj)"
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_REMOTE_CONTROL=1 \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "rc task" --no-attach
+  [ "$status" -eq 0 ]
+  grep -q "send-keys -t vibe-proj-rc-task true --remote-control vibe-proj-rc-task C-m" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "start: Remote Control is off by default" {
+  cd "$(make_repo proj)"
+  run env SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=true \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" start "rc off" --no-attach
+  [ "$status" -eq 0 ]
+  run grep -q -- "--remote-control" "$VIBE_TEST_TMUX_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "attach: a resumed agent keeps its Remote Control name" {
+  cd "$(make_repo proj)"
+  run_vibe start "rc resume" >/dev/null
+  local stub
+  stub="$(attach_tmux_stub "$BATS_TEST_TMPDIR/tmuxbin-rc-resume")"
+
+  run env PATH="$stub:$PATH" SSH_CONNECTION="1.2.3.4 1 5.6.7.8 22" \
+    VIBE_TEST_PANE_CMD=bash \
+    VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD=stub-agent \
+    VIBE_AGENT_RESUME_ARGS=--stub-continue \
+    VIBE_REMOTE_CONTROL=1 \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "rc resume"
+  [ "$status" -eq 0 ]
+  grep -q "send-keys -t vibe-proj-rc-resume stub-agent --remote-control vibe-proj-rc-resume --stub-continue" "$VIBE_TEST_TMUX_LOG"
+}
+
+@test "attach: a local exec passes the Remote Control name as its own argument" {
+  cd "$(make_repo proj)"
+  run_vibe start "rc local" >/dev/null
+  local agent="$BATS_TEST_TMPDIR/argv-agent.sh"
+  printf '#!/usr/bin/env bash
+printf "%%s\\n" "$@" >"%s"\n' "$BATS_TEST_TMPDIR/argv" >"$agent"
+  chmod +x "$agent"
+
+  run env VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    VIBE_AGENT_CMD="$agent" \
+    VIBE_REMOTE_CONTROL=1 \
+    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
+    "$VIBE" attach "rc local"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$BATS_TEST_TMPDIR/argv")" = "$(printf '%s\n' --remote-control vibe-proj-rc-local)" ]
+}
+
 @test "attach: never types into a pane that is still running something" {
   # send-keys into a live agent would be typed *at* it as a prompt, and into a
   # build or an editor as whatever those make of it.
@@ -1482,6 +1541,15 @@ EOF
     VIBE_CONFIG_FILE="$cfg" "$VIBE" doctor
   [ "$status" -eq 1 ]
   [[ "$output" == *"not plain KEY=VALUE"* ]] || false
+}
+
+@test "doctor: reports whether Remote Control is on" {
+  cd "$(make_repo proj)"
+  run run_vibe doctor
+  [[ "$output" == *"remote      off"* ]] || false
+  run env VIBE_REMOTE_CONTROL=1 VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
+    "$VIBE" doctor
+  [[ "$output" == *"remote      agents start with --remote-control"* ]] || false
 }
 
 @test "config: environment variable beats the config file" {

@@ -95,6 +95,7 @@ Template: `templates/vibe.config.example`; `vibe doctor` validates it.
 | `VIBE_AGENT_RESUME_ARGS` | unset | Continue the old conversation when `attach` restarts a dead agent |
 | `VIBE_TMUX_PREFIX` | `vibe` | tmux session name prefix |
 | `VIBE_START_PULL_MAIN` | `1` | Fast-forward the main checkout before cutting a new branch |
+| `VIBE_REMOTE_CONTROL` | `0` | `1`: start the agent with `--remote-control <tmux session>` (Claude Code) |
 
 ## tmux and VS Code
 
@@ -102,6 +103,19 @@ Template: `templates/vibe.config.example`; `vibe doctor` validates it.
 echo 'source-file ~/git/agentic-dev-toolkit/tmux/tmux.conf' >> ~/.tmux.conf
 ./install.sh vscode   # new integrated terminals open with 'vibe status'
 ```
+
+## Remote Control (Claude app, claude.ai/code)
+
+```bash
+# ~/.config/vibe/config
+VIBE_REMOTE_CONTROL=1
+VIBE_AGENT_RESUME_ARGS=--continue
+```
+
+- The app only shows the `claude` process in the tmux pane; tmux keeps it alive.
+- Session gone from the app → `vibe attach <task>` over SSH; a dead agent resumes.
+- Agent alive, link dropped → `/remote-control` in the session reconnects it.
+- Host offline about 10 min, or asleep → the agent exits; keep the host awake.
 
 ## What breaks it
 

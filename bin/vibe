@@ -61,6 +61,7 @@ _env_agent_cmd="${VIBE_AGENT_CMD:-}"
 _env_agent_resume_args="${VIBE_AGENT_RESUME_ARGS:-}"
 _env_tmux_prefix="${VIBE_TMUX_PREFIX:-}"
 _env_start_pull_main="${VIBE_START_PULL_MAIN:-}"
+_env_remote_control="${VIBE_REMOTE_CONTROL:-}"
 
 if [[ -r "$VIBE_CONFIG_FILE" ]]; then
   # shellcheck source=/dev/null
@@ -83,8 +84,12 @@ VIBE_TMUX_PREFIX="${_env_tmux_prefix:-${VIBE_TMUX_PREFIX:-vibe}}"
 # new branch does not fork from local history that predates a teammate's
 # merge. Never blocks: see ff_main_quiet. Set to 0 to branch off HEAD as-is.
 VIBE_START_PULL_MAIN="${_env_start_pull_main:-${VIBE_START_PULL_MAIN:-1}}"
+# 1 launches the agent as '<VIBE_AGENT_CMD> --remote-control <tmux session>',
+# so each task appears under its tmux session name in claude.ai/code and the
+# Claude app. Claude Code only. Default 0.
+VIBE_REMOTE_CONTROL="${_env_remote_control:-${VIBE_REMOTE_CONTROL:-0}}"
 unset _env_worktree_root _env_agent_cmd _env_agent_resume_args \
-  _env_tmux_prefix _env_start_pull_main
+  _env_tmux_prefix _env_start_pull_main _env_remote_control
 
 # A line matches this iff it is nothing but HANDOFF.md template scaffolding:
 # blank lines, '#' headings, '>' guidance quotes, '- **Field:**' metadata, and
@@ -398,6 +403,16 @@ ensure_worktree() {
 tmux_session_name() {
   # vibe-<repo>-<branch>, tmux disallows dots in session names
   echo "${VIBE_TMUX_PREFIX}-$1-$2" | tr '.' '-'
+}
+
+# agent_launch SESS — the agent command line to type into SESS's shell:
+# VIBE_AGENT_CMD, plus '--remote-control SESS' when VIBE_REMOTE_CONTROL=1.
+agent_launch() {
+  if [[ "$VIBE_REMOTE_CONTROL" == "1" ]]; then
+    printf '%s --remote-control %q' "$VIBE_AGENT_CMD" "$1"
+  else
+    printf '%s' "$VIBE_AGENT_CMD"
+  fi
 }
 
 # tmux_live_session SESS — true when tmux is installed here *and* SESS is
@@ -765,7 +780,8 @@ open_session() {
 
   if session_in_tmux "$sess" "$no_attach"; then
     need tmux
-    local launch="$VIBE_AGENT_CMD" launch_fresh
+    local launch launch_fresh
+    launch="$(agent_launch "$sess")"
     # launch_fresh is what actually starts a brand-new conversation (a new
     # tmux session, or a dead pane restarted with no resume args) — launch
     # itself stays free of the kickoff so it can still be combined with
@@ -824,6 +840,9 @@ open_session() {
     cd "$dir"
     # shellcheck disable=SC2206
     local -a agent_argv=($VIBE_AGENT_CMD)
+    if [[ "$VIBE_REMOTE_CONTROL" == "1" ]]; then
+      agent_argv+=(--remote-control "$sess")
+    fi
     exec "${agent_argv[@]}"
   fi
 }
@@ -1728,6 +1747,12 @@ cmd_doctor() {
   else
     d_ok "resume      attach restarts a dead agent with a fresh context (set VIBE_AGENT_RESUME_ARGS to continue the old one)"
   fi
+
+  case "$VIBE_REMOTE_CONTROL" in
+    1) d_ok "remote      agents start with --remote-control, named after their tmux session" ;;
+    0) d_ok "remote      off (set VIBE_REMOTE_CONTROL=1 to reach sessions from the Claude app)" ;;
+    *) d_wn "remote      VIBE_REMOTE_CONTROL='$VIBE_REMOTE_CONTROL' is neither 0 nor 1 — treated as off" ;;
+  esac
 
   printf '\n'
   rule "Environment"
