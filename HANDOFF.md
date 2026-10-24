@@ -14,8 +14,52 @@
 
 ## State
 
-Not started. A read-only usage audit ran on 2026-10-24 from a
-humanoid-locoman-vla session; its numbers are below. No verdict is made.
+Verdict walk in progress (started 2026-10-24). Nothing applied yet. A
+read-only usage audit ran on 2026-10-24 from a humanoid-locoman-vla
+session; its numbers are below.
+
+Verdicts so far:
+
+| Feature | Verdict | Note |
+|---|---|---|
+| vibe loop | cut | cmd_loop, cmd_loop_run, templates/LOOP*.md, docs/vibe-loop.md, tests/vibe-loop.bats |
+| loop-brief | cut | skill + tests/loop-brief.bats |
+| babysit-pr | cut | skill + docs/babysit-pr.md + tests/babysit-pr.bats |
+| sota-digest | keep, on demand | drop cron + vibe-loop wrapper (sota-weekly.sh); rewrite to run in-session |
+| vibe rc | cut | built-in /remote-control replaces it |
+| vibe park | cut | |
+| vibe status --json | cut | flag + tests/vibe-status-json.bats + PROJECT_ROADMAP.md:19 |
+| vibe sync | cut | update GLOBAL.md:96, project-status-scaffold SKILL.md:96, attach/resume hint messages |
+| vibe list / where / resume | merge | list → status, where → doctor, resume → attach |
+| vibe doctor | rare-but-critical, trim | drop checks for removed verbs, aim for half size |
+| notify-ntfy | cut | hook + docs/notifications.md + tests + both hook wirings |
+| session-end-handoff | cut | hook + tests + both hook wirings (settings.json, .claude-plugin/hooks.json) |
+| local/server detection | reduce | tmux only when $SSH_CONNECTION/$SSH_TTY; remove VIBE_SERVER_HOSTNAME + hostname fallback |
+| handoff-start | keep | separate from handoff-brief |
+| add-roadmap-item | keep, enable model invocation | remove `disable-model-invocation`; agents never saw it on "add this to the roadmap" |
+| implement-test-suite | keep | |
+| skill-audit | merge into docs/skill-lint.md | judgment checklist moves; skill goes |
+| research-first-run | merge into codebase-map | "how to run it" part + RUNBOOK template; skill goes |
+| codebase-review, codebase-health, codebase-map, commit-push-pr, sync-with-main | keep | |
+| weekly-report | cut | skill + templates/report + tests |
+| repo-scaffold | cut | + templates ci/, gitignore/, repo/pre-push; drop pre-push from the CI template check + CLAUDE.md list |
+| team-up | cut | |
+| grilling, grill-me | keep | |
+| vendored writing skills (4) | keep | |
+| subagents: diff-reviewer, docs-drift, test-hardener, security-sweep | cut all | + readonly-bash.sh, readonly-bash-for-reviewers.sh, tests/readonly-bash.bats, claude/agents/, `agents` list in .claude-plugin/plugin.json; refs in README, docs/{academic-writing,mcp-servers,plugin,vendoring-external-skills}.md, tests/{install,plugin}.bats, PROJECT_STATUS.md |
+| .claude-plugin install path | keep | |
+| skill-lint-on-edit | cut | hook + both wirings + tests |
+| statusline, vscode/, completions/ | keep | completions lose cut verbs |
+| GLOBAL.md "My setup" | rewrite | one workstation (turing), reached over SSH + tmux; drop machine-to-machine git travel |
+| vibe status | keep, core | the author's most-used value; absorbs list |
+| HANDOFF / PROJECT_STATUS / PROJECT_ROADMAP + templates | keep, core | they carry context session to session, not machine to machine |
+| session-start-handoff, handoff-brief, project-status-scaffold, tmux/ | keep | |
+
+Workflow (decided): turing is the workstation and the only machine with
+work; the laptop only SSHes in. So the usage numbers above cover the real
+machine — the "check the server" gotcha no longer applies.
+
+Archive: tag `pre-audit-2026-10-24` on main (3c3d895), pushed.
 
 - Verdicts: decided with the author, feature by feature, no default
   (keep / cut / merge / rare-but-critical).
@@ -59,9 +103,27 @@ humanoid-locoman-vla session; its numbers are below. No verdict is made.
 
 ## Next action
 
-Walk the table with the author, most expensive first (the loop cluster: 46
-commits, 0 uses). Record each verdict, then apply cuts and merges as one PR
-per cluster.
+The author wants a full audit: every part of the repo, not only the table.
+Settle the workflow question first, then walk the groups below. Record each
+verdict above, then apply cuts and merges as one PR per cluster.
+
+1. Workflow + handoff: GLOBAL.md "My setup", detect_env / `where`, tmux/,
+   templates/HANDOFF.md, handoff-brief, handoff-start, session-start-handoff,
+   session-end-handoff, notify-ntfy, project-status-scaffold +
+   PROJECT_STATUS/ROADMAP templates, add-roadmap-item,
+   docs/artifact-architecture.md.
+2. Own skills: codebase-health, codebase-map, codebase-review,
+   commit-push-pr, implement-test-suite, repo-scaffold (+ templates ci,
+   gitignore, repo), research-first-run (+ templates/research), skill-audit,
+   sync-with-main, team-up, weekly-report (+ templates/report).
+3. Vendored: grilling, grill-me, literature-review, proofread,
+   writing-assistance, writing-simple-style.
+4. Subagents: diff-reviewer, docs-drift, test-hardener, security-sweep.
+5. Hooks + config: readonly-bash (+ for-reviewers), skill-lint-on-edit,
+   inject-global-memory (plugin only), statusline, settings.json,
+   claude/CLAUDE.md (response style).
+6. Infra: .claude-plugin, install.sh, bin/plug, bin/skill-lint,
+   completions/, vscode/, docs/ (14 files + docs/sota/).
 
 ## Blockers
 
