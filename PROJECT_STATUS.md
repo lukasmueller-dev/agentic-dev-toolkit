@@ -25,6 +25,11 @@ contract and the installer's auto-discovery rules.
   `babysit-pr`, `weekly-report`, `repo-scaffold`, `team-up`, all subagents,
   ntfy/session-end/skill-lint-on-edit hooks. Pre-cut state: tag
   `pre-audit-2026-10-24`. Rationale in the PR for `toolkit-audit`.
+- 2026-10-24: **Research audit.** Unused in practice: `research-lib.sh`
+  (repo-kind, exec-context detection) and roadmap Track C cut; `codebase-map`
+  reduced to a one-screen map. PR for `harness-agent-features`.
+- 2026-10-24: A research skill whose writes stay in the target repo is
+  model-invocable. See `docs/research-skills.md` §1.
 - 2026-10-24: `vibe status`, `HANDOFF.md`, `PROJECT_STATUS.md` and
   `PROJECT_ROADMAP.md` are the core: they carry context session to session.
 - 2026-10-24: `sota-digest` runs on demand only; no cron. See `docs/sota-watch.md`.
@@ -39,8 +44,6 @@ contract and the installer's auto-discovery rules.
   live session wherever one runs. PR for `roadmap-track-d`.
 - 2026-07-27: The kickoff prompt fires only under `--no-attach`. PR for
   `skill-handoff-start`.
-- 2026-07-27: The `CODEBASE_MAP.md` schema is dogfooded and fixed. See
-  `docs/research-skills.md` §7.
 - 2026-07-26: `research-*` work ships as skills, not agents. See
   `docs/research-skills.md`.
 - 2026-07-26: `install.sh` prunes orphaned symlinks (resolve into this checkout

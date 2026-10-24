@@ -14,9 +14,7 @@ copy.
 | `codebase/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
 
 `codebase/` goes into *another* repo's `docs/`, never into this one
-(`docs/research-skills.md` §3). A future `research-*` skill puts what it
-emits in `research/`: the directory follows the emitting skill, not the
-destination.
+(`docs/research-skills.md` §2).
 
 How the documents divide information between them — and why the handoff must
 end a task empty — is `docs/artifact-architecture.md`. The templates encode
@@ -45,7 +43,6 @@ render still produces a readable file.
 | `<worktree>`  | Absolute path to the worktree root                   |
 | `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` and the brief scripts (`scaffold.sh` stays day-only) |
 | `<machine>`   | Hostname of the machine that rendered it |
-| `<mode>`      | Which half of a fixed schema gets depth — `research`/`application` (`codebase/CODEBASE_MAP.md` only) |
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/CODEBASE_MAP.md` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
