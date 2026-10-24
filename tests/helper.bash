@@ -47,7 +47,7 @@ mkdir -p "$HOME"
 # machine that exports VIBE_AGENT_CMD or keeps a real
 # ~/.config/vibe/config would otherwise flip assertions from under the tests.
 unset VIBE_WORKTREE_ROOT VIBE_AGENT_CMD VIBE_AGENT_RESUME_ARGS \
-  VIBE_TMUX_PREFIX VIBE_START_PULL_MAIN
+  VIBE_TMUX_PREFIX VIBE_START_PULL_MAIN VIBE_REMOTE_CONTROL
 export VIBE_CONFIG_FILE="${BATS_TEST_TMPDIR:-$BATS_FILE_TMPDIR}/no-such-config"
 
 # Resolved before the stub goes on PATH, so a test can still ask the real tmux

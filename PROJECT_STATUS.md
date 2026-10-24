@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-24: Remote Control is opt-in at launch (`VIBE_REMOTE_CONTROL=1`), a
+  view on the tmux session, which stays the source of truth. PR for
+  `vibe-remote-control`.
 - 2026-10-24: **Usage-audit cut.** One workstation, no machine-to-machine git
   travel; cut `vibe loop/rc/park/sync`, `status --json`, `loop-brief`,
   `babysit-pr`, `weekly-report`, `repo-scaffold`, `team-up`, all subagents,

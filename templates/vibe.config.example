@@ -33,6 +33,12 @@
 # Default: unset
 #VIBE_AGENT_RESUME_ARGS=--continue
 
+# 1 starts every agent as `<VIBE_AGENT_CMD> --remote-control <tmux session>`,
+# so each task appears under its tmux session name in claude.ai/code and the
+# Claude app. Claude Code only.
+# Default: 0
+#VIBE_REMOTE_CONTROL=1
+
 # Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
 # Default: vibe
 #VIBE_TMUX_PREFIX=vibe
