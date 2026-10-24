@@ -8,7 +8,7 @@
 > nothing off, and merged, a leftover baton strays onto the default branch.
 
 - **Repo:** agentic-dev-toolkit
-- **Branch:** `research-kit-v1` (stacked on `harness-agent-features`, PR #81)
+- **Branch:** `research-kit-v1` (draft PR #82 against `main`)
 - **Worktree:** /home/lukas-mueller/git/worktrees/agentic-dev-toolkit/research-kit-v1
 - **Last updated:** 2026-10-24 13:55 CEST · local (turing)
 
@@ -43,14 +43,13 @@ Settled design (grilling 2026-10-24; promote to the PR body):
 
 1. Get the author's review of the card text in `references/cards.md` and the
    two SKILL.md files (Q14: text review in the PR, no design round).
-2. After PR #81 merges: `git merge origin/main`, open this PR against `main`.
-3. Run step 2 of `research-experiment-setup` on NCBF (`rl-x-NCBF`, author's
+2. Run step 2 of `research-experiment-setup` on NCBF (`rl-x-NCBF`, author's
    branch off `pncbf-v2`): the card table only, no code; the author approves
    it. That is kit v1's done-when.
 
 ## Blockers
 
-PR #81 must merge before this PR targets `main`.
+None.
 
 ## Gotchas (unpromoted)
 
