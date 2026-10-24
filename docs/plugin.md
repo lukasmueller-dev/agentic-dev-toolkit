@@ -26,7 +26,7 @@ with the layout Claude Code expects at a plugin root:
 | -------------- | ----------------- | ----------------------------------------- |
 | `skills/`      | `skills/`         | Every skill, no manifest entry needed     |
 | —              | `vendor/skills/`  | Listed in the manifest's `skills`, loaded in addition to `skills/` |
-| `bin/`         | `bin/`            | `vibe`, `skill-lint` and `plug` join the Bash `PATH` |
+| `bin/`         | `bin/`            | `skill-lint` and `plug` join the Bash `PATH` |
 | `hooks/hooks.json` | —             | `.claude-plugin/hooks.json`               |
 
 That is not a coincidence worth over-reading — `skills/` at the top level is
@@ -86,9 +86,7 @@ has.
   `disable-model-invocation: true`, so the cost is one extra entry in the slash
   picker, not a skill Claude might act on. `skills/_lib` has no `SKILL.md` and
   is ignored.
-- **`bin/` joins the Bash `PATH` automatically.** `vibe` in a sandbox with no
-  tmux and no persistent worktree root will not do anything useful, but it
-  degrades rather than breaking; `vibe doctor` reports what it detected.
+- **`bin/` joins the Bash `PATH` automatically.**
 - **Versioning.** `version` is set in the manifest, so the plugin only updates
   when that field is bumped. Left unset, every commit would count as a new
   version.

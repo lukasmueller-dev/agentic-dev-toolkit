@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# statusLine command — renders:  repo · branch · task
+# statusLine command — renders:  repo · branch
 #
 # Not a hook event, despite living in hooks/: Claude Code invokes it through
 # the "statusLine" setting rather than the "hooks" block. It sits here because
@@ -10,21 +10,7 @@
 # stdin: the statusLine JSON payload. Most fields are optional, so every read
 # has a fallback; a status line that errors out is worse than one missing a
 # segment.
-#
-# The task segment is the vibe task. vibe lays worktrees out as
-# $VIBE_WORKTREE_ROOT/<repo>/<task>, so the directory name IS the task. It is
-# only shown when the cwd is genuinely inside the worktree root — in a normal
-# checkout there is no task and the segment is omitted rather than faked.
 set -uo pipefail
-
-CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
-
-read_config() { # read_config KEY — without sourcing; config is data, not code
-  local key="$1"
-  [[ -r "$CONFIG_FILE" ]] || return 0
-  sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$CONFIG_FILE" |
-    tail -1 | tr -d '"'\'''
-}
 
 input="$(cat 2>/dev/null || true)"
 
@@ -55,21 +41,6 @@ fi
 branch="$(git -C "$cwd" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 [[ "$branch" == "HEAD" ]] && branch="detached"
 
-# --- vibe task --------------------------------------------------------------
-wt_root="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
-wt_root="${wt_root:-$HOME/git/worktrees}"
-task=""
-# Two path components required below the root: at the root itself, or at
-# <root>/<repo>, there is no task yet — the old single-star pattern matched
-# those too and rendered a path fragment as the task segment.
-case "$cwd/" in
-  "$wt_root"/*/*/)
-    rel="${cwd#"$wt_root"/}" # <repo>/<task>[/deeper...]
-    task="${rel#*/}"         # strip <repo>/
-    task="${task%%/*}"       # keep only <task>
-    ;;
-esac
-
 # --- render -----------------------------------------------------------------
 c_dim=$'\033[2m'
 c_off=$'\033[0m'
@@ -78,8 +49,5 @@ c_grn=$'\033[32m'
 
 out="${c_cyn}${repo}${c_off}"
 [[ -n "$branch" ]] && out="$out ${c_dim}·${c_off} ${c_grn}${branch}${c_off}"
-# Only when the task differs from the branch — vibe names them alike, and
-# printing "fix-login · fix-login" is just noise.
-[[ -n "$task" && "$task" != "$branch" ]] && out="$out ${c_dim}·${c_off} ${task}"
 
 printf '%s' "$out"

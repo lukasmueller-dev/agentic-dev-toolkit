@@ -31,8 +31,7 @@ ordinary scripts:
 2. **Say nothing when there is nothing to say.** A hook that prints on every
    invocation becomes noise and then gets ignored.
 3. **No personal values in the script.** Hostnames and paths come from the
-   environment or `~/.config/vibe/config`. A missing value means no-op, not an
-   error.
+   environment. A missing value means no-op, not an error.
 4. **Be fast.** `statusline.sh` runs on every render; it uses bash parameter
    expansion instead of `basename`/`dirname` for that reason.
 

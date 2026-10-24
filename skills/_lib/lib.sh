@@ -1,28 +1,21 @@
 # shellcheck shell=bash
 #
-# vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
-# briefs (handoff-brief/handoff.sh, codebase-review/review.sh). codebase-map/map.sh sources it too, for
-# render_template and TEMPLATE_DIR alone: the placeholder contract in
-# templates/README.md has one implementation, and a second renderer would be
-# the same drift the templates directory exists to prevent.
+# lib.sh — helpers shared by the skill scripts: template rendering for every
+# seed script, and brief staging for handoff-brief/handoff.sh and
+# codebase-review/review.sh. One renderer for the placeholder contract in
+# templates/README.md.
 #
-# Sourced, never executed. The caller is expected to run under
-# `set -euo pipefail` and to have resolved its own real location first
-# (script_dir cannot live here — a script needs it to *find* this file).
+# Sourced, never executed. The caller runs under `set -euo pipefail` and has
+# resolved its own real location first (script_dir cannot live here).
 #
-# Everything below is kept in lockstep with bin/vibe: worktree layout, config
-# precedence (env over config over default), and the handoff content filter.
-# If this lib resolved a different worktree root than vibe, 'vibe attach'
-# would never find the worktree a brief was staged in.
-#
-# The `_lib` name matters: install.sh skips `skills/_*`, which is the only
-# thing keeping this directory out of ~/.claude/skills.
+# The `_lib` name keeps this directory out of ~/.claude/skills: install.sh
+# skips `skills/_*`.
 
 die() {
-  echo "${LIB_PROG:-vibe-lib}: $*" >&2
+  echo "${LIB_PROG:-lib}: $*" >&2
   exit 1
 }
-info() { echo "${LIB_PROG:-vibe-lib}: $*" >&2; }
+info() { echo "${LIB_PROG:-lib}: $*" >&2; }
 
 command -v git >/dev/null 2>&1 || die "'git' is required but not installed."
 
@@ -31,13 +24,12 @@ command -v git >/dev/null 2>&1 || die "'git' is required but not installed."
 # root is two levels up. The caller sourced us by an already-resolved
 # physical path, so BASH_SOURCE needs no symlink walking of its own.
 # ---------------------------------------------------------------------------
-VIBE_LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TOOLKIT_HOME="$(dirname "$(dirname "$VIBE_LIB_DIR")")"
+LIB_DIR_SELF="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOLKIT_HOME="$(dirname "$(dirname "$LIB_DIR_SELF")")"
 # shellcheck disable=SC2034  # consumed by the sourcing scripts
 TEMPLATE_DIR="${TOOLKIT_TEMPLATE_DIR:-$TOOLKIT_HOME/templates}"
 
 # render_template FILE [TOKEN VALUE]... — print FILE with each TOKEN replaced.
-# KEEP IN LOCKSTEP with the copy in bin/vibe (these scripts cannot source it).
 # Pure bash: no sed, so a value containing slashes (worktree paths hold them)
 # needs no escaping. One left-to-right scan: the earliest remaining token
 # occurrence is copied out with its value and scanning resumes AFTER the
@@ -80,29 +72,6 @@ render_template() {
 }
 
 # ---------------------------------------------------------------------------
-# Config. Parsed, never sourced (like claude/hooks/statusline.sh): the config
-# file is data, not code. Precedence must mirror bin/vibe exactly.
-# ---------------------------------------------------------------------------
-VIBE_CONFIG_FILE="${VIBE_CONFIG_FILE:-$HOME/.config/vibe/config}"
-
-# The optional `export ` prefix is not cosmetic: bin/vibe *sources* the config,
-# so `export KEY=value` works there, and `vibe doctor` explicitly accepts it as
-# valid. A parser that does not would silently disagree with both — bin/vibe
-# using the configured worktree root while this lib falls back to the default,
-# which is how a brief gets re-seeded into a second worktree.
-read_config() {
-  local key="$1"
-  [[ -r "$VIBE_CONFIG_FILE" ]] || return 0
-  sed -nE "s/^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=[[:space:]]*//p" \
-    "$VIBE_CONFIG_FILE" | tail -1 | tr -d '"'\'''
-}
-
-VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
-VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}"
-VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-$(read_config VIBE_START_PULL_MAIN)}"
-VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-1}"
-
-# ---------------------------------------------------------------------------
 # Git helpers.
 # ---------------------------------------------------------------------------
 main_repo_root() {
@@ -113,18 +82,17 @@ main_repo_root() {
 }
 repo_name() { basename "$(main_repo_root)"; }
 slug() { echo "$1" | tr '[:upper:] /' '[:lower:]--' | sed 's/[^a-z0-9._-]//g'; }
-worktree_dir() { echo "$VIBE_WORKTREE_ROOT/$1/$2"; }
+# worktree_dir BRANCH — where a brief is staged: the same place Claude Code
+# puts its own worktrees, so one 'git worktree list' shows both.
+worktree_dir() { echo "$(main_repo_root)/.claude/worktrees/$1"; }
 
 # ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
-# to its upstream, called right before a brand-new task branch is cut from
-# MAIN's HEAD. KEEP IN LOCKSTEP with bin/vibe's copy. Never refuses: a
-# disabled setting, a dirty tree, no upstream, or a failed fetch/merge are all
-# silently skipped, so the caller always still branches off whatever HEAD
-# already is rather than blocking on git.
+# to its upstream, right before a new task branch is cut from MAIN's HEAD.
+# Never refuses: a dirty tree, no upstream, or a failed fetch/merge is
+# skipped. Untracked files are ignored — .claude/worktrees/ is one.
 ff_main_quiet() {
   local main="$1"
-  [[ "$VIBE_START_PULL_MAIN" == "1" ]] || return 0
-  [[ -z "$(git -C "$main" status --porcelain 2>/dev/null)" ]] || return 0
+  [[ -z "$(git -C "$main" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 0
   git -C "$main" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || return 0
   git -C "$main" fetch -q 2>/dev/null || return 0
   local base
@@ -162,8 +130,7 @@ ensure_worktree() {
 }
 
 # seed_handoff_file DIR REPO BRANCH — render templates/HANDOFF.md into DIR
-# unless one is already there. Every vibe worktree carries a handoff; both
-# brief scripts seed it the same way.
+# unless one is already there.
 seed_handoff_file() {
   local dir="$1" repo="$2" branch="$3"
   [[ ! -f "$dir/HANDOFF.md" && -f "$TEMPLATE_DIR/HANDOFF.md" ]] || return 0
@@ -178,9 +145,8 @@ seed_handoff_file() {
 
 # handoff_carries_content FILE — true when FILE holds anything beyond the
 # template's own scaffolding: blank lines, headings, '>' guidance quotes,
-# '- **Field:**' metadata, and single-line _placeholders_. Literal copy of
-# VIBE_HANDOFF_SCAFFOLD_RE in bin/vibe ('vibe done's guard) — a third lives in
-# claude/hooks/session-start-handoff.sh; update all three together. The
+# '- **Field:**' metadata, and single-line _placeholders_. A literal copy lives
+# in claude/hooks/session-start-handoff.sh; update both together. The
 # template keeps every placeholder on one line so this stays a line filter.
 handoff_carries_content() {
   local f="$1"
@@ -196,7 +162,7 @@ handoff_carries_content() {
 # that into the variable instead of letting it reach the caller's stdout.
 stage_worktree() {
   local branch="$1"
-  STAGED_DIR="$(worktree_dir "$(repo_name)" "$branch")"
+  STAGED_DIR="$(worktree_dir "$branch")"
   if [[ ! -d "$STAGED_DIR" ]]; then
     ensure_worktree "$(main_repo_root)" "$branch" "$STAGED_DIR"
   fi
@@ -222,8 +188,9 @@ handoff_stage_state() {
 }
 
 # publish_handoff DIR BRANCH COMMIT_MSG PUSH_HINT — validate that DIR's
-# HANDOFF.md is finished, then commit and push BRANCH. Only the commit message
-# and the push-failure hint ever differ between the callers.
+# HANDOFF.md is finished, commit and push BRANCH, then remove the staging
+# worktree so a new session can 'git switch BRANCH'. Only the commit message
+# and the push-failure hint differ between the callers.
 #
 # Finished means: no token survived the render, and the two sections a cold
 # session depends on were actually written. Blockers and Gotchas may keep
@@ -250,6 +217,11 @@ publish_handoff() {
   fi
   git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
   info "pushed '$branch' to origin"
+  if git -C "$(main_repo_root)" worktree remove "$dir" 2>/dev/null; then
+    info "removed the staging worktree — '$branch' is free to check out"
+  else
+    info "could not remove $dir — run: git worktree remove '$dir'"
+  fi
 }
 
 # section_unfinished FILE HEADING — true while the section under HEADING is

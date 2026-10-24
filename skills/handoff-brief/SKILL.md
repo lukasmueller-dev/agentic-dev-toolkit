@@ -1,23 +1,21 @@
 ---
 name: handoff-brief
-description: "Distills the current conversation into a HANDOFF.md brief on its own task branch, ready for a dedicated session to pick up. Use when the user says 'hand this off', 'prepare a handoff', 'spin this off into a vibe task', or a discussion has produced a plan that a separate agent session should execute. Captures the conclusions — context, decisions, first concrete step — into the handoff, stages it on the task's branch and worktree, commits and pushes it, and prints the exact command to start the session, without ever starting it."
+description: "Distills the current conversation into a HANDOFF.md brief on its own task branch, ready for a dedicated session to pick up. Use when the user says 'hand this off', 'prepare a handoff', 'spin this off into its own task', or a discussion has produced a plan that a separate agent session should execute. Captures the conclusions — context, decisions, first concrete step — into the handoff, stages it on the task's own branch, commits and pushes it, and prints the message that starts the new session, without ever starting it."
 disable-model-invocation: true
 argument-hint: "[<task name>]"
 ---
 
 # Handoff brief
 
-Turn the conversation that just happened into the baton a dedicated session
-picks up cold. The brief is `HANDOFF.md` at the root of the task's own
-worktree, committed and pushed so any machine can start the session; the
-session runner (`vibe start`) adopts an existing worktree and never reseeds a
-handoff that is already there.
+Turn the conversation that just happened into the baton a new session picks
+up cold. The brief is `HANDOFF.md` at the root of the task's own branch,
+committed and pushed; the new session checks that branch out and begins.
 
 ## Hard boundaries — never do these
 
-- **Never start the session.** No `vibe start`, no agent launch. The
-  deliverable is the pushed handoff and the printed command — starting the
-  session is the user's move.
+- **Never start the session.** No agent launch. The deliverable is the
+  pushed handoff and the printed start message — starting the session is
+  the user's move.
 - **Never write HANDOFF.md from memory or a heredoc.** `handoff.sh create`
   renders it from `templates/HANDOFF.md`; you only edit the rendered file.
 - **Never overwrite a handoff that carries content.** `handoff.sh` reports
@@ -69,8 +67,9 @@ Run the bundled script (resolve the path from this skill's directory):
 bash handoff.sh create "<task>"
 ```
 
-It creates the branch and worktree (adopting a branch that exists only on
-origin) and seeds `HANDOFF.md` from the shared template. Read the
+It creates the branch and a staging worktree under `.claude/worktrees/`
+(adopting a branch that exists only on origin) and seeds `HANDOFF.md` from
+the shared template. Read the
 `KEY=VALUE` output:
 
 - `STATE=created` or `STATE=existing-scaffold` — an empty handoff is ready;
@@ -99,23 +98,21 @@ bash handoff.sh publish "<task>"
 ```
 
 It validates the handoff (no unrendered tokens, `## State` and
-`## Next action` actually written), commits, and pushes. If validation fails
-it names the unfinished section — fix it and retry.
+`## Next action` actually written), commits, pushes, and removes the staging
+worktree so the branch is free. If validation fails it names the unfinished
+section — fix it and retry.
 
-Then print the start commands and stop:
+Then print the message that starts the task, for the user to send as the
+first prompt of a new session in this repo, and stop:
 
 ```
-vibe start <task>     # here — on the server this is a tmux session that survives disconnect
-vibe attach <task>    # from another machine, after a git fetch happens automatically
+git switch <task>, then begin per HANDOFF.md.
 ```
 
 with one note: the session that picks this up must promote what is durable
-and delete the handoff before finishing (`vibe done` enforces it), so the
-brief is guaranteed to be consumed and promoted, never silently dropped —
-and never merged onto the default branch as a stray file.
+and delete the handoff before finishing (`commit-push-pr` checks it), so the
+brief is consumed and promoted, never silently dropped — and never merged
+onto the default branch as a stray file.
 
-If the user wanted the session started rather than staged, that is
-`handoff-start` — same brief, same phases, one launch step on the end.
-
-**Done means:** the handoff is pushed and the command is printed. Do not
+**Done means:** the handoff is pushed and the start message is printed. Do not
 start the session, and do not keep refining after approval.

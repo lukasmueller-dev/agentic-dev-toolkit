@@ -17,7 +17,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 @test "install: creates the expected symlinks" {
   run "$INSTALL"
   [ "$status" -eq 0 ]
-  [ -L "$HOME/bin/vibe" ]
+  [ -L "$HOME/bin/skill-lint" ]
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/hooks" ]
@@ -26,8 +26,6 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # settings.json is merged, not symlinked — Claude Code writes to it itself
   [ -f "$HOME/.claude/settings.json" ]
   [ ! -L "$HOME/.claude/settings.json" ]
-  [ -L "$HOME/.zsh/completions/_vibe" ]
-  [ -L "$HOME/.local/share/bash-completion/completions/vibe" ]
 }
 
 @test "install: every symlink resolves back into the repo" {
@@ -150,25 +148,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
 }
 
-@test "install: two displaced files sharing a basename both survive backup" {
-  # ~/bin/vibe and the bash completion back up under the same kind and
-  # basename ("bin/vibe") in one run — the second must not clobber the first.
-  mkdir -p "$HOME/bin" "$HOME/.local/share/bash-completion/completions"
-  printf 'REAL-CLI\n' >"$HOME/bin/vibe"
-  printf 'REAL-COMPLETION\n' >"$HOME/.local/share/bash-completion/completions/vibe"
-  run "$INSTALL" bin
-  [ "$status" -eq 0 ]
-  run grep -rl REAL-CLI "$HOME/.agentic-dev-toolkit-backups"
-  [ "$status" -eq 0 ]
-  run grep -rl REAL-COMPLETION "$HOME/.agentic-dev-toolkit-backups"
-  [ "$status" -eq 0 ]
-}
-
 @test "uninstall: removes every symlink it created" {
   "$INSTALL" >/dev/null
   run "$INSTALL" --uninstall
   [ "$status" -eq 0 ]
-  [ ! -e "$HOME/bin/vibe" ]
+  [ ! -e "$HOME/bin/skill-lint" ]
   [ ! -e "$HOME/.claude/CLAUDE.md" ]
   [ ! -e "$HOME/.claude/hooks" ]
   [ ! -e "$HOME/.claude/skills/project-status-scaffold" ]
@@ -189,11 +173,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 @test "uninstall: leaves a real file at a managed path" {
   mkdir -p "$HOME/bin"
-  printf '#!/bin/sh\n' >"$HOME/bin/vibe"
+  printf '#!/bin/sh\n' >"$HOME/bin/skill-lint"
   run "$INSTALL" --uninstall bin
   [ "$status" -eq 0 ]
-  [ -f "$HOME/bin/vibe" ]
-  [ ! -L "$HOME/bin/vibe" ]
+  [ -f "$HOME/bin/skill-lint" ]
+  [ ! -L "$HOME/bin/skill-lint" ]
   [[ "$(printf '%s\n' "$output" | plain)" == *"not ours to remove"* ]] || false
 }
 
@@ -202,7 +186,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$INSTALL" --uninstall --dry
   [ "$status" -eq 0 ]
   # every symlink survives the dry run
-  [ -L "$HOME/bin/vibe" ]
+  [ -L "$HOME/bin/skill-lint" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   # and it says what it would do — "remove", never the past-tense
@@ -212,19 +196,18 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$(printf '%s\n' "$output" | plain | grep -c '^  removed  ')" -eq 0 ]
 }
 
-@test "install: degrades politely when jq is missing (settings + vscode)" {
-  # Both merge steps depend on jq; without it the installer must still link
-  # everything, warn about the two files it could not merge, and exit 0 —
+@test "install: degrades politely when jq is missing" {
+  # The settings merge depends on jq; without it the installer must still link
+  # everything, warn about the file it could not merge, and exit 0 —
   # hooks have the same rule, and this is the installer's version of it.
   local nojq
   nojq="$(path_without jq)"
 
-  run env PATH="$nojq" "$INSTALL" claude vscode
+  run env PATH="$nojq" "$INSTALL" claude
   [ "$status" -eq 0 ]
   local plain_out
   plain_out="$(printf '%s\n' "$output" | plain)"
   [[ "$plain_out" == *"jq not installed — cannot merge settings.json."* ]] || false
-  [[ "$plain_out" == *"jq not installed — cannot merge automatically."* ]] || false
   # the symlink half of the claude target still happened
   [ -L "$HOME/.claude/CLAUDE.md" ]
   # and no half-merged settings file was invented
@@ -354,8 +337,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   # Same symptom, different diagnosis and different fix — reporting one link
   # under both headings would send you looking for a rename that never happened.
   "$INSTALL" >/dev/null
-  rm "$HOME/bin/vibe"
-  ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/vibe"
+  rm "$HOME/bin/skill-lint"
+  ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/skill-lint"
 
   run "$INSTALL" doctor
   [ "$status" -eq 1 ]
@@ -387,7 +370,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 @test "doctor: notices a missing symlink" {
   "$INSTALL" >/dev/null
-  rm "$HOME/bin/vibe"
+  rm "$HOME/bin/skill-lint"
   run "$INSTALL" doctor
   # Exit status too, not just the word: every sibling doctor test asserts
   # status 1, and a regression that downgrades a missing managed link from
@@ -399,11 +382,11 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 
 @test "doctor: notices a dangling symlink" {
   "$INSTALL" >/dev/null
-  rm "$HOME/bin/vibe"
-  ln -s "$REPO_ROOT/bin/vibe" "$HOME/bin/vibe"
+  rm "$HOME/bin/skill-lint"
+  ln -s "$REPO_ROOT/bin/skill-lint" "$HOME/bin/skill-lint"
   # point it at something that does not exist
-  rm "$HOME/bin/vibe"
-  ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/vibe"
+  rm "$HOME/bin/skill-lint"
+  ln -s "$REPO_ROOT/bin/does-not-exist" "$HOME/bin/skill-lint"
   run "$INSTALL" doctor
   [ "$status" -eq 1 ]
   [[ "$(printf '%s\n' "$output" | plain)" == *"dangling"* ]] || false
@@ -590,7 +573,7 @@ fake_repo() {
   for d in codebase research; do
     [ -n "$(find "$REPO_ROOT/templates/$d" -type f 2>/dev/null | head -1)" ]
   done
-  run grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
+  run grep -rniE 'claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/codebase \
     "$REPO_ROOT"/templates/research
@@ -603,38 +586,6 @@ fake_repo() {
 @test "install: rejects an unknown target" {
   run "$INSTALL" not-a-target
   [ "$status" -eq 1 ]
-}
-
-# ---------------------------------------------------------------------------
-# vscode merge
-# ---------------------------------------------------------------------------
-@test "vscode: merges into existing settings without losing keys" {
-  local dir="$HOME/Library/Application Support/Code/User"
-  [ "$(uname -s)" = "Darwin" ] || dir="$HOME/.config/Code/User"
-  mkdir -p "$dir"
-  cat >"$dir/settings.json" <<'EOF'
-// a comment, as VS Code allows
-{
-  "editor.fontSize": 14,
-  "terminal.integrated.profiles.osx": { "mine": { "path": "fish" } }
-}
-EOF
-  run "$INSTALL" vscode
-  [ "$status" -eq 0 ]
-  jq -e '.["editor.fontSize"] == 14' "$dir/settings.json"
-  jq -e '.["terminal.integrated.profiles.osx"].mine' "$dir/settings.json"
-  # and a backup of the original was kept
-  [ "$(find "$dir" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 1 ]
-}
-
-@test "vscode: re-running does not rewrite an already-merged file" {
-  local dir="$HOME/Library/Application Support/Code/User"
-  [ "$(uname -s)" = "Darwin" ] || dir="$HOME/.config/Code/User"
-  "$INSTALL" vscode >/dev/null
-  run "$INSTALL" vscode
-  [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
-  [ "$(find "$dir" -name 'settings.json.bak.*' | wc -l | tr -d ' ')" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------

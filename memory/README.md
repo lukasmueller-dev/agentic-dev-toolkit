@@ -22,8 +22,7 @@ silently loses the workflow memory while everything still looks installed —
 
 Instructions that are true of *my workflow*, not of one agent: where each kind
 of information is written, the local/server split across machines, the
-handoff discipline, how
-`vibe` structures a task.
+handoff discipline, and how a task becomes a session.
 
 ## What does *not* belong here
 

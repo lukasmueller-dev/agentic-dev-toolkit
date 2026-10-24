@@ -12,14 +12,13 @@
 #   ./install.sh doctor             check what is installed and report drift
 #
 # Targets:
-#   bin      bin/* -> ~/bin/, plus shell completions
+#   bin      bin/* -> ~/bin/
 #   skills   skills/<name>/ and vendor/skills/<name>/ -> ~/.claude/skills/<name>
 #   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
 #            memory/GLOBAL.md -> ~/.claude/global-memory.md, and merges
 #            claude/settings.json into your real settings.json
 #   codex    codex/* -> ~/.codex/, memory/GLOBAL.md -> ~/.codex/AGENTS.md
 #   gemini   gemini/* -> ~/.gemini/, memory/GLOBAL.md -> ~/.gemini/GEMINI.md
-#   vscode   merge vscode/*.jsonc into the real VS Code settings.json
 #   all      every target above (the default)
 #
 # Auto-discovery: every target enumerates the repo at run time. Drop a file in
@@ -85,7 +84,7 @@ while (($#)); do
     --uninstall) UNINSTALL=1 ;;
     doctor | --doctor) DOCTOR=1 ;;
     -h | --help) usage 0 ;;
-    all | bin | skills | claude | codex | gemini | vscode) TARGETS+=("$1") ;;
+    all | bin | skills | claude | codex | gemini) TARGETS+=("$1") ;;
     *)
       err "unknown argument: $1"
       usage 1
@@ -184,12 +183,6 @@ build_map() {
         map_add "$f" "$HOME/bin/$(basename "$f")" bin
       done
     fi
-    # Completions belong to the CLI they complete, so they ride with `bin`.
-    [[ -f "$REPO/completions/vibe.bash" ]] &&
-      map_add "$REPO/completions/vibe.bash" \
-        "$HOME/.local/share/bash-completion/completions/vibe" bin
-    [[ -f "$REPO/completions/_vibe" ]] &&
-      map_add "$REPO/completions/_vibe" "$HOME/.zsh/completions/_vibe" bin
   fi
 
   if want skills && [[ -d "$REPO/skills" ]]; then
@@ -351,10 +344,9 @@ prune_orphans() {
 backup() { # backup PATH KIND — move a real file out of the way, never delete
   local path="$1" bak="$BACKUP_DST/$2" dst n=1
   mkdir -p "$bak"
-  # Two managed paths can share a kind and a basename (~/bin/vibe and the
-  # bash completion both back up as bin/vibe), and a second mv to the same
-  # destination would silently clobber the first backup — the one thing this
-  # function exists to never do. Suffix instead of overwrite.
+  # Two managed paths can share a kind and a basename, and a second mv to the
+  # same destination would silently clobber the first backup — the one thing
+  # this function exists to never do. Suffix instead of overwrite.
   dst="$bak/$(basename "$path")"
   while [[ -e "$dst" ]]; do
     dst="$bak/$(basename "$path").$n"
@@ -542,97 +534,6 @@ install_claude_settings() {
 }
 
 # ---------------------------------------------------------------------------
-# VS Code settings — merged, not symlinked
-#
-# These snippets are fragments meant to be combined with settings you already
-# have. Symlinking the file would replace every unrelated setting in it.
-# ---------------------------------------------------------------------------
-vscode_target_file() {
-  # A remote VS Code session keeps machine settings under ~/.vscode-server.
-  if [[ -d "$HOME/.vscode-server" ]]; then
-    printf '%s' "$HOME/.vscode-server/data/Machine/settings.json"
-  elif [[ "$(uname -s)" == "Darwin" ]]; then
-    printf '%s' "$HOME/Library/Application Support/Code/User/settings.json"
-  else
-    printf '%s' "$HOME/.config/Code/User/settings.json"
-  fi
-}
-
-# Which snippet, unlike which target file, follows the OS and nothing else:
-# VS Code keys terminal profiles by platform (`profiles.osx` vs
-# `profiles.linux`). Picking by "is this a remote session" got that wrong for a
-# macOS machine reached over SSH, which is a server *and* needs the osx keys.
-vscode_snippet() {
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    printf '%s' "$REPO/vscode/vscode-darwin.jsonc"
-  else
-    printf '%s' "$REPO/vscode/vscode-linux.jsonc"
-  fi
-}
-
-# Strips whole-line // comments only. That is all these snippets use, and it
-# avoids mangling a URL like https://… inside a string value.
-strip_jsonc() { sed 's|^[[:space:]]*//.*$||' "$1"; }
-
-install_vscode() {
-  hdr "vscode"
-  local snippet target
-  snippet="$(vscode_snippet)"
-  target="$(vscode_target_file)"
-
-  if [[ ! -f "$snippet" ]]; then
-    say "  no snippet for this platform"
-    return
-  fi
-  say "  snippet  $snippet"
-  say "  target   $target"
-
-  if ! command -v jq >/dev/null 2>&1; then
-    warn "  jq not installed — cannot merge automatically."
-    warn "  Add these keys to $target by hand:"
-    strip_jsonc "$snippet" | sed '/^[[:space:]]*$/d; s/^/    /'
-    return
-  fi
-
-  if ((DRY)); then
-    if [[ -f "$target" ]]; then
-      say "  would merge into existing settings (backing it up first)"
-    else
-      say "  would create $target from the snippet"
-    fi
-    return
-  fi
-
-  mkdir -p "$(dirname "$target")"
-  if [[ ! -f "$target" ]]; then
-    strip_jsonc "$snippet" | jq '.' >"$target"
-    ok "  created  $target"
-    return
-  fi
-
-  if ! strip_jsonc "$target" | jq empty 2>/dev/null; then
-    err "  $target is not valid JSON once comments are stripped — leaving it alone."
-    err "  Merge the snippet by hand."
-    return
-  fi
-
-  local merged bak
-  merged="$(jq -s '.[0] * .[1]' <(strip_jsonc "$target") <(strip_jsonc "$snippet"))"
-
-  # Already applied? Then do not touch the file, and do not leave a backup.
-  if [[ "$(strip_jsonc "$target" | jq -S '.')" == "$(printf '%s' "$merged" | jq -S '.')" ]]; then
-    say "  ok       already applied"
-    return
-  fi
-
-  bak="$target.bak.$RUN_TS"
-  cp "$target" "$bak"
-  printf '%s\n' "$merged" >"$target"
-  warn "  backed up $bak"
-  ok "  merged   $target"
-}
-
-# ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
 run_doctor() {
@@ -640,7 +541,7 @@ run_doctor() {
   local pass="  ${c_grn}ok${c_off}  " bad="  ${c_red}FAIL${c_off}" wrn="  ${c_yel}warn${c_off}"
 
   # d_ok/d_wn/d_no FORMAT [ARG]... — one report line: severity prefix, the
-  # message, a newline, and the tally. Same shape as bin/vibe's cmd_doctor.
+  # message, a newline, and the tally.
   # Written out longhand, every one of the eighteen lines below repeated the
   # prefix argument and the '\n', and each non-ok one carried its own flag
   # assignment on the next line — which is exactly the line that gets forgotten
@@ -726,16 +627,14 @@ run_doctor() {
     if command -v "$t" >/dev/null 2>&1; then
       d_ok '%s' "$t"
     else
-      d_wn '%s missing (needed to merge VS Code settings and by the Claude Code hooks)' "$t"
+      d_wn '%s missing (needed by the settings merge and the Claude Code hooks)' "$t"
     fi
   done
-  for t in tmux gh; do
-    if command -v "$t" >/dev/null 2>&1; then
-      d_ok '%s' "$t"
-    else
-      d_wn '%s missing (optional)' "$t"
-    fi
-  done
+  if command -v gh >/dev/null 2>&1; then
+    d_ok 'gh'
+  else
+    d_wn 'gh missing (optional)'
+  fi
 
   # Without the import, Claude Code loads the response-style rules and silently
   # drops the workflow memory — every symlink still looks correct, so nothing
@@ -763,21 +662,6 @@ run_doctor() {
     d_ok 'baseline applied in %s' "$CLAUDE_SETTINGS_DST"
   else
     d_wn '%s is missing part of the baseline — run ./install.sh claude' "$CLAUDE_SETTINGS_DST"
-  fi
-
-  hdr "VS Code"
-  local vtarget vsnippet
-  vtarget="$(vscode_target_file)"
-  vsnippet="$(vscode_snippet)"
-  if [[ ! -f "$vtarget" ]]; then
-    d_wn '%s does not exist — run ./install.sh vscode' "$vtarget"
-  elif ! command -v jq >/dev/null 2>&1; then
-    d_wn 'cannot verify without jq'
-  elif [[ "$(strip_jsonc "$vtarget" | jq -S '.' 2>/dev/null)" == "$(jq -s -S '.[0] * .[1]' <(strip_jsonc "$vtarget") <(strip_jsonc "$vsnippet") 2>/dev/null)" ]]; then
-    d_ok 'settings applied in %s' "$vtarget"
-  else
-    d_wn '%s is missing keys from %s — run ./install.sh vscode' \
-      "$vtarget" "$(basename "$vsnippet")"
   fi
 
   hdr "Backups"
@@ -834,11 +718,6 @@ if ((UNINSTALL)); then
     say "  not removed: the baseline was merged into your own settings.json."
     say "  Undo by restoring a backup: $CLAUDE_SETTINGS_DST.bak.*"
   fi
-  if want vscode; then
-    hdr "vscode"
-    say "  not removed: settings were merged into your own file, not symlinked."
-    say "  Undo by restoring a backup: $(vscode_target_file).bak.*"
-  fi
   printf '\n'
   ok "uninstall complete."
   exit 0
@@ -872,18 +751,6 @@ done
 prune_orphans
 
 want claude && install_claude_settings
-want vscode && install_vscode
-
-# --- tmux: a snippet, sourced by hand ---------------------------------------
-if want all && [[ -f "$REPO/tmux/tmux.conf" ]]; then
-  hdr "tmux"
-  if [[ -f "$HOME/.tmux.conf" ]] && grep -q 'tmux/tmux.conf' "$HOME/.tmux.conf" 2>/dev/null; then
-    say "  ok       already sourced from ~/.tmux.conf"
-  else
-    say "  not linked — it is a snippet. Add to ~/.tmux.conf:"
-    say "    source-file $REPO/tmux/tmux.conf"
-  fi
-fi
 
 # --- PATH check -------------------------------------------------------------
 if ((DRY == 0)); then

@@ -74,14 +74,10 @@ It does *not* contain history ("first I did X…"), rationale, completed-step
 logs, or anything about other tasks. History is git's job; rationale is the
 commit body's job.
 
-When the task ends the baton dies: `vibe done` refuses to remove a worktree
-whose `HANDOFF.md` still carries content beyond its own headings — and, once
-cleared, refuses again while the file itself is still on the branch, where a
-merge would land it in the PR diff and stray it onto the default branch.
-Promote what is durable (see below), delete the file (`git rm HANDOFF.md`,
-commit, push), then finish. `--discard-handoff` is the explicit override
-meaning "I looked; nothing in it is worth keeping — and if the file stays on
-the branch, that is deliberate."
+When the task ends the baton dies: promote what is durable (see below),
+delete the file (`git rm HANDOFF.md`, commit, push), then finish.
+`commit-push-pr` does this before it opens the PR; CI fails a `HANDOFF.md`
+left at the repo root.
 
 ### PR description (layer 1)
 
@@ -144,10 +140,9 @@ durable:
 
 The end of a task is the enforcement point: a finished task hands nothing
 off, so everything still in the handoff is either promoted or consciously
-discarded. `vibe done` checks exactly this, deterministically and with no
-agent involvement — agents are instructed (via `memory/GLOBAL.md` and the
-`project-status-scaffold` skill) to promote and clear before wrapping up, and
-the guard catches the cases where that discipline was skipped.
+discarded. Agents are instructed (via `memory/GLOBAL.md`, the
+`project-status-scaffold` and `commit-push-pr` skills) to promote and clear
+before wrapping up, and CI catches a handoff that reached the default branch.
 
 ## Who enforces what
 
@@ -155,6 +150,6 @@ the guard catches the cases where that discipline was skipped.
 | ------------------------------------------- | ---------------------------------------- |
 | Summary contract, routing table             | `memory/GLOBAL.md` (agent instructions)  |
 | Handoff baton semantics                     | `templates/HANDOFF.md` + scaffold skill  |
-| Handoff empty at task end                   | `vibe done` guard (`bin/vibe`)           |
+| Handoff gone at task end                    | `commit-push-pr` + CI stray-file check   |
 | Commit body is one-line facts, PR is skim+`<details>` | `skills/commit-push-pr`       |
 | Templates stay tool-neutral                 | CI (`.github/workflows/ci.yml`)          |

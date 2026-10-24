@@ -26,8 +26,7 @@ overflow belongs in an artifact, not in chat.
 recurring gotcha → the repo's instruction file; decision → commit/PR body plus
 a one-liner in `PROJECT_STATUS.md` — then delete `HANDOFF.md` (`git rm`,
 commit, push). Left on the branch, even a cleared handoff merges into the default
-branch as a stray file. `vibe done` refuses while the handoff still carries
-content, and again while the file is still on the branch.
+branch as a stray file; CI fails on one.
 
 # Write for scanning, not reading
 
@@ -52,18 +51,15 @@ paragraph. Commit and PR bodies are the same: a few one-line facts each.
 
 # My setup
 
-All work lives on one workstation. I reach it either at the keyboard or over
-SSH from a laptop or phone, and continue the same session there — git does not
-carry work between machines.
+All work lives on one always-on workstation. Each repo there runs a
+persistent agent server; I start, steer and finish sessions from a phone or a
+browser. Setup and traps: `~/git/agentic-dev-toolkit/docs/remote-sessions.md`.
 
-- Over SSH, every task runs in its own persistent `tmux` session, so an agent
-  keeps working after I disconnect.
+- Every session gets its own git worktree and branch under
+  `<repo>/.claude/worktrees/`; the server removes it when the session ends
+  clean. `git worktree list` shows what is left.
 - The toolkit is installed from `~/git/agentic-dev-toolkit` by symlink, so
   `git pull` updates the installed tools in place.
-- `vibe` drives it: one git branch + one git worktree + one session per task,
-  under `$VIBE_WORKTREE_ROOT/<repo>/<task>` (default `~/git/worktrees`).
-  `vibe status` is the overview; `vibe help` lists the commands, `vibe doctor`
-  checks the setup.
 
 ## What this means for you
 
@@ -82,9 +78,9 @@ a `/clear`, or the next day starts cold; anything not written down is lost.
   maintains these files — let it. Without that skill, keep them current by
   hand, per the table above.
 
-**Prefer commands that survive a disconnect.** Over SSH, long-running work
-belongs in the task's tmux session, not in a foreground process attached to my
-connection.
+**Prefer commands that survive the session.** Long-running work (training,
+large builds) belongs in its own `tmux` session or job, not in a foreground
+process of the agent.
 
 # Tool traps
 

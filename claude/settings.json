@@ -117,9 +117,6 @@
       "Bash(whoami)",
       "Bash(echo:*)",
       "Bash(printf:*)",
-      "Bash(vibe status:*)",
-      "Bash(vibe doctor:*)",
-      "Bash(vibe help)",
       "Bash(tmux ls)",
       "Bash(tmux list-sessions:*)"
     ],

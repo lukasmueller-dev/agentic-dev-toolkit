@@ -11,13 +11,9 @@ setup() { git_env; }
 
 REVIEW="$REPO_ROOT/skills/codebase-review/review.sh"
 
-run_review() {
-  VIBE_WORKTREE_ROOT="$BATS_TEST_TMPDIR/worktrees" \
-    VIBE_CONFIG_FILE="$BATS_TEST_TMPDIR/no-such-config" \
-    bash "$REVIEW" "$@"
-}
+run_review() { bash "$REVIEW" "$@"; }
 
-wt() { echo "$BATS_TEST_TMPDIR/worktrees/proj/$1"; }
+wt() { echo "$BATS_TEST_TMPDIR/proj/.claude/worktrees/$1"; }
 
 # finish_handoff DIR — replace the State and Next action placeholders with
 # real content, the way the model would after assembling the mission.
@@ -151,15 +147,14 @@ advance_main() {
   [[ "$output" == *"State"* ]] || false
 }
 
-@test "publish: commits the finished brief and pushes with an upstream" {
+@test "publish: commits and pushes the finished brief, then frees the branch" {
   cd "$(make_repo proj)"
   run_review create
   finish_handoff "$(wt fresh-review-1)"
   run run_review publish fresh-review-1
   [ "$status" -eq 0 ]
   [[ "$output" == *"STATE=published"* ]] || false
-  [ -z "$(git -C "$(wt fresh-review-1)" status --porcelain)" ]
-  git -C "$(wt fresh-review-1)" rev-parse '@{u}' >/dev/null
+  [ ! -d "$(wt fresh-review-1)" ]
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline fresh-review-1 |
     grep -q "brief 'fresh-review-1'"
 }
