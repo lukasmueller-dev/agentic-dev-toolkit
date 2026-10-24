@@ -2,7 +2,6 @@
 #
 #   mkdir -p ~/.config/vibe
 #   cp templates/vibe.config.example ~/.config/vibe/config
-#   chmod 600 ~/.config/vibe/config      # it can hold your ntfy topic
 #
 # Precedence: environment variable > this file > built-in default.
 # So an env var set in your shell always wins over a value here.
@@ -24,81 +23,25 @@
 # Default: claude
 #VIBE_AGENT_CMD=claude
 
-# Arguments that turn VIBE_AGENT_CMD into a one-shot, headless run. `vibe park`
-# uses these to have the agent refresh HANDOFF.md before syncing, and `vibe
-# loop` uses them for each unattended round, appending the prompt as the final
-# argument: `$VIBE_AGENT_CMD $VIBE_AGENT_HEADLESS_ARGS "<prompt>"`. The default
-# is Claude Code's `-p`; point it at whatever your agent uses so nothing here
-# assumes Claude. If the agent is missing, park still syncs.
-# Default: -p
-#VIBE_AGENT_HEADLESS_ARGS=-p
-
 # Arguments that make VIBE_AGENT_CMD continue its previous conversation for a
 # worktree instead of opening an empty one. Used in exactly one situation: the
 # task's tmux session is still alive but its agent has exited, so `vibe attach`
 # finds the pane back at a shell and starts the agent again. Unset, that restart
 # gets a fresh context and HANDOFF.md carries the state.
 # Agent-agnostic by default; Claude Code spells it `--continue`, which resumes
-# the most recent conversation for the pane's directory — note that a headless
-# `vibe park` or `vibe loop` round in the same worktree can be the most recent
-# one, and would be resumed instead of your interactive session.
+# the most recent conversation for the pane's directory.
 # Default: unset
 #VIBE_AGENT_RESUME_ARGS=--continue
-
-# Extra args appended ONLY when a loop is started with --dangerously-allow-all:
-# the agent's "skip every permission prompt" mode. A loop runs unattended, so
-# it cannot answer a prompt — but skipping all of them lets the agent take any
-# action your account can, inside the (isolated, but same-$HOME) worktree. Leave
-# unset unless you have read docs/vibe-loop.md and accept that blast radius.
-# Default: unset
-#VIBE_LOOP_PERMISSIVE_ARGS=--dangerously-skip-permissions
-
-# Extra args appended ONLY when a loop is started with --sandbox: the agent's
-# "confine this run" mode, typically restricting filesystem writes to the
-# worktree and network access to an allowlist. This is the answer to the blast
-# radius above — it composes with --dangerously-allow-all rather than replacing
-# it. Deliberately agent-agnostic: every agent spells its sandbox differently,
-# so the value is yours to set, and --sandbox refuses to start while it is
-# unset rather than silently running unconfined.
-# Default: unset
-#VIBE_LOOP_SANDBOX_ARGS=
 
 # Prefix for tmux session names, which are <prefix>-<repo>-<branch>.
 # Default: vibe
 #VIBE_TMUX_PREFIX=vibe
-
-# This machine's own hostname, as `hostname` reports it here — set it only on
-# a machine that should count as a server. Each machine names itself, so any
-# number of them can.
-# Only a fallback: vibe treats any SSH session as the server first. Set this so
-# detection still works in a local shell on that machine (a cron job, a tmux
-# session started at boot) where SSH_CONNECTION is not set.
-# Default: unset
-#VIBE_SERVER_HOSTNAME=this-machines-hostname
-
-# Launch server-side sessions with Claude Code Remote Control already enabled,
-# so a task is reachable from the Claude app without typing /rc first. Set to 1
-# to opt in. Server only (there is no persistent session to reach on local),
-# and it appends Claude Code's --remote-control flag — leave it 0 for an agent
-# that has no such option, and use `vibe rc <task>` on demand instead.
-# Default: 0
-#VIBE_RC_ON_START=0
 
 # Before 'vibe start' cuts a brand-new task branch off the main checkout's
 # HEAD, fast-forward that checkout to its upstream first (fetch + merge
 # --ff-only). Skipped automatically when the main checkout is dirty, has no
 # upstream, or the fetch fails — it never blocks a start, only keeps it from
 # quietly forking off local history that predates a teammate's merge. Set to
-# 0 to branch off HEAD exactly as it is, the pre-existing behaviour.
+# 0 to branch off HEAD exactly as it is.
 # Default: 1
 #VIBE_START_PULL_MAIN=1
-
-# ntfy.sh topic for phone notifications. Unset means notifications are off.
-#
-# On the public ntfy.sh instance the topic name IS the access control: anyone
-# who knows it can read your notifications and publish to them. Use a long
-# random string, not something guessable. Generate one with:
-#   echo "claude-$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 16)"
-# See docs/notifications.md.
-# Default: unset
-#VIBE_NTFY_TOPIC=claude-xxxxxxxxxxxxxxxx

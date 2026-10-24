@@ -24,8 +24,8 @@ overflow belongs in an artifact, not in chat.
 
 **Before a task ends, the handoff must be gone.** Promote what is durable —
 recurring gotcha → the repo's instruction file; decision → commit/PR body plus
-a one-liner in `PROJECT_STATUS.md` — then delete `HANDOFF.md` (`git rm`, then
-sync). Left on the branch, even a cleared handoff merges into the default
+a one-liner in `PROJECT_STATUS.md` — then delete `HANDOFF.md` (`git rm`,
+commit, push). Left on the branch, even a cleared handoff merges into the default
 branch as a stray file. `vibe done` refuses while the handoff still carries
 content, and again while the file is still on the branch.
 
@@ -52,32 +52,23 @@ paragraph. Commit and PR bodies are the same: a few one-line facts each.
 
 # My setup
 
-I work across several machines on the same repos, and this shapes what "done"
-means for a work session. How many there are does not matter; what matters is
-the role each one plays in a given session:
+All work lives on one workstation. I reach it either at the keyboard or over
+SSH from a laptop or phone, and continue the same session there — git does not
+carry work between machines.
 
-- **local** — a machine I am sitting at. Interactive work, no tmux forced.
-- **server** — a machine I reach over SSH, where work has to outlive the
-  connection. Every task runs in its own persistent `tmux` session, so an agent
-  keeps working after I disconnect. I reattach later from any other machine, or
-  from my phone.
-
-The role is per-session, not a fixed label on a box: the same machine is
-"local" when I sit at it and "server" when I SSH into it, and the operating
-system is irrelevant to the split.
-
-Every machine runs the same toolkit from `~/git/agentic-dev-toolkit`, installed
-by symlink, so `git pull` updates the installed tools in place.
-
-`vibe` is the CLI that drives this: one git branch + one git worktree per task,
-under `$VIBE_WORKTREE_ROOT/<repo>/<task>` (default `~/git/worktrees`). Run
-`vibe help` for the commands and `vibe doctor` when something looks wrong.
+- Over SSH, every task runs in its own persistent `tmux` session, so an agent
+  keeps working after I disconnect.
+- The toolkit is installed from `~/git/agentic-dev-toolkit` by symlink, so
+  `git pull` updates the installed tools in place.
+- `vibe` drives it: one git branch + one git worktree + one session per task,
+  under `$VIBE_WORKTREE_ROOT/<repo>/<task>` (default `~/git/worktrees`).
+  `vibe status` is the overview; `vibe help` lists the commands, `vibe doctor`
+  checks the setup.
 
 ## What this means for you
 
-**The handoff is the product of a session, not an afterthought.** Because work
-moves between machines, anything you know that is not written down is lost when
-the session ends. Concretely:
+**The handoff carries context from one session to the next.** A new session,
+a `/clear`, or the next day starts cold; anything not written down is lost.
 
 - Keep `HANDOFF.md` (worktree root) current — where the work stands and what
   the next session should do first. Update it *before* I wrap up, not after I
@@ -91,21 +82,9 @@ the session ends. Concretely:
   maintains these files — let it. Without that skill, keep them current by
   hand, per the table above.
 
-**Nothing uncommitted crosses machines.** The handoff travels through git.
-Uncommitted work on one machine is invisible everywhere else. If a session ends
-with work worth keeping, it needs to be committed and pushed (`vibe sync`).
-
-**Prefer commands that survive a disconnect.** On the server, long-running work
+**Prefer commands that survive a disconnect.** Over SSH, long-running work
 belongs in the task's tmux session, not in a foreground process attached to my
-SSH connection.
-
-## Environment detection
-
-`vibe` decides local-vs-server per machine, from `$SSH_CONNECTION` / `$SSH_TTY`,
-falling back to comparing the hostname against `$VIBE_SERVER_HOSTNAME` — which
-each machine sets to *its own* hostname when it should count as a server. If a
-command behaves as though it is on the wrong machine, that is the thing to check —
-`vibe where` prints the verdict and the reason for it.
+connection.
 
 # Working on the toolkit itself
 

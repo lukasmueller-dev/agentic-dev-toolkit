@@ -4,7 +4,8 @@ The one home for the bar every skill is held to. Each criterion has a stable
 ID, one line of rationale, and a tag:
 
 - **lint** — mechanical, enforced by `bin/skill-lint`. Its findings cite the ID.
-- **judgment** — needs a reader; graded by the `skill-audit` skill.
+- **judgment** — needs a reader; graded with the checklist in
+  `docs/skill-lint.md`.
 
 Change a criterion here and nowhere else. `skill-lint` owns the machine-checkable
 wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
@@ -42,7 +43,7 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 
 | ID   | Tag      | Criterion | Why |
 | ---- | -------- | --------- | --- |
-| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. Recorded exceptions: (a) a skill whose every side effect sits behind an explicit in-skill approval gate may stay model-invocable (`codebase-health` — findings are reported first, fixes need the user's category-by-category go-ahead; `repo-scaffold` — the audit is read-only and every write waits on the phase-3 gate); (b) a skill whose only side effect is idempotent, never-destructive scaffolding of files it owns and that is meant to run proactively (`project-status-scaffold` — creates the status/handoff files only when missing, never overwrites, and the workflow depends on it firing unasked at the end of a session). | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. When the human's approval is built into the flow itself, or the side effect cannot destroy anything and is wanted proactively, the gate is unnecessary. |
+| SQ13 | judgment | A skill with side effects sets `disable-model-invocation: true`. Recorded exceptions: (a) a skill whose every side effect sits behind an explicit in-skill approval gate may stay model-invocable (`codebase-health` — findings are reported first, fixes need the user's category-by-category go-ahead); (b) a skill whose only side effect is idempotent, never-destructive scaffolding of files it owns and that is meant to run proactively (`project-status-scaffold` — creates the status/handoff files only when missing, never overwrites, and the workflow depends on it firing unasked at the end of a session; `add-roadmap-item` — appends one item to the roadmap file it owns, never edits existing items, and must load when the user says "add this to the roadmap"). | Deploys, commits and sends should be timed by the human, not auto-triggered by a description match. When the human's approval is built into the flow itself, or the side effect cannot destroy anything and is wanted proactively, the gate is unnecessary. |
 
 ## Bundled files and portability
 
@@ -58,5 +59,5 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 
 - `bin/skill-lint` — the **lint** rows, mechanically, in any repo. See
   `docs/skill-lint.md`.
-- `skills/skill-audit` — the **judgment** rows, by reading each `SKILL.md`.
-  It runs `skill-lint` first for the mechanical pass, then grades the rest.
+- The judgment checklist in `docs/skill-lint.md` — the **judgment** rows, by
+  reading each `SKILL.md` after `skill-lint` has run.

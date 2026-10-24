@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
-# skills/_lib/research-lib.sh's repo-kind detection, and the map.sh steps
-# built on it. Everything runs in throwaway repos under $BATS_TEST_TMPDIR.
+# skills/_lib/research-lib.sh's repo-kind and execution-context detections,
+# and the map.sh steps built on them. Everything runs in throwaway repos under $BATS_TEST_TMPDIR.
 #
 # The verdict rule (docs/research-skills.md §4) is what these mostly guard:
 # it is the piece a later change is most likely to get subtly wrong, and a
@@ -249,4 +249,172 @@ EOF
   run bash "$MAP" seed research "$d"
   [ "$status" -ne 0 ]
   [ ! -e "$d/docs/CODEBASE_MAP.md" ]
+}
+
+# ---------------------------------------------------------------------------
+# Execution context (docs/research-skills.md §5) and `map.sh context`.
+#
+# Probes run with $STUB as their *whole* PATH: a stub can add nvidia-smi or
+# sbatch but never hide a real one, so on a GPU box or a login node every
+# "no GPU"/"no scheduler" row would otherwise assert the host.
+# ---------------------------------------------------------------------------
+
+# exec_stubs — private stub dir holding only the tools the probes shell out to.
+exec_stubs() {
+  STUB="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$STUB"
+  local t
+  for t in bash dirname git grep; do
+    ln -s "$(command -v "$t")" "$STUB/$t"
+  done
+  # A real allocation on the runner would make every verdict `cluster`.
+  unset SLURM_JOB_ID SLURM_JOB_NODELIST
+}
+
+# stub_gpu N — nvidia-smi listing N devices; N=0 means present but failing.
+stub_gpu() {
+  local n="$1" i=0
+  if [ "$n" -eq 0 ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' >"$STUB/nvidia-smi"
+  else
+    cat >"$STUB/nvidia-smi" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in -L) ;; *) exit 0 ;; esac
+STUB
+    while [ "$i" -lt "$n" ]; do
+      echo "echo 'GPU $i: Stub (UUID: GPU-$i)'" >>"$STUB/nvidia-smi"
+      i=$((i + 1))
+    done
+  fi
+  chmod +x "$STUB/nvidia-smi"
+}
+
+# stub_gpu_empty — nvidia-smi exits 0 but lists nothing (driver, no devices).
+stub_gpu_empty() {
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$STUB/nvidia-smi"
+  chmod +x "$STUB/nvidia-smi"
+}
+
+stub_scheduler() {
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$STUB/${1:-sbatch}"
+  chmod +x "$STUB/${1:-sbatch}"
+}
+
+context_of() {
+  PATH="$STUB" bash -c '
+    set -euo pipefail
+    . "$1/skills/_lib/research-lib.sh"
+    detect_exec_context
+  ' _ "$REPO_ROOT"
+}
+
+context_evidence_of() {
+  PATH="$STUB" bash -c '
+    set -euo pipefail
+    . "$1/skills/_lib/research-lib.sh"
+    exec_context_evidence
+  ' _ "$REPO_ROOT"
+}
+
+@test "exec context: inside an allocation is cluster" {
+  exec_stubs
+  # shellcheck disable=SC2030  # each @test is its own subshell
+  export SLURM_JOB_ID=12345
+  [ "$(context_of)" = cluster ]
+}
+
+@test "exec context: SLURM_JOB_NODELIST alone is also inside an allocation" {
+  exec_stubs
+  export SLURM_JOB_NODELIST="node[001-004]"
+  [ "$(context_of)" = cluster ]
+}
+
+@test "exec context: an allocation outranks every other probe" {
+  exec_stubs
+  # shellcheck disable=SC2031  # exec_stubs unsets it, this test sets its own
+  export SLURM_JOB_ID=12345
+  stub_scheduler sbatch
+  stub_gpu 8
+  [ "$(context_of)" = cluster ]
+}
+
+@test "exec context: a scheduler with no GPU is a login node" {
+  exec_stubs
+  stub_scheduler sbatch
+  [ "$(context_of)" = cluster ]
+}
+
+@test "exec context: a scheduler AND a GPU is ambiguous" {
+  # Interactive allocation vs workstation with cluster access: a guess burns
+  # an allocation.
+  exec_stubs
+  stub_scheduler srun
+  stub_gpu 2
+  [ "$(context_of)" = ambiguous ]
+}
+
+@test "exec context: no scheduler and a GPU is a workstation" {
+  exec_stubs
+  stub_gpu 1
+  [ "$(context_of)" = workstation ]
+}
+
+@test "exec context: no scheduler and no GPU is a CPU-only workstation" {
+  exec_stubs
+  [ "$(context_of)" = workstation ]
+  run context_evidence_of
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q 'nvidia-smi not installed'
+}
+
+@test "exec context: a present-but-failing nvidia-smi counts as no GPU" {
+  exec_stubs
+  stub_gpu 0
+  stub_scheduler sbatch
+  [ "$(context_of)" = cluster ]
+  run context_evidence_of
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q 'listed no device'
+}
+
+@test "exec context: an nvidia-smi that succeeds but lists nothing is no GPU" {
+  exec_stubs
+  stub_gpu_empty
+  stub_scheduler sbatch
+  [ "$(context_of)" = cluster ]
+  run context_evidence_of
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q 'listed no device'
+}
+
+@test "exec context: evidence reports every probe, including the negatives" {
+  exec_stubs
+  run context_evidence_of
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | grep -c .)" -eq 3 ]
+  echo "$output" | grep -q '^scheduler environment: '
+  echo "$output" | grep -q '^scheduler on PATH: '
+  echo "$output" | grep -q '^GPU: '
+}
+
+@test "exec context: never errors, so a caller under set -e reaches the ask" {
+  exec_stubs
+  run context_of
+  [ "$status" -eq 0 ]
+  run context_evidence_of
+  [ "$status" -eq 0 ]
+}
+
+@test "map.sh context: prints the verdict and its evidence, and runs nothing" {
+  exec_stubs
+  stub_gpu 1
+  run env PATH="$STUB" bash "$MAP" context
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '^context: workstation$'
+  echo "$output" | grep -q '^GPU: nvidia-smi lists 1 device'
+}
+
+@test "codebase-map: the first-run reference it points to exists" {
+  grep -q 'references/first-run.md' "$REPO_ROOT/skills/codebase-map/SKILL.md"
+  [ -f "$REPO_ROOT/skills/codebase-map/references/first-run.md" ]
 }

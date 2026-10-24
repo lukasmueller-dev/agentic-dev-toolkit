@@ -15,7 +15,7 @@ claude --plugin-dir ~/git/agentic-dev-toolkit
 ```
 
 Repeat the flag to load it beside other plugins. `claude plugin validate .`
-checks the manifest, the skill and agent frontmatter, and the hook config.
+checks the manifest, the skill frontmatter, and the hook config.
 
 ## What the plugin root already is
 
@@ -27,7 +27,6 @@ with the layout Claude Code expects at a plugin root:
 | `skills/`      | `skills/`         | Every skill, no manifest entry needed     |
 | —              | `vendor/skills/`  | Listed in the manifest's `skills`, loaded in addition to `skills/` |
 | `bin/`         | `bin/`            | `vibe`, `skill-lint` and `plug` join the Bash `PATH` |
-| `agents/`      | `claude/agents/`  | Listed in the manifest                    |
 | `hooks/hooks.json` | —             | `.claude-plugin/hooks.json`               |
 
 That is not a coincidence worth over-reading — `skills/` at the top level is
@@ -62,6 +61,9 @@ The known limit is that injected context is ordinary conversation context, not
 a memory file. A long enough session can compact it away, where the symlink
 install's `~/.claude/CLAUDE.md` would survive.
 
+`inject-global-memory.sh` is not wired in the symlink install. On a real machine
+it is an inert script sitting in `~/.claude/hooks`.
+
 ### Permission and sandbox policy
 
 A plugin's `settings.json` supports only the `agent` and `subagentStatusLine`
@@ -73,33 +75,6 @@ package, and the argument does not stop applying when the package is ours.
 
 Under the plugin, sessions run on whatever permission settings the host already
 has.
-
-## The reviewer agents keep their guard
-
-`diff-reviewer`, `docs-drift` and `security-sweep` are read-only *by allowlist*,
-not by instruction — see `claude/agents/README.md`. `tools:` alone cannot do
-that job, because it takes bare tool names, so each agent carries a frontmatter
-`PreToolUse` hook running `readonly-bash.sh`, which is the only layer that sees
-a Bash command's arguments.
-
-Claude Code **refuses `hooks:` in the frontmatter of a plugin-shipped agent**,
-for good reason: a plugin could otherwise install a hook by shipping an agent
-nobody ever invokes. Shipped naively, the three reviewers would arrive with
-`Bash` and no allowlist — read-only by instruction alone, which is the exact
-thing the recorded decision rejects.
-
-So the plugin wires one session-level `PreToolUse(Bash)` hook running
-`claude/hooks/readonly-bash-for-reviewers.sh`. Session hooks fire inside
-subagents, and the payload carries `agent_type`, so the wrapper narrows a
-session-wide hook back down to the three agents the frontmatter used to name
-and delegates the verdict to the unmodified `readonly-bash.sh`. Both the bare
-name and the namespaced `agentic-dev-toolkit:docs-drift` form match; the `:`
-anchor keeps a foreign agent called `their-docs-drift` from inheriting the
-guard.
-
-Neither wrapper is wired in the symlink install. `claude/settings.json` does not
-reference either file, so on a real machine they are inert scripts sitting in
-`~/.claude/hooks`, and the frontmatter hooks do the work as before.
 
 ## Known rough edges
 
@@ -113,7 +88,7 @@ reference either file, so on a real machine they are inert scripts sitting in
   is ignored.
 - **`bin/` joins the Bash `PATH` automatically.** `vibe` in a sandbox with no
   tmux and no persistent worktree root will not do anything useful, but it
-  degrades rather than breaking; `vibe where` reports what it detected.
+  degrades rather than breaking; `vibe doctor` reports what it detected.
 - **Versioning.** `version` is set in the manifest, so the plugin only updates
   when that field is bumped. Left unset, every commit would count as a new
   version.
@@ -125,9 +100,10 @@ symlink install, `.claude-plugin/hooks.json` for the plugin — because the
 command paths genuinely differ (`$HOME/.claude/hooks/…` against
 `${CLAUDE_PLUGIN_ROOT}/claude/hooks/…`). They are not generated from each
 other, so `tests/plugin.bats` asserts they stay in step: every event in the
-baseline appears in the plugin config, every command resolves to a file that
-exists, and every agent file in `claude/agents/` is listed in the manifest.
+baseline appears in the plugin config, and every command resolves to a file
+that exists.
 
-That last one is what replaces auto-discovery. `agents` must be a list of
-files, not a directory — the validator rejects a directory — so adding an agent
-means adding a manifest line, and the test is what makes forgetting it loud.
+`claude/agents/` is empty today, so the manifest has no `agents` key. Adding an
+agent means adding one: it must be a list of files, not a directory — the
+validator rejects a directory — and `tests/plugin.bats` fails until every agent
+file is listed.

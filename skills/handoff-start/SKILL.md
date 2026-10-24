@@ -45,7 +45,7 @@ Stop at the point where it prints the start commands. That is Phase 2's job.
 ## Phase 2 — Launch it
 
 Only once `handoff.sh publish` has reported success. One command, on every
-machine — do not check `vibe where` and do not branch on the answer:
+machine:
 
 ```
 vibe start <task> --no-attach

@@ -215,23 +215,21 @@ jobs:
           # Existence check first, for the same reason as the guard above: grep
           # exits 2 on a missing file, so deleting or renaming a template would
           # silently retire its neutrality check rather than fail the build.
-          for f in templates/HANDOFF.md templates/LOOP.md \
-            templates/LOOP_PR.md templates/PROJECT_STATUS.md \
-            templates/PROJECT_ROADMAP.md templates/repo/pre-push; do
+          for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
+            templates/PROJECT_ROADMAP.md; do
             test -f "$f" || {
               echo "::error file=$f::missing — this guard cannot run"
               exit 1
             }
           done
-          # The scaffold emits whole directories into other repos too, so ci/,
-          # gitignore/ and codebase/ fall under the same rule. Directories
-          # rather than files on purpose: a family that adds a document per
-          # skill is then covered without another edit here. A directory
+          # Skills emit whole directories into other repos too, so codebase/
+          # falls under the same rule. Directories rather than files on
+          # purpose: a family that adds a document per skill is then covered
+          # without another edit here. A directory
           # rename would make a glob match nothing and pass silently, so
           # assert each is non-empty before grepping it — which also means a
           # directory only joins this list once it holds something.
-          for d in templates/ci templates/gitignore templates/codebase templates/research \
-            templates/report; do
+          for d in templates/codebase; do
             test -n "$(find "$d" -type f 2>/dev/null | head -1)" || {
               echo "::error::$d is empty or missing — this guard cannot run"
               exit 1
@@ -246,23 +244,20 @@ jobs:
           # "macOS" or "MacBook" — the two spellings a real violation uses.
           # Left anchored either side, so "machine" and "macro" still pass.
           if grep -rniE 'vibe|claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
-            templates/HANDOFF.md templates/LOOP.md \
-            templates/LOOP_PR.md templates/PROJECT_STATUS.md \
-            templates/PROJECT_ROADMAP.md templates/repo/pre-push \
-            templates/ci templates/gitignore templates/codebase \
-            templates/research templates/report; then
+            templates/HANDOFF.md templates/PROJECT_STATUS.md \
+            templates/PROJECT_ROADMAP.md templates/codebase; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi
 
-      - name: no stray handoff or brief at the repo root
+      - name: no stray handoff at the repo root
         run: |
-          # HANDOFF.md and LOOP.md are start-of-task input, not deliverable.
-          # `vibe done` refuses to finish while either is on the branch, but a
+          # HANDOFF.md is start-of-task input, not deliverable.
+          # `vibe done` refuses to finish while it is on the branch, but a
           # PR merged without it (or with CI down) can still carry one onto
           # main — that has happened twice (PRs #11 and #14) plus once more
           # while Actions was disabled by billing. This is the backstop.
-          for f in HANDOFF.md LOOP.md; do
+          for f in HANDOFF.md; do
             if [ -e "$f" ]; then
               echo "::error file=$f::stray $f at the repo root — task briefs must be dropped before merge"
               exit 1

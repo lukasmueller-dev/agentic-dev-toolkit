@@ -1,26 +1,26 @@
 ---
 name: sota-digest
-description: "Writes the weekly state-of-the-art digest for this repo — surveys agentic-development sources by web search, diffs what it finds against PROJECT_ROADMAP.md and PROJECT_STATUS.md, and emits docs/sota/<YYYY-Www>.md with 1-3 recommendations formatted as ready-to-add roadmap items. Use when the unattended weekly run invokes it, or when the user asks for a SOTA digest, a state-of-the-art sweep, or 'what changed in agentic dev this week'. Repo-local: it only ever runs against this toolkit."
+description: "Writes the weekly state-of-the-art digest for this repo — surveys agentic-development sources by web search, diffs what it finds against PROJECT_ROADMAP.md and PROJECT_STATUS.md, and emits docs/sota/<YYYY-Www>.md with 1-3 recommendations formatted as ready-to-add roadmap items. Use when the user asks for a SOTA digest, a state-of-the-art sweep, or 'what changed in agentic dev this week'. Repo-local: it only ever runs against this toolkit."
 disable-model-invocation: true
 ---
 
-# Weekly SOTA digest
+# SOTA digest
 
 Produce one file — `docs/sota/<YYYY-Www>.md` — that a human reads in five
 minutes and either acts on or ignores. Its value is entirely in what it
 *leaves out*: a digest that lists everything that happened is a feed, not a
 recommendation.
 
-This skill normally runs unattended, in a worktree, driven by `vibe loop`
-(see `docs/sota-watch.md`). The loop does the git work. You write the file.
+Runs on demand, in an interactive session (see `docs/sota-watch.md`). You
+write the file; the user reviews it and decides whether to commit.
 
 ## Hard boundaries — never do these
 
-- **Never commit, push, or open a PR.** The surrounding loop does all three.
-  Writing the digest file is the entire deliverable.
+- **Never commit, push, or open a PR unasked.** Writing the digest file is the
+  entire deliverable; the user commits it after review.
 - **Never edit `PROJECT_ROADMAP.md` or `PROJECT_STATUS.md`.** Recommendations
-  are *proposals*; they are promoted by a human running `add-roadmap-item`
-  after the PR is reviewed. Writing them straight into the roadmap removes
+  are *proposals*; they are promoted by `add-roadmap-item` once the user
+  accepts one. Writing them straight into the roadmap removes
   the review gate this whole mechanism exists to provide.
 - **Never touch anything else in the repo.** No refactors, no fixes, no
   "while I was in here". A digest run that changes code is unreviewable.
@@ -31,8 +31,7 @@ This skill normally runs unattended, in a worktree, driven by `vibe loop`
 
 ## Phase 1 — Fix the week
 
-Use the week identifier named in the goal of `LOOP.md` if there is one;
-otherwise `date -u +%G-W%V` (ISO year and week, e.g. `2026-W30`). Everything
+Use `date -u +%G-W%V` (ISO year and week, e.g. `2026-W30`). Everything
 below writes that exact string. The digest path is
 `docs/sota/<YYYY-Www>.md` — create `docs/sota/` if it does not exist.
 
@@ -105,5 +104,4 @@ release feed" goes — silence there is read as a clean run.
 
 Done when `docs/sota/<YYYY-Www>.md` exists, every claim in it carries a URL,
 it holds between zero and three recommendations, and nothing else in the
-worktree has changed. Stop there — the loop commits, pushes, and opens the
-PR.
+worktree has changed. Stop there and point the user at the file.

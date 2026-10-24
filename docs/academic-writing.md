@@ -20,7 +20,7 @@ Nothing is installed by the toolkit. Install what a skill needs:
 | `writing-assistance` | — |
 | `literature-review` | `pip install requests`; `pandoc` + `xelatex`; network to arXiv, Semantic Scholar, IEEE, OpenReview, ACM, doi.org, crossref |
 
-## Known risks (security-sweep, 2026-10-06)
+## Known risks (security review, 2026-10-06)
 
 - `proofread`, `writing-simple-style`, `literature-review` set `allowed-tools: Bash` → no prompt for any command while active; the sandbox still applies.
 - `proofread`, `writing-simple-style` build a PDF unasked; pass `--no-pdf` (simple-style) or decline. proofread's build path names `proofreading/`, not `proofread/` → it fails.

@@ -4,8 +4,8 @@
 #
 # Every rule here is machine-checkable: it needs no reader's judgment, only a
 # regex or a length. The judgment calls — does the description say *what and
-# when*, does the body open with boundaries — live in the skill-audit skill,
-# not here. Keep that line sharp: a check that needs an opinion does not belong
+# when*, does the body open with boundaries — live in the judgment checklist
+# in docs/skill-lint.md, not here. Keep that line sharp: a check that needs an opinion does not belong
 # in this file.
 #
 # SKILL.md is an open standard (the Agent Skills spec), so checking one is not

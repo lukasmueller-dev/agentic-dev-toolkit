@@ -12,22 +12,20 @@ export VIBE="$REPO_ROOT/bin/vibe"
 # ---------------------------------------------------------------------------
 # Isolation from the real machine's tmux
 #
-# detect_env() calls us "server" whenever SSH_CONNECTION/SSH_TTY is set or the
-# hostname matches VIBE_SERVER_HOSTNAME. Run the suite over SSH and every
-# `vibe start` / `vibe loop` then creates a REAL tmux session against the live
-# tmux server — outside $BATS_TEST_TMPDIR, where bats' cleanup cannot reach it,
-# with a real agent running in it against a worktree bats later deletes.
+# detect_env() calls us "ssh" whenever SSH_CONNECTION/SSH_TTY is set. Run the
+# suite over SSH and every `vibe start` then creates a REAL tmux session
+# against the live tmux server — outside $BATS_TEST_TMPDIR, where bats' cleanup
+# cannot reach it, with a real agent running in it against a worktree bats
+# later deletes.
 #
 # So: force the local path for every test (braces), and make the real tmux
-# unreachable anyway (belt), so a test that deliberately exercises the server
+# unreachable anyway (belt), so a test that deliberately exercises the SSH
 # path asserts against a log instead of leaking a session.
 # ---------------------------------------------------------------------------
 unset SSH_CONNECTION SSH_TTY SSH_CLIENT
-# No hostname can contain a slash, so this never matches.
-export VIBE_SERVER_HOSTNAME="vibe-tests/never-a-real-host"
 # $TMUX is how vibe knows it is already inside a client: set, it switches the
 # client instead of attaching. Run the suite from inside tmux — which is where
-# this toolkit's own work happens — and every server-path test silently takes
+# this toolkit's own work happens — and every SSH-path test silently takes
 # the switch-client branch, so anything the attach branch does goes untested.
 unset TMUX TMUX_PANE
 
@@ -46,11 +44,10 @@ export HOME
 mkdir -p "$HOME"
 
 # The runner's own vibe configuration must not reach the suite: a developer
-# machine that exports VIBE_LOOP_PERMISSIVE_ARGS or keeps a real
+# machine that exports VIBE_AGENT_CMD or keeps a real
 # ~/.config/vibe/config would otherwise flip assertions from under the tests.
-unset VIBE_WORKTREE_ROOT VIBE_AGENT_CMD VIBE_AGENT_HEADLESS_ARGS \
-  VIBE_AGENT_RESUME_ARGS VIBE_LOOP_PERMISSIVE_ARGS VIBE_LOOP_SANDBOX_ARGS \
-  VIBE_TMUX_PREFIX VIBE_NTFY_TOPIC VIBE_RC_ON_START
+unset VIBE_WORKTREE_ROOT VIBE_AGENT_CMD VIBE_AGENT_RESUME_ARGS \
+  VIBE_TMUX_PREFIX VIBE_START_PULL_MAIN
 export VIBE_CONFIG_FILE="${BATS_TEST_TMPDIR:-$BATS_FILE_TMPDIR}/no-such-config"
 
 # Resolved before the stub goes on PATH, so a test can still ask the real tmux
