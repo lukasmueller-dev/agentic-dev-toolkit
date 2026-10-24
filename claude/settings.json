@@ -118,8 +118,6 @@
       "Bash(echo:*)",
       "Bash(printf:*)",
       "Bash(vibe status:*)",
-      "Bash(vibe list:*)",
-      "Bash(vibe where:*)",
       "Bash(vibe doctor:*)",
       "Bash(vibe help)",
       "Bash(tmux ls)",

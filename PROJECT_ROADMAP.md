@@ -5,23 +5,12 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-07-27 · server (srv1841294)_
+_Last updated: 2026-10-24 · turing_
 
 ## Items
 
-One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) or a
-`LOOP.md` (the `loop-brief` skill) can be staged straight from it. Order
-matters within a track; tracks are independent.
-
-Track D — fixes:
-
-- [ ] **Fix `vibe status --json` on HEAD** — 11 tests in
-  `tests/vibe-status-json.bats` fail on clean `main` (e.g. `"dirty": false`,
-  `"state": "merged"`, `"tmux_session": null` assertions). Done when
-  `bats tests/vibe-status-json.bats` is green on macOS bash 3.2.
-- [ ] **Audit older suites for mid-test `[[ … ]]`** — they cannot fail on
-  bash 3.2 (see CLAUDE.md Testing). Done when every mid-test `[[ ]]` in
-  `tests/*.bats` ends in `|| false` and the suite is still green.
+One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) can be
+staged straight from it. Order matters within a track; tracks are independent.
 
 Track C — research-codebase skills:
 
@@ -39,25 +28,11 @@ Deliberately rejected, so they are not re-proposed: a generic "optimize my
 model" skill, anything that autonomously launches training, and a
 paper-writing agent.
 
-- [ ] **`research-first-run`** (wave 1) — **the skill has landed; what
-      remains is the proof, and it needs a GPU box.** `skills/research-first-run/`,
-      its `env.sh`, §5's execution-context detection in
-      `skills/_lib/research-lib.sh` and `templates/research/RUNBOOK.md` are
-      all merged and tested. None of that was provable on a machine with no
-      GPU and no scheduler, which is the whole of what is left:
-      run the skill against a real research codebase on real hardware, and
-      commit the `scripts/smoke.sh` it produces — one process, one device,
-      under about two minutes, measured rather than estimated, exiting
-      non-zero on failure.
-      Two things to watch for, since they are what the skill exists to get
-      right and neither can be checked here: the environment resolution
-      order (runtime → framework build → accelerator toolkit → any wheel
-      compiled against both — that last link is where first runs actually
-      die), and whether workarounds really do land in `docs/RUNBOOK.md` as
-      they are found rather than at the end, when the one change that
-      mattered is indistinguishable from the three that did not.
-      Delete this item once `scripts/smoke.sh` exists in a real repo and
-      has been run.
+- [ ] **First run on real hardware** (wave 1) — run `codebase-map`'s
+      `references/first-run.md` against `openpi` on a GPU box and commit the
+      `scripts/smoke.sh` it leads to: one process, one device, under about two
+      minutes, measured, exiting non-zero on failure.
+      Done when `scripts/smoke.sh` exists in a real repo and has been run.
 
 - [ ] **`research-train-doctor`** (wave 2) — triages a run that is not
       learning. The value is the ordering, by prior probability rather

@@ -1,12 +1,12 @@
 # Working on this repo
 
-This is a toolkit, not an application. Its users are agents and a human across
-several machines, and everything in it is installed by symlink into `$HOME`. That
+This is a toolkit, not an application. Its users are agents and a human, and
+everything in it is installed by symlink into `$HOME`. That
 shapes every convention below: a mistake here does not fail a test suite, it
 quietly changes how every other repo behaves.
 
-For the *personal workflow* this toolkit serves — the local/server split across
-machines, handoffs, `vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
+For the *personal workflow* this toolkit serves — one workstation reached over
+SSH, handoffs, `vibe` — see `memory/GLOBAL.md`, the global memory this repo installs into
 every agent. This file is only about changing the toolkit itself.
 
 ## Layout contract
@@ -18,10 +18,10 @@ every agent. This file is only about changing the toolkit itself.
 | `templates/`  | Documents the tools emit                            | No             |
 | `completions/`| Shell completions for `bin/` tools                  | No             |
 | `memory/`     | Global memory installed into every agent            | No             |
-| `claude/`     | Claude Code config: settings, hooks, agents, response style | Yes     |
+| `claude/`     | Claude Code config: settings, hooks, response style | Yes             |
 | `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |
 | `vscode/`     | VS Code settings fragments                          | Yes            |
-| `tmux/`       | tmux snippet for server sessions                    | Yes            |
+| `tmux/`       | tmux snippet for SSH sessions                       | Yes            |
 | `.claude-plugin/` | Claude Code plugin manifest + its hook wiring   | Yes            |
 | `vendor/`     | External skills, written only by `bin/plug`         | No             |
 | `docs/`       | Narrative docs, one file per topic                  | —              |
@@ -51,9 +51,9 @@ an example. That is precisely how the three divergent copies of `HANDOFF.md`
 came about. If a tool needs to emit a document, it reads `templates/`.
 
 Templates must not name a specific CLI, machine, or agent. CI fails the build
-if `templates/HANDOFF.md`, `templates/LOOP.md`, `templates/LOOP_PR.md`,
-`templates/PROJECT_STATUS.md`, `templates/PROJECT_ROADMAP.md`, or
-`templates/repo/pre-push` mentions one.
+if `templates/HANDOFF.md`, `templates/PROJECT_STATUS.md`,
+`templates/PROJECT_ROADMAP.md`, or anything under `templates/codebase/`
+mentions one.
 
 ## Global memory lives in `memory/`
 
@@ -94,9 +94,9 @@ rules matter when changing anything here:
 - **`skills` in the manifest adds `./vendor/skills/`** to the default
   `skills/` scan. A missing path fails the plugin load, so
   `vendor/skills/README.md` stays committed.
-- **`agents` in the manifest is a list of files.** The validator rejects a
-  directory, so this is the one place auto-discovery does not apply. A new
-  agent needs a manifest line; the suite fails until it gets one.
+- **`agents` in the manifest is a list of files.** `claude/agents/` is empty,
+  so the key is absent. A new agent needs a manifest line (the validator
+  rejects a directory); the suite fails until it gets one.
 
 `claude plugin validate .` is the schema check. It warns about this repo's own
 `CLAUDE.md` — a plugin root's `CLAUDE.md` is not loaded as context — which is
@@ -143,8 +143,8 @@ Rules the installer keeps, which any change must preserve:
   bearing: together they are a strict subset of what `--uninstall` already
   removes, so pruning cannot lose anything that was not already lost, and
   foreign litter stays someone else's to clean. The scan is one level deep by
-  design — `~/.claude/agents` and `~/.claude/hooks` are whole-directory
-  symlinks *into* the repo, so descending would judge repo files by rules
+  design — `~/.claude/hooks` (and `~/.claude/agents`, once it holds an
+  agent) are whole-directory symlinks *into* the repo, so descending would judge repo files by rules
   meant for install destinations. A dangling link at a *mapped* path is a
   different diagnosis (`dangling`, its source is missing) and is excluded.
 
@@ -186,8 +186,7 @@ The same reasoning as the runtime keys above, one step further: there is no
 stable baseline to merge, because every line of it is a choice someone made
 in a session.
 
-So MCP servers are documented and never installed — `docs/mcp-servers.md`
-curates which few are worth connecting. A server that belongs to a project
+So MCP servers are never installed. A server that belongs to a project
 rather than to a person goes in that project's own `.mcp.json`, which is
 version-controllable by design, and is that repo's business rather than this
 one's.
@@ -267,7 +266,7 @@ Start from `skills/_template/SKILL.md`. The quality bar every skill is held to �
 each rule with a stable ID and its rationale — lives in `docs/skill-quality.md`;
 that is the one file to edit when a criterion changes. `bin/skill-lint` enforces
 the mechanical rules (run it, or let CI's `--strict` pass catch you); the
-`skill-audit` skill grades the judgment ones. A skill that writes repo prose
+judgment checklist in `docs/skill-lint.md` covers the rest. A skill that writes repo prose
 follows the "Write for scanning, not reading" section of `memory/GLOBAL.md` (SQ19).
 
 ## Claude Code config
@@ -297,19 +296,18 @@ each protects against silent data loss.
 **A mid-test `[[ … ]]` never fails under bats on bash 3.2** — the macOS leg
 reads it as passing. Write `[[ … ]] || false`, or use `[ … ]`.
 
-**The suite must never look like the server.** `tests/helper.bash` unsets
-`SSH_*`, points `VIBE_SERVER_HOSTNAME` at an unmatchable value, and puts a stub
-`tmux` early on `PATH` — otherwise a run over SSH takes `detect_env`'s server
-path and every `vibe start`/`vibe loop` leaves a real tmux session, and a real
-agent, running against a worktree bats has already deleted. It also unsets the
-runner's `VIBE_*` variables and redirects `VIBE_CONFIG_FILE`, so the developer's
-own config cannot flip an assertion. A test that exercises the server path
-asserts against `$VIBE_TEST_TMUX_LOG`, never the live tmux server.
+**The suite must never look like an SSH session.** `tests/helper.bash` unsets
+`SSH_*` and puts a stub `tmux` early on `PATH` — otherwise a run over SSH takes
+`detect_env`'s SSH path and every `vibe start` leaves a real tmux session, and
+a real agent, running against a worktree bats has already deleted. It also
+unsets the runner's `VIBE_*` variables and redirects `VIBE_CONFIG_FILE`, so the
+developer's own config cannot flip an assertion. A test that exercises the SSH
+path asserts against `$VIBE_TEST_TMUX_LOG`, never the live tmux server.
 
 **And it must never look like it is already inside tmux.** `$TMUX` is how
 `vibe` tells an attach from a switch-client, so a suite run from inside a tmux
 session — which is where this toolkit's own work happens — silently sends every
-server-path test down the switch-client branch, and whatever the attach branch
+SSH-path test down the switch-client branch, and whatever the attach branch
 does goes untested while still reporting green. `helper.bash` unsets it for
 that reason.
 
@@ -369,7 +367,7 @@ vendored code.
 **Pass `skills` to `skill-lint` explicitly.** With no argument it prefers
 `./.claude/skills` over `./skills`, so a bare run at this repo's root
 checks the one skill in *this repo's own* Claude config and reports
-success — green, having linted none of the 13 skills you shipped.
+success — green, having linted none of the skills you shipped.
 
 **Stage a new file under `skills/` before running `bats`.** The suite's
 `the suite creates and deletes nothing under skills/` guard greps

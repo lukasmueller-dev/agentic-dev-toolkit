@@ -7,8 +7,6 @@ copy.
 | File                 | Lives at        | Lifespan                        |
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
-| `LOOP.md`            | worktree root   | Short — one per unattended loop  |
-| `LOOP_PR.md`         | never on disk   | Rendered straight into a PR body when a loop ends with `--pr` |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |
 | `vibe.config.example`| `~/.config/vibe/config` | Config, not a document  |
@@ -46,14 +44,7 @@ render still produces a readable file.
 | `<branch>`    | Current branch                                       |
 | `<worktree>`  | Absolute path to the worktree root                   |
 | `<date>`      | Render date — `YYYY-MM-DD`, with time and zone appended by `bin/vibe` and the brief scripts (`scaffold.sh` stays day-only) |
-| `<machine>`   | Where it was rendered — `local` or `server`, with the hostname in parentheses |
-| `<goal>`      | The task a loop is working toward (`LOOP.md`, `LOOP_PR.md`) |
-| `<until>`     | The loop's stop-check command, or `—` (`LOOP.md`, `LOOP_PR.md`) |
-| `<max>`       | The loop's max round count (`LOOP.md`, `LOOP_PR.md`) |
-| `<outcome>`   | One-line verdict on how the loop ended (`LOOP_PR.md` only) |
-| `<status>`    | The loop's final state — `success`, `maxed`, … (`LOOP_PR.md` only) |
-| `<iter>`      | Rounds actually run (`LOOP_PR.md` only)              |
-| `<last>`      | Result of the last stop check — `pass`/`fail`/`none` (`LOOP_PR.md` only) |
+| `<machine>`   | Hostname of the machine that rendered it |
 | `<mode>`      | Which half of a fixed schema gets depth — `research`/`application` (`codebase/CODEBASE_MAP.md` only) |
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/CODEBASE_MAP.md` only) |
 
@@ -74,21 +65,14 @@ tokens in.
 
 ## Consumers
 
-- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`),
-  `LOOP.md` into an unattended-loop worktree (`vibe loop`), and renders
-  `LOOP_PR.md` as the PR body when a loop ends with `--pr`
+- `bin/vibe` — seeds `HANDOFF.md` into each new worktree (`vibe start`)
 - `skills/project-status-scaffold/scaffold.sh` — scaffolds all three status
   documents (`PROJECT_STATUS.md`, `PROJECT_ROADMAP.md`, `HANDOFF.md`)
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 - `skills/add-roadmap-item` — renders `PROJECT_ROADMAP.md` from the template
   (via `scaffold.sh`) when the repo lacks one, before adding an item to it
-- `skills/loop-brief/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
-  into a task worktree before an unattended loop starts
 - `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` into a task worktree
   before a dedicated session picks the task up
-- `skills/babysit-pr/brief.sh` — renders `LOOP.md` (and seeds `HANDOFF.md`)
-  for the loop that babysits a PR to mergeable (the rendering itself lives in
-  `skills/_lib/vibe-lib.sh`, shared by the brief scripts)
 - `skills/codebase-map/map.sh` — renders `codebase/CODEBASE_MAP.md` into the
   target repo's `docs/`, and never overwrites an existing one
 

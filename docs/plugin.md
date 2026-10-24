@@ -88,7 +88,7 @@ has.
   is ignored.
 - **`bin/` joins the Bash `PATH` automatically.** `vibe` in a sandbox with no
   tmux and no persistent worktree root will not do anything useful, but it
-  degrades rather than breaking; `vibe where` reports what it detected.
+  degrades rather than breaking; `vibe doctor` reports what it detected.
 - **Versioning.** `version` is set in the manifest, so the plugin only updates
   when that field is bumped. Left unset, every commit would count as a new
   version.
