@@ -50,7 +50,7 @@ The app's new-session picker offers the repo on this machine.
 | Brief for a later session | `/handoff-brief <task>` → in a new session: `git switch <task>, then begin per HANDOFF.md.` |
 | Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
 | Finish | `/commit-push-pr`, merge; a clean worktree is removed when its session ends |
-| Leftovers | `git worktree list`; `git worktree remove <path>` once merged |
+| Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 
 ## What breaks it
 

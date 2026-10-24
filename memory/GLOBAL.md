@@ -57,7 +57,7 @@ browser. Setup and traps: `~/git/agentic-dev-toolkit/docs/remote-sessions.md`.
 
 - Every session gets its own git worktree and branch under
   `<repo>/.claude/worktrees/`; the server removes it when the session ends
-  clean. `git worktree list` shows what is left.
+  clean. The `worktree-cleanup` skill removes the merged ones that are left.
 - The toolkit is installed from `~/git/agentic-dev-toolkit` by symlink, so
   `git pull` updates the installed tools in place.
 

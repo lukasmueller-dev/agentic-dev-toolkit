@@ -39,6 +39,7 @@ cd ~/git/agentic-dev-toolkit && ./install.sh
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
+| [`worktree-cleanup`](skills/worktree-cleanup/) | Removes worktrees (and their branches) whose work has landed, after you approve the list |
 
 Vendored: `grilling`, `grill-me`, and four academic-writing skills
 ([docs](docs/academic-writing.md)). New skill: copy
