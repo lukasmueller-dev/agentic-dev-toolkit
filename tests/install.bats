@@ -21,7 +21,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/hooks" ]
-  [ -L "$HOME/.claude/agents" ]
+  # agents/ holds only its README, so it is not linked
+  [ ! -e "$HOME/.claude/agents" ]
   # settings.json is merged, not symlinked — Claude Code writes to it itself
   [ -f "$HOME/.claude/settings.json" ]
   [ ! -L "$HOME/.claude/settings.json" ]
@@ -38,23 +39,8 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   done < <(find "$HOME" -type l)
 }
 
-@test "install: the global agent roster is reachable through the link" {
-  run "$INSTALL" claude
-  [ "$status" -eq 0 ]
-  local a
-  for a in diff-reviewer test-hardener docs-drift security-sweep; do
-    [ -f "$HOME/.claude/agents/$a.md" ]
-    # the frontmatter name must match the filename, or the agent cannot be
-    # addressed by the name the roster advertises
-    run grep -qx "name: $a" "$HOME/.claude/agents/$a.md"
-    [ "$status" -eq 0 ]
-  done
-  # the README documents the directory and must not be mistaken for an agent
-  [ -f "$HOME/.claude/agents/README.md" ]
-}
-
 @test "install: a claude/ directory holding only a README is not linked" {
-  # The rule that kept agents/ out of ~/.claude while it was empty. Exercised
+  # The rule that keeps agents/ out of ~/.claude while it is empty. Exercised
   # against a *copy* of the repo — no test may create files under $REPO_ROOT.
   local copy="$BATS_TEST_TMPDIR/repo"
   cp -R "$REPO_ROOT" "$copy"
@@ -65,8 +51,9 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$copy/install.sh" claude
   [ "$status" -eq 0 ]
   [ ! -e "$HOME/.claude/emptyish" ]
+  [ ! -e "$HOME/.claude/agents" ]
   # and a populated directory beside it still links
-  [ -L "$HOME/.claude/agents" ]
+  [ -L "$HOME/.claude/hooks" ]
 }
 
 @test "install: is idempotent — a second run creates nothing new" {
@@ -307,14 +294,13 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
 }
 
 @test "prune: does not descend into the whole-directory symlinks" {
-  # ~/.claude/agents and ~/.claude/hooks are links INTO the repo, so a
+  # ~/.claude/hooks is a link INTO the repo, so a
   # recursive scan would walk repo files and judge them as install
   # destinations. Nothing inside them may be removed.
   "$INSTALL" >/dev/null
   run "$INSTALL"
   [ "$status" -eq 0 ]
-  [ -L "$HOME/.claude/agents" ]
-  [ -f "$HOME/.claude/agents/diff-reviewer.md" ]
+  [ -L "$HOME/.claude/hooks" ]
   [ -f "$HOME/.claude/hooks/statusline.sh" ]
 }
 
@@ -688,7 +674,7 @@ EOF
   run "$INSTALL" claude
   [ "$status" -eq 0 ]
   jq -e '.permissions.allow | length > 0' "$HOME/.claude/settings.json"
-  jq -e '.hooks.SessionEnd' "$HOME/.claude/settings.json"
+  jq -e '.hooks.SessionStart' "$HOME/.claude/settings.json"
   jq -e '.statusLine.type == "command"' "$HOME/.claude/settings.json"
 }
 
@@ -719,7 +705,7 @@ EOF
 
   # Without this the test passes on an empty loop, which is exactly what a
   # broken jq path or a renamed key would produce.
-  [ "$checked" -ge 5 ]
+  [ "$checked" -ge 2 ]
 }
 
 @test "claude settings: never clobbers runtime state Claude Code owns" {
