@@ -86,6 +86,16 @@ a `/clear`, or the next day starts cold; anything not written down is lost.
 belongs in the task's tmux session, not in a foreground process attached to my
 connection.
 
+# Tool traps
+
+- A second `uv sync` while one runs blocks silently on the cache lock. Check
+  for a running one by its output; never start a second to retry.
+- `kill $(pgrep -f <pattern>)` also kills the calling shell (exit 144). Read
+  the pid first, then kill it.
+- `tmux has-session -t name` prefix-matches. Use `-t '=name'`.
+- `git push` fails now and then with `signing failed ... communication with
+  agent failed`. Retry once; else ask me to run it.
+
 # Working on the toolkit itself
 
 When the repo in question *is* `agentic-dev-toolkit`, its own instruction file
