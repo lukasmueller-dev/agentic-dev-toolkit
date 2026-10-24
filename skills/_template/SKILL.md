@@ -22,7 +22,7 @@ Every rule a skill is held to — with a stable ID and its rationale — is in
 [`docs/skill-quality.md`](../../docs/skill-quality.md). Read it once; this
 template will not restate it. The **lint**-tagged rules are enforced
 mechanically by `bin/skill-lint` (run it before you commit); the
-**judgment**-tagged rules are what the `skill-audit` skill grades.
+**judgment**-tagged rules are the checklist in `docs/skill-lint.md`.
 
 ## Frontmatter
 

@@ -4,7 +4,8 @@ The one home for the bar every skill is held to. Each criterion has a stable
 ID, one line of rationale, and a tag:
 
 - **lint** — mechanical, enforced by `bin/skill-lint`. Its findings cite the ID.
-- **judgment** — needs a reader; graded by the `skill-audit` skill.
+- **judgment** — needs a reader; graded with the checklist in
+  `docs/skill-lint.md`.
 
 Change a criterion here and nowhere else. `skill-lint` owns the machine-checkable
 wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
@@ -58,5 +59,5 @@ wording of the **lint** rows; `skills/_template/SKILL.md` and the repo
 
 - `bin/skill-lint` — the **lint** rows, mechanically, in any repo. See
   `docs/skill-lint.md`.
-- `skills/skill-audit` — the **judgment** rows, by reading each `SKILL.md`.
-  It runs `skill-lint` first for the mechanical pass, then grades the rest.
+- The judgment checklist in `docs/skill-lint.md` — the **judgment** rows, by
+  reading each `SKILL.md` after `skill-lint` has run.

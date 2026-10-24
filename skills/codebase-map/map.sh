@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# map.sh — the two mechanical steps of codebase-map: classify the
-# repo, and seed the artifact the skill then fills in.
+# map.sh — the mechanical steps of codebase-map: classify the repo and the
+# machine, and seed the artifact the skill then fills in.
 #
 #   bash map.sh detect [DIR]        repo kind + the evidence behind it
+#   bash map.sh context             execution context + the evidence behind it
 #   bash map.sh seed MODE [DIR]     create docs/CODEBASE_MAP.md if absent
 #
 # Both are deliberately dumb. The verdict comes from the shared detection in
@@ -50,6 +51,7 @@ LIB_PROG=codebase-map
 
 usage() {
   echo "usage: bash map.sh detect [DIR]" >&2
+  echo "       bash map.sh context" >&2
   echo "       bash map.sh seed research|application [DIR]" >&2
   exit 2
 }
@@ -78,6 +80,11 @@ case "$cmd" in
     [ -d "$dir" ] || die "not a directory: $dir"
     echo "kind: $(detect_repo_kind "$dir")"
     repo_kind_evidence "$dir"
+    ;;
+
+  context)
+    echo "context: $(detect_exec_context)"
+    exec_context_evidence
     ;;
 
   seed)
