@@ -1,8 +1,7 @@
 # shellcheck shell=bash
 #
 # vibe-lib.sh — helpers shared by the skill scripts that stage vibe task
-# briefs (loop-brief/brief.sh, handoff-brief/handoff.sh, babysit-pr/brief.sh,
-# codebase-review/review.sh). codebase-map/map.sh sources it too, for
+# briefs (handoff-brief/handoff.sh, codebase-review/review.sh). codebase-map/map.sh sources it too, for
 # render_template and TEMPLATE_DIR alone: the placeholder contract in
 # templates/README.md has one implementation, and a second renderer would be
 # the same drift the templates directory exists to prevent.
@@ -12,9 +11,9 @@
 # (script_dir cannot live here — a script needs it to *find* this file).
 #
 # Everything below is kept in lockstep with bin/vibe: worktree layout, config
-# precedence (env over config over default), the loop state file, and the
-# handoff content filter. If this lib resolved a different worktree root than
-# vibe, the loop would later re-seed a blank brief into a second worktree.
+# precedence (env over config over default), and the handoff content filter.
+# If this lib resolved a different worktree root than vibe, 'vibe attach'
+# would never find the worktree a brief was staged in.
 #
 # The `_lib` name matters: install.sh skips `skills/_*`, which is the only
 # thing keeping this directory out of ~/.claude/skills.
@@ -100,12 +99,8 @@ read_config() {
 
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$(read_config VIBE_WORKTREE_ROOT)}"
 VIBE_WORKTREE_ROOT="${VIBE_WORKTREE_ROOT:-$HOME/git/worktrees}"
-VIBE_SERVER_HOSTNAME="${VIBE_SERVER_HOSTNAME:-$(read_config VIBE_SERVER_HOSTNAME)}"
 VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-$(read_config VIBE_START_PULL_MAIN)}"
 VIBE_START_PULL_MAIN="${VIBE_START_PULL_MAIN:-1}"
-
-# The loop runner's gitignored per-worktree state file (see bin/vibe).
-LOOP_STATE_FILE=".vibe-loop.state"
 
 # ---------------------------------------------------------------------------
 # Git helpers.
@@ -166,29 +161,6 @@ ensure_worktree() {
   info "created worktree: $dir (branch: $branch)"
 }
 
-detect_env() {
-  if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_TTY:-}" ]]; then
-    echo server
-  elif [[ -n "$VIBE_SERVER_HOSTNAME" && "$(hostname)" == "$VIBE_SERVER_HOSTNAME" ]]; then
-    echo server
-  else
-    echo local
-  fi
-}
-
-# loop_live DIR — true only when a loop runner is genuinely running there:
-# STATUS=running and its recorded PID still alive (same test as bin/vibe).
-loop_live() {
-  local dir="$1" sf status pid
-  sf="$dir/$LOOP_STATE_FILE"
-  [[ -f "$sf" ]] || return 1
-  status="$(sed -n 's/^STATUS=//p' "$sf" | tail -1)"
-  [[ "$status" == "running" ]] || return 1
-  pid="$(sed -n 's/^PID=//p' "$sf" | tail -1)"
-  [[ -n "$pid" ]] || return 1
-  kill -0 "$pid" 2>/dev/null
-}
-
 # seed_handoff_file DIR REPO BRANCH — render templates/HANDOFF.md into DIR
 # unless one is already there. Every vibe worktree carries a handoff; both
 # brief scripts seed it the same way.
@@ -200,7 +172,7 @@ seed_handoff_file() {
     '<branch>' "$branch" \
     '<worktree>' "$dir" \
     '<date>' "$(date '+%Y-%m-%d %H:%M %Z')" \
-    '<machine>' "$(detect_env) ($(hostname))" >"$dir/HANDOFF.md"
+    '<machine>' "$(hostname)" >"$dir/HANDOFF.md"
   info "seeded HANDOFF.md"
 }
 
@@ -216,21 +188,15 @@ handoff_carries_content() {
   grep -qvE '^[[:space:]]*$|^#|^>|^- \*\*|^_.*_[[:space:]]*$' "$f"
 }
 
-# stage_worktree BRANCH WHAT — set STAGED_DIR to BRANCH's worktree, creating it
-# when it does not exist and refusing while a loop runner owns it. WHAT names
-# the document in that refusal ("brief", "handoff"), which is the only thing the
-# three create paths said differently. Editing a file under a live runner races
-# the runner's own commit of that file, so this refuses rather than warns.
+# stage_worktree BRANCH — set STAGED_DIR to BRANCH's worktree, creating it
+# when it does not exist.
 #
 # Sets a global instead of echoing the path deliberately: 'git worktree add'
 # writes its progress to stdout, and a command substitution here would swallow
 # that into the variable instead of letting it reach the caller's stdout.
 stage_worktree() {
-  local branch="$1" what="$2"
+  local branch="$1"
   STAGED_DIR="$(worktree_dir "$(repo_name)" "$branch")"
-  if [[ -d "$STAGED_DIR" ]] && loop_live "$STAGED_DIR"; then
-    die "a loop is running for '$branch' — never edit a $what under a live runner."
-  fi
   if [[ ! -d "$STAGED_DIR" ]]; then
     ensure_worktree "$(main_repo_root)" "$branch" "$STAGED_DIR"
   fi
@@ -256,9 +222,8 @@ handoff_stage_state() {
 }
 
 # publish_handoff DIR BRANCH COMMIT_MSG PUSH_HINT — validate that DIR's
-# HANDOFF.md is finished, then commit and push BRANCH. The handoff sibling of
-# publish_brief below, shared for the same reason: only the commit message and
-# the push-failure hint ever differ between the callers.
+# HANDOFF.md is finished, then commit and push BRANCH. Only the commit message
+# and the push-failure hint ever differ between the callers.
 #
 # Finished means: no token survived the render, and the two sections a cold
 # session depends on were actually written. Blockers and Gotchas may keep
@@ -282,40 +247,6 @@ publish_handoff() {
   if [[ -n "$(git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
     git -C "$dir" commit -q -m "$msg"
     info "committed the handoff"
-  fi
-  git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
-  info "pushed '$branch' to origin"
-}
-
-# publish_brief DIR BRANCH COMMIT_MSG PUSH_HINT — validate DIR's LOOP.md, then
-# commit it (with HANDOFF.md when present) and push BRANCH.
-#
-# The validation is the point: a brief ships only once it is finished, meaning
-# no token survived the render and the two sections the loop actually reads
-# were written. The iteration log keeps its placeholder — the loop fills that
-# in. Both brief scripts had this written out identically; only the commit
-# message and the push-failure hint ever differed, so those are arguments.
-publish_brief() {
-  local dir="$1" branch="$2" msg="$3" push_hint="$4"
-  local f="$dir/LOOP.md"
-
-  if grep -qE '<(repo|branch|worktree|goal|until|max|date|machine)>' "$f"; then
-    die "LOOP.md still contains unrendered <tokens> — finish the brief first."
-  fi
-  local heading
-  for heading in '## Done when' '## Constraints'; do
-    grep -qxF "$heading" "$f" ||
-      die "LOOP.md lost its '$heading' section — restore the template structure."
-    if section_unfinished "$f" "$heading"; then
-      die "the '$heading' section is still the template placeholder — write it before publishing."
-    fi
-  done
-
-  git -C "$dir" add LOOP.md
-  if [[ -f "$dir/HANDOFF.md" ]]; then git -C "$dir" add HANDOFF.md; fi
-  if [[ -n "$(git -C "$dir" status --porcelain -- LOOP.md HANDOFF.md)" ]]; then
-    git -C "$dir" commit -q -m "$msg"
-    info "committed the brief"
   fi
   git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
   info "pushed '$branch' to origin"

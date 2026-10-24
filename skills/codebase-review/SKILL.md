@@ -23,9 +23,7 @@ fewer hop.
 
 One round per invocation: the human merge gate between rounds is
 deliberate, because a round's value depends on the owner merging the
-previous review PR and deciding its open items first. There is no
-unattended-loop variant: a review has no executable stop check, which is
-exactly what `loop-brief` requires.
+previous review PR and deciding its open items first.
 
 ## Hard boundaries — never do these
 
@@ -137,8 +135,7 @@ the unfinished section — fix it and retry. Do not launch anything until
 this has succeeded: a round started against an unpushed brief cannot be
 picked up from another machine.
 
-Then start the round. One command, on every machine — do not check
-`vibe where` and do not branch on the answer:
+Then start the round. One command, on every machine:
 
 ```
 vibe start <branch> --no-attach

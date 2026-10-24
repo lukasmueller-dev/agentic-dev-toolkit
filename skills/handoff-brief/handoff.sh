@@ -51,7 +51,7 @@ cmd_create() {
   local repo branch dir
   repo="$(repo_name)"
   branch="$(slug "$task")"
-  stage_worktree "$branch" handoff
+  stage_worktree "$branch"
   dir="$STAGED_DIR"
 
   handoff_stage_state "$dir" "$repo" "$branch"
@@ -77,9 +77,6 @@ cmd_publish() {
 
   [[ -d "$dir" ]] || die "no worktree for '$branch' at $dir — run: handoff.sh create '$task'"
   [[ -f "$f" ]] || die "no HANDOFF.md in $dir — run: handoff.sh create '$task'"
-  if loop_live "$dir"; then
-    die "a loop is running for '$branch' — never edit a handoff under a live runner."
-  fi
 
   publish_handoff "$dir" "$branch" "vibe handoff: brief '$branch'" \
     "push failed — resolve it by hand (never force-push a handoff)."

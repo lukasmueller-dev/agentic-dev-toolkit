@@ -13,11 +13,6 @@ worktree, committed and pushed so any machine can start the session; the
 session runner (`vibe start`) adopts an existing worktree and never reseeds a
 handoff that is already there.
 
-This is the interactive sibling of `loop-brief`: same staging, but the
-artifact is a handoff for a supervised session rather than a `LOOP.md` for an
-unattended loop. If the task has a checkable stop condition and should run
-unattended, use `loop-brief` instead.
-
 ## Hard boundaries — never do these
 
 - **Never start the session.** No `vibe start`, no agent launch. The
@@ -27,8 +22,6 @@ unattended, use `loop-brief` instead.
   renders it from `templates/HANDOFF.md`; you only edit the rendered file.
 - **Never overwrite a handoff that carries content.** `handoff.sh` reports
   one — show the user what is there and refine it in place.
-- **Never touch a task whose loop is live.** `handoff.sh` refuses on its own
-  — do not work around it by editing files directly.
 - **Never force-push or resolve divergence.** If `handoff.sh publish` fails
   to push, report the error and stop.
 
@@ -59,9 +52,8 @@ for a particular agent.
    started, plus the context the next session cannot recover on its own —
    what was decided, what was rejected and why, which files matter.
 2. **Next action** — the first concrete step, specific enough to act on
-   without having seen this discussion. Push back on vagueness here the way
-   `loop-brief` pushes on the stop check: "implement the thing we discussed"
-   hands off nothing.
+   without having seen this discussion. Push back on vagueness: "implement the
+   thing we discussed" hands off nothing.
 3. **Blockers / Gotchas** — anything already known to be in the way, and
    surprises surfaced during the discussion. Leave a section's placeholder
    alone if there is genuinely nothing.

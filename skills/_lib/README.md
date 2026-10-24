@@ -5,10 +5,9 @@ makes `install.sh` and `skill-lint` skip this directory, exactly like
 `_template/`. Nothing here is ever linked into `~/.claude/skills`.
 
 `vibe-lib.sh` holds everything the brief-staging scripts
-(`loop-brief/brief.sh`, `handoff-brief/handoff.sh`, `babysit-pr/brief.sh`)
-must agree on with
-`bin/vibe`: worktree layout, config precedence, the loop state file, template
-rendering, and the handoff content filter. Before the lib existed each script
+(`handoff-brief/handoff.sh`, `codebase-review/review.sh`) must agree on with
+`bin/vibe`: worktree layout, config precedence, template rendering, and the
+handoff content filter. Before the lib existed each script
 carried its own copy of these, with a "kept in lockstep with bin/vibe"
 comment doing the work a single definition does now.
 
@@ -21,8 +20,8 @@ modelled on `detect_env`/`env_reason` in `bin/vibe`, and both always exit 0 —
 "cannot tell" is a verdict, not an error.
 
 `bin/vibe` still has its own copies — it is deliberately a single
-self-contained file. If its behavior changes (worktree paths, config keys,
-the loop state format), this lib must change with it; the bats suites for
+self-contained file. If its behavior changes (worktree paths, config keys),
+this lib must change with it; the bats suites for
 the brief-staging skills are what catch a drift.
 
 ## Sourcing it

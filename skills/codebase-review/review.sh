@@ -165,7 +165,7 @@ cmd_create() {
     branch="$BRANCH_PREFIX-$round"
   fi
 
-  stage_worktree "$branch" "review brief"
+  stage_worktree "$branch"
   handoff_stage_state "$STAGED_DIR" "$repo" "$branch"
 
   echo "ROUND=$round"
@@ -192,9 +192,6 @@ cmd_publish() {
   dir="$(worktree_dir "$repo" "$branch")"
   [[ -d "$dir" ]] || die "no worktree for '$branch' at $dir — run: review.sh create"
   [[ -f "$dir/HANDOFF.md" ]] || die "no HANDOFF.md in $dir — run: review.sh create"
-  if loop_live "$dir"; then
-    die "a loop is running for '$branch' — never edit a brief under a live runner."
-  fi
 
   publish_handoff "$dir" "$branch" "vibe handoff: brief '$branch'" \
     "push failed — resolve it by hand (never force-push a staged round)."

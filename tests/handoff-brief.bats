@@ -95,19 +95,6 @@ finish_handoff() {
   git -C "$(wt feat)" rev-parse '@{u}' >/dev/null
 }
 
-@test "create: refuses while the task's loop is live" {
-  cd "$(make_repo proj)"
-  run_handoff create "busy task"
-  local live
-  sleep 30 &
-  live=$!
-  printf 'STATUS=running\nPID=%s\n' "$live" >"$(wt busy-task)/.vibe-loop.state"
-  run run_handoff create "busy task"
-  kill "$live" 2>/dev/null || true
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]] || false
-}
-
 # ---------------------------------------------------------------------------
 # publish: validation, commit, push
 # ---------------------------------------------------------------------------
@@ -158,20 +145,6 @@ finish_handoff() {
   [ -z "$(git -C "$(wt ship-task)" status --porcelain)" ]
   git -C "$(wt ship-task)" rev-parse '@{u}' >/dev/null
   git -C "$BATS_TEST_TMPDIR/proj.git" log --oneline ship-task | grep -q "brief 'ship-task'"
-}
-
-@test "publish: refuses while the task's loop is live" {
-  cd "$(make_repo proj)"
-  run_handoff create "hot task"
-  finish_handoff "$(wt hot-task)"
-  local live
-  sleep 30 &
-  live=$!
-  printf 'STATUS=running\nPID=%s\n' "$live" >"$(wt hot-task)/.vibe-loop.state"
-  run run_handoff publish "hot task"
-  kill "$live" 2>/dev/null || true
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"loop is running"* ]] || false
 }
 
 # ---------------------------------------------------------------------------
