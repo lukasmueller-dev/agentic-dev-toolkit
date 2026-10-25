@@ -2,8 +2,8 @@
 
 Personal tooling for agentic development on one always-on workstation, driven
 from the Claude app through one Remote Control server per repo
-([docs](docs/remote-sessions.md)). Installed by symlink, so `git pull` updates
-it in place.
+([docs](docs/remote-sessions.md)). Installed by symlink; `vibe update-toolkit`
+updates it in place.
 Inspired by [this video](https://www.youtube.com/watch?v=trg1FRbpnys).
 
 ```bash

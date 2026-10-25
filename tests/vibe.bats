@@ -254,6 +254,82 @@ setup() {
   [[ "$output" == *"is on 'side', not main"* ]] || false
 }
 
+# make_kit — a fake toolkit checkout whose install.sh logs its arguments.
+make_kit() {
+  local t
+  t="$(make_repo kit)"
+  printf '#!/bin/sh\necho "install $*" >>"%s/install.log"\n' "$STUBS" >"$t/install.sh"
+  chmod +x "$t/install.sh"
+  git -C "$t" add install.sh
+  git -C "$t" commit -q -m "installer"
+  git -C "$t" push -q origin main
+  printf '%s' "$t"
+}
+
+@test "update-toolkit: pulls, then runs install and doctor" {
+  local t o
+  t="$(make_kit)"
+  o="$(clone_repo kit kit-other)"
+  git -C "$o" commit -q --allow-empty -m "newer toolkit"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$t" rev-parse HEAD)" = "$(git -C "$o" rev-parse HEAD)" ]
+  [ "$(cat "$STUBS/install.log")" = "$(printf 'install \ninstall doctor')" ]
+}
+
+@test "update-toolkit: refuses a dirty or off-main checkout and changes nothing" {
+  local t
+  t="$(make_kit)"
+  echo x >>"$t/install.sh"
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -ne 0 ]
+  git -C "$t" checkout -q -- install.sh
+  git -C "$t" switch -q -c side
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -ne 0 ]
+  [ ! -e "$STUBS/install.log" ]
+}
+
+@test "update-toolkit: a changed unit reloads systemd on a server only" {
+  local t o
+  t="$(make_kit)"
+  o="$(clone_repo kit kit-other)"
+  printf '#!/bin/sh\necho "$@" >>"%s/systemctl.log"\n' "$STUBS" >"$STUBS/systemctl"
+  chmod +x "$STUBS/systemctl"
+  mkdir -p "$o/claude/systemd"
+  echo "[Unit]" >"$o/claude/systemd/claude-rc@.service"
+  git -C "$o" add claude
+  git -C "$o" commit -q -m "unit"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUBS/systemctl.log" ]
+  echo "[Unit] changed" >"$o/claude/systemd/claude-rc@.service"
+  git -C "$o" commit -q -am "unit again"
+  git -C "$o" push -q origin main
+  mkdir -p "$HOME/.config/vibe"
+  echo server >"$HOME/.config/vibe/role"
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  grep -qx -- "--user daemon-reload" "$STUBS/systemctl.log"
+  [[ "$output" == *"restart 'claude-rc@*'"* ]] || false
+}
+
+@test "sync: leaves a behind toolkit checkout to update-toolkit" {
+  local t o
+  t="$(make_kit)"
+  o="$(clone_repo kit kit-other)"
+  git -C "$o" commit -q --allow-empty -m "newer toolkit"
+  git -C "$o" push -q origin main
+  cd "$t"
+  VIBE_TOOLKIT="$t" run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"toolkit is 1 commits behind origin/main — run: vibe update-toolkit"* ]] || false
+  [[ "$output" == *"behind"*"kit "*"run: vibe update-toolkit"* ]] || false
+  [ "$(git -C "$t" rev-parse HEAD)" != "$(git -C "$o" rev-parse HEAD)" ]
+}
+
 @test "status: --claude lists claude-rc units and the role; other flags fail" {
   cat >"$STUBS/systemctl" <<'EOF'
 #!/bin/sh
