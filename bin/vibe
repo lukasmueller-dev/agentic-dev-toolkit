@@ -188,6 +188,7 @@ sync_wt() {
     fi
     [[ -z "$dirty" ]] || note="${note:+$note, }dirty"
     [[ -z "$locked" ]] || note="${note:+$note, }locked"
+    [[ "$dir" != "$main" || "$br" == "$def" ]] || note="${note:+$note, }off $def"
   fi
   printf '%-11s %-40s %-28s %s %s\n' "$res" "$name" "${br:--}" "$note" "$(pr_of "$prs" "$br")"
   return "$rc"
