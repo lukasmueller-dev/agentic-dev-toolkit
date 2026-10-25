@@ -113,6 +113,18 @@ setup() {
   [ "$(git -C "$r" rev-parse origin/new-work)" = "$(git -C "$r/.claude/worktrees/new-work" rev-parse HEAD)" ]
 }
 
+@test "sync: marks a main checkout that is not on the default branch" {
+  local r
+  r="$(make_repo proj)"
+  cd "$r"
+  run "$VIBE" sync
+  [[ "$output" != *"off main"* ]] || false
+  git -C "$r" switch -q -c side
+  run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"proj "*"side"*"off main"* ]] || false
+}
+
 @test "sync: never pushes an app session branch that has no upstream" {
   local r
   r="$(make_repo proj)"
