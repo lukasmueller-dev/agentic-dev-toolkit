@@ -59,12 +59,13 @@ The app's new-session picker offers the repo on this machine.
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 
 `vibe sync [--all]` result per worktree: `pushed`, `pulled`, `ok`, `empty`
-(no commits, not pushed), `local` (app session branch `worktree-*`, never
+(no commits, not pushed), `merged` (upstream gone, never pushed again —
+`/worktree-cleanup`), `local` (app session branch `worktree-*`, never
 pushed), `behind`/`diverged`/`detached`/`missing` (left
 alone), `ahead` (main checkout, never pushed). Note `off main`: the main checkout is
 off the default branch — work belongs in a worktree. `--all`: every repo next to
 the toolkit (`VIBE_ROOT`). Every `vibe` call warns once when the toolkit
-checkout is behind `origin/main`, off `main`, or dirty.
+checkout is behind `origin/main` (fetch: every `sync`, else at most every 5 min), off `main`, or dirty.
 
 ## What breaks it
 
