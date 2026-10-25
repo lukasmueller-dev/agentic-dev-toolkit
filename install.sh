@@ -13,7 +13,8 @@
 #
 # Targets:
 #   bin      bin/* -> ~/bin/, completions/<cmd>.bash ->
-#            ~/.local/share/bash-completion/completions/<cmd>
+#            ~/.local/share/bash-completion/completions/<cmd>,
+#            completions/_<cmd> -> ~/.local/share/zsh/site-functions/_<cmd>
 #   skills   skills/<name>/ and vendor/skills/<name>/ -> ~/.claude/skills/<name>
 #   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
 #            memory/GLOBAL.md -> ~/.claude/global-memory.md, and merges
@@ -188,6 +189,11 @@ build_map() {
     for f in "$REPO"/completions/*.bash; do
       [[ -f "$f" ]] || continue
       map_add "$f" "$HOME/.local/share/bash-completion/completions/$(basename "$f" .bash)" bin
+    done
+    # zsh takes completions/_<cmd> from a directory on $fpath.
+    for f in "$REPO"/completions/_*; do
+      [[ -f "$f" ]] || continue
+      map_add "$f" "$HOME/.local/share/zsh/site-functions/$(basename "$f")" bin
     done
   fi
 

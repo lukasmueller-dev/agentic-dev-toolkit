@@ -1,0 +1,54 @@
+#compdef vibe
+#
+# _vibe — zsh completion for bin/vibe. install.sh links it to
+# ~/.local/share/zsh/site-functions/_vibe; that directory must be in $fpath
+# before compinit runs.
+
+# _vibe_tasks — branch names of the current repo, local and on origin.
+_vibe_tasks() {
+  local -a tasks
+  tasks=(${(f)"$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin 2>/dev/null |
+    sed -e 's#^origin/##' -e '/^HEAD$/d' -e '/^origin$/d' -e '/^worktree-/d' -e '/^main$/d' -e '/^master$/d' |
+    sort -u)"})
+  compadd -a tasks
+}
+
+# _vibe_agents — --<agent> for each <agent>/vibe-status.sh in the toolkit.
+_vibe_agents() {
+  local root="${commands[vibe]:A:h:h}" f
+  local -a agents
+  for f in "$root"/*/vibe-status.sh(N); do
+    agents+=("--${f:h:t}")
+  done
+  compadd -a agents
+}
+
+_vibe() {
+  if (( CURRENT == 2 )); then
+    local -a verbs
+    verbs=(
+      'start:start a task in its own worktree'
+      'sync:sync worktrees with the default branch'
+      'status:show agent servers on this machine'
+      'update-toolkit:pull, install and run doctor'
+      'help:show usage'
+    )
+    _describe -t commands verb verbs
+    return
+  fi
+  case "$words[2]" in
+    start)
+      if [[ "$words[CURRENT-1]" == -C ]]; then
+        _files -/
+      elif [[ "$words[CURRENT]" == -* ]]; then
+        compadd -- -C
+      else
+        _vibe_tasks
+      fi
+      ;;
+    sync) compadd -- --all --wip ;;
+    status) _vibe_agents ;;
+  esac
+}
+
+_vibe "$@"

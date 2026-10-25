@@ -19,6 +19,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   [ "$status" -eq 0 ]
   [ -L "$HOME/bin/skill-lint" ]
   [ -L "$HOME/.local/share/bash-completion/completions/vibe" ]
+  [ -L "$HOME/.local/share/zsh/site-functions/_vibe" ]
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/hooks" ]
