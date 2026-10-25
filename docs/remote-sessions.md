@@ -51,7 +51,7 @@ The app's new-session picker offers the repo on this machine.
 | Step | How |
 | --- | --- |
 | Start | New session in the app → own worktree `<repo>/.claude/worktrees/<name>`, branch `worktree-<name>` |
-| Start in VS Code | `vibe start <task>` → worktree `<repo>/.claude/worktrees/<task>`, branch `<task>`, opened in VS Code; prints the open PR |
+| Start in VS Code | `vibe start <task>` → worktree `<repo>/.claude/worktrees/<task>`, branch `<task>`, opened in VS Code; prints the open PR; sessions there show as `<repo>-<task>-<two words>` |
 | Change machine | `vibe sync` before you leave (`--wip` commits dirty task branches), `vibe start <task>` on the other |
 | Brief for a later session | `/handoff-brief <task>` → `vibe start <task>`, or in a new app session: `git switch <task>, then begin per HANDOFF.md.` |
 | Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
@@ -73,8 +73,9 @@ Fix: `vibe update-toolkit`.
 
 - `systemctl --user status claude-rc@<repo>` says `condition failed` → no
   `server` in `~/.config/vibe/role`; step 2.
-- A VS Code session shows a generated name in the app → `/rename <task>`;
-  the extension ignores per-workspace environment variables.
+- A VS Code session is named `turing-<words>`, not `<repo>-<task>-<words>` →
+  the worktree predates the name file; run `vibe start <task>` once and start a
+  new session. Exact name without the two words: `/rename <task>`.
 
 - `Workspace not trusted` on the server screen → step 1, then
   `systemctl --user restart claude-rc@<repo>`.

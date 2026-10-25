@@ -3,6 +3,7 @@
 # vibe — one worktree per task, opened in VS Code; git carries it between machines.
 #
 #   vibe start [-C <repo>] <task>   make or adopt <repo>/.claude/worktrees/<task>, open it
+#                                   (runs each <agent>/vibe-start.sh <worktree> <repo>-<task>)
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
@@ -27,7 +28,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,8s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,9s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -121,6 +122,11 @@ cmd_start() {
   elif [[ -z "$(git -C "$dir" status --porcelain)" ]]; then
     git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null || true
   fi
+  for s in "$SELF_ROOT"/*/vibe-start.sh; do
+    if [[ -f "$s" ]] && ! bash "$s" "$dir" "$(basename "$main")-$branch"; then
+      warn "$s failed"
+    fi
+  done
   pr="$(pr_of "$(open_prs "$dir")" "$branch")"
   echo "worktree: $dir"
   [[ -z "$pr" ]] || echo "PR:       $pr"

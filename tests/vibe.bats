@@ -84,6 +84,34 @@ setup() {
   [[ "$output" == *"worktree: $r/.claude/worktrees/feat"* ]] || false
 }
 
+@test "start: names app sessions <repo>-<task> and keeps the setting out of git" {
+  local r f
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" feat
+  f="$r/.claude/worktrees/feat/.claude/settings.local.json"
+  [ "$(jq -r '.env.CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX' "$f")" = proj-feat ]
+  grep -qxF '.claude/settings.local.json' "$r/.git/info/exclude"
+  [ -z "$(git -C "$r/.claude/worktrees/feat" status --porcelain)" ]
+  jq '.permissions = {"allow": ["Bash(ls)"]}' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+  "$VIBE" start -C "$r" feat
+  [ "$(jq -r '.permissions.allow[0]' "$f")" = "Bash(ls)" ]
+  [ "$(grep -cxF '.claude/settings.local.json' "$r/.git/info/exclude")" -eq 1 ]
+}
+
+@test "start: without jq, writes a new name file but leaves an existing one alone" {
+  local r f
+  r="$(make_repo proj)"
+  PATH="$(path_without jq)" run "$VIBE" start -C "$r" feat
+  [ "$status" -eq 0 ]
+  f="$r/.claude/worktrees/feat/.claude/settings.local.json"
+  grep -q '"CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX": "proj-feat"' "$f"
+  echo '{"other": 1}' >"$f"
+  PATH="$(path_without jq)" run "$VIBE" start -C "$r" feat
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no jq; session name not set"* ]] || false
+  [ "$(cat "$f")" = '{"other": 1}' ]
+}
+
 @test "start: refuses the default branch and a missing task" {
   local r
   r="$(make_repo proj)"
