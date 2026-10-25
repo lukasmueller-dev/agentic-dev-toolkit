@@ -3,6 +3,7 @@
 One Claude Code Remote Control server per repo, on the always-on machine, in
 worktree mode. Sessions start, run and end from the Claude app or
 claude.ai/code. Unit: [`claude/systemd/claude-rc@.service`](../claude/systemd/claude-rc@.service).
+VS Code sessions on any machine: `bin/vibe`, below.
 
 ## Requirements
 
@@ -19,7 +20,10 @@ cd ~/github/<repo> && claude    # accept the trust prompt, then /exit
 
 ## 2. Install the unit
 
+Servers machine only — on every other machine the unit skips itself.
+
 ```bash
+mkdir -p ~/.config/vibe && echo server > ~/.config/vibe/role
 systemctl --user link ~/.claude/systemd/claude-rc@.service
 loginctl enable-linger "$USER"    # servers keep running with nobody logged in
 ```
@@ -36,7 +40,7 @@ Repo outside `~/github`: `systemctl --user edit claude-rc@<repo>` and set
 ## 4. Verify
 
 ```bash
-systemctl --user status claude-rc@<repo>
+vibe status --claude               # every server: state, restarts, since
 tmux -L claude-rc-<repo> attach    # the server's screen; detach: Ctrl-b d
 ```
 
@@ -47,12 +51,26 @@ The app's new-session picker offers the repo on this machine.
 | Step | How |
 | --- | --- |
 | Start | New session in the app → own worktree `<repo>/.claude/worktrees/<name>`, branch `worktree-<name>` |
-| Brief for a later session | `/handoff-brief <task>` → in a new session: `git switch <task>, then begin per HANDOFF.md.` |
+| Start in VS Code | `vibe start <task>` → worktree `<repo>/.claude/worktrees/<task>`, branch `<task>`, opened in VS Code; prints the open PR |
+| Change machine | `vibe sync` before you leave (`--wip` commits dirty task branches), `vibe start <task>` on the other |
+| Brief for a later session | `/handoff-brief <task>` → `vibe start <task>`, or in a new app session: `git switch <task>, then begin per HANDOFF.md.` |
 | Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
 | Finish | `/commit-push-pr`, merge; a clean worktree is removed when its session ends |
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 
+`vibe sync [--all]` result per worktree: `pushed`, `pulled`, `ok`, `empty`
+(no commits, not pushed), `local` (app session branch `worktree-*`, never
+pushed), `behind`/`diverged`/`detached`/`missing` (left
+alone), `ahead` (main checkout, never pushed). `--all`: every repo next to
+the toolkit (`VIBE_ROOT`). Every `vibe` call warns once when the toolkit
+checkout is behind `origin/main`, off `main`, or dirty.
+
 ## What breaks it
+
+- `systemctl --user status claude-rc@<repo>` says `condition failed` → no
+  `server` in `~/.config/vibe/role`; step 2.
+- A VS Code session shows a generated name in the app → `/rename <task>`;
+  the extension ignores per-workspace environment variables.
 
 - `Workspace not trusted` on the server screen → step 1, then
   `systemctl --user restart claude-rc@<repo>`.

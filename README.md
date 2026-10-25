@@ -16,6 +16,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines. [Docs](docs/remote-sessions.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
 | [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |

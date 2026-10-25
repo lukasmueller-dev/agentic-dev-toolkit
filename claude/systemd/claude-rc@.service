@@ -1,7 +1,7 @@
 # claude-rc@<repo> — a Claude Code Remote Control server for ~/github/<repo>,
 # in worktree mode, inside its own tmux server so it has a terminal.
 # Setup: docs/remote-sessions.md. Other repo root: a drop-in that sets
-# WorkingDirectory.
+# WorkingDirectory. Skipped unless ~/.config/vibe/role holds 'server'.
 
 [Unit]
 Description=Claude Code Remote Control server for %i
@@ -12,7 +12,8 @@ After=network-online.target
 Type=forking
 WorkingDirectory=%h/github/%i
 Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/env tmux -L claude-rc-%i new-session -d -s %i 'claude remote-control --spawn worktree --name %i'
+ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+ExecStart=/usr/bin/env tmux -L claude-rc-%i new-session -d -s %i 'claude remote-control --spawn worktree --name "%i · main" --remote-control-session-name-prefix %i'
 ExecStop=/usr/bin/env tmux -L claude-rc-%i kill-server
 # The server exits when claude does; restart brings its sessions back.
 Restart=always
