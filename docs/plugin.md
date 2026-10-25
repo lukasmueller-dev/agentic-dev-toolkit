@@ -11,7 +11,7 @@ It is a **pure addition**. `.claude-plugin/` is invisible to `install.sh`, and
 symlink install and loses nothing.
 
 ```bash
-claude --plugin-dir ~/git/agentic-dev-toolkit
+claude --plugin-dir ~/github/agentic-dev-toolkit
 ```
 
 Repeat the flag to load it beside other plugins. `claude plugin validate .`

@@ -2,7 +2,7 @@
 
 Route everything you write by lifetime. Write it once at the lowest layer
 whose lifetime fits; higher layers point down, never restate. Full
-architecture: `~/git/agentic-dev-toolkit/docs/artifact-architecture.md`.
+architecture: `~/github/agentic-dev-toolkit/docs/artifact-architecture.md`.
 
 | Information                                            | Home                                     |
 | ------------------------------------------------------ | ---------------------------------------- |
@@ -53,12 +53,12 @@ paragraph. Commit and PR bodies are the same: a few one-line facts each.
 
 All work lives on one always-on workstation. Each repo there runs a
 persistent agent server; I start, steer and finish sessions from a phone or a
-browser. Setup and traps: `~/git/agentic-dev-toolkit/docs/remote-sessions.md`.
+browser. Setup and traps: `~/github/agentic-dev-toolkit/docs/remote-sessions.md`.
 
 - Every session gets its own git worktree and branch under
   `<repo>/.claude/worktrees/`; the server removes it when the session ends
   clean. The `worktree-cleanup` skill removes the merged ones that are left.
-- The toolkit is installed from `~/git/agentic-dev-toolkit` by symlink, so
+- The toolkit is installed from `~/github/agentic-dev-toolkit` by symlink, so
   `git pull` updates the installed tools in place.
 
 ## What this means for you
