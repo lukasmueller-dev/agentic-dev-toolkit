@@ -7,8 +7,8 @@ it in place.
 Inspired by [this video](https://www.youtube.com/watch?v=trg1FRbpnys).
 
 ```bash
-git clone <this-repo-url> ~/git/agentic-dev-toolkit
-cd ~/git/agentic-dev-toolkit && ./install.sh
+git clone <this-repo-url> ~/github/agentic-dev-toolkit
+cd ~/github/agentic-dev-toolkit && ./install.sh
 ./install.sh doctor
 ```
 
@@ -53,7 +53,7 @@ Vendored: `grilling`, `grill-me`, and four academic-writing skills
 ./install.sh bin skills      # targets: all bin skills claude codex gemini
 ./install.sh doctor          # verify, report drift
 ./install.sh --uninstall     # remove only the symlinks this repo owns
-claude --plugin-dir ~/git/agentic-dev-toolkit   # no $HOME: load as a plugin
+claude --plugin-dir ~/github/agentic-dev-toolkit   # no $HOME: load as a plugin
 ```
 
 - Never deletes a real file: it moves to `~/.agentic-dev-toolkit-backups/<timestamp>/`.

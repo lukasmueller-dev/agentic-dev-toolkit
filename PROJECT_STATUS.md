@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-24 · turing_
+_Last updated: 2026-10-25 · turing_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-24: **Research kit v1** — 10 decision cards, no run scripts; Go2
+  path deferred to NCBF's hardware stage. Design in PR #82; NCBF facts and Go2
+  estimates in PR #87.
 - 2026-10-24: **vibe cut.** Sessions run as Claude Code Remote Control
   servers, one per repo, worktree mode, under a systemd user unit; the
   toolkit is skills, hooks, templates and memory only. Pre-cut state: tag
