@@ -105,14 +105,14 @@ ff_main_quiet() {
     info "fast-forwarded $branch before branching"
 }
 
-# ensure_worktree MAIN BRANCH DIR — create DIR as a worktree for BRANCH.
+# ensure_worktree MAIN BRANCH DIR [BASE] — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
 # needed, and tracked — so a brief pushed from another machine is picked up
-# instead of shadowed by a fresh branch off HEAD); new branch off HEAD. Only
-# the last case calls ff_main_quiet: the other two reuse a branch's own
-# history, so MAIN being stale does not affect them.
+# instead of shadowed by a fresh branch off HEAD); new branch off BASE when it
+# resolves (untracked, so it never pushes to BASE); new branch off HEAD. Only
+# the last case calls ff_main_quiet: the others do not depend on MAIN's HEAD.
 ensure_worktree() {
-  local main="$1" branch="$2" dir="$3"
+  local main="$1" branch="$2" dir="$3" base="${4:-}"
   mkdir -p "$(dirname "$dir")"
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
     git -C "$main" worktree add "$dir" "$branch"
@@ -121,6 +121,8 @@ ensure_worktree() {
       git -C "$main" fetch -q origin "$branch" >/dev/null 2>&1 || true
     if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
       git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
+    elif [[ -n "$base" ]] && git -C "$main" rev-parse -q --verify "$base^{commit}" >/dev/null; then
+      git -C "$main" worktree add --no-track -b "$branch" "$dir" "$base"
     else
       ff_main_quiet "$main"
       git -C "$main" worktree add -b "$branch" "$dir"

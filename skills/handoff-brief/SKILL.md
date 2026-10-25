@@ -102,8 +102,8 @@ It validates the handoff (no unrendered tokens, `## State` and
 worktree so the branch is free. If validation fails it names the unfinished
 section — fix it and retry.
 
-Then print the message that starts the task, for the user to send as the
-first prompt of a new session in this repo, and stop:
+Then print how to start the task, and stop: in VS Code, `vibe start <task>`;
+in a new app session, this first prompt:
 
 ```
 git switch <task>, then begin per HANDOFF.md.

@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-25: **vibe returns, small**: `start`, `sync`, `status --<agent>`;
+  work moves between machines through git, so the usage-audit line "no
+  machine-to-machine git travel" no longer holds. Servers run only where
+  `~/.config/vibe/role` says `server`. PR for `feat/vibe-sync`.
 - 2026-10-24: **Research kit v1** — 10 decision cards, no run scripts; Go2
   path deferred to NCBF's hardware stage. Design in PR #82; NCBF facts and Go2
   estimates in PR #87.
