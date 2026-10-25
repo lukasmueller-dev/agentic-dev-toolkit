@@ -354,6 +354,32 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# complete WORD... — COMPREPLY of the bash completion for "vibe WORD...".
+complete_vibe() {
+  # shellcheck disable=SC1091
+  . "$REPO_ROOT/completions/vibe.bash"
+  COMP_WORDS=(vibe "$@")
+  COMP_CWORD=$(($#))
+  _vibe
+  printf '%s\n' "${COMPREPLY[@]+"${COMPREPLY[@]}"}"
+}
+
+@test "completion: verbs, sync flags, agents and task branches" {
+  local r o
+  [ "$(complete_vibe u)" = update-toolkit ]
+  [ "$(complete_vibe sync --w)" = --wip ]
+  ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
+  [ "$(complete_vibe status --)" = --claude ]
+  r="$(make_repo proj)"
+  o="$(clone_repo proj other)"
+  git -C "$o" push -q origin main:remote-task
+  git -C "$r" branch local-task
+  git -C "$r" branch worktree-snug
+  git -C "$r" fetch -q origin
+  cd "$r"
+  [ "$(complete_vibe start '')" = "$(printf 'local-task\nremote-task')" ]
+}
+
 @test "unit: the server starts only with role 'server'" {
   local unit="$REPO_ROOT/claude/systemd/claude-rc@.service"
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$unit"
