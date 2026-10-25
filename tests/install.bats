@@ -18,6 +18,7 @@ plain() { sed $'s/\033\\[[0-9;]*m//g'; }
   run "$INSTALL"
   [ "$status" -eq 0 ]
   [ -L "$HOME/bin/skill-lint" ]
+  [ -L "$HOME/.local/share/bash-completion/completions/vibe" ]
   [ -L "$HOME/.claude/skills/project-status-scaffold" ]
   [ -L "$HOME/.claude/CLAUDE.md" ]
   [ -L "$HOME/.claude/hooks" ]

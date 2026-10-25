@@ -12,7 +12,8 @@
 #   ./install.sh doctor             check what is installed and report drift
 #
 # Targets:
-#   bin      bin/* -> ~/bin/
+#   bin      bin/* -> ~/bin/, completions/<cmd>.bash ->
+#            ~/.local/share/bash-completion/completions/<cmd>
 #   skills   skills/<name>/ and vendor/skills/<name>/ -> ~/.claude/skills/<name>
 #   claude   claude/CLAUDE.md + hooks/ + agents/ -> ~/.claude/ (symlinks),
 #            memory/GLOBAL.md -> ~/.claude/global-memory.md, and merges
@@ -183,6 +184,11 @@ build_map() {
         map_add "$f" "$HOME/bin/$(basename "$f")" bin
       done
     fi
+    # Completions ride with the CLI they complete: completions/<cmd>.bash.
+    for f in "$REPO"/completions/*.bash; do
+      [[ -f "$f" ]] || continue
+      map_add "$f" "$HOME/.local/share/bash-completion/completions/$(basename "$f" .bash)" bin
+    done
   fi
 
   if want skills && [[ -d "$REPO/skills" ]]; then
