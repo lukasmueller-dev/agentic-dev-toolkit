@@ -57,6 +57,7 @@ The app's new-session picker offers the repo on this machine.
 | Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
 | Finish | `/commit-push-pr`, merge; a clean worktree is removed when its session ends |
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
+| Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed. `vibe sync` never pulls the toolkit |
 
 `vibe sync [--all]` result per worktree: `pushed`, `pulled`, `ok`, `empty`
 (no commits, not pushed), `merged` (upstream gone, never pushed again —
@@ -66,6 +67,7 @@ alone), `ahead` (main checkout, never pushed). Note `off main`: the main checkou
 off the default branch — work belongs in a worktree. `--all`: every repo next to
 the toolkit (`VIBE_ROOT`). Every `vibe` call warns once when the toolkit
 checkout is behind `origin/main` (fetch: every `sync`, else at most every 5 min), off `main`, or dirty.
+Fix: `vibe update-toolkit`.
 
 ## What breaks it
 

@@ -5,6 +5,7 @@
 #   vibe start [-C <repo>] <task>   make or adopt <repo>/.claude/worktrees/<task>, open it
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
+#   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #
 # Docs: docs/remote-sessions.md.
 set -euo pipefail
@@ -26,7 +27,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,7s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,8s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -39,9 +40,11 @@ default_branch() {
   echo "${ref#origin/}"
 }
 
+TOOLKIT="$(cd -P "${VIBE_TOOLKIT:-$SELF_ROOT}" 2>/dev/null && pwd || echo "${VIBE_TOOLKIT:-$SELF_ROOT}")"
+
 # toolkit_check — one warning line when the installed toolkit differs from origin.
 toolkit_check() {
-  local t="${VIBE_TOOLKIT:-$SELF_ROOT}" cache stamp now def b ahead behind
+  local t="$TOOLKIT" cache stamp now def b ahead behind
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || return 0
   cache="${XDG_CACHE_HOME:-$HOME/.cache}/vibe/last-fetch"
   now="$(date +%s)"
@@ -60,7 +63,7 @@ toolkit_check() {
   if ((${ahead:-0} > 0 && ${behind:-0} > 0)); then
     warn "toolkit checkout has diverged from origin/$def"
   elif ((${behind:-0} > 0)); then
-    warn "toolkit is $behind commits behind origin/$def — git -C $t pull"
+    warn "toolkit is $behind commits behind origin/$def — run: vibe update-toolkit"
   fi
 }
 
@@ -184,6 +187,8 @@ sync_wt() {
         if git -C "$dir" push -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
       elif ((behind > 0)) && [[ -n "$dirty" || -n "$locked" ]]; then
         res="behind"
+      elif ((behind > 0)) && [[ "$dir" == "$main" && "$(cd -P "$main" && pwd)" == "$TOOLKIT" ]]; then
+        res="behind" note="run: vibe update-toolkit"
       elif ((behind > 0)); then
         if git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
       fi
@@ -228,7 +233,31 @@ cmd_status() {
   exec bash "$s"
 }
 
+cmd_update_toolkit() {
+  local t="$TOOLKIT" def unit before after
+  [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
+  git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
+  def="$(default_branch "$t")"
+  [[ "$(git -C "$t" rev-parse --abbrev-ref HEAD)" == "$def" ]] || die "$t is not on $def"
+  [[ -z "$(git -C "$t" status --porcelain --untracked-files=no)" ]] || die "$t has uncommitted changes"
+  unit="claude/systemd/claude-rc@.service"
+  before="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
+  after="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
+  "$t/install.sh" || die "install.sh failed"
+  "$t/install.sh" doctor || die "doctor reports problems"
+  if [[ "$before" != "$after" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
+    systemctl --user daemon-reload
+    echo "unit changed; restart stops running sessions: systemctl --user restart 'claude-rc@*'"
+  fi
+}
+
 case "${1:-}" in
+  update-toolkit)
+    shift
+    cmd_update_toolkit "$@"
+    ;;
   start | sync | status)
     cmd="$1"
     shift

@@ -61,7 +61,8 @@ browser. Setup and traps: `~/github/agentic-dev-toolkit/docs/remote-sessions.md`
 - The main checkout stays on the default branch: never commit there; work in
   a worktree (`vibe start <task>`).
 - The toolkit is installed from `~/github/agentic-dev-toolkit` by symlink, so
-  `git pull` updates the installed tools in place.
+  `vibe update-toolkit` updates the installed tools in place (pull, install,
+  doctor).
 
 ## What this means for you
 
