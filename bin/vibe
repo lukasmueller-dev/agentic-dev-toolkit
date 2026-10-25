@@ -46,7 +46,7 @@ toolkit_check() {
   cache="${XDG_CACHE_HOME:-$HOME/.cache}/vibe/last-fetch"
   now="$(date +%s)"
   stamp="$(stat -c %Y "$cache" 2>/dev/null || stat -f %m "$cache" 2>/dev/null || echo 0)"
-  if ((now - stamp >= ${VIBE_FETCH_INTERVAL:-3600})); then
+  if ((now - stamp >= ${VIBE_FETCH_INTERVAL:-300})); then
     mkdir -p "$(dirname "$cache")" && touch "$cache"
     GIT_TERMINAL_PROMPT=0 git -C "$t" fetch -q origin 2>/dev/null || true
   fi
@@ -163,6 +163,8 @@ sync_wt() {
     if ! counts="$(git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
       if [[ "$dir" == "$main" ]]; then
         res="no-upstream"
+      elif git -C "$dir" config "branch.$br.merge" >/dev/null; then
+        res="merged" note="upstream gone — /worktree-cleanup"
       elif [[ "$br" == worktree-* ]]; then
         res="local" note="app session branch, not pushed"
       elif [[ "$(git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
@@ -230,7 +232,8 @@ case "${1:-}" in
   start | sync | status)
     cmd="$1"
     shift
-    toolkit_check
+    # sync fetches every repo anyway, so its check never uses the cache.
+    if [[ "$cmd" == sync ]]; then VIBE_FETCH_INTERVAL=0 toolkit_check; else toolkit_check; fi
     "cmd_$cmd" "$@"
     ;;
   -h | --help | help) usage ;;

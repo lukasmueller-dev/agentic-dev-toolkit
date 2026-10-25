@@ -125,6 +125,36 @@ setup() {
   [[ "$output" == *"proj "*"side"*"off main"* ]] || false
 }
 
+@test "sync: a branch whose upstream was deleted is merged and never pushed again" {
+  local r
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" done-task
+  git -C "$r/.claude/worktrees/done-task" commit -q --allow-empty -m "work"
+  cd "$r"
+  "$VIBE" sync
+  git -C "$r" push -q origin --delete done-task
+  run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"merged"*"proj/done-task"*"/worktree-cleanup"* ]] || false
+  run git -C "$r" ls-remote --heads origin done-task
+  [ -z "$output" ]
+}
+
+@test "toolkit check: sync ignores the fetch cache" {
+  local t o r
+  t="$(make_repo kit)"
+  o="$(clone_repo kit kit-other)"
+  r="$(make_repo proj)"
+  cd "$r"
+  VIBE_TOOLKIT="$t" VIBE_FETCH_INTERVAL=3600 "$VIBE" sync
+  git -C "$o" commit -q --allow-empty -m "merged a minute ago"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" VIBE_FETCH_INTERVAL=3600 run "$VIBE" status --claude
+  [[ "$output" != *"behind origin/main"* ]] || false
+  VIBE_TOOLKIT="$t" VIBE_FETCH_INTERVAL=3600 run "$VIBE" sync
+  [[ "$output" == *"toolkit is 1 commits behind origin/main"* ]] || false
+}
+
 @test "sync: never pushes an app session branch that has no upstream" {
   local r
   r="$(make_repo proj)"
