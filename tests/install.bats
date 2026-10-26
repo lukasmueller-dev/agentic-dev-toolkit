@@ -663,6 +663,18 @@ EOF
   jq -e '.sandbox.excludedCommands | length > 0' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: night-shift jobs have no unsandboxed escape and no default-branch push" {
+  local f="$REPO_ROOT/claude/night-shift-settings.json"
+  jq -e '.sandbox.allowUnsandboxedCommands == false' "$f"
+  # without it a job whose sandbox cannot start runs every command unsandboxed
+  jq -e '.sandbox.failIfUnavailable == true' "$f"
+  jq -e '.permissions.deny | index("Bash(git push * main)")' "$f"
+  jq -e '.permissions.deny | index("Bash(git push * *:main)")' "$f"
+  jq -e '.permissions.deny | index("Bash(gh pr merge:*)")' "$f"
+  # runtime state belongs to the live file, never to a baseline
+  jq -e 'has("model") | not' "$f"
+}
+
 @test "claude settings: unions sandbox arrays instead of replacing them" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'
