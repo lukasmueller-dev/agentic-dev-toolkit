@@ -10,6 +10,8 @@
 #   vibe night start --<agent> <dir> [--jobs N] [--until HH:MM] [--timeout DUR]
 #                                   run the night's jobs in tmux (<agent>/vibe-night.sh)
 #   vibe night status [<dir>]       one line per job of a night (default: the latest)
+#   vibe night report [--<agent>] [--new] [<dir>]
+#                                   write <dir>/report.md; open a session on it
 #
 # Docs: docs/remote-sessions.md, docs/night-shift.md.
 set -euo pipefail
@@ -31,7 +33,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,12s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,14s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -484,13 +486,20 @@ cmd_night_start() {
   echo "status:  vibe night status $DIR"
 }
 
-cmd_night_status() {
-  local dir="${1:-}" d id st
+# night_dir [DIR] — DIR, else the latest night under NIGHT_ROOT.
+night_dir() {
+  local dir="${1:-}" d
   if [[ -z "$dir" ]]; then
     for d in "$NIGHT_ROOT"/*/; do [[ -d "$d/jobs" ]] && dir="${d%/}"; done
     [[ -n "$dir" ]] || die "no night under $NIGHT_ROOT"
   fi
   [[ -d "$dir/jobs" ]] || die "$dir/jobs is missing"
+  echo "$dir"
+}
+
+cmd_night_status() {
+  local dir d id st
+  dir="$(night_dir "${1:-}")"
   echo "night: $dir"
   for d in "$dir"/jobs/*/; do
     d="${d%/}"
@@ -500,12 +509,88 @@ cmd_night_status() {
   done
 }
 
+# night_report_md DIR — the morning report: counts, one row per job, then the
+# next action of every job that did not finish.
+night_report_md() {
+  local dir="$1" d id st wt result counts="" s n
+  echo "# Night shift — ${dir##*/}"
+  echo
+  for s in "done" blocked failed timeout skipped running queued; do
+    n=0
+    for d in "$dir"/jobs/*/; do
+      [[ -f "$d/job" ]] || continue
+      st="$(jstate "${d%/}" status)"
+      [[ "${st:-queued}" != "$s" ]] || n=$((n + 1))
+    done
+    ((n == 0)) || counts="${counts:+$counts · }$n $s"
+  done
+  echo "${counts:-no jobs}"
+  echo
+  echo "| Job | Status | Result | PR |"
+  echo "| --- | --- | --- | --- |"
+  for d in "$dir"/jobs/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" ]] || continue
+    st="$(jstate "$d" status)" result="$(jstate "$d" note)"
+    printf '| %s | %s | %s | %s |\n' "${d##*/}" "${st:-queued}" "${result//|//}" "$(jstate "$d" pr)"
+  done
+  for d in "$dir"/jobs/*/; do
+    d="${d%/}"
+    st="$(jstate "$d" status)"
+    case "$st" in "done" | "") continue ;; esac
+    [[ -f "$d/job" ]] || continue
+    wt="$(jstate "$d" worktree)"
+    echo
+    echo "## ${d##*/} — $st"
+    echo
+    echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
+    [[ -z "$wt" ]] || echo "- Worktree: $wt"
+    if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
+      echo "- Next action:"
+      md_section "$wt/HANDOFF.md" "Next action" "  "
+      echo "- Blockers:"
+      md_section "$wt/HANDOFF.md" Blockers "  "
+    fi
+    case "$st" in failed | timeout) echo "- Log: $d/log" ;; esac
+  done
+}
+
+# vibe night report [--<agent>] [--new] [DIR] — write DIR/report.md; with an
+# agent, open a session on it (<agent>/vibe-night-report.sh). --new: only
+# when the night has no report yet (the morning timer).
+cmd_night_report() {
+  local agent="" dir="" new=0
+  while (($#)); do
+    case "$1" in
+      --new) new=1 ;;
+      -h | --help) usage ;;
+      --?*) agent="${1#--}" ;;
+      *) dir="$1" ;;
+    esac
+    shift
+  done
+  if [[ -n "$agent" ]]; then
+    [[ "$agent" != */* && -f "$SELF_ROOT/$agent/vibe-night-report.sh" ]] ||
+      die "no night report for '$agent' — $SELF_ROOT/$agent/vibe-night-report.sh is missing"
+  fi
+  dir="$(night_dir "$dir")"
+  if ((new)) && [[ -f "$dir/report.md" ]]; then
+    echo "night $dir already has a report"
+    return 0
+  fi
+  night_report_md "$dir" >"$dir/report.md"
+  echo "report: $dir/report.md"
+  if [[ -n "$agent" ]]; then
+    bash "$SELF_ROOT/$agent/vibe-night-report.sh" "$dir/report.md" "$dir"
+  fi
+}
+
 cmd_night() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    start | run | status) "cmd_night_$sub" "$@" ;;
-    *) die "usage: vibe night start|status — see vibe --help" ;;
+    start | run | status | report) "cmd_night_$sub" "$@" ;;
+    *) die "usage: vibe night start|status|report — see vibe --help" ;;
   esac
 }
 

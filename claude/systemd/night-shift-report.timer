@@ -1,0 +1,11 @@
+# night-shift-report.timer — the morning report at 07:00, or at boot if missed.
+
+[Unit]
+Description=night-shift morning report at 07:00
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

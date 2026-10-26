@@ -26,11 +26,25 @@ printf '%s\n' thesis pncbf humanoid_bridge >~/.config/night-shift/repos   # high
 
 It writes the night dir and runs `vibe night start --claude <dir>`.
 
-## 3. Verify
+## 3. Install the morning report
+
+Servers machine only (`~/.config/vibe/role` holds `server`).
+
+```bash
+systemctl --user link ~/.claude/systemd/night-shift-report.service ~/.claude/systemd/night-shift-report.timer
+systemctl --user enable --now night-shift-report.timer
+```
+
+At 07:00: `vibe night report --claude --new` writes `report.md` and opens a
+Remote Control session `night-shift <date>` that pushes the summary to the phone.
+
+## 4. Verify
 
 ```bash
 vibe night status       # latest night: one line per job
 tmux -L night-shift attach -t night
+vibe night report --claude    # report now; the session replaces the last one
+systemctl --user list-timers night-shift-report.timer
 ```
 
 ## Layout
@@ -43,6 +57,7 @@ tmux -L night-shift attach -t night
 | `status`, `note` | runner | `queued` `running` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
 | `result`, `pr.md` | agent | `done:`/`blocked:`/`failed:` line; PR title + body |
+| `report.md` (night dir) | `vibe night report` | counts, one row per job, next action of each unfinished job |
 
 Runner: at most `--jobs` (4) agents at once, none started after `--until`
 (06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a
@@ -52,6 +67,13 @@ Night job settings: [`claude/night-shift-settings.json`](../claude/night-shift-s
 — no unsandboxed retry, no push to `main`/`master`, no `gh pr merge`.
 
 ## What breaks it
+
+- Every job `failed` at once, log mentions login → the claude.ai login expired;
+  `claude` shows `Your login expires in N days` beforehand — run `/login`.
+- No push in the morning → `/config` "Push when Claude decides" is off, or the
+  report session is focused in a terminal.
+- The report session ignores its prompt → a variadic flag (`--add-dir`) after
+  it swallowed the prompt; keep it first in `claude/vibe-night-report.sh`.
 
 - Every job `failed`, log says the sandbox cannot start → Ubuntu's AppArmor
   blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing), sudo once.

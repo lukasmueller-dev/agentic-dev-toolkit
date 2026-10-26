@@ -68,4 +68,5 @@ vibe night start --claude <night-dir>          # --jobs 4 --until 06:30 --timeou
 ## Done
 
 Done when `vibe night start` printed `night started`. Report in 3 lines:
-job count, the deadline, `vibe night status <night-dir>`.
+job count, the deadline, `vibe night status <night-dir>`. The morning report
+comes at 07:00 by timer, or now with `vibe night report --claude`.

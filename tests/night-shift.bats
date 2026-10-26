@@ -40,7 +40,8 @@ EOF
   chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/tmux"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_NIGHT_POLL=0.2
-  NIGHT="$BATS_TEST_TMPDIR/night"
+  export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
+  NIGHT="$XDG_STATE_HOME/night-shift/2026-10-26"
   mkdir -p "$NIGHT/jobs"
 }
 
@@ -150,8 +151,8 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   local r
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
-  cd "$BATS_TEST_TMPDIR"
-  run "$VIBE" night start --claude night --jobs 2
+  cd "$XDG_STATE_HOME/night-shift"
+  run "$VIBE" night start --claude 2026-10-26 --jobs 2
   [ "$status" -eq 0 ]
   grep -q -- "-L night-shift new-session -d -s night -c $NIGHT" "$STUBS/tmux.log"
   grep -q -- "night run --claude $NIGHT --jobs 2 --until 06:30 --timeout 3h" "$STUBS/tmux.log"
@@ -166,9 +167,7 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
 @test "night status: defaults to the latest night" {
   local r
   r="$(make_repo proj)"
-  export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
-  NIGHT="$XDG_STATE_HOME/night-shift/2026-10-26"
-  mkdir -p "$XDG_STATE_HOME/night-shift/2026-10-25/jobs" "$NIGHT/jobs"
+  mkdir -p "$XDG_STATE_HOME/night-shift/2026-10-25/jobs"
   mkjob 01-a "$r" task-a ok
   echo blocked >"$NIGHT/jobs/01-a/status"
   run "$VIBE" night status
@@ -206,4 +205,47 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   run "$SWEEP" "$a" "$BATS_TEST_TMPDIR/nowhere"
   [ "$status" -eq 0 ]
   [[ "$output" == *"# 1. alpha"*"no PROJECT_ROADMAP.md"*"# 2. nowhere"*"not a git repo"* ]] || false
+}
+
+@test "night report: counts, one row per job, next action of unfinished jobs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b blocked
+  mkjob 03-c "$r" task-c crash
+  "$VIBE" night run --claude "$NIGHT" --jobs 3 --until "$(soon)" >/dev/null 2>&1
+  printf '## Next action\n\nAsk the supervisor.\n\n## Blockers\n\nNeeds a | decision.\n' \
+    >"$r/.claude/worktrees/task-b/HANDOFF.md"
+  run "$VIBE" night report "$NIGHT"
+  [ "$status" -eq 0 ]
+  run cat "$NIGHT/report.md"
+  [[ "$output" == *"1 done · 1 blocked · 1 failed"* ]] || false
+  [[ "$output" == *"| 01-a | done | done: work.txt added | https://example.com/pull/1 |"* ]] || false
+  [[ "$output" == *"## 02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
+  [[ "$output" == *"## 03-c — failed"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
+  [[ "$output" != *"## 01-a"* ]] || false
+}
+
+@test "night report: --new keeps an existing report; --claude opens a session in tmux" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo old >"$NIGHT/report.md"
+  run "$VIBE" night report --claude --new "$NIGHT"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$NIGHT/report.md")" = old ]
+  [ ! -e "$STUBS/tmux.log" ]
+  run "$VIBE" night report --claude "$NIGHT"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$NIGHT/report.md")" != old ]
+  grep -q -- "-L night-shift new-session -d -s report -c $REPO_ROOT" "$STUBS/tmux.log"
+  grep -q -- "--add-dir $NIGHT --model sonnet --remote-control night-shift\\\\ 2026-10-26 Read" "$STUBS/tmux.log"
+  run "$VIBE" night report --nope "$NIGHT"
+  [ "$status" -ne 0 ]
+}
+
+@test "unit: the morning report runs only with role 'server', at 07:00" {
+  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/night-shift-report.service"
+  grep -q '^ExecStart=.*vibe night report --claude --new$' "$REPO_ROOT/claude/systemd/night-shift-report.service"
+  grep -q '^OnCalendar=\*-\*-\* 07:00:00$' "$REPO_ROOT/claude/systemd/night-shift-report.timer"
 }
