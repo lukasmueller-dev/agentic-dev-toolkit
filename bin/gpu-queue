@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# gpu-queue — one GPU, one job at a time, across every repo on this machine.
+#
+#   gpu-queue submit [--name N] [--dir D] [--then CMD] -- CMD...
+#                                   queue CMD (run in D); CMD of --then runs after it
+#   gpu-queue run [--until HH:MM] [--once]
+#                                   run queued jobs in order; none started after --until
+#   gpu-queue lock -- CMD...        run CMD holding the GPU lock (manual runs, other queues)
+#   gpu-queue status                queued, running and finished jobs
+#
+# --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/night-shift.md.
+set -euo pipefail
+
+usage() {
+  sed -n '5,12s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+  exit "${1:-0}"
+}
+die() {
+  echo "gpu-queue: $*" >&2
+  exit 1
+}
+info() { echo "gpu-queue: $*" >&2; }
+
+Q="${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}"
+LOCK="$Q/gpu.lock"
+
+# with_lock CMD... — run CMD while holding the GPU lock; flock, else a mkdir lock.
+with_lock() {
+  mkdir -p "$Q"
+  if command -v flock >/dev/null 2>&1; then
+    flock "$LOCK" "$@"
+  else
+    until mkdir "$LOCK.d" 2>/dev/null; do sleep "${GPUQ_POLL:-5}"; done
+    local rc=0
+    "$@" || rc=$?
+    rmdir "$LOCK.d"
+    return "$rc"
+  fi
+}
+
+# until_epoch HH:MM — epoch of the next HH:MM, today or tomorrow.
+until_epoch() {
+  local h m now nh nm ns
+  [[ "$1" =~ ^([01]?[0-9]|2[0-3]):([0-5][0-9])$ ]] || die "--until wants HH:MM, got '$1'"
+  h="${BASH_REMATCH[1]}" m="${BASH_REMATCH[2]}"
+  read -r now nh nm ns < <(date '+%s %H %M %S')
+  echo $((now - 10#$ns + ((10#$h * 60 + 10#$m - 10#$nh * 60 - 10#$nm + 1440) % 1440) * 60))
+}
+
+cmd_submit() {
+  local name="job" dir="$PWD" then="" id j
+  while (($#)); do
+    case "$1" in
+      --name) name="${2:?--name needs a value}" && shift 2 ;;
+      --dir) dir="${2:?--dir needs a directory}" && shift 2 ;;
+      --then) then="${2:?--then needs a command}" && shift 2 ;;
+      --)
+        shift
+        break
+        ;;
+      *) die "unknown option '$1' — the command goes after --" ;;
+    esac
+  done
+  (($#)) || die "usage: gpu-queue submit [--name N] [--dir D] [--then CMD] -- CMD..."
+  [[ -d "$dir" ]] || die "no directory: $dir"
+  name="$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '-')"
+  id="$(date +%Y%m%d-%H%M%S)-$$-$name"
+  j="$Q/queued/$id"
+  mkdir -p "$Q/queued" "$Q/running" "$Q/finished" "$j.tmp"
+  printf '%q ' "$@" >"$j.tmp/cmd"
+  (cd "$dir" && pwd) >"$j.tmp/dir"
+  printf '%s\n' "$then" >"$j.tmp/then"
+  mv "$j.tmp" "$j"
+  echo "$id"
+}
+
+# run_one ID — run a queued job under the lock, then its --then command.
+run_one() {
+  local id="$1" j="$Q/running/$1" rc=0
+  mv "$Q/queued/$id" "$j" || return 0
+  date '+%F %T' >"$j/started"
+  info "start $id"
+  (cd "$(cat "$j/dir")" && with_lock bash -c "$(cat "$j/cmd")") >"$j/log" 2>&1 || rc=$?
+  echo "$rc" >"$j/exit"
+  date '+%F %T' >"$j/ended"
+  mv "$j" "$Q/finished/$id"
+  j="$Q/finished/$id"
+  info "end $id: exit $rc"
+  if [[ -n "$(cat "$j/then")" ]]; then
+    GPUQ_EXIT="$rc" GPUQ_LOG="$j/log" GPUQ_JOB="$id" bash -c "$(cat "$j/then")" >"$j/then.log" 2>&1 ||
+      info "$id: --then failed, see $j/then.log"
+  fi
+}
+
+cmd_run() {
+  local until="" once=0 deadline="" id d
+  while (($#)); do
+    case "$1" in
+      --until) until="${2:?--until needs HH:MM}" && shift 2 ;;
+      --once) once=1 && shift ;;
+      *) die "unknown option '$1'" ;;
+    esac
+  done
+  [[ -z "$until" ]] || deadline="$(until_epoch "$until")"
+  mkdir -p "$Q/queued" "$Q/running" "$Q/finished"
+  while :; do
+    id=""
+    for d in "$Q"/queued/*/; do
+      [[ -d "$d" ]] || continue
+      id="$(basename "$d")"
+      break
+    done
+    if [[ -n "$deadline" ]] && (($(date +%s) >= deadline)); then
+      info "past $until — no new job"
+      break
+    fi
+    if [[ -n "$id" ]]; then
+      run_one "$id"
+    elif ((once)); then
+      break
+    else
+      sleep "${GPUQ_POLL:-30}"
+    fi
+  done
+}
+
+cmd_lock() {
+  [[ "${1:-}" == -- ]] && shift
+  (($#)) || die "usage: gpu-queue lock -- CMD..."
+  with_lock "$@"
+}
+
+cmd_status() {
+  local s d
+  for s in running queued finished; do
+    for d in "$Q/$s"/*/; do
+      [[ -d "$d" ]] || continue
+      printf '%-9s %-48s %s\n' "$s" "$(basename "$d")" "$(cat "$d/exit" 2>/dev/null || cat "$d/dir")"
+    done
+  done
+}
+
+case "${1:-}" in
+  submit | run | lock | status)
+    cmd="$1"
+    shift
+    "cmd_$cmd" "$@"
+    ;;
+  -h | --help | help) usage ;;
+  *) usage 1 ;;
+esac

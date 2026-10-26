@@ -17,7 +17,7 @@ get approval, start the jobs. Runner, layout and traps:
 - **Never change a repo yourself.** You write only the night dir; the jobs do the work.
 - **Never list an item that fails the gate.** Show it under "Rejected" with the reason.
 - **Never plan more than** 8 jobs, 2 per repo, 1 on Opus. The rest default to Sonnet.
-- **Never plan a GPU run or a job that needs one.** Gate them out (`no GPU queue yet`).
+- **Never plan GPU runs that cannot finish by the deadline together.** They run one at a time.
 
 ## Phase 1 — Sweep
 
@@ -33,7 +33,7 @@ An item or handoff next action passes only when all are true:
 1. Its done-when names a check a command can make: a test, a metric, a file.
 2. It names no person, no physical hardware, no `Blocked` marker, no "with <name>".
 3. It changes only its own repo.
-4. It needs no GPU run, no login, no secret.
+4. It needs no login and no secret. A GPU run has a command or config that runs as written.
 5. No open PR already carries it, unless it is that PR's handoff.
 6. Its worktree is not `DIRTY`.
 
@@ -41,12 +41,13 @@ An item or handoff next action passes only when all are true:
 
 1. Order by the repo's rank, then by order in the repo: handoffs first, then roadmap items top to bottom.
 2. Propose up to 3 new next steps from a repo's goal and roadmap gaps; mark them `new`. Each one must pass the gate.
-3. Per job: id `NN-<branch>` (rank order), branch slug (a handoff keeps its branch), model, one-line done-when.
+3. Per job: id `NN-<branch>` (rank order), branch slug (a handoff keeps its branch), model, kind, one-line done-when.
+   Kind `gpu`: the job prepares the code and queues the run; a follow-up job finishes after it.
 4. Propose Opus only for a job that needs design judgment; say why.
 
 ## Phase 4 — Approve
 
-Show one table: `# · repo · task · source · model · branch · done-when`.
+Show one table: `# · repo · task · source · kind · model · branch · done-when`.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the table again.
 
@@ -64,6 +65,8 @@ Run outside the sandbox (tmux and git push must not inherit it):
 ```bash
 vibe night start --claude <night-dir>          # --jobs 4 --until 06:30 --timeout 3h
 ```
+
+It also starts the GPU queue (`gpu-queue run --until 06:30`) when none runs.
 
 ## Done
 

@@ -8,6 +8,7 @@ You run unattended overnight. Nobody reads a question before morning.
 
 - **Done when:** <done-when>
 - **Source:** <one of: `PROJECT_ROADMAP.md:<line>` · `HANDOFF.md` next action · new>
+- **Kind:** <code | gpu>
 - **Repo / branch:** <repo> · `<branch>` — this worktree is the only place you change
 - **Job dir:** `<job-dir>`
 - **Time limit:** <timeout>; stop as blocked well before it
@@ -25,10 +26,11 @@ You run unattended overnight. Nobody reads a question before morning.
 9. Source handoff: start from `HANDOFF.md`; when the task is done, delete it per the repo's rules.
 10. Source new: your first commit adds the item to `PROJECT_ROADMAP.md` (task + done-when); when the task is done, your last commit deletes it.
 11. Blocked, failed or out of time: overwrite `HANDOFF.md` with State, Next action and Blockers, and commit it.
+12. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
 
 ## Before you exit
 
 Write two files in the job dir:
 
-- `result` — one line: `done: <what changed>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
+- `result` — one line: `done: <what changed>`, `queued: <what runs>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
 - `pr.md` — line 1: the PR title (Conventional Commits). Then the body: what changed, how you checked it, what to review first.

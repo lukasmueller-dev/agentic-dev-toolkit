@@ -15,8 +15,15 @@ setup() {
   cat >"$STUBS/claude" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >>"$STUBS/claude.log"
-mode="\$(sed -n 's/^MODE=//p')"
+prompt="\$(cat)"
+mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
+case "\$prompt" in *"## GPU run finished"*) mode=ok ;; esac
 case "\$mode" in
+  gpu)
+    echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
+    "$VIBE" night gpu -- sh -c 'echo trained >out.txt'
+    echo "queued: training" >"\$NIGHT_SHIFT_JOB_DIR/result"
+    ;;
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     printf 'feat: night work\nWhat changed.\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
@@ -40,6 +47,7 @@ EOF
   chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/tmux"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_NIGHT_POLL=0.2
+  export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state"
   NIGHT="$XDG_STATE_HOME/night-shift/2026-10-26"
   mkdir -p "$NIGHT/jobs"
@@ -248,4 +256,32 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/night-shift-report.service"
   grep -q '^ExecStart=.*vibe night report --claude --new$' "$REPO_ROOT/claude/systemd/night-shift-report.service"
   grep -q '^OnCalendar=\*-\*-\* 07:00:00$' "$REPO_ROOT/claude/systemd/night-shift-report.timer"
+}
+
+@test "night gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {
+  local r pid
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a gpu
+  "$VIBE" night run --claude "$NIGHT" --until "$(soon)" >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$NIGHT/jobs/01-a/status" 2>/dev/null)" != gpu ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$NIGHT/jobs/01-a/status")" = gpu ]
+  [ "$(cat "$NIGHT/jobs/01-a/pr")" = "https://example.com/pull/1" ]
+  "$REPO_ROOT/bin/gpu-queue" run --once
+  wait "$pid"
+  [ "$(cat "$NIGHT/jobs/01-a/status")" = "done" ]
+  [ "$(cat "$NIGHT/jobs/01-a/note")" = "GPU run exit 0 → 01-a-gpu" ]
+  [ "$(cat "$r/.claude/worktrees/task-a/out.txt")" = trained ]
+  grep -q '^follow=1$' "$NIGHT/jobs/01-a-gpu/job"
+  grep -q -- '- Exit: 0' "$NIGHT/jobs/01-a-gpu/prompt.md"
+  [ "$(cat "$NIGHT/jobs/01-a-gpu/status")" = "done" ]
+}
+
+@test "night gpu: only inside a night job" {
+  run "$VIBE" night gpu -- true
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"inside a night job"* ]] || false
 }

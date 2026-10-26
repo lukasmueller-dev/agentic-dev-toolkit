@@ -352,7 +352,8 @@ night_prepare() {
     return 0
   fi
   wt="$(worktree_of "$main" "$branch")"
-  if [[ -n "$wt" && -n "$(git -C "$wt" status --porcelain)" ]]; then
+  # A GPU follow-up starts in the worktree the run just wrote its outputs to.
+  if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 && -n "$(git -C "$wt" status --porcelain)" ]]; then
     night_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
@@ -408,6 +409,7 @@ night_run_job() {
     case "$result" in
       "done:"*) st="done" ;;
       "blocked:"*) st=blocked ;;
+      "queued:"*) st=gpu ;;
       *) st=failed note="no result line" ;;
     esac
   fi
@@ -416,7 +418,7 @@ night_run_job() {
 }
 
 cmd_night_run() {
-  local d st pid running now deadline queued
+  local d st pid running waiting now deadline queued
   night_args "$@"
   deadline="$(deadline_epoch "$UNTIL")"
   TIMEOUT_CMD=()
@@ -429,7 +431,7 @@ cmd_night_run() {
   fi
   info "night $DIR: $JOBS at a time, none started after $UNTIL"
   while :; do
-    running=0 queued=()
+    running=0 waiting=0 queued=()
     for d in "$DIR"/jobs/*/; do
       d="${d%/}"
       [[ -f "$d/job" ]] || continue
@@ -443,11 +445,13 @@ cmd_night_run() {
             night_end "$d" failed "job process died"
           fi
           ;;
+        gpu) waiting=$((waiting + 1)) ;;
         "" | queued) queued+=("$d") ;;
       esac
     done
-    if ((${#queued[@]} == 0 && running == 0)); then break; fi
     now="$(date +%s)"
+    # A job waiting on its GPU run gets a follow-up job, unless the night is over.
+    if ((${#queued[@]} == 0 && running == 0 && (waiting == 0 || now >= deadline))); then break; fi
     for d in "${queued[@]+"${queued[@]}"}"; do
       if ((now >= deadline)); then
         night_end "$d" skipped "not started before $UNTIL"
@@ -481,9 +485,51 @@ cmd_night_start() {
   cmd="$(printf '%q ' "$SELF_ROOT/bin/vibe" night run "--$AGENT" "$DIR" \
     --jobs "$JOBS" --until "$UNTIL" --timeout "$TIMEOUT")"
   tmux -L night-shift new-session -d -s night -c "$DIR" "$cmd >>$(printf '%q' "$DIR/runner.log") 2>&1"
+  if ! tmux -L night-shift has-session -t '=gpu' 2>/dev/null; then
+    cmd="$(printf '%q ' "$SELF_ROOT/bin/gpu-queue" run --until "$UNTIL")"
+    tmux -L night-shift new-session -d -s gpu -c "$DIR" "$cmd >>$(printf '%q' "$DIR/gpu-queue.log") 2>&1"
+  fi
   echo "night started: $DIR"
   echo "follow:  tail -f $DIR/runner.log"
   echo "status:  vibe night status $DIR"
+}
+
+# vibe night gpu -- CMD... — from inside a night job: queue CMD on the GPU
+# (cwd: the worktree); when it ends, a follow-up job continues the task.
+cmd_night_gpu() {
+  local d="${NIGHT_SHIFT_JOB_DIR:-}" id
+  [[ -n "$d" && -f "$d/job" ]] || die "vibe night gpu runs inside a night job (NIGHT_SHIFT_JOB_DIR)"
+  if [[ "${1:-}" == -- ]]; then shift; fi
+  (($#)) || die "usage: vibe night gpu -- CMD..."
+  id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
+    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" night follow "$d")" -- "$@")" || die "gpu-queue submit failed"
+  echo "$id" >"$d/gpu-job"
+  echo "queued $id — now write result 'queued: <what runs>' and exit"
+}
+
+# vibe night follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
+# with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG).
+cmd_night_follow() {
+  local p="${1:?usage: vibe night follow <job dir>}" f n=1
+  p="${p%/}"
+  [[ -f "$p/job" ]] || die "no job at $p"
+  f="$p-gpu"
+  while [[ -e "$f" ]]; do
+    n=$((n + 1))
+    f="$p-gpu$n"
+  done
+  mkdir -p "$f"
+  {
+    grep -v '^follow=' "$p/job" || true
+    echo "follow=1"
+  } >"$f/job"
+  {
+    cat "$p/prompt.md"
+    printf '\n## GPU run finished\n\n- Exit: %s\n- Log: %s\n\n' "${GPUQ_EXIT:-?}" "${GPUQ_LOG:-?}"
+    echo "An earlier session prepared and queued this run; its commits are on the branch."
+    echo "Read the log and the outputs, check the done-when, finish the task."
+  } >"$f/prompt.md"
+  night_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
 # night_dir [DIR] — DIR, else the latest night under NIGHT_ROOT.
@@ -515,7 +561,7 @@ night_report_md() {
   local dir="$1" d id st wt result counts="" s n
   echo "# Night shift — ${dir##*/}"
   echo
-  for s in "done" blocked failed timeout skipped running queued; do
+  for s in "done" blocked failed timeout skipped running gpu queued; do
     n=0
     for d in "$dir"/jobs/*/; do
       [[ -f "$d/job" ]] || continue
@@ -589,7 +635,7 @@ cmd_night() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    start | run | status | report) "cmd_night_$sub" "$@" ;;
+    start | run | status | report | gpu | follow) "cmd_night_$sub" "$@" ;;
     *) die "usage: vibe night start|status|report — see vibe --help" ;;
   esac
 }
