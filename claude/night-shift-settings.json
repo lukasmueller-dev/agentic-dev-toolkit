@@ -25,7 +25,8 @@
         "~/.cache/huggingface",
         "~/.cache/pip",
         "~/.cache/uv",
-        "~/.local/state/gpu-queue"
+        "~/.local/state/gpu-queue",
+        "~/.local/state/night-shift"
       ]
     }
   }
