@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-25 · turing_
+_Last updated: 2026-10-26 · turing_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-26: **night-shift**: evening skill plans, `vibe night` runs headless
+  Sonnet jobs (max 4 parallel, deadline 06:30) under a fail-closed sandbox;
+  the runner, not the agent, pushes and opens draft PRs. Design: PR body.
 - 2026-10-25: **vibe returns, small**: `start`, `sync`, `status --<agent>`;
   work moves between machines through git, so the usage-audit line "no
   machine-to-machine git travel" no longer holds. Servers run only where
