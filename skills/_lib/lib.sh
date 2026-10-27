@@ -71,6 +71,15 @@ render_template() {
   printf '%s\n' "$out"
 }
 
+# md_section FILE HEADING [INDENT] — body of '## HEADING' in FILE, without
+# blank lines and template placeholders (_..._), each line prefixed by INDENT.
+md_section() {
+  awk -v h="## $2" -v ind="${3:-}" '
+    $0 == h { on = 1; next }
+    on && /^## / { exit }
+    on && !/^_.*_$/ && NF { print ind $0 }' "$1"
+}
+
 # ---------------------------------------------------------------------------
 # Git helpers.
 # ---------------------------------------------------------------------------

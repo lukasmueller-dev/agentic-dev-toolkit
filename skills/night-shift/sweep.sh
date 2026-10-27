@@ -28,14 +28,6 @@ LIB_PROG=night-shift
 ROOT="${NIGHT_SHIFT_ROOT:-$(dirname "$TOOLKIT_HOME")}"
 CONF="${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/repos"
 
-# section FILE HEADING — body of '## HEADING' without template placeholders.
-section() {
-  awk -v h="## $2" '
-    $0 == h { on = 1; next }
-    on && /^## / { exit }
-    on && !/^_.*_$/ && NF { print "    " $0 }' "$1"
-}
-
 # roadmap FILE — headings and open items, an item joined to one line.
 roadmap() {
   awk '
@@ -57,7 +49,7 @@ sweep_repo() {
   fi
   if [[ -f "$dir/PROJECT_STATUS.md" ]]; then
     echo "## goal"
-    section "$dir/PROJECT_STATUS.md" Goal
+    md_section "$dir/PROJECT_STATUS.md" Goal "    "
   fi
   echo "## roadmap"
   if [[ -f "$dir/PROJECT_ROADMAP.md" ]]; then roadmap "$dir/PROJECT_ROADMAP.md"; else echo "  no PROJECT_ROADMAP.md"; fi
@@ -70,9 +62,9 @@ sweep_repo() {
         if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
           echo "  $wt [${br:-detached}]$([[ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ]] || echo ' DIRTY')"
           echo "   next action:"
-          section "$wt/HANDOFF.md" "Next action"
+          md_section "$wt/HANDOFF.md" "Next action" "    "
           echo "   blockers:"
-          section "$wt/HANDOFF.md" Blockers
+          md_section "$wt/HANDOFF.md" Blockers "    "
         fi
         wt=""
         ;;
