@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * master)",
+      "Bash(git push * master *)",
+      "Bash(git push * *:main)",
+      "Bash(git push * *:main *)",
+      "Bash(git push * *:master)",
+      "Bash(git push * *:master *)",
+      "Bash(git push * *refs/heads/main*)",
+      "Bash(git push * *refs/heads/master*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr ready:*)",
+      "Bash(sudo:*)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "failIfUnavailable": true,
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache/huggingface",
+        "~/.cache/pip",
+        "~/.cache/uv",
+        "~/.local/state/gpu-queue",
+        "~/.local/state/night-shift"
+      ]
+    }
+  }
+}

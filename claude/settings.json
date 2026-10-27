@@ -158,9 +158,13 @@
       "allowedDomains": [
         "*.github.com",
         "*.githubusercontent.com",
+        "*.hf.co",
+        "*.huggingface.co",
+        "api.wandb.ai",
         "crates.io",
         "files.pythonhosted.org",
         "github.com",
+        "huggingface.co",
         "proxy.golang.org",
         "pypi.org",
         "registry.npmjs.org",
