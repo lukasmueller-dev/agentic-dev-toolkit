@@ -5,6 +5,11 @@ approval, `vibe night` runs each as a headless agent in its own worktree and
 opens a draft PR. Skill: [`skills/night-shift/`](../skills/night-shift/SKILL.md).
 Scheduled jobs ride the same runner: `docs/recurring-jobs.md`.
 
+| When | Skill | Does |
+| --- | --- | --- |
+| Morning | [`/check-in`](../skills/check-in/SKILL.md) | works the briefing: merge, answer and requeue, take into a day session, close |
+| Evening | [`/shutdown`](../skills/shutdown/SKILL.md) | pushes and hands off every worktree, then runs `/night-shift` |
+
 ## Requirements
 
 - `tmux`, `gh` logged in, `timeout` (coreutils).

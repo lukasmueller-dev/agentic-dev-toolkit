@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-27: **day bookends**: `check-in` (morning, works the briefing) and
+  `shutdown` (evening, hands off every worktree, then runs `night-shift`);
+  both skills only, no new script. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
   `vibe job due` (01:00 timer) queues due jobs on the night runner, one PR per
   run on `jobs/<job>`, cap 2 open job PRs per repo, two failures stop a job.
