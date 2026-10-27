@@ -153,8 +153,8 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   run grep -c new-session "$STUBS/tmux.log"
   [ "$output" = 0 ]
   run "$VIBE" night report "$NIGHTS/2026-10-26"
-  run cat "$NIGHTS/2026-10-26/report.md"
-  [[ "$output" == *"## Needs you"*"| 99-proj-crashy | skipped | stopped after 2 failures"* ]] || false
+  run cat "$NIGHTS/briefings/$(date +%F).md"
+  [[ "$output" == *"## Needs you"*"| 2026-10-26/99-proj-crashy | skipped | stopped after 2 failures"* ]] || false
 }
 
 @test "job run + night run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {

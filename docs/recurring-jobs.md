@@ -33,6 +33,7 @@ systemctl --user enable --now agent-jobs.timer
 vibe job list                            # repo × job: schedule, last run, due / stopped / invalid
 vibe job due --claude --dry              # what the next 01:00 run queues
 vibe job run --claude <repo> <job>       # one job now; then: vibe night status
+vibe night report                        # today's briefing over every active night (docs/night-shift.md §3)
 systemctl --user list-timers agent-jobs.timer
 ```
 
@@ -41,6 +42,10 @@ systemctl --user list-timers agent-jobs.timer
 | Job | Schedule | Output | Does |
 | --- | --- | --- | --- |
 | `codebase-health` | weekly, sun | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
+| `stale-state` | weekly, sun | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
+| `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
+| `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
+| `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 

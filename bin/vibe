@@ -10,8 +10,8 @@
 #   vibe night start --<agent> <dir> [--jobs N] [--until HH:MM] [--timeout DUR]
 #                                   run the night's jobs in tmux (<agent>/vibe-night.sh)
 #   vibe night status [<dir>]       one line per job of a night (default: the latest)
-#   vibe night report [--<agent>] [--new] [<dir>]
-#                                   write <dir>/report.md; open a session on it
+#   vibe night report [--<agent>] [--new] [<dir>...]
+#                                   the day's briefing over the active nights; open a session on it
 #   vibe job list [<repo>...]       recurring jobs per repo: schedule, last run, due
 #   vibe job due --<agent> [--dry] [--max N]
 #                                   queue every due job on tonight's night (the 01:00 timer)
@@ -608,20 +608,24 @@ report_tldr() {
   echo "${t:-$(jstate "$1" note)}"
 }
 
-# report_rows DIR TITLE CLASS... — one table of the jobs in the classes: a
-# status, or `pr` (done with a PR URL; `done` is then done without one).
+# report_rows TITLE CLASS... — one table of the jobs in the classes: a status,
+# or `pr` (done with a PR URL; `done` is then done without one). Reads NIGHTS.
 report_rows() {
-  local dir="$1" title="$2" d st cls pr tldr rows=""
-  shift 2
-  for d in "$dir"/jobs/*/; do
-    d="${d%/}"
-    [[ -f "$d/job" ]] || continue
-    st="$(jstate "$d" status)" pr="$(jstate "$d" pr)"
-    st="${st:-queued}" cls="${st:-queued}"
-    case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
-    in_list "$cls" "$@" || continue
-    tldr="$(report_tldr "$d")"
-    rows+="| ${d##*/} | $st | ${tldr//|//} | $pr |"$'\n'
+  local title="$1" dir d st cls pr tldr links rows=""
+  shift
+  for dir in "${NIGHTS[@]}"; do
+    for d in "$dir"/jobs/*/; do
+      d="${d%/}"
+      [[ -f "$d/job" ]] || continue
+      st="$(jstate "$d" status)" pr="$(jstate "$d" pr)"
+      st="${st:-queued}" cls="${st:-queued}"
+      case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
+      in_list "$cls" "$@" || continue
+      tldr="$(report_tldr "$d")" links=""
+      case "$pr" in http*) links="[PR]($pr)" ;; esac
+      [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
+      rows+="| ${dir##*/}/${d##*/} | $st | ${tldr//|//} | $links |"$'\n'
+    done
   done
   echo
   echo "## $title"
@@ -629,64 +633,83 @@ report_rows() {
   if [[ -z "$rows" ]]; then
     echo "none"
   else
-    echo "| Job | Status | TL;DR | PR |"
+    echo "| Job | Status | TL;DR | Links |"
     echo "| --- | --- | --- | --- |"
     printf '%s' "$rows"
   fi
 }
 
-# night_report_md DIR — the morning report, ranked: what needs a human, the
-# PRs to read, the rest; then the next action of every job that did not finish.
+# night_report_md DIR... — the briefing over the nights: counts, then ranked
+# tables (needs a human, PRs to read, the rest), then the next action of
+# every job that did not finish.
 night_report_md() {
-  local dir="$1" d st wt counts="" s n
-  echo "# Night shift — ${dir##*/}"
+  local dir d st wt counts="" s n names=""
+  NIGHTS=("$@")
+  for dir in "$@"; do names="${names:+$names, }${dir##*/}"; done
+  echo "# Agent jobs — $(date +%F)"
   echo
   for s in "done" blocked failed timeout skipped running gpu queued; do
     n=0
-    for d in "$dir"/jobs/*/; do
-      [[ -f "$d/job" ]] || continue
-      st="$(jstate "${d%/}" status)"
-      [[ "${st:-queued}" != "$s" ]] || n=$((n + 1))
+    for dir in "$@"; do
+      for d in "$dir"/jobs/*/; do
+        [[ -f "$d/job" ]] || continue
+        st="$(jstate "${d%/}" status)"
+        [[ "${st:-queued}" != "$s" ]] || n=$((n + 1))
+      done
     done
     ((n == 0)) || counts="${counts:+$counts · }$n $s"
   done
-  echo "${counts:-no jobs}"
-  report_rows "$dir" "Needs you" blocked failed timeout skipped
-  report_rows "$dir" "PR ready" pr
-  report_rows "$dir" "Done, nothing to read" "done" running gpu queued
-  for d in "$dir"/jobs/*/; do
-    d="${d%/}"
-    st="$(jstate "$d" status)"
-    case "$st" in "done" | "") continue ;; esac
-    [[ -f "$d/job" ]] || continue
-    wt="$(jstate "$d" worktree)"
-    echo
-    echo "## ${d##*/} — $st"
-    echo
-    echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
-    [[ -z "$wt" ]] || echo "- Worktree: $wt"
-    [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
-    if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
-      echo "- Next action:"
-      md_section "$wt/HANDOFF.md" "Next action" "  "
-      echo "- Blockers:"
-      md_section "$wt/HANDOFF.md" Blockers "  "
-    fi
-    case "$st" in failed | timeout) echo "- Log: $d/log" ;; esac
+  echo "${counts:-no jobs} — nights: $names"
+  report_rows "Needs you" blocked failed timeout skipped
+  report_rows "PR ready" pr
+  report_rows "Done, nothing to read" "done" running gpu queued
+  for dir in "$@"; do
+    for d in "$dir"/jobs/*/; do
+      d="${d%/}"
+      st="$(jstate "$d" status)"
+      case "$st" in "done" | "") continue ;; esac
+      [[ -f "$d/job" ]] || continue
+      wt="$(jstate "$d" worktree)"
+      echo
+      echo "## ${dir##*/}/${d##*/} — $st"
+      echo
+      echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
+      [[ -z "$wt" ]] || echo "- Worktree: $wt"
+      [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
+      if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
+        echo "- Next action:"
+        md_section "$wt/HANDOFF.md" "Next action" "  "
+        echo "- Blockers:"
+        md_section "$wt/HANDOFF.md" Blockers "  "
+      fi
+      case "$st" in failed | timeout) echo "- Log: $d/log" ;; esac
+    done
   done
 }
 
-# vibe night report [--<agent>] [--new] [DIR] — write DIR/report.md; with an
-# agent, open a session on it (<agent>/vibe-night-report.sh). --new: only
-# when the night has no report yet (the morning timer).
+# active_nights — every night with a job file written in the last 24 h.
+active_nights() {
+  local d
+  for d in "$NIGHT_ROOT"/*/; do
+    [[ -d "$d/jobs" ]] || continue
+    [[ -z "$(find "$d/jobs" -type f -mmin -1440 -print -quit 2>/dev/null)" ]] || echo "${d%/}"
+  done
+}
+
+# vibe night report [--<agent>] [--new] [DIR...] — the day's briefing over
+# DIRs (default: the nights active in the last 24 h) to
+# NIGHT_ROOT/briefings/<date>.md, copied to the directory named in
+# ~/.config/night-shift/briefing-dir when that file exists. With an agent,
+# open a session on it (<agent>/vibe-night-report.sh). --new: only when the
+# day has no briefing yet (the morning timer).
 cmd_night_report() {
-  local agent="" dir="" new=0
+  local agent="" new=0 dirs=() d file copy
   while (($#)); do
     case "$1" in
       --new) new=1 ;;
       -h | --help) usage ;;
       --?*) agent="${1#--}" ;;
-      *) dir="$1" ;;
+      *) dirs+=("$(night_dir "$1")") ;;
     esac
     shift
   done
@@ -694,15 +717,25 @@ cmd_night_report() {
     [[ "$agent" != */* && -f "$SELF_ROOT/$agent/vibe-night-report.sh" ]] ||
       die "no night report for '$agent' — $SELF_ROOT/$agent/vibe-night-report.sh is missing"
   fi
-  dir="$(night_dir "$dir")"
-  if ((new)) && [[ -f "$dir/report.md" ]]; then
-    echo "night $dir already has a report"
+  if ((${#dirs[@]} == 0)); then
+    while IFS= read -r d; do [[ -z "$d" ]] || dirs+=("$d"); done < <(active_nights)
+    ((${#dirs[@]})) || dirs=("$(night_dir "")")
+  fi
+  file="$NIGHT_ROOT/briefings/$(date +%F).md"
+  if ((new)) && [[ -f "$file" ]]; then
+    echo "briefing $file exists"
     return 0
   fi
-  night_report_md "$dir" >"$dir/report.md"
-  echo "report: $dir/report.md"
+  mkdir -p "${file%/*}"
+  night_report_md "${dirs[@]}" >"$file"
+  echo "briefing: $file"
+  copy="$(head -n 1 "${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/briefing-dir" 2>/dev/null || true)"
+  copy="${copy/#\~/$HOME}"
+  if [[ -n "$copy" ]]; then
+    mkdir -p "$copy" && cp "$file" "$copy/" && echo "copied: $copy/${file##*/}"
+  fi
   if [[ -n "$agent" ]]; then
-    bash "$SELF_ROOT/$agent/vibe-night-report.sh" "$dir/report.md" "$dir"
+    bash "$SELF_ROOT/$agent/vibe-night-report.sh" "$file" "$NIGHT_ROOT"
   fi
 }
 

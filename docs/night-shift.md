@@ -27,24 +27,28 @@ printf '%s\n' thesis pncbf humanoid_bridge >~/.config/night-shift/repos   # high
 
 It writes the night dir and runs `vibe night start --claude <dir>`.
 
-## 3. Install the morning report
+## 3. Install the morning briefing
 
-Servers machine only (`~/.config/vibe/role` holds `server`).
+Server machine only (`~/.config/vibe/role` holds `server`).
 
 ```bash
 systemctl --user link ~/.claude/systemd/night-shift-report.service ~/.claude/systemd/night-shift-report.timer
 systemctl --user enable --now night-shift-report.timer
+echo ~/notes/_inbox/agent-jobs-briefings >~/.config/night-shift/briefing-dir   # optional: a copy for your notes
 ```
 
-At 07:00: `vibe night report --claude --new` writes `report.md` and opens a
-Remote Control session `night-shift <date>` that pushes the summary to the phone.
+At 07:00: `vibe night report --claude --new` writes
+`~/.local/state/night-shift/briefings/<date>.md` over every night active in
+the last 24 h (the planned night and the recurring jobs' night), copies it to
+the briefing dir, and opens a Remote Control session `briefing <date>` that
+pushes the summary to the phone.
 
 ## 4. Verify
 
 ```bash
 vibe night status       # latest night: one line per job
 tmux -L night-shift attach -t night
-vibe night report --claude    # report now; the session replaces the last one
+vibe night report --claude    # today's briefing now; the session replaces the last one
 systemctl --user list-timers night-shift-report.timer
 ```
 
@@ -59,7 +63,7 @@ systemctl --user list-timers night-shift-report.timer
 | `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
 | `result`, `pr.md`, `report.md` | agent | `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings outside the diff (`templates/job-report.md`) |
 | `gpu-job` | `vibe night gpu` | the `gpu-queue` job id |
-| `report.md` (night dir) | `vibe night report` | counts, one row per job, next action of each unfinished job |
+| `briefings/<date>.md` (under `night-shift/`) | `vibe night report` | the day's briefing: counts, rows ranked Needs you → PR ready → Done with links, next action of each unfinished job |
 
 Runner: at most `--jobs` (4) agents at once, none started after `--until`
 (06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a
@@ -89,6 +93,7 @@ Night job settings: [`claude/night-shift-settings.json`](../claude/night-shift-s
 
 - Every job `failed` at once, log mentions login → the claude.ai login expired;
   `claude` shows `Your login expires in N days` beforehand — run `/login`.
+- A briefing lists one night only → the other night's job files are older than 24 h; name both: `vibe night report <dir> <dir>`.
 - No push in the morning → `/config` "Push when Claude decides" is off, or the
   report session is focused in a terminal.
 - The report session ignores its prompt → a variadic flag (`--add-dir`) after
