@@ -36,6 +36,14 @@ vibe job run --claude <repo> <job>       # one job now; then: vibe night status
 systemctl --user list-timers agent-jobs.timer
 ```
 
+## Catalogue
+
+| Job | Schedule | Output | Does |
+| --- | --- | --- | --- |
+| `codebase-health` | weekly, sun | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
+
+New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
+
 ## Layout
 
 | Where | Holds |

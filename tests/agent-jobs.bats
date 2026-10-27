@@ -239,3 +239,14 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   run grep -c Persistent "$REPO_ROOT/claude/systemd/agent-jobs.timer"
   [ "$output" = 0 ]
 }
+
+@test "unit: every catalogue entry has a schedule, a day when weekly, and a task body" {
+  local f sched body
+  for f in "$REPO_ROOT"/skills/recurring-jobs/references/jobs/*.md; do
+    case "${f##*/}" in _*) continue ;; esac
+    sched="$(awk 'NR > 1 && $0 == "---" { exit } index($0, "schedule:") == 1 { print $2 }' "$f")"
+    [[ "$sched" == daily || "$sched" == weekly || "$sched" == monthly ]] || false
+    body="$(awk 'NR > 1 && on { print } NR > 1 && $0 == "---" { on = 1 }' "$f" | grep -c . || true)"
+    [ "$body" -gt 2 ]
+  done
+}

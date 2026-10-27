@@ -13,7 +13,11 @@ Two commitments define everything below. First, **no behavioral changes** —
 if a cleanup would alter what the code does (even an exception message a
 caller might match on), it gets reported, never auto-fixed. Second, **no
 fixes without approval** — the scan and report are always safe to run; code
-is only touched after the user approves a category.
+is only touched after the user approves a category. Third, **one PR per
+run**: every approved category lands on one branch as separate commits.
+
+Unattended (a recurring job): see the last section; the job prompt is the
+approval, and only `docs` may be fixed.
 
 ## Pipeline
 
@@ -23,7 +27,9 @@ recorded baseline you cannot prove the fixes were behavior-preserving.
 ### 1. Resolve scope
 
 - Accept an optional path argument from the user; default is the whole repo.
-- Read `.codebase-health/state.json` if it exists:
+- State lives outside the repo, so a fresh worktree sees it:
+  `${XDG_STATE_HOME:-~/.local/state}/codebase-health/<repo name>/state.json`.
+  Read it if it exists:
 
 ```json
 { "last_scanned_commit": "<sha>", "last_run": "<ISO date>" }
@@ -33,8 +39,6 @@ recorded baseline you cannot prove the fixes were behavior-preserving.
   SHA (`git diff --name-only <sha>..HEAD`). Duplication comparison still runs
   against the whole repo — a changed file can duplicate an unchanged one.
 - If absent: full scan.
-- Keep the state directory out of version control via `.git/info/exclude`
-  (not `.gitignore`) so the health tool never creates diff noise of its own.
 
 ### 2. Preflight
 
@@ -101,9 +105,8 @@ disappears.
 
 ### 6. Fix
 
-- One branch per approved category, from the current HEAD:
-  `health/dedup-<YYYY-MM-DD>`, `health/complexity-<...>`, `health/docs-<...>`.
-  One category per branch keeps each PR reviewable in one sitting.
+- One branch for the run, from the current HEAD: `health/<YYYY-MM-DD>`.
+  Categories are commit groups on it, not branches: one PR per run.
 - One commit per fix. Atomic commits make step 7's reverts surgical.
 - Behavior-preserving transformations only. When unsure whether a change
   alters behavior, don't make it — downgrade the finding to report-only.
@@ -118,8 +121,8 @@ disappears.
 
 ### 7. Verify
 
-- Per branch, re-run the **full** test suite, not just tests near changed
-  files — refactors have blast radius.
+- Re-run the **full** test suite, not just tests near changed files —
+  refactors have blast radius.
 - Any failure not in the preflight baseline: `git revert` the offending
   commit and mark that finding "attempted, failed verification" with the
   failure output. Do not rationalize a new failure as unrelated.
@@ -128,20 +131,20 @@ disappears.
 
 ### 8. Deliver
 
-- Push each branch and open a PR (e.g. `gh pr create`). The PR description
-  **is** the report for that category: the findings fixed (grouped by file,
-  same format as step 4), plus any reverted attempts with their failure
-  output.
-- Append to the first PR a short "Known, not addressed" section listing
-  unapproved and report-only findings, so the full scan result survives in
-  reviewable history.
+- Push the branch and open one PR (e.g. `gh pr create`). The body follows
+  `templates/job-pr.md` in the toolkit: `Changed` / `Verify` /
+  `Decisions/risks` first, at most 12 lines above `<details>`.
+- Inside `<details>`: the findings fixed (grouped by file, same format as
+  step 4), reverted attempts with their failure output, and a "Known, not
+  addressed" list of unapproved and report-only findings, so the full scan
+  result survives in reviewable history.
 
 ### 9. Update state
 
-Write the new `last_scanned_commit` (the SHA that was scanned) to
-`.codebase-health/state.json` only after the PRs are open. If a run
-crashes, the stale marker makes the next run re-scan instead of skip —
-re-scanning is cheap, silently skipped findings are not.
+Write the new `last_scanned_commit` (the SHA that was scanned) to the state
+file of step 1 only after the PR is open (unattended: after the commits are
+made). If a run crashes, the stale marker makes the next run re-scan instead
+of skip — re-scanning is cheap, silently skipped findings are not.
 
 ## If the user only wants part of this
 
@@ -149,3 +152,21 @@ The pipeline degrades gracefully: "just scan" means stop after step 4;
 "just check the docs" means run only the docs category; "scan this
 directory" sets the scope in step 1. Never skip steps 2 (baseline) or 7
 (verify) when any fixing happens.
+
+## Unattended — as a recurring job
+
+The job prompt (`recurring-jobs` catalogue entry `codebase-health`) is the
+approval. Run steps 1–4, 6, 7 and 9 with these changes; skip 5 and 8.
+
+- Step 2: a failing baseline or no tests → scan only. No commit at all.
+- Step 4: the report goes to the job dir's `report.md` (template in the
+  prompt), one line per finding, at most 25 lines. Nothing to chat.
+- Step 6: fix the **docs** category only, on the job's branch, one commit per
+  fix. Every **dedup** and **complexity** finding with a done-when a command
+  can check becomes one `PROJECT_ROADMAP.md` item (task + done-when, the
+  file's own format); commit them together as one commit. A finding without a
+  checkable done-when stays in `report.md`.
+- Output `report` in the prompt: no commits; step 6 is report-only.
+- Done when `result`, `report.md` and (after a commit) `pr.md` are in the
+  job dir; the runner pushes and opens or updates the one PR.
+

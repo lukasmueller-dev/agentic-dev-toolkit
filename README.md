@@ -33,7 +33,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`project-status-scaffold`](skills/project-status-scaffold/) | Keeps `HANDOFF.md`, `PROJECT_STATUS.md`, `PROJECT_ROADMAP.md` current across sessions |
 | [`add-roadmap-item`](skills/add-roadmap-item/) | Turns a discussed idea into one roadmap item: task + done-when |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch |
-| [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve |
+| [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve; weekly as a recurring job |
 | [`codebase-review`](skills/codebase-review/) | Stages an independent review round for a fresh session |
 | [`codebase-map`](skills/codebase-map/) | Maps an unfamiliar repo into `docs/CODEBASE_MAP.md`, including how to get it running |
 | [`research-experiment-setup`](skills/research-experiment-setup/) | Makes every run of a research project recorded, comparable and reported: 10 decision cards |
