@@ -202,7 +202,8 @@ jobs:
           # exits 2 on a missing file, so deleting or renaming a template would
           # silently retire its neutrality check rather than fail the build.
           for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
-            templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md; do
+            templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
+            templates/AGENT_JOB.md; do
             test -f "$f" || {
               echo "::error file=$f::missing — this guard cannot run"
               exit 1
@@ -230,7 +231,7 @@ jobs:
           if grep -rniE 'claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
             templates/HANDOFF.md templates/PROJECT_STATUS.md \
             templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
-            templates/codebase templates/research; then
+            templates/AGENT_JOB.md templates/codebase templates/research; then
             echo "::error::templates must not name a specific tool or machine"
             exit 1
           fi

@@ -3,6 +3,7 @@
 Evening: `/night-shift` plans unattended jobs across the active repos; after
 approval, `vibe night` runs each as a headless agent in its own worktree and
 opens a draft PR. Skill: [`skills/night-shift/`](../skills/night-shift/SKILL.md).
+Scheduled jobs ride the same runner: `docs/recurring-jobs.md`.
 
 ## Requirements
 

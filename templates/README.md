@@ -15,6 +15,7 @@ copy.
 | `research/HARDWARE_TRIAL.md` | `<repo>/docs/hardware/<platform>.md` | Long — one per hardware platform |
 | `job-pr.md`          | a job's `pr.md` (PR title + body) | Short — one per unattended job run |
 | `job-report.md`      | a job's `report.md` | Short — one per unattended job run; the morning report reads it |
+| `AGENT_JOB.md`       | `<repo>/.agent-jobs/<job>.md` | Long — one per repo × recurring job; opts the repo in |
 
 `codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
@@ -48,8 +49,9 @@ render still produces a readable file.
 | `<machine>`   | Hostname of the machine that rendered it |
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
+| `<job>`       | Recurring job name (`AGENT_JOB.md`, `job-report.md`) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines; the folded detail (`job-pr.md` only, filled by the job itself) |
-| `<job>`, `<needs-you>`, `<findings>`, `<not-done>` | Job id; what needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
+| `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -82,6 +84,8 @@ tokens in.
 
 - `skills/night-shift/SKILL.md` — appends `job-pr.md` and `job-report.md` to
   every job prompt; the job fills them in its job dir
+- `bin/vibe job` — renders `AGENT_JOB.md` into a repo (`add`), and appends
+  `job-pr.md` and `job-report.md` to every recurring job's prompt (`due`, `run`)
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

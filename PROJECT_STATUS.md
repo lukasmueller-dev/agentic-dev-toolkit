@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-26 · turing_
+_Last updated: 2026-10-27 · turing_
 
 ## Goal
 
@@ -20,6 +20,11 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
+  `vibe job due` (01:00 timer) queues due jobs on the night runner, one PR per
+  run on `jobs/<job>`, cap 2 open job PRs per repo, two failures stop a job.
+  Output contract for every job: `memory/GLOBAL.md`, `templates/job-*.md`.
+  Design: PRs #99 and the `feat/recurring-jobs` PR.
 - 2026-10-26: **night-shift**: evening skill plans, `vibe night` runs headless
   Sonnet jobs (max 4 parallel, deadline 06:30) under a fail-closed sandbox;
   the runner, not the agent, pushes and opens draft PRs. Design: PR body.
