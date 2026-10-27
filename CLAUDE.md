@@ -15,7 +15,7 @@ global memory this repo installs into every agent) and
 | Directory     | Holds                                              | Tool-specific? |
 | ------------- | -------------------------------------------------- | -------------- |
 | `bin/`        | CLIs any agent or human can run                     | No             |
-| `completions/`| bash completion for a `bin/` CLI, `<cmd>.bash`      | No             |
+| `completions/`| bash (`<cmd>.bash`) and zsh (`_<cmd>`) completion for a `bin/` CLI | No             |
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
 | `memory/`     | Global memory installed into every agent            | No             |
@@ -110,6 +110,7 @@ something should never require editing the installer:
 | -------------------------- | --------------------------------------- |
 | a file in `bin/`           | `~/bin/<name>`                          |
 | `completions/<cmd>.bash`   | `~/.local/share/bash-completion/completions/<cmd>` |
+| `completions/_<cmd>`       | `~/.local/share/zsh/site-functions/_<cmd>` |
 | a directory in `skills/`   | `~/.claude/skills/<name>`               |
 | a directory in `vendor/skills/` | `~/.claude/skills/<name>` (a local `skills/<name>` wins) |
 | a file in `claude/`        | `~/.claude/<name>`                      |

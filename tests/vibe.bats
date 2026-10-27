@@ -416,3 +416,30 @@ complete_vibe() {
   local unit="$REPO_ROOT/claude/systemd/claude-rc@.service"
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$unit"
 }
+
+# zcomplete WORD... — candidates the zsh completion offers for "vibe WORD...".
+# compadd/_describe/_files are stubbed to print, so no compinit is needed.
+zcomplete_vibe() {
+  zsh -f -c '
+    compadd() { [[ $1 == -a ]] && print -rl -- "${(@P)2}" || print -rl -- "${@:#--}"; }
+    _describe() { print -rl -- "${(@)${(@P)4}%%:*}"; }
+    _files() { print "files $*"; }
+    source "$1"; shift
+    words=(vibe "$@"); CURRENT=$#words; _vibe
+  ' _ "$REPO_ROOT/completions/_vibe" "$@"
+}
+
+@test "completion: zsh verbs, flags, agents and task branches" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  zcomplete_vibe '' | grep -qx update-toolkit
+  [ "$(zcomplete_vibe sync '' | sort | tr '\n' ' ')" = "--all --wip " ]
+  [ "$(zcomplete_vibe start -C '')" = "files -/" ]
+  ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
+  [ "$(zcomplete_vibe status '')" = --claude ]
+  local r
+  r="$(make_repo zproj)"
+  git -C "$r" branch zsh-task
+  git -C "$r" branch worktree-snug
+  cd "$r"
+  [ "$(zcomplete_vibe start '')" = zsh-task ]
+}
