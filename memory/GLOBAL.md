@@ -109,6 +109,17 @@ under a minute. Shape: `~/github/agentic-dev-toolkit/templates/job-pr.md`
 - Sentences: ≤20 words, active voice, present tense, one instruction each,
   no `-ing` verb forms, the same word for the same thing.
 
+# Prefer the cut
+
+The smallest change that does the job wins. Before you add, ask what you can
+remove.
+
+- No layer, option, flag, fallback or abstraction for a case nobody has hit.
+- A fix that deletes code beats one that adds code.
+- Three similar lines beat a helper used once.
+- When the ask is bigger than the problem, say so and propose the smaller
+  version.
+
 # Working on the toolkit itself
 
 When the repo in question *is* `agentic-dev-toolkit`, its own instruction file

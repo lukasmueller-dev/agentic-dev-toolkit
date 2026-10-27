@@ -1,0 +1,12 @@
+# agent-jobs — queues every due recurring job on tonight's night at 01:00
+# (timer: agent-jobs.timer). Setup: docs/recurring-jobs.md. Skipped unless
+# ~/.config/vibe/role holds 'server'.
+
+[Unit]
+Description=agent-jobs dispatcher
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+ExecStart=%h/bin/vibe job due --claude

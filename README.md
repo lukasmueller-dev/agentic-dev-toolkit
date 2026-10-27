@@ -16,7 +16,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `night` runs unattended jobs. [Docs](docs/remote-sessions.md), [night](docs/night-shift.md) |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `night` runs unattended jobs; `job` queues recurring ones. [Docs](docs/remote-sessions.md), [night](docs/night-shift.md), [jobs](docs/recurring-jobs.md) |
 | [`bin/gpu-queue`](bin/gpu-queue) | One GPU job at a time across all repos; night-shift queues its runs here. [Docs](docs/night-shift.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
@@ -33,7 +33,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`project-status-scaffold`](skills/project-status-scaffold/) | Keeps `HANDOFF.md`, `PROJECT_STATUS.md`, `PROJECT_ROADMAP.md` current across sessions |
 | [`add-roadmap-item`](skills/add-roadmap-item/) | Turns a discussed idea into one roadmap item: task + done-when |
 | [`handoff-brief`](skills/handoff-brief/) | Distills a discussion into a `HANDOFF.md` on its own task branch |
-| [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve |
+| [`codebase-health`](skills/codebase-health/) | Duplication, complexity, drifted docs — then fixes only what you approve; weekly as a recurring job |
 | [`codebase-review`](skills/codebase-review/) | Stages an independent review round for a fresh session |
 | [`codebase-map`](skills/codebase-map/) | Maps an unfamiliar repo into `docs/CODEBASE_MAP.md`, including how to get it running |
 | [`research-experiment-setup`](skills/research-experiment-setup/) | Makes every run of a research project recorded, comparable and reported: 10 decision cards |
@@ -42,6 +42,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
 | [`night-shift`](skills/night-shift/) | Plans unattended overnight jobs across the active repos, starts them after you approve |
+| [`recurring-jobs`](skills/recurring-jobs/) | Lists, installs and checks the jobs the 01:00 timer queues on the night runner |
 | [`worktree-cleanup`](skills/worktree-cleanup/) | Removes worktrees (and their branches) whose work has landed, after you approve the list |
 
 Vendored: `grilling`, `grill-me`, and four academic-writing skills
@@ -79,6 +80,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
   · [research skills](docs/research-skills.md) · [night shift](docs/night-shift.md)
+  · [recurring jobs](docs/recurring-jobs.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

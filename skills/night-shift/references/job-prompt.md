@@ -22,11 +22,12 @@ You run unattended overnight. Nobody reads a question before morning.
 5. Check the done-when with a command before you call the task done. Run the repo's own lint and tests.
 6. Keep to the task. Put other findings in the PR body, not in the diff.
 7. Obey the repo's instruction file (`CLAUDE.md`, `AGENTS.md`).
-8. Source roadmap: your last commit deletes the item from `PROJECT_ROADMAP.md` when the task is done.
-9. Source handoff: start from `HANDOFF.md`; when the task is done, delete it per the repo's rules.
-10. Source new: your first commit adds the item to `PROJECT_ROADMAP.md` (task + done-when); when the task is done, your last commit deletes it.
-11. Blocked, failed or out of time: overwrite `HANDOFF.md` with State, Next action and Blockers, and commit it.
-12. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
+8. Prefer the cut: the smallest change that passes the done-when; delete before you add.
+9. Source roadmap: your last commit deletes the item from `PROJECT_ROADMAP.md` when the task is done.
+10. Source handoff: start from `HANDOFF.md`; when the task is done, delete it per the repo's rules.
+11. Source new: your first commit adds the item to `PROJECT_ROADMAP.md` (task + done-when); when the task is done, your last commit deletes it.
+12. Blocked, failed or out of time: overwrite `HANDOFF.md` with State, Next action and Blockers, and commit it.
+13. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
 
 ## Before you exit
 

@@ -247,31 +247,58 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   "$VIBE" night run --claude "$NIGHT" --jobs 3 --until "$(soon)" >/dev/null 2>&1
   printf '## Next action\n\nAsk the supervisor.\n\n## Blockers\n\nNeeds a | decision.\n' \
     >"$r/.claude/worktrees/task-b/HANDOFF.md"
+  echo findings >"$NIGHT/jobs/03-c/report.md"
   run "$VIBE" night report "$NIGHT"
   [ "$status" -eq 0 ]
-  run cat "$NIGHT/report.md"
-  [[ "$output" == *"1 done · 1 blocked · 1 failed"* ]] || false
-  [[ "$output" == *"## Needs you"*"| 02-b | blocked | blocked: needs a decision |  |"*"| 03-c | failed |"*"## PR ready"*"## Done, nothing to read"* ]] || false
-  [[ "$output" == *"## PR ready"*"| 01-a | done | work.txt added. | https://example.com/pull/1 |"*"## Done, nothing to read"*"none"* ]] || false
-  [[ "$output" == *"## 02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
-  [[ "$output" == *"## 03-c — failed"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
-  [[ "$output" != *"## 01-a"* ]] || false
+  run cat "$XDG_STATE_HOME/night-shift/briefings/$(date +%F).md"
+  [[ "$output" == *"1 done · 1 blocked · 1 failed — nights: 2026-10-26"* ]] || false
+  [[ "$output" == *"## Needs you"*"| 2026-10-26/02-b | blocked | blocked: needs a decision |  |"*"| 2026-10-26/03-c | failed |"*"| [report](file://$NIGHT/jobs/03-c/report.md) |"*"## PR ready"*"## Done, nothing to read"* ]] || false
+  [[ "$output" == *"## PR ready"*"| 2026-10-26/01-a | done | work.txt added. | [PR](https://example.com/pull/1) |"*"## Done, nothing to read"*"none"* ]] || false
+  [[ "$output" == *"## 2026-10-26/02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
+  [[ "$output" == *"## 2026-10-26/03-c — failed"*"- Report: $NIGHT/jobs/03-c/report.md"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
+  [[ "$output" != *"## 2026-10-26/01-a"* ]] || false
+}
+
+@test "night report: merges every night active in the last 24 h; copies to the briefing dir" {
+  local r other
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  "$VIBE" night run --claude "$NIGHT" --until "$(soon)" >/dev/null 2>&1
+  other="$XDG_STATE_HOME/night-shift/2026-10-26-jobs"
+  mkdir -p "$other/jobs/90-proj-x" "$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old"
+  printf 'repo=%s\nbranch=x\nmodel=sonnet\n' "$r" >"$other/jobs/90-proj-x/job"
+  echo blocked >"$other/jobs/90-proj-x/status"
+  printf 'repo=%s\nbranch=old\nmodel=sonnet\n' "$r" >"$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old/job"
+  touch -t 202601010000 "$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old/job"
+  mkdir -p "$BATS_TEST_TMPDIR/config/night-shift"
+  echo "$BATS_TEST_TMPDIR/vault/_inbox/briefings" >"$BATS_TEST_TMPDIR/config/night-shift/briefing-dir"
+  XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config" run "$VIBE" night report
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/_inbox/briefings/$(date +%F).md"* ]] || false
+  run cat "$BATS_TEST_TMPDIR/vault/_inbox/briefings/$(date +%F).md"
+  [[ "$output" == *"1 done · 1 blocked — nights: 2026-10-26, 2026-10-26-jobs"* ]] || false
+  [[ "$output" == *"| 2026-10-26-jobs/90-proj-x | blocked |"* ]] || false
+  [[ "$output" != *"01-old"* ]] || false
 }
 
 @test "night report: --new keeps an existing report; --claude opens a session in tmux" {
   local r
   r="$(make_repo proj)"
+  local briefing
+  briefing="$XDG_STATE_HOME/night-shift/briefings/$(date +%F).md"
   mkjob 01-a "$r" task-a ok
-  echo old >"$NIGHT/report.md"
+  mkdir -p "${briefing%/*}"
+  echo old >"$briefing"
   run "$VIBE" night report --claude --new "$NIGHT"
   [ "$status" -eq 0 ]
-  [ "$(cat "$NIGHT/report.md")" = old ]
+  [ "$(cat "$briefing")" = old ]
   [ ! -e "$STUBS/tmux.log" ]
   run "$VIBE" night report --claude "$NIGHT"
   [ "$status" -eq 0 ]
-  [ "$(cat "$NIGHT/report.md")" != old ]
+  [ "$(cat "$briefing")" != old ]
   grep -q -- "-L night-shift new-session -d -s report -c $REPO_ROOT" "$STUBS/tmux.log"
-  grep -q -- "--add-dir $NIGHT --model sonnet --remote-control night-shift\\\\ 2026-10-26 Read" "$STUBS/tmux.log"
+  grep -q -- "--add-dir $XDG_STATE_HOME/night-shift --model sonnet --remote-control briefing\\\\ $(date +%F) Read" "$STUBS/tmux.log"
   run "$VIBE" night report --nope "$NIGHT"
   [ "$status" -ne 0 ]
 }
