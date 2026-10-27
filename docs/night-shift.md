@@ -1,0 +1,61 @@
+# Night shift
+
+Evening: `/night-shift` plans unattended jobs across the active repos; after
+approval, `vibe night` runs each as a headless agent in its own worktree and
+opens a draft PR. Skill: [`skills/night-shift/`](../skills/night-shift/SKILL.md).
+
+## Requirements
+
+- `tmux`, `gh` logged in, `timeout` (coreutils).
+- The repos trusted once (`docs/remote-sessions.md` step 1).
+- A sandbox that starts: `bwrap --ro-bind / / --unshare-net true` exits 0.
+  Night jobs exit instead of running unsandboxed (`failIfUnavailable`).
+
+## 1. List the active repos
+
+```bash
+mkdir -p ~/.config/night-shift
+printf '%s\n' thesis pncbf humanoid_bridge >~/.config/night-shift/repos   # highest rank first
+```
+
+## 2. Plan and start
+
+```text
+/night-shift            # in a session; approve the table it shows
+```
+
+It writes the night dir and runs `vibe night start --claude <dir>`.
+
+## 3. Verify
+
+```bash
+vibe night status       # latest night: one line per job
+tmux -L night-shift attach -t night
+```
+
+## Layout
+
+`~/.local/state/night-shift/<date>/jobs/<NN-branch>/`
+
+| File | Written by | Holds |
+| --- | --- | --- |
+| `job`, `prompt.md` | skill | `repo=`, `branch=`, `model=`; the job prompt |
+| `status`, `note` | runner | `queued` `running` `done` `blocked` `failed` `timeout` `skipped`; why |
+| `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
+| `result`, `pr.md` | agent | `done:`/`blocked:`/`failed:` line; PR title + body |
+
+Runner: at most `--jobs` (4) agents at once, none started after `--until`
+(06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a
+draft PR only when the job committed; the agent itself never pushes.
+
+Night job settings: [`claude/night-shift-settings.json`](../claude/night-shift-settings.json)
+— no unsandboxed retry, no push to `main`/`master`, no `gh pr merge`.
+
+## What breaks it
+
+- Every job `failed`, log says the sandbox cannot start → Ubuntu's AppArmor
+  blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing), sudo once.
+- A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
+- `a night already runs` → `tmux -L night-shift attach -t night`; wait or kill it.
+- `vibe night start` run inside a sandboxed session → jobs inherit that sandbox; start it unsandboxed.
+- `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

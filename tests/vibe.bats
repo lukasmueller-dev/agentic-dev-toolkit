@@ -398,6 +398,9 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
+  [ "$(complete_vibe night st | tr '\n' ' ')" = "start status " ]
+  [ "$(complete_vibe night start --j)" = --jobs ]
+  [ "$(complete_vibe night start --c)" = --claude ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task

@@ -7,8 +7,11 @@
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
+#   vibe night start --<agent> <dir> [--jobs N] [--until HH:MM] [--timeout DUR]
+#                                   run the night's jobs in tmux (<agent>/vibe-night.sh)
+#   vibe night status [<dir>]       one line per job of a night (default: the latest)
 #
-# Docs: docs/remote-sessions.md.
+# Docs: docs/remote-sessions.md, docs/night-shift.md.
 set -euo pipefail
 
 script_dir() {
@@ -28,7 +31,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,9s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,12s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -92,6 +95,27 @@ open_prs() {
 }
 pr_of() { printf '%s\n' "$1" | awk -F'\t' -v b="$2" '$1 == b { print $2; exit }'; }
 
+# open_worktree MAIN BRANCH DEFAULT — make or adopt BRANCH's worktree, run the
+# agent start hooks; sets WT. Call from inside the repo.
+open_worktree() {
+  local main="$1" branch="$2" def="$3" s
+  ensure_exclude "$main"
+  git -C "$main" fetch -q origin 2>/dev/null || warn "fetch failed — using the last fetched refs"
+  WT="$(worktree_of "$main" "$branch")"
+  if [[ -z "$WT" ]]; then
+    WT="$(worktree_dir "$branch")"
+    [[ ! -e "$WT" ]] || die "$WT exists but does not hold branch '$branch'"
+    ensure_worktree "$main" "$branch" "$WT" "origin/$def"
+  elif [[ -z "$(git -C "$WT" status --porcelain)" ]]; then
+    git -C "$WT" merge -q --ff-only '@{u}' 2>/dev/null || true
+  fi
+  for s in "$SELF_ROOT"/*/vibe-start.sh; do
+    if [[ -f "$s" ]] && ! bash "$s" "$WT" "$(basename "$main")-$branch"; then
+      warn "$s failed"
+    fi
+  done
+}
+
 cmd_start() {
   local repo_dir="$PWD" task="" main branch dir def pr
   while (($#)); do
@@ -112,21 +136,8 @@ cmd_start() {
   branch="$(slug "$task")"
   def="$(default_branch "$main")"
   [[ -n "$branch" && "$branch" != "$def" ]] || die "'$task' is not a task name"
-  ensure_exclude "$main"
-  git -C "$main" fetch -q origin 2>/dev/null || warn "fetch failed — using the last fetched refs"
-  dir="$(worktree_of "$main" "$branch")"
-  if [[ -z "$dir" ]]; then
-    dir="$(worktree_dir "$branch")"
-    [[ ! -e "$dir" ]] || die "$dir exists but does not hold branch '$branch'"
-    ensure_worktree "$main" "$branch" "$dir" "origin/$def"
-  elif [[ -z "$(git -C "$dir" status --porcelain)" ]]; then
-    git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null || true
-  fi
-  for s in "$SELF_ROOT"/*/vibe-start.sh; do
-    if [[ -f "$s" ]] && ! bash "$s" "$dir" "$(basename "$main")-$branch"; then
-      warn "$s failed"
-    fi
-  done
+  open_worktree "$main" "$branch" "$def"
+  dir="$WT"
   pr="$(pr_of "$(open_prs "$dir")" "$branch")"
   echo "worktree: $dir"
   [[ -z "$pr" ]] || echo "PR:       $pr"
@@ -259,7 +270,250 @@ cmd_update_toolkit() {
   fi
 }
 
+# --- night: unattended jobs, one worktree each (docs/night-shift.md) ---------
+
+NIGHT_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/night-shift"
+
+# jget FILE KEY — the value of KEY=value in FILE; empty when absent.
+jget() { awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$1" 2>/dev/null || true; }
+# jstate JOB NAME — first line of a job state file; empty when absent.
+jstate() { head -n 1 "$1/$2" 2>/dev/null || true; }
+
+# night_end JOB STATUS NOTE — final status of a job.
+night_end() {
+  echo "$2" >"$1/status"
+  echo "$3" >"$1/note"
+  date '+%F %T' >"$1/ended"
+  rm -f "$1/pid"
+}
+
+# deadline_epoch HH:MM — epoch of the next HH:MM, today or tomorrow.
+deadline_epoch() {
+  local h m now nh nm ns diff
+  [[ "$1" =~ ^([01]?[0-9]|2[0-3]):([0-5][0-9])$ ]] || die "--until wants HH:MM, got '$1'"
+  h="${BASH_REMATCH[1]}" m="${BASH_REMATCH[2]}"
+  read -r now nh nm ns < <(date '+%s %H %M %S')
+  diff=$(((10#$h * 60 + 10#$m - 10#$nh * 60 - 10#$nm + 1440) % 1440))
+  echo $((now - 10#$ns + diff * 60))
+}
+
+# night_args ARGS... — parse start/run options into AGENT DIR JOBS UNTIL TIMEOUT.
+night_args() {
+  AGENT="" DIR="" JOBS=4 UNTIL=06:30 TIMEOUT=3h
+  while (($#)); do
+    case "$1" in
+      --jobs) JOBS="${2:?--jobs needs a number}" && shift 2 ;;
+      --until) UNTIL="${2:?--until needs HH:MM}" && shift 2 ;;
+      --timeout) TIMEOUT="${2:?--timeout needs a duration, e.g. 3h}" && shift 2 ;;
+      -h | --help) usage ;;
+      --?*)
+        [[ -z "$AGENT" ]] || die "one agent only"
+        AGENT="${1#--}"
+        shift
+        ;;
+      *)
+        [[ -z "$DIR" ]] || die "one night directory only"
+        DIR="$1"
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$AGENT" && -n "$DIR" ]] || die "usage: vibe night start --<agent> <dir>, e.g. --claude"
+  [[ "$AGENT" != */* && -f "$SELF_ROOT/$AGENT/vibe-night.sh" ]] ||
+    die "no night jobs for '$AGENT' — $SELF_ROOT/$AGENT/vibe-night.sh is missing"
+  [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs wants a positive number, got '$JOBS'"
+  [[ -d "$DIR/jobs" ]] || die "$DIR/jobs is missing — the night-shift skill writes it"
+  DIR="$(cd -P "$DIR" && pwd)"
+  deadline_epoch "$UNTIL" >/dev/null
+}
+
+# night_prepare JOB — check the job, make or adopt its worktree. Writes
+# JOB/worktree on success, a final status otherwise. Run it in a subshell.
+night_prepare() {
+  local d="$1" repo branch main def wt
+  repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
+  [[ -f "$d/prompt.md" ]] || {
+    night_end "$d" failed "no prompt.md"
+    return 0
+  }
+  cd "$repo" 2>/dev/null || {
+    night_end "$d" failed "no directory '$repo'"
+    return 0
+  }
+  main="$(main_repo_root 2>/dev/null)" || {
+    night_end "$d" failed "$repo is not a git repo"
+    return 0
+  }
+  def="$(default_branch "$main")"
+  if [[ -z "$branch" || "$(slug "$branch")" != "$branch" || "$branch" == "$def" ]]; then
+    night_end "$d" failed "bad branch '$branch'"
+    return 0
+  fi
+  wt="$(worktree_of "$main" "$branch")"
+  if [[ -n "$wt" && -n "$(git -C "$wt" status --porcelain)" ]]; then
+    night_end "$d" skipped "$wt has uncommitted changes"
+    return 0
+  fi
+  if [[ -z "$wt" && -e "$(worktree_dir "$branch")" ]]; then
+    night_end "$d" skipped "$(worktree_dir "$branch") exists but does not hold '$branch'"
+    return 0
+  fi
+  open_worktree "$main" "$branch" "$def"
+  if [[ "$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
+    night_end "$d" failed "no worktree for '$branch'"
+    return 0
+  fi
+  echo "$def" >"$d/base"
+  echo "$(basename "$main")-$branch" >"$d/name"
+  echo "$WT" >"$d/worktree"
+}
+
+# night_publish JOB — push the job's commits, open a draft PR from JOB/pr.md.
+night_publish() {
+  local d="$1" wt base branch ahead title url
+  wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
+  ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
+  ((ahead > 0)) || return 0
+  if ! git -C "$wt" push -q -u origin "$branch"; then
+    echo "push failed" >"$d/pr"
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || return 0
+  url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
+  if [[ -z "$url" ]]; then
+    title="$(head -n 1 "$d/pr.md" 2>/dev/null || true)"
+    if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
+    printf '\n---\n_night-shift job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
+    url="$( (cd "$wt" && gh pr create --draft --base "$base" --head "$branch" \
+      --title "${title:-night-shift: $(basename "$d")}" --body-file "$d/pr-body.md") | tail -n 1 || true)"
+  fi
+  echo "${url:-PR not created}" >"$d/pr"
+}
+
+# night_run_job JOB — the agent in the job's worktree, then publish. Runs in
+# the background; the runner marks it failed if it dies without a status.
+night_run_job() {
+  local d="$1" rc=0 result st note=""
+  date '+%F %T' >"$d/started"
+  NIGHT_SHIFT_JOB_DIR="$d" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-night.sh" \
+    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" >"$d/log" 2>&1 || rc=$?
+  result="$(jstate "$d" result)"
+  if ((rc == 124 || rc == 137)); then
+    st=timeout note="stopped after $TIMEOUT"
+  elif ((rc != 0)); then
+    st=failed note="agent exit $rc: $(tail -n 1 "$d/log" 2>/dev/null | cut -c 1-160 || true)"
+  else
+    case "$result" in
+      "done:"*) st="done" ;;
+      "blocked:"*) st=blocked ;;
+      *) st=failed note="no result line" ;;
+    esac
+  fi
+  night_publish "$d" || true
+  night_end "$d" "$st" "${result:-$note}"
+}
+
+cmd_night_run() {
+  local d st pid running now deadline queued
+  night_args "$@"
+  deadline="$(deadline_epoch "$UNTIL")"
+  TIMEOUT_CMD=()
+  if command -v timeout >/dev/null 2>&1; then
+    TIMEOUT_CMD=(timeout --kill-after=60 "$TIMEOUT")
+  elif command -v gtimeout >/dev/null 2>&1; then
+    TIMEOUT_CMD=(gtimeout --kill-after=60 "$TIMEOUT")
+  else
+    warn "no timeout(1) — jobs run without the $TIMEOUT limit"
+  fi
+  info "night $DIR: $JOBS at a time, none started after $UNTIL"
+  while :; do
+    running=0 queued=()
+    for d in "$DIR"/jobs/*/; do
+      d="${d%/}"
+      [[ -f "$d/job" ]] || continue
+      st="$(jstate "$d" status)"
+      case "$st" in
+        running)
+          pid="$(jstate "$d" pid)"
+          if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            running=$((running + 1))
+          else
+            night_end "$d" failed "job process died"
+          fi
+          ;;
+        "" | queued) queued+=("$d") ;;
+      esac
+    done
+    if ((${#queued[@]} == 0 && running == 0)); then break; fi
+    now="$(date +%s)"
+    for d in "${queued[@]+"${queued[@]}"}"; do
+      if ((now >= deadline)); then
+        night_end "$d" skipped "not started before $UNTIL"
+        continue
+      fi
+      ((running < JOBS)) || break
+      echo running >"$d/status"
+      (night_prepare "$d") >>"$d/runner.log" 2>&1 || true
+      if [[ "$(jstate "$d" status)" != running || ! -s "$d/worktree" ]]; then
+        [[ "$(jstate "$d" status)" != running ]] || night_end "$d" failed "prepare failed — see runner.log"
+        continue
+      fi
+      night_run_job "$d" >>"$d/runner.log" 2>&1 &
+      echo "$!" >"$d/pid"
+      running=$((running + 1))
+      info "started $(basename "$d")"
+    done
+    sleep "${VIBE_NIGHT_POLL:-30}"
+  done
+  info "night finished"
+  cmd_night_status "$DIR"
+}
+
+cmd_night_start() {
+  local cmd
+  night_args "$@"
+  command -v tmux >/dev/null 2>&1 || die "tmux is required"
+  if tmux -L night-shift has-session -t '=night' 2>/dev/null; then
+    die "a night already runs — tmux -L night-shift attach -t night"
+  fi
+  cmd="$(printf '%q ' "$SELF_ROOT/bin/vibe" night run "--$AGENT" "$DIR" \
+    --jobs "$JOBS" --until "$UNTIL" --timeout "$TIMEOUT")"
+  tmux -L night-shift new-session -d -s night -c "$DIR" "$cmd >>$(printf '%q' "$DIR/runner.log") 2>&1"
+  echo "night started: $DIR"
+  echo "follow:  tail -f $DIR/runner.log"
+  echo "status:  vibe night status $DIR"
+}
+
+cmd_night_status() {
+  local dir="${1:-}" d id st
+  if [[ -z "$dir" ]]; then
+    for d in "$NIGHT_ROOT"/*/; do [[ -d "$d/jobs" ]] && dir="${d%/}"; done
+    [[ -n "$dir" ]] || die "no night under $NIGHT_ROOT"
+  fi
+  [[ -d "$dir/jobs" ]] || die "$dir/jobs is missing"
+  echo "night: $dir"
+  for d in "$dir"/jobs/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" ]] || continue
+    id="${d##*/}" st="$(jstate "$d" status)"
+    printf '%-32s %-8s %s %s\n' "$id" "${st:-queued}" "$(jstate "$d" pr)" "$(jstate "$d" note)"
+  done
+}
+
+cmd_night() {
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    start | run | status) "cmd_night_$sub" "$@" ;;
+    *) die "usage: vibe night start|status — see vibe --help" ;;
+  esac
+}
+
 case "${1:-}" in
+  night)
+    shift
+    cmd_night "$@"
+    ;;
   update-toolkit)
     shift
     cmd_update_toolkit "$@"

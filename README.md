@@ -16,7 +16,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines. [Docs](docs/remote-sessions.md) |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `night` runs unattended jobs. [Docs](docs/remote-sessions.md), [night](docs/night-shift.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
 | [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |
@@ -40,6 +40,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
+| [`night-shift`](skills/night-shift/) | Plans unattended overnight jobs across the active repos, starts them after you approve |
 | [`worktree-cleanup`](skills/worktree-cleanup/) | Removes worktrees (and their branches) whose work has landed, after you approve the list |
 
 Vendored: `grilling`, `grill-me`, and four academic-writing skills
@@ -76,7 +77,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
   · [skill quality](docs/skill-quality.md) · [skill-lint](docs/skill-lint.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
-  · [research skills](docs/research-skills.md)
+  · [research skills](docs/research-skills.md) · [night shift](docs/night-shift.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements
