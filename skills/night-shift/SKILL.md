@@ -57,6 +57,7 @@ For each approved job, under `${XDG_STATE_HOME:-~/.local/state}/night-shift/<YYY
 
 - `job` — three lines: `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled. Time limit: 3h unless the user set one.
+  The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.
 
 ## Phase 6 — Start
 

@@ -56,13 +56,15 @@ systemctl --user list-timers night-shift-report.timer
 | `job`, `prompt.md` | skill | `repo=`, `branch=`, `model=`; the job prompt |
 | `status`, `note` | runner | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
-| `result`, `pr.md` | agent | `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body |
+| `result`, `pr.md`, `report.md` | agent | `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings outside the diff (`templates/job-report.md`) |
 | `gpu-job` | `vibe night gpu` | the `gpu-queue` job id |
 | `report.md` (night dir) | `vibe night report` | counts, one row per job, next action of each unfinished job |
 
 Runner: at most `--jobs` (4) agents at once, none started after `--until`
 (06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a
-draft PR only when the job committed; the agent itself never pushes.
+draft PR only when the job committed; the agent itself never pushes. Every PR
+it opens carries the label `agent`; a PR open on the branch already gets its
+body replaced instead.
 
 GPU jobs: the agent commits, then `vibe night gpu -- <cmd>` queues the run in
 [`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, the queue's

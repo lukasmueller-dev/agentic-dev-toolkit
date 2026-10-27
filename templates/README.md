@@ -13,6 +13,8 @@ copy.
 | `codebase/CODEBASE_MAP.md` | `<repo>/docs/CODEBASE_MAP.md` | Long — one per repo; a re-run diffs against it rather than replacing it |
 | `research/EXPERIMENT_SETUP.md` | `<repo>/docs/EXPERIMENT_SETUP.md` | Long — one per repo; one row per card |
 | `research/HARDWARE_TRIAL.md` | `<repo>/docs/hardware/<platform>.md` | Long — one per hardware platform |
+| `job-pr.md`          | a job's `pr.md` (PR title + body) | Short — one per unattended job run |
+| `job-report.md`      | a job's `report.md` | Short — one per unattended job run; the morning report reads it |
 
 `codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
@@ -46,6 +48,8 @@ render still produces a readable file.
 | `<machine>`   | Hostname of the machine that rendered it |
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
+| `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines; the folded detail (`job-pr.md` only, filled by the job itself) |
+| `<job>`, `<needs-you>`, `<findings>`, `<not-done>` | Job id; what needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -75,6 +79,9 @@ tokens in.
   target repo's `docs/`, and never overwrites an existing one
 - `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`
   — render `research/` the same way, through `skills/_lib/doc-lib.sh`
+
+- `skills/night-shift/SKILL.md` — appends `job-pr.md` and `job-report.md` to
+  every job prompt; the job fills them in its job dir
 
 Each resolves this directory from its own location on disk, following
 symlinks, so the templates are found whether the script is run from the repo

@@ -26,8 +26,12 @@ case "\$mode" in
     ;;
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    printf 'feat: night work\nWhat changed.\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
+    printf 'feat: night work\n\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$NIGHT_SHIFT_JOB_DIR/result"
+    ;;
+  nopr)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    echo "done: work.txt added, no pr.md" >"\$NIGHT_SHIFT_JOB_DIR/result"
     ;;
   blocked) echo "blocked: needs a decision" >"\$NIGHT_SHIFT_JOB_DIR/result" ;;
   crash) exit 3 ;;
@@ -40,6 +44,7 @@ EOF
 echo "\$*" >>"$STUBS/gh.log"
 case "\$1 \$2" in
   "pr create") echo "https://example.com/pull/1" ;;
+  "pr list") [ ! -f "$STUBS/pr-exists" ] || echo "https://example.com/pull/9" ;;
 esac
 EOF
   # shellcheck disable=SC2016  # the stub's own $@ and $3
@@ -76,7 +81,8 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-b
   [ "$(cat "$NIGHT/jobs/01-a/pr")" = "https://example.com/pull/1" ]
   grep -q -- 'pr create --draft --base main --head task-a --title feat: night work' "$STUBS/gh.log"
-  grep -q 'What changed.' "$NIGHT/jobs/01-a/pr-body.md"
+  grep -q '^\*\*Changed:\*\* work.txt added.' "$NIGHT/jobs/01-a/pr-body.md"
+  grep -q -- 'pr edit https://example.com/pull/1 --add-label agent' "$STUBS/gh.log"
   [ "$(cat "$NIGHT/jobs/01-a/note")" = "done: work.txt added" ]
   [[ "$output" == *"01-a"*"done"* ]] || false
 }
@@ -90,6 +96,23 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   grep -q -- '-p --model sonnet --name proj-task-a' "$STUBS/claude.log"
   grep -q -- '--permission-prompts none' "$STUBS/claude.log"
   grep -q -- "--settings $REPO_ROOT/claude/night-shift-settings.json" "$STUBS/claude.log"
+}
+
+@test "night run: no pr.md titles the PR from the result; an open PR gets its body replaced" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a nopr
+  run "$VIBE" night run --claude "$NIGHT" --until "$(soon)"
+  [ "$status" -eq 0 ]
+  grep -q -- '--title night(01-a): work.txt added, no pr.md --body-file' "$STUBS/gh.log"
+  touch "$STUBS/pr-exists"
+  mkjob 02-b "$r" task-b ok
+  run "$VIBE" night run --claude "$NIGHT" --until "$(soon)"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$NIGHT/jobs/02-b/pr")" = "https://example.com/pull/9" ]
+  grep -q -- 'pr edit https://example.com/pull/9 --body-file' "$STUBS/gh.log"
+  run grep -c -- 'pr create --draft --base main --head task-b' "$STUBS/gh.log"
+  [ "$output" = 0 ]
 }
 
 @test "night run: blocked without commits pushes nothing; crash and silence fail" {
@@ -228,7 +251,8 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   [ "$status" -eq 0 ]
   run cat "$NIGHT/report.md"
   [[ "$output" == *"1 done · 1 blocked · 1 failed"* ]] || false
-  [[ "$output" == *"| 01-a | done | done: work.txt added | https://example.com/pull/1 |"* ]] || false
+  [[ "$output" == *"## Needs you"*"| 02-b | blocked | blocked: needs a decision |  |"*"| 03-c | failed |"*"## PR ready"*"## Done, nothing to read"* ]] || false
+  [[ "$output" == *"## PR ready"*"| 01-a | done | work.txt added. | https://example.com/pull/1 |"*"## Done, nothing to read"*"none"* ]] || false
   [[ "$output" == *"## 02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
   [[ "$output" == *"## 03-c — failed"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
   [[ "$output" != *"## 01-a"* ]] || false
