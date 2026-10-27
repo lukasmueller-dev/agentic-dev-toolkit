@@ -95,6 +95,20 @@ process of the agent.
 - `git push` fails now and then with `signing failed ... communication with
   agent failed`. Retry once; else ask me to run it.
 
+# Output a human reads in a minute
+
+A PR body, a job report and an end-of-task summary are read on a phone in
+under a minute. Shape: `~/github/agentic-dev-toolkit/templates/job-pr.md`
+(PR body) and `templates/job-report.md` (job report).
+
+- PR body: three TL;DR lines first — `Changed`, `Verify`, `Decisions/risks`
+  ("none" if none). At most 12 lines above `<details>`; the rest folds.
+- Job report: at most 25 lines. `Needs you` first; one line per finding.
+- PR title: `<type>(<scope>): <what>`, ≤60 characters. A job's PR carries the
+  job as scope: `night(01-a): …`, `job(codebase-health): …`.
+- Sentences: ≤20 words, active voice, present tense, one instruction each,
+  no `-ing` verb forms, the same word for the same thing.
+
 # Working on the toolkit itself
 
 When the repo in question *is* `agentic-dev-toolkit`, its own instruction file

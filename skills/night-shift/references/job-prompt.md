@@ -30,7 +30,20 @@ You run unattended overnight. Nobody reads a question before morning.
 
 ## Before you exit
 
-Write two files in the job dir:
+Write these files in the job dir. A human reads them on a phone in a minute.
 
 - `result` — one line: `done: <what changed>`, `queued: <what runs>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
-- `pr.md` — line 1: the PR title (Conventional Commits). Then the body: what changed, how you checked it, what to review first.
+- `pr.md` — the first template below, every `<token>` filled. Line 1 is the title: `night(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
+- `report.md` — the second template, only when you have findings outside the diff. At most 25 lines.
+
+Sentences: ≤20 words, active voice, one instruction each, no `-ing` verb forms.
+
+## Output templates
+
+### pr.md
+
+<the pr template, verbatim>
+
+### report.md
+
+<the report template, verbatim>

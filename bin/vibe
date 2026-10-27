@@ -371,7 +371,16 @@ night_prepare() {
   echo "$WT" >"$d/worktree"
 }
 
-# night_publish JOB — push the job's commits, open a draft PR from JOB/pr.md.
+# pr_title_fallback JOB — `night(<id>): <result>` when the job wrote no pr.md.
+pr_title_fallback() {
+  local r
+  r="$(jstate "$1" result)"
+  r="${r#*: }"
+  echo "night(${1##*/}): ${r:-${1##*/}}" | cut -c 1-60
+}
+
+# night_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
+# or replace the body of the PR already open on the branch. Label: agent.
 night_publish() {
   local d="$1" wt base branch ahead title url
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
@@ -382,13 +391,20 @@ night_publish() {
     return 0
   fi
   command -v gh >/dev/null 2>&1 || return 0
+  if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
+  printf '\n---\n_night-shift job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
-  if [[ -z "$url" ]]; then
+  if [[ -n "$url" ]]; then
+    (cd "$wt" && gh pr edit "$url" --body-file "$d/pr-body.md") >/dev/null 2>&1 || true
+  else
     title="$(head -n 1 "$d/pr.md" 2>/dev/null || true)"
-    if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
-    printf '\n---\n_night-shift job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
+    [[ -n "$title" ]] || title="$(pr_title_fallback "$d")"
     url="$( (cd "$wt" && gh pr create --draft --base "$base" --head "$branch" \
-      --title "${title:-night-shift: $(basename "$d")}" --body-file "$d/pr-body.md") | tail -n 1 || true)"
+      --title "$title" --body-file "$d/pr-body.md") | tail -n 1 || true)"
+  fi
+  if [[ -n "$url" ]]; then
+    (cd "$wt" && gh label create agent --color 5319e7 --description "opened by a job runner") >/dev/null 2>&1 || true
+    (cd "$wt" && gh pr edit "$url" --add-label agent) >/dev/null 2>&1 || true
   fi
   echo "${url:-PR not created}" >"$d/pr"
 }
@@ -555,10 +571,56 @@ cmd_night_status() {
   done
 }
 
-# night_report_md DIR — the morning report: counts, one row per job, then the
-# next action of every job that did not finish.
+# in_list NEEDLE WORD... — true when NEEDLE is one of the words.
+in_list() {
+  local n="$1" w
+  shift
+  for w in "$@"; do [[ "$w" != "$n" ]] || return 0; done
+  return 1
+}
+
+# report_tldr JOB — the `Changed:` line of the job's pr.md, else its result.
+report_tldr() {
+  local t=""
+  if [[ -f "$1/pr.md" ]]; then
+    t="$(grep -m 1 '^\*\*Changed:\*\*' "$1/pr.md" 2>/dev/null || true)"
+    t="${t#\*\*Changed:\*\*}"
+    t="${t# }"
+  fi
+  echo "${t:-$(jstate "$1" note)}"
+}
+
+# report_rows DIR TITLE CLASS... — one table of the jobs in the classes: a
+# status, or `pr` (done with a PR URL; `done` is then done without one).
+report_rows() {
+  local dir="$1" title="$2" d st cls pr tldr rows=""
+  shift 2
+  for d in "$dir"/jobs/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" ]] || continue
+    st="$(jstate "$d" status)" pr="$(jstate "$d" pr)"
+    st="${st:-queued}" cls="${st:-queued}"
+    case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
+    in_list "$cls" "$@" || continue
+    tldr="$(report_tldr "$d")"
+    rows+="| ${d##*/} | $st | ${tldr//|//} | $pr |"$'\n'
+  done
+  echo
+  echo "## $title"
+  echo
+  if [[ -z "$rows" ]]; then
+    echo "none"
+  else
+    echo "| Job | Status | TL;DR | PR |"
+    echo "| --- | --- | --- | --- |"
+    printf '%s' "$rows"
+  fi
+}
+
+# night_report_md DIR — the morning report, ranked: what needs a human, the
+# PRs to read, the rest; then the next action of every job that did not finish.
 night_report_md() {
-  local dir="$1" d id st wt result counts="" s n
+  local dir="$1" d st wt counts="" s n
   echo "# Night shift — ${dir##*/}"
   echo
   for s in "done" blocked failed timeout skipped running gpu queued; do
@@ -571,15 +633,9 @@ night_report_md() {
     ((n == 0)) || counts="${counts:+$counts · }$n $s"
   done
   echo "${counts:-no jobs}"
-  echo
-  echo "| Job | Status | Result | PR |"
-  echo "| --- | --- | --- | --- |"
-  for d in "$dir"/jobs/*/; do
-    d="${d%/}"
-    [[ -f "$d/job" ]] || continue
-    st="$(jstate "$d" status)" result="$(jstate "$d" note)"
-    printf '| %s | %s | %s | %s |\n' "${d##*/}" "${st:-queued}" "${result//|//}" "$(jstate "$d" pr)"
-  done
+  report_rows "$dir" "Needs you" blocked failed timeout skipped
+  report_rows "$dir" "PR ready" pr
+  report_rows "$dir" "Done, nothing to read" "done" running gpu queued
   for d in "$dir"/jobs/*/; do
     d="${d%/}"
     st="$(jstate "$d" status)"
@@ -591,6 +647,7 @@ night_report_md() {
     echo
     echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
     [[ -z "$wt" ]] || echo "- Worktree: $wt"
+    [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
     if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
       echo "- Next action:"
       md_section "$wt/HANDOFF.md" "Next action" "  "
