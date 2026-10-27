@@ -60,6 +60,9 @@ browser. Setup and traps: `~/github/agentic-dev-toolkit/docs/remote-sessions.md`
   clean. The `worktree-cleanup` skill removes the merged ones that are left.
 - The main checkout stays on the default branch: never commit there; work in
   a worktree (`vibe start <task>`).
+- The day: the `check-in` skill on the night's briefing at 08:00, then deep
+  work without sessions until 12:00; sessions 13:00–18:00; the `shutdown`
+  skill hands off every worktree and starts the night shift.
 - The toolkit is installed from `~/github/agentic-dev-toolkit` by symlink, so
   `vibe update-toolkit` updates the installed tools in place (pull, install,
   doctor).
