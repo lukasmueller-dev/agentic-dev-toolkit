@@ -84,6 +84,10 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [[ "$output" == *"nosched"*"invalid: no schedule"* ]] || false
   [[ "$output" == *"nobody"*"invalid: not in the catalogue, and the repo file has no instructions"* ]] || false
   [[ "$output" != *bystander* && "$output" != *available* ]] || false
+  [[ "$output" == *"agent-shift sweep: no "*"night-shift/repos"* ]] || false
+  printf 'proj  # first\n\n%s\n' "$BATS_TEST_TMPDIR/other" >"$XDG_CONFIG_HOME/night-shift/repos"
+  run "$VIBE" job list
+  [[ "$output" == *"agent-shift sweep ("*"night-shift/repos): proj, other"* ]] || false
   run "$VIBE" job list --all
   [[ "$output" == *"proj"*"crashy"*"daily"*"available — vibe job add proj crashy"* ]] || false
   [[ "$output" != *bystander* ]] || false

@@ -8,15 +8,17 @@
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #   vibe night start --<agent> <dir> [--jobs N] [--until HH:MM] [--timeout DUR]
-#                                   run the night's jobs in tmux (<agent>/vibe-night.sh)
-#   vibe night status [<dir>]       one line per job of a night (default: the latest)
+#                                   run a shift's jobs in tmux, night or day (<agent>/vibe-night.sh);
+#                                   <dir>: a path, or a name under ~/.local/state/night-shift
+#   vibe night status [<dir>]       one line per job of a shift (default: the latest)
 #   vibe night report [--<agent>] [--new] [--day] [<dir>...]
-#                                   the day's briefing over the active nights; open a session on it
+#                                   the briefing over the shifts of the last 24 h; --day: today's
+#                                   day shift only; --<agent>: open a session on it
 #   vibe job list [--all] [<repo>...]
-#                                   recurring jobs per repo: schedule, last run, due;
-#                                   --all adds the catalogue jobs not opted into
+#                                   recurring jobs of every repo with .agent-jobs/, and the repos
+#                                   the agent-shift sweep covers; --all adds the jobs not opted into
 #   vibe job due --<agent> [--dry] [--max N]
-#                                   queue every due job on tonight's night (the 01:00 timer)
+#                                   queue every due job on the running shift, else a new one (01:00)
 #   vibe job run --<agent> <repo> <job>   queue one job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.agent-jobs/<job>.md
 #
@@ -40,7 +42,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,21s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,23s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -926,10 +928,10 @@ cmd_job_list() {
       *) repos+=("$f") ;;
     esac
   done
-  printf '%-18s %-20s %-8s %-4s %-11s %s\n' REPO JOB SCHEDULE DAY LAST-RUN STATE
+  printf '%-21s %-20s %-8s %-4s %-11s %s\n' REPO JOB SCHEDULE DAY LAST-RUN STATE
   while IFS= read -r repo; do
     [[ -d "$repo" ]] || {
-      printf '%-18s %s\n' "$(basename "$repo")" "no directory $repo"
+      printf '%-21s %s\n' "$(basename "$repo")" "no directory $repo"
       continue
     }
     while IFS= read -r job; do
@@ -941,17 +943,35 @@ cmd_job_list() {
         invalid) why="invalid: $(job_check "$repo" "$job")" ;;
         stopped) why="stopped: $fails failures — rm $JOBS_STATE/$(basename "$repo")/$job/fails" ;;
       esac
-      printf '%-18s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
+      printf '%-21s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
         "$(job_key "$repo" "$job" schedule -)" "$(job_key "$repo" "$job" day -)" "${last:-never}" "$why"
     done < <(job_names "$repo")
     ((all)) || continue
     for f in "$JOBS_CATALOGUE"/*.md; do
       job="${f##*/}" && job="${job%.md}"
       [[ "$job" != _* && ! -f "$repo/.agent-jobs/$job.md" ]] || continue
-      printf '%-18s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
+      printf '%-21s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
         "$(fm_get "$f" schedule)" "$(fm_get "$f" day)" - "available — vibe job add $(basename "$repo") $job"
     done
   done < <(job_repos "${repos[@]+"${repos[@]}"}")
+  sweep_line
+}
+
+# sweep_line — the repos the agent-shift sweep covers (~/.config/night-shift/repos).
+sweep_line() {
+  local conf="${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/repos" line names=""
+  if [[ ! -f "$conf" ]]; then
+    printf '\nagent-shift sweep: no %s\n' "$conf"
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(echo "$line" | tr -d '[:space:]')"
+    [[ -z "$line" ]] || names+="${names:+, }${line##*/}"
+  done <"$conf"
+  # shellcheck disable=SC2088  # a literal ~ for display
+  case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
+  printf '\nagent-shift sweep (%s): %s\n' "$conf" "${names:-none}"
 }
 
 # job_open_prs REPO — "branch" per open PR a runner opened; empty without gh.
@@ -1141,5 +1161,5 @@ case "${1:-}" in
     "cmd_$cmd" "$@"
     ;;
   -h | --help | help) usage ;;
-  *) usage 1 ;;
+  *) die "unknown command '${1:-}' — vibe help" ;;
 esac

@@ -382,6 +382,13 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "an unknown command names itself in one line, not the whole help" {
+  run "$VIBE" jobs --all
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown command 'jobs'"* ]] || false
+  [ "${#lines[@]}" -eq 1 ]
+}
+
 # complete WORD... — COMPREPLY of the bash completion for "vibe WORD...".
 complete_vibe() {
   # shellcheck disable=SC1091
