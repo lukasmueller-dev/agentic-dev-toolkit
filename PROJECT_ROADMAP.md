@@ -19,10 +19,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
-- [ ] **GPU follow-up names its own job dir** — `vibe night follow` copies the
-      parent prompt, so the follow-up writes `result` into the parent dir. Done
-      when a bats test shows the follow-up prompt names its own job dir.
-
 ### Recurring jobs (design: PRs #99–#102, `docs/recurring-jobs.md`)
 
 - [ ] **`vibe job triage`** — a runner script, no agent: merges the base into
