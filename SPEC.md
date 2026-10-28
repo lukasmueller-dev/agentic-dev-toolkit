@@ -34,17 +34,24 @@ One always-on job queue replaces the day and night shifts. Two skills, run at an
 - `/review-jobs` marks handled jobs; the status shows only unreviewed ones.
 - CLI: `vibe queue add|status|run|pause|resume` replaces `vibe night`, no alias; `vibe job` stays for the recurring jobs.
 - The 07:00 and 13:00 briefing timers go; the status is on demand.
-
-## Open questions (grill before M1)
-
-- Mark reviewed: move the job dir to `archive/`, or a `reviewed` state file?
-- The briefing copy to the vault (`briefing-dir`): on every status, on `/review-jobs` only, or dropped?
-- State dir: keep `~/.local/state/night-shift/`, or a new `agent-queue/` with the old nights left as they are?
-- Window and slots: one config file, or flags on the service?
+- State: `~/.local/state/agent-queue/queue/<id>/`; `/review-jobs` moves handled jobs to `archive/<YYYY-MM>/<id>/`; old `night-shift/` dirs stay.
+- Runner: `agent-queue.service` (systemd user, `Restart=always`, role `server`) runs the runner and `gpu-queue run` without `--until`.
+- Config: `~/.config/agent-queue/config` (`night=18:00-07:00`, `slots_day=2`, `slots_night=4`, `heavy=2h`), read each poll; defaults in code, so a new machine needs no file.
+- Default job timeout 2h (light); `SPEC.md` milestones, GPU prep and work marked big get more.
+- A heavy job starts whenever the window is open and may run into the day.
+- Order: FIFO by id; in the window heavy first. Id: `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; `vibe queue add` moves a prepared dir in, so the runner never sees a half-written job.
+- A job waits while another job on its branch runs.
+- `pause`: no new starts, running jobs finish; one flag file.
+- `vibe queue report` (run by `/review-jobs`): `briefings/<date>-<HHMM>.md` plus the vault copy; a queue header (running, queued, heavy waiting, paused), then the unreviewed jobs by repo.
+- `requeue`: answer into `HANDOFF.md`, push, `vibe queue add` a follow-up on the branch; the old job is archived.
+- `/review-jobs` archives every carried-out row; skipped rows stay unreviewed.
+- `/fill-queue` Phase 0 shows the queue; the sweep skips branches queued or running.
+- No notification on an empty queue.
+- Cutover: one PR; `vibe night` and both report timers go; stop the old tmux `gpu` session by hand once (PR Verify line).
 
 ## Milestones
 
-- [ ] Runner: persistent queue, window rule, slots per window, `pause`/`resume` — code — done when `bats tests/` covers heavy-waits-by-day, heavy-first-at-night, slots per window
+- [ ] Runner: persistent queue, window rule, slots per window, branch lock, `pause`/`resume` — code — done when `bats tests/` covers heavy-waits-by-day, heavy-first-at-night, slots per window
 - [ ] `vibe queue add [--now]`; the dispatcher and GPU follow-ups append to the queue — code — done when `tests/agent-jobs.bats` queues into the one queue dir
 - [ ] `vibe queue status`: rows grouped by repo with `Context`, unreviewed only — code — done when a bats test checks the grouping and the reviewed filter
 - [ ] Skills `/review-jobs` and `/fill-queue` from `check-in` and `agent-shift`; `/check-in`, `/shutdown` call them — code — done when `./bin/skill-lint --strict skills` passes and no skill names `vibe night`
