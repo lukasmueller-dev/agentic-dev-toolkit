@@ -307,6 +307,18 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -ne 0 ]
 }
 
+@test "status: the columns line up for ids of any length" {
+  local r a b
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-a-much-longer-id-than-the-other "$r" task-b ok
+  run "$VIBE" queue status
+  a="$(grep ' 01-a ' <<<"$output")" b="$(grep ' 02-a-much' <<<"$output")"
+  a="${a%%queued*}" b="${b%%queued*}"
+  [ "${#a}" -gt 6 ]
+  [ "${#a}" -eq "${#b}" ]
+}
+
 @test "report: header, held jobs under Yours, per repo tables, next actions; copied to the briefing dir" {
   local r f
   r="$(make_repo proj)"
