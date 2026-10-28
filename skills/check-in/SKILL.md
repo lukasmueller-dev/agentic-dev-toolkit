@@ -16,7 +16,7 @@ Review what the agents finished, then keep the queue full. Queue layout:
 
 ## Phase 1 — Review
 
-Read `../review-jobs/SKILL.md` and do every phase of it.
+Read `../review-jobs/SKILL.md` and do every phase of it. That includes its worktree cleanup.
 
 ## Phase 2 — Fill
 
@@ -25,4 +25,4 @@ Read `../fill-queue/SKILL.md` and do every phase of it. The user declines → st
 ## Done
 
 Done when both skills are done or declined. Report in at most 6 lines:
-merged, requeued, held, closed, jobs added, and `Decisions/risks:`.
+ready, requeued, held, closed, worktrees removed, jobs added, and `Decisions/risks:`.
