@@ -18,6 +18,9 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
+- [ ] **Bump the mattpocock pin** — `bin/plug update mattpocock`, security
+      review of the `vendor/` diff, commit conf + lock + `vendor/` together.
+      Done when `bin/plug verify` passes and `plugins.lock` pins the new SHA.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
