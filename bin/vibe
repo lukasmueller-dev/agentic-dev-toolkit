@@ -283,6 +283,21 @@ cmd_update_toolkit() {
 
 # --- queue: unattended agent jobs, one worktree each (docs/vibe-queue.md) ---
 
+# role_gate queue|job SUB [ARG...] — on a client (~/.config/vibe/role: `client <host>`),
+# run a read-only SUB on the server over ssh and stop on any other.
+role_gate() {
+  local role="" host="" cmd
+  read -r role host _ 2>/dev/null <"$HOME/.config/vibe/role" || true
+  [[ "$role" != server ]] || return 0
+  [[ -n "$host" ]] || die "no server configured: echo 'client <host>' > ~/.config/vibe/role"
+  case "$1 ${2:-}" in
+    "queue status" | "queue report" | "job list") ;;
+    *) die "the queue runs on the server — ssh $host" ;;
+  esac
+  printf -v cmd ' %q' "$@"
+  exec ssh "$host" "\$HOME/bin/vibe$cmd"
+}
+
 QROOT="${XDG_STATE_HOME:-$HOME/.local/state}/vibe"
 QDIR="$QROOT/queue"
 QCONF="${XDG_CONFIG_HOME:-$HOME/.config}/vibe"
@@ -922,6 +937,7 @@ cmd_queue_report() {
 }
 
 cmd_queue() {
+  role_gate queue "$@"
   local sub="${1:-}"
   shift || true
   case "$sub" in
@@ -1254,6 +1270,7 @@ cmd_job_add() {
 }
 
 cmd_job() {
+  role_gate job "$@"
   local sub="${1:-}"
   shift || true
   case "$sub" in

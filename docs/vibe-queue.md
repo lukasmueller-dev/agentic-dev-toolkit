@@ -45,6 +45,9 @@ systemctl --user link ~/.claude/systemd/vibe-queue.service ~/.claude/systemd/gpu
 systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
+Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
+There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
+
 ## 3. Verify
 
 ```bash
@@ -99,4 +102,5 @@ gpu-queue lock -- python train.py     # a manual run that waits for the queue's 
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
+- `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.
