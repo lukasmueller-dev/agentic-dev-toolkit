@@ -761,8 +761,12 @@ queue_repos() {
 
 # vibe queue status — the header, then one line per job, grouped by repo.
 cmd_queue_status() {
-  local repo d st txt
+  local repo d st txt w=0
   queue_header
+  for d in "$QDIR"/*/; do
+    d="${d%/}" && d="${d##*/}"
+    if [[ -f "$QDIR/$d/job" && ${#d} -gt $w ]]; then w=${#d}; fi
+  done
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     echo
@@ -773,8 +777,8 @@ cmd_queue_status() {
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
-      printf '  %-48s %-8s %-5s %s %s\n' "${d##*/}" "${st:-queued}" \
-        "$(if job_heavy "$d"; then echo heavy; else echo light; fi)" "$(jstate "$d" pr)" "$txt"
+      printf '  %-*s  %-8s %-5s  %s %s\n' "$w" "${d##*/}" "${st:-queued}" \
+        "$(if job_heavy "$d"; then echo heavy; else echo light; fi)" "$txt" "$(jstate "$d" pr)"
     done
   done < <(queue_repos)
 }
