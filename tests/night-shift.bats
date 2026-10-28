@@ -26,7 +26,7 @@ case "\$mode" in
     ;;
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    printf 'feat: night work\n\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
+    printf 'feat: night work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$NIGHT_SHIFT_JOB_DIR/result"
     ;;
   nopr)
@@ -244,6 +244,7 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   mkjob 01-a "$r" task-a ok
   mkjob 02-b "$r" task-b blocked
   mkjob 03-c "$r" task-c crash
+  echo 'context=Task c needs a | fix.' >>"$NIGHT/jobs/03-c/job"
   "$VIBE" night run --claude "$NIGHT" --jobs 3 --until "$(soon)" >/dev/null 2>&1
   printf '## Next action\n\nAsk the supervisor.\n\n## Blockers\n\nNeeds a | decision.\n' \
     >"$r/.claude/worktrees/task-b/HANDOFF.md"
@@ -252,8 +253,8 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   [ "$status" -eq 0 ]
   run cat "$XDG_STATE_HOME/night-shift/briefings/$(date +%F).md"
   [[ "$output" == *"1 done · 1 blocked · 1 failed — nights: 2026-10-26"* ]] || false
-  [[ "$output" == *"## Needs you"*"| 2026-10-26/02-b | blocked | blocked: needs a decision |  |"*"| 2026-10-26/03-c | failed |"*"| [report](file://$NIGHT/jobs/03-c/report.md) |"*"## PR ready"*"## Done, nothing to read"* ]] || false
-  [[ "$output" == *"## PR ready"*"| 2026-10-26/01-a | done | work.txt added. | [PR](https://example.com/pull/1) |"*"## Done, nothing to read"*"none"* ]] || false
+  [[ "$output" == *"## Needs you"*"| 2026-10-26/02-b | blocked |  | blocked: needs a decision |  |"*"| 2026-10-26/03-c | failed | Task c needs a / fix. |"*"| [report](file://$NIGHT/jobs/03-c/report.md) |"*"## PR ready"*"## Done, nothing to read"* ]] || false
+  [[ "$output" == *"## PR ready"*"| 2026-10-26/01-a | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"*"## Done, nothing to read"*"none"* ]] || false
   [[ "$output" == *"## 2026-10-26/02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
   [[ "$output" == *"## 2026-10-26/03-c — failed"*"- Report: $NIGHT/jobs/03-c/report.md"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
   [[ "$output" != *"## 2026-10-26/01-a"* ]] || false

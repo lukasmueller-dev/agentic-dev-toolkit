@@ -598,21 +598,34 @@ in_list() {
   return 1
 }
 
+# md_line FILE KEY — the text after `**KEY:**` on its first line in FILE.
+md_line() {
+  local t
+  t="$(grep -m 1 "^\*\*$2:\*\*" "$1" 2>/dev/null || true)"
+  t="${t#\*\*"$2":\*\*}"
+  echo "${t# }"
+}
+
 # report_tldr JOB — the `Changed:` line of the job's pr.md, else its result.
 report_tldr() {
-  local t=""
-  if [[ -f "$1/pr.md" ]]; then
-    t="$(grep -m 1 '^\*\*Changed:\*\*' "$1/pr.md" 2>/dev/null || true)"
-    t="${t#\*\*Changed:\*\*}"
-    t="${t# }"
-  fi
+  local t
+  t="$(md_line "$1/pr.md" Changed)"
   echo "${t:-$(jstate "$1" note)}"
+}
+
+# report_context JOB — `context=` of the job file, else the `Context:` line of pr.md or report.md.
+report_context() {
+  local t
+  t="$(jget "$1/job" context)"
+  [[ -n "$t" ]] || t="$(md_line "$1/pr.md" Context)"
+  [[ -n "$t" ]] || t="$(md_line "$1/report.md" Context)"
+  echo "$t"
 }
 
 # report_rows TITLE CLASS... — one table of the jobs in the classes: a status,
 # or `pr` (done with a PR URL; `done` is then done without one). Reads NIGHTS.
 report_rows() {
-  local title="$1" dir d st cls pr tldr links rows=""
+  local title="$1" dir d st cls pr ctx tldr links rows=""
   shift
   for dir in "${NIGHTS[@]}"; do
     for d in "$dir"/jobs/*/; do
@@ -622,10 +635,10 @@ report_rows() {
       st="${st:-queued}" cls="${st:-queued}"
       case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
       in_list "$cls" "$@" || continue
-      tldr="$(report_tldr "$d")" links=""
+      ctx="$(report_context "$d")" tldr="$(report_tldr "$d")" links=""
       case "$pr" in http*) links="[PR]($pr)" ;; esac
       [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
-      rows+="| ${dir##*/}/${d##*/} | $st | ${tldr//|//} | $links |"$'\n'
+      rows+="| ${dir##*/}/${d##*/} | $st | ${ctx//|//} | ${tldr//|//} | $links |"$'\n'
     done
   done
   echo
@@ -634,8 +647,8 @@ report_rows() {
   if [[ -z "$rows" ]]; then
     echo "none"
   else
-    echo "| Job | Status | TL;DR | Links |"
-    echo "| --- | --- | --- | --- |"
+    echo "| Job | Status | Context | TL;DR | Links |"
+    echo "| --- | --- | --- | --- | --- |"
     printf '%s' "$rows"
   fi
 }

@@ -40,7 +40,7 @@ One action per row:
 | `close` | wrong direction or superseded | `gh pr close` with a one-line reason |
 | `log` | `failed`, `timeout` | read the log tail; propose one of the actions above with the cause |
 
-Show one table: `# · job · status · TL;DR · action · why`. For a `requeue`
+Show one table: `# · job · status · context · TL;DR · action · why`. For a `requeue`
 row, ask the question the job is blocked on. **Stop and wait for approval.**
 Apply every change the user asks for, then show the table again.
 

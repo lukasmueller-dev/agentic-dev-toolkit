@@ -6,6 +6,7 @@ You run unattended overnight. Nobody reads a question before morning.
 
 <task, verbatim from its source>
 
+- **Context:** <context>
 - **Done when:** <done-when>
 - **Source:** <one of: `PROJECT_ROADMAP.md:<line>` · `HANDOFF.md` next action · new>
 - **Kind:** <code | gpu>
@@ -37,8 +38,8 @@ You run unattended overnight. Nobody reads a question before morning.
 Write these files in the job dir. A human reads them on a phone in a minute.
 
 - `result` — one line: `done: <what changed>`, `queued: <what runs>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
-- `pr.md` — the first template below, every `<token>` filled. Line 1 is the title: `agent-shift(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
-- `report.md` — the second template, only when you have findings outside the diff. At most 25 lines.
+- `pr.md` — the first template below, every `<token>` filled; its Context line is the Context above, verbatim. Line 1 is the title: `agent-shift(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
+- `report.md` — the second template, only when you have findings outside the diff; Context as in `pr.md`. At most 25 lines.
 
 Sentences: ≤20 words, active voice, one instruction each, no `-ing` verb forms.
 

@@ -132,7 +132,7 @@ disappears.
 ### 8. Deliver
 
 - Push the branch and open one PR (e.g. `gh pr create`). The body follows
-  `templates/job-pr.md` in the toolkit: `Changed` / `Verify` /
+  `templates/job-pr.md` in the toolkit: `Context` / `Changed` / `Verify` /
   `Decisions/risks` first, at most 12 lines above `<details>`.
 - Inside `<details>`: the findings fixed (grouped by file, same format as
   step 4), reverted attempts with their failure output, and a "Known, not

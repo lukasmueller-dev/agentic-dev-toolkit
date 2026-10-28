@@ -36,6 +36,7 @@ Write these files in the job dir. A human reads them on a phone in a minute.
 - `report.md` — always; the second template, every `<token>` filled. At most 25 lines.
 - `pr.md` — when you committed; the first template. Line 1 is the title: `job(<job>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
 
+The Context line says what this run is about in plain words, at most 25 words, the same in both files.
 Sentences: ≤20 words, active voice, one instruction each, no `-ing` verb forms.
 
 ## Output templates
