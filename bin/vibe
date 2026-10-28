@@ -447,8 +447,9 @@ job_prepare() {
     return 0
   fi
   wt="$(worktree_of "$main" "$branch")"
-  # A GPU follow-up starts in the worktree the run just wrote its outputs to.
-  if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 && -n "$(git -C "$wt" status --porcelain)" ]]; then
+  # A GPU follow-up or a job a usage limit stopped resumes in its own dirty worktree.
+  if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 && "$(jstate "$d" worktree)" != "$wt" &&
+  -n "$(git -C "$wt" status --porcelain)" ]]; then
     job_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
@@ -526,10 +527,28 @@ job_chain() {
   echo "next milestone → $(basename "$(queue_add "$tmp")")"
 }
 
+# limit_reset LOG — the reset epoch when the agent stopped on a usage limit; empty else.
+limit_reset() {
+  local ev
+  ev="$(grep -oE '"rate_limit_info":\{"status":"rejected"[^}]*' "$1" 2>/dev/null | tail -n 1 || true)"
+  [[ "$ev" =~ \"resetsAt\":([0-9]+) ]] || return 0
+  echo "${BASH_REMATCH[1]}"
+}
+
+# at_time EPOCH — EPOCH as YYYY-MM-DD HH:MM, GNU or BSD date.
+at_time() { date -d "@$1" '+%F %H:%M' 2>/dev/null || date -r "$1" '+%F %H:%M'; }
+
+# limited — true until the usage limit a job hit resets.
+limited() {
+  local t
+  t="$(head -n 1 "$QROOT/limit" 2>/dev/null || true)"
+  [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
+}
+
 # job_run JOB — the agent in the job's worktree, then publish. Runs in the
 # background; it writes the final status itself, so it outlives a runner restart.
 job_run() {
-  local d="$1" rc=0 result st note="" t
+  local d="$1" rc=0 result st note="" t reset
   date '+%F %T' >"$d/started"
   t="$(job_timeout "$d")"
   local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
@@ -537,6 +556,15 @@ job_run() {
   VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
     "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" >"$d/log" 2>&1 || rc=$?
   result="$(jstate "$d" result)"
+  reset="$(limit_reset "$d/log")"
+  if [[ -n "$reset" && "$result" != "done:"* ]]; then
+    # A usage limit: requeue, keep the worktree, start nothing until the reset.
+    echo "$reset" >"$QROOT/limit"
+    echo queued >"$d/status"
+    echo "usage limit — retry after $(at_time "$reset")" >"$d/note"
+    rm -f "$d/pid"
+    return 0
+  fi
   if ((rc == 124 || rc == 137)); then
     st=timeout note="stopped after $t"
   elif ((rc != 0)); then
@@ -561,10 +589,12 @@ agent_check() {
 }
 
 # queue_order JOB... — the jobs that may start now, in start order: --now
-# jobs, then in the night window heavy jobs, then light ones. Paused: none.
+# jobs, then in the night window heavy jobs, then light ones. Paused or
+# limited: none.
 queue_order() {
   local d night=0 now=() heavy=() light=()
   [[ ! -e "$QROOT/paused" ]] || return 0
+  if limited; then return 0; fi
   if in_window; then night=1; fi
   for d in "$@"; do
     if [[ "$(jget "$d/job" now)" == 1 ]]; then
@@ -765,6 +795,7 @@ queue_header() {
   printf 'queue: %s running · %s on the GPU · %s queued (%s heavy, start in the window) · %s to review · window %s %s, %s slots' \
     "$r" "$g" "$q" "$h" "$v" "$(window)" "$open" "$slots"
   if [[ -e "$QROOT/paused" ]]; then printf ' · PAUSED'; fi
+  if limited; then printf ' · USAGE LIMIT until %s' "$(at_time "$(head -n 1 "$QROOT/limit")")"; fi
   echo
 }
 
