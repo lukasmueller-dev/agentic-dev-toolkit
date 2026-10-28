@@ -63,7 +63,8 @@ contract and the installer's auto-discovery rules.
   model-invocable. See `docs/research-skills.md` §1.
 - 2026-10-24: `HANDOFF.md`, `PROJECT_STATUS.md` and `PROJECT_ROADMAP.md` are
   the core: they carry context session to session.
-- 2026-10-24: `sota-digest` runs on demand only; no cron. See `docs/sota-watch.md`.
+- 2026-10-24: `sota-digest` runs weekly (Sunday) as a recurring vibe job that
+  commits the digest to a draft PR, and on demand. See `docs/sota-watch.md`.
 - 2026-10-06: Vendored skills may bundle on-demand scripts, never auto-run
   ones; each add/update gets a security review first. See
   `docs/vendoring-external-skills.md`.
