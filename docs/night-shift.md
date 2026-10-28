@@ -1,14 +1,16 @@
 # Night shift
 
-Evening: `/night-shift` plans unattended jobs across the active repos; after
+Evening: `/agent-shift` plans unattended jobs across the active repos; after
 approval, `vibe night` runs each as a headless agent in its own worktree and
-opens a draft PR. Skill: [`skills/night-shift/`](../skills/night-shift/SKILL.md).
+opens a draft PR. Skill: [`skills/agent-shift/`](../skills/agent-shift/SKILL.md).
 Scheduled jobs ride the same runner: `docs/recurring-jobs.md`.
 
 | When | Skill | Does |
 | --- | --- | --- |
-| Morning | [`/check-in`](../skills/check-in/SKILL.md) | works the briefing: merge, answer and requeue, take into a day session, close |
-| Evening | [`/shutdown`](../skills/shutdown/SKILL.md) | pushes and hands off every worktree, then runs `/night-shift` |
+| Morning | [`/check-in`](../skills/check-in/SKILL.md) | works the briefing: merge, answer and requeue, take into a day session, close; then runs `/agent-shift day` |
+| 13:00 | timer | the day shift's briefing |
+| Evening | [`/shutdown`](../skills/shutdown/SKILL.md) | pushes and hands off every worktree, then runs `/agent-shift` |
+| Both | `/agent-shift` Phase 0 | big work: your items and proposals, grilled into a `SPEC.md` on a new branch; one milestone per shift |
 
 ## Requirements
 
@@ -27,7 +29,7 @@ printf '%s\n' thesis pncbf humanoid_bridge >~/.config/night-shift/repos   # high
 ## 2. Plan and start
 
 ```text
-/night-shift            # in a session; approve the table it shows
+/agent-shift            # in a session; approve the table it shows
 ```
 
 It writes the night dir and runs `vibe night start --claude <dir>`.
@@ -39,22 +41,29 @@ Server machine only (`~/.config/vibe/role` holds `server`).
 ```bash
 systemctl --user link ~/.claude/systemd/night-shift-report.service ~/.claude/systemd/night-shift-report.timer
 systemctl --user enable --now night-shift-report.timer
-echo ~/notes/_inbox/agent-jobs-briefings >~/.config/night-shift/briefing-dir   # optional: a copy for your notes
+systemctl --user link ~/.claude/systemd/day-shift-report.service ~/.claude/systemd/day-shift-report.timer
+systemctl --user enable --now day-shift-report.timer
+echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/night-shift/briefing-dir   # the Obsidian inbox
 ```
 
-At 07:00: `vibe night report --claude --new` writes
+At 07:00: `vibe night report --new` writes
 `~/.local/state/night-shift/briefings/<date>.md` over every night active in
-the last 24 h (the planned night and the recurring jobs' night), copies it to
-the briefing dir, and opens a Remote Control session `briefing <date>` that
-pushes the summary to the phone.
+the last 24 h (the planned night and the recurring jobs' night) and copies it
+to the briefing dir as `briefing-<date>.md`, with note frontmatter. It opens no
+session. At 13:00: `vibe night report --day --new` does the same for the day
+shift, as `briefing-<date>-day.md`; no day shift, no file.
+
+Day shift: `/agent-shift day`, run by `/check-in` — the same sweep, gate and
+approval into `<date>-day/`, started with `--until 10:30 --timeout 2h`, so every
+job stops by 12:30.
 
 ## 4. Verify
 
 ```bash
 vibe night status       # latest night: one line per job
 tmux -L night-shift attach -t night
-vibe night report --claude    # today's briefing now; the session replaces the last one
-systemctl --user list-timers night-shift-report.timer
+vibe night report             # today's briefing now; the copy lands in the briefing dir
+systemctl --user list-timers night-shift-report.timer day-shift-report.timer
 ```
 
 ## Layout
@@ -68,7 +77,7 @@ systemctl --user list-timers night-shift-report.timer
 | `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
 | `result`, `pr.md`, `report.md` | agent | `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings outside the diff (`templates/job-report.md`) |
 | `gpu-job` | `vibe night gpu` | the `gpu-queue` job id |
-| `briefings/<date>.md` (under `night-shift/`) | `vibe night report` | the day's briefing: counts, rows ranked Needs you → PR ready → Done with links, next action of each unfinished job |
+| `briefings/<date>.md`, `<date>-day.md` (under `night-shift/`) | `vibe night report` | the morning and the 13:00 briefing: counts, rows ranked Needs you → PR ready → Done with links, next action of each unfinished job |
 
 Runner: at most `--jobs` (4) agents at once, none started after `--until`
 (06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a
@@ -108,5 +117,6 @@ Night job settings: [`claude/night-shift-settings.json`](../claude/night-shift-s
   blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing), sudo once.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `a night already runs` → `tmux -L night-shift attach -t night`; wait or kill it.
+  At check-in: a night job started near 06:30 runs to 09:30 at most.
 - `vibe night start` run inside a sandboxed session → jobs inherit that sandbox; start it unsandboxed.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

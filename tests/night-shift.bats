@@ -82,7 +82,7 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   [ "$(cat "$NIGHT/jobs/01-a/pr")" = "https://example.com/pull/1" ]
   grep -q -- 'pr create --draft --base main --head task-a --title feat: night work' "$STUBS/gh.log"
   grep -q '^\*\*Changed:\*\* work.txt added.' "$NIGHT/jobs/01-a/pr-body.md"
-  grep -q -- 'pr edit https://example.com/pull/1 --add-label agent' "$STUBS/gh.log"
+  grep -qF -- 'api --method POST repos/{owner}/{repo}/issues/1/labels -f labels[]=agent' "$STUBS/gh.log"
   [ "$(cat "$NIGHT/jobs/01-a/note")" = "done: work.txt added" ]
   [[ "$output" == *"01-a"*"done"* ]] || false
 }
@@ -104,13 +104,13 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   mkjob 01-a "$r" task-a nopr
   run "$VIBE" night run --claude "$NIGHT" --until "$(soon)"
   [ "$status" -eq 0 ]
-  grep -q -- '--title night(01-a): work.txt added, no pr.md --body-file' "$STUBS/gh.log"
+  grep -q -- '--title agent-shift(01-a): work.txt added, no pr.md --body-file' "$STUBS/gh.log"
   touch "$STUBS/pr-exists"
   mkjob 02-b "$r" task-b ok
   run "$VIBE" night run --claude "$NIGHT" --until "$(soon)"
   [ "$status" -eq 0 ]
   [ "$(cat "$NIGHT/jobs/02-b/pr")" = "https://example.com/pull/9" ]
-  grep -q -- 'pr edit https://example.com/pull/9 --body-file' "$STUBS/gh.log"
+  grep -qF -- "api --method PATCH repos/{owner}/{repo}/pulls/9 -F body=@$NIGHT/jobs/02-b/pr-body.md" "$STUBS/gh.log"
   run grep -c -- 'pr create --draft --base main --head task-b' "$STUBS/gh.log"
   [ "$output" = 0 ]
 }
@@ -207,7 +207,7 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   [[ "$output" == *"01-a"*"blocked"* ]] || false
 }
 
-SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
+SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
 
 @test "sweep: repos from the config in rank order, items joined, handoff next action" {
   local a b
@@ -275,8 +275,9 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config" run "$VIBE" night report
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/_inbox/briefings/$(date +%F).md"* ]] || false
-  run cat "$BATS_TEST_TMPDIR/vault/_inbox/briefings/$(date +%F).md"
+  [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/_inbox/briefings/briefing-$(date +%F).md"* ]] || false
+  [ "$(head -n 4 "$BATS_TEST_TMPDIR/vault/_inbox/briefings/briefing-$(date +%F).md")" = "$(printf -- '---\ncreated: %s\ntouched_by_ai: true\n---' "$(date +%F)")" ]
+  run cat "$BATS_TEST_TMPDIR/vault/_inbox/briefings/briefing-$(date +%F).md"
   [[ "$output" == *"1 done · 1 blocked — nights: 2026-10-26, 2026-10-26-jobs"* ]] || false
   [[ "$output" == *"| 2026-10-26-jobs/90-proj-x | blocked |"* ]] || false
   [[ "$output" != *"01-old"* ]] || false
@@ -303,10 +304,32 @@ SWEEP="$REPO_ROOT/skills/night-shift/sweep.sh"
   [ "$status" -ne 0 ]
 }
 
-@test "unit: the morning report runs only with role 'server', at 07:00" {
+@test "unit: the reports run only with role 'server', at 07:00 and 13:00" {
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/night-shift-report.service"
-  grep -q '^ExecStart=.*vibe night report --claude --new$' "$REPO_ROOT/claude/systemd/night-shift-report.service"
+  grep -q '^ExecStart=.*vibe night report --new$' "$REPO_ROOT/claude/systemd/night-shift-report.service"
   grep -q '^OnCalendar=\*-\*-\* 07:00:00$' "$REPO_ROOT/claude/systemd/night-shift-report.timer"
+  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/day-shift-report.service"
+  grep -q '^ExecStart=.*vibe night report --day --new$' "$REPO_ROOT/claude/systemd/day-shift-report.service"
+  grep -q '^OnCalendar=\*-\*-\* 13:00:00$' "$REPO_ROOT/claude/systemd/day-shift-report.timer"
+}
+
+@test "night report: --day briefs today's day shift only; no day shift is no error" {
+  local r day
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  run "$VIBE" night report --day
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no day shift today"* ]] || false
+  [ ! -e "$XDG_STATE_HOME/night-shift/briefings/$(date +%F)-day.md" ]
+  day="$XDG_STATE_HOME/night-shift/$(date +%F)-day"
+  mkdir -p "$day/jobs/01-b"
+  printf 'repo=%s\nbranch=b\nmodel=sonnet\n' "$r" >"$day/jobs/01-b/job"
+  echo blocked >"$day/jobs/01-b/status"
+  run "$VIBE" night report --day
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME/night-shift/briefings/$(date +%F)-day.md"
+  [[ "$output" == *"$(date +%F)-day/01-b | blocked"* ]] || false
+  [[ "$output" != *"01-a"* ]] || false
 }
 
 @test "night gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {

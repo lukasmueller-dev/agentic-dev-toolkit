@@ -170,7 +170,7 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/jobs/health
   [ -d "$r/.claude/worktrees/jobs/health" ]
   grep -q -- '--head jobs/health --title job(health): tidy' "$STUBS/gh.log"
-  grep -q -- 'pr edit https://example.com/pull/1 --add-label agent' "$STUBS/gh.log"
+  grep -qF -- 'api --method POST repos/{owner}/{repo}/issues/1/labels -f labels[]=agent' "$STUBS/gh.log"
   grep -q -- '--name proj-jobs-health' "$STUBS/claude.log"
   [ -f "$XDG_STATE_HOME/agent-jobs/proj/health/last-run" ]
   run "$VIBE" job list "$r"

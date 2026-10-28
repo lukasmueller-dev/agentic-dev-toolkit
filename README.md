@@ -41,9 +41,9 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
-| [`night-shift`](skills/night-shift/) | Plans unattended overnight jobs across the active repos, starts them after you approve |
-| [`check-in`](skills/check-in/) | Morning: one action per briefing row that needs you — merge, requeue, day session, close |
-| [`shutdown`](skills/shutdown/) | Evening: pushes and hands off every worktree, then runs `night-shift` |
+| [`agent-shift`](skills/agent-shift/) | Plans unattended overnight jobs across the active repos, starts them after you approve; `day`: a shorter day shift |
+| [`check-in`](skills/check-in/) | Morning: one action per briefing row that needs you — merge, requeue, day session, close; then plans the day shift |
+| [`shutdown`](skills/shutdown/) | Evening: pushes and hands off every worktree, then runs `agent-shift` |
 | [`recurring-jobs`](skills/recurring-jobs/) | Lists, installs and checks the jobs the 01:00 timer queues on the night runner |
 | [`worktree-cleanup`](skills/worktree-cleanup/) | Removes worktrees (and their branches) whose work has landed, after you approve the list |
 

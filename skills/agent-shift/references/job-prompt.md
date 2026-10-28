@@ -27,14 +27,17 @@ You run unattended overnight. Nobody reads a question before morning.
 10. Source handoff: start from `HANDOFF.md`; when the task is done, delete it per the repo's rules.
 11. Source new: your first commit adds the item to `PROJECT_ROADMAP.md` (task + done-when); when the task is done, your last commit deletes it.
 12. Blocked, failed or out of time: overwrite `HANDOFF.md` with State, Next action and Blockers, and commit it.
-13. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
+13. `SPEC.md` in the worktree: do its first open milestone only, and tick it off in that milestone's last commit. Never change the rest of the spec; a plan that no longer holds is a blocker.
+    Not the last milestone: overwrite `HANDOFF.md` with the next milestone as next action, and keep it.
+    The last milestone: do the spec's end action, move each decision to `pr.md`, then delete `HANDOFF.md`.
+14. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
 
 ## Before you exit
 
 Write these files in the job dir. A human reads them on a phone in a minute.
 
 - `result` — one line: `done: <what changed>`, `queued: <what runs>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
-- `pr.md` — the first template below, every `<token>` filled. Line 1 is the title: `night(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
+- `pr.md` — the first template below, every `<token>` filled. Line 1 is the title: `agent-shift(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
 - `report.md` — the second template, only when you have findings outside the diff. At most 25 lines.
 
 Sentences: ≤20 words, active voice, one instruction each, no `-ing` verb forms.

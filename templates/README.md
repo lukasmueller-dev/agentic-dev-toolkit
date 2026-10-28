@@ -7,6 +7,7 @@ copy.
 | File                 | Lives at        | Lifespan                        |
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
+| `SPEC.md`            | worktree root   | Short — one per big work item; its last milestone deletes or rewrites it |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
@@ -82,8 +83,9 @@ tokens in.
 - `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`
   — render `research/` the same way, through `skills/_lib/doc-lib.sh`
 
-- `skills/night-shift/SKILL.md` — appends `job-pr.md` and `job-report.md` to
-  every job prompt; the job fills them in its job dir
+- `skills/agent-shift/SKILL.md` — appends `job-pr.md` and `job-report.md` to
+  every job prompt; the job fills them in its job dir. Phase 0 fills `SPEC.md`
+  by hand after a grilling
 - `bin/vibe job` — renders `AGENT_JOB.md` into a repo (`add`), and appends
   `job-pr.md` and `job-report.md` to every recurring job's prompt (`due`, `run`)
 

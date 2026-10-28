@@ -1,21 +1,23 @@
 ---
 name: check-in
-description: "Morning check-in on the night's agent jobs: reads today's briefing, proposes one action per job that needs a human or has a PR ready — merge, answer and requeue for tonight, take into a daytime session, close — and carries out only the actions the user approves. Use when the user says 'check in', 'morning check-in', 'go through the briefing', 'what did the night do', or starts the day and wants the night's results triaged."
+description: "Morning check-in on the night's agent jobs: reads today's briefing, proposes one action per job that needs a human or has a PR ready — merge, answer and requeue, take into a daytime session, close — carries out only the actions the user approves, then plans the day shift: the night shift, stopped by 12:30. Use when the user says 'check in', 'morning check-in', 'go through the briefing', 'what did the night do', or starts the day and wants the night's results triaged."
 disable-model-invocation: true
 ---
 
 # Check-in
 
 Morning: turn the briefing into decisions, carry them out, list what the
-day's sessions should take. Briefing and night layout: `docs/night-shift.md`
-in the toolkit.
+day's sessions should take, start the day shift. Briefing, night and day
+shift layout: `docs/night-shift.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
 - **Never merge, close, comment or push without approval of the action table.**
 - **Never merge a PR whose checks fail**, or one the user has not seen the TL;DR of.
+- **Never merge a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
-- **Never start a session or a night.** The day plan is a list; the user starts the work.
+- **Never start a session.** The day plan is a list; the user starts the work.
+- **Never start the day shift without approval of its table.**
 
 ## Phase 1 — Read
 
@@ -33,12 +35,12 @@ One action per row:
 | Action | When | Does |
 | --- | --- | --- |
 | `merge` | PR ready, checks pass or none, Verify line is a quick look | `gh pr ready`, then `gh pr merge` with the method of the repo's last merges |
-| `tonight` | blocked on a decision the user can give now | writes the answer into the job's `HANDOFF.md`, commits, pushes; the night-shift sweep picks it up |
+| `requeue` | blocked on a decision the user can give now | writes the answer into the job's `HANDOFF.md`, commits, pushes; the day shift or the agent-shift sweep picks it up |
 | `day` | needs a human: review a big diff, hardware, judgment | goes on the day plan |
 | `close` | wrong direction or superseded | `gh pr close` with a one-line reason |
 | `log` | `failed`, `timeout` | read the log tail; propose one of the actions above with the cause |
 
-Show one table: `# · job · status · TL;DR · action · why`. For a `tonight`
+Show one table: `# · job · status · TL;DR · action · why`. For a `requeue`
 row, ask the question the job is blocked on. **Stop and wait for approval.**
 Apply every change the user asks for, then show the table again.
 
@@ -47,20 +49,26 @@ Apply every change the user asks for, then show the table again.
 Work the approved rows top to bottom. Report each one as one line. A failed
 command stops that row only: report the error and go on.
 
-For `tonight`: under `## Next action` and `## Blockers` of the job's
+For `requeue`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
 `docs(handoff): <job> unblocked` and push the job's branch.
 
 Merged and closed branches keep their worktrees: `/worktree-cleanup` removes them.
 
-## Phase 4 — Day plan
+## Phase 4 — Day shift
+
+Read `../agent-shift/SKILL.md` and do every phase of it with the argument `day`.
+Its sweep finds the `requeue` answers as handoff next actions. Its approval
+table is the day shift's. The user declines → go to Phase 5.
+
+## Phase 5 — Day plan
 
 List the `day` rows, then each handoff next action in the active repos that
-names a person or needs a session (`../night-shift/sweep.sh`, its "handoffs"
+names a person or needs a session (`../agent-shift/sweep.sh`, its "handoffs"
 part). One line each: repo · task · first step.
 
 ## Done
 
-Done when every approved row is carried out and the day plan is shown.
-Report in at most 6 lines: merged, requeued, closed, the day plan count, and
-`Decisions/risks:`.
+Done when every approved row is carried out, the day shift is started or
+declined, and the day plan is shown. Report in at most 6 lines: merged,
+requeued, closed, day shift jobs, the day plan count, and `Decisions/risks:`.

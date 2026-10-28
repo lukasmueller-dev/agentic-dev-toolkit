@@ -565,7 +565,7 @@ fake_repo() {
   local f
   for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
     templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
-    templates/AGENT_JOB.md; do
+    templates/AGENT_JOB.md templates/SPEC.md; do
     # existence first: grep exits 2 on a missing file, which '-ne 0' accepts as
     # readily as "no match", so a rename would retire the check silently.
     [ -f "$REPO_ROOT/$f" ]
@@ -580,6 +580,7 @@ fake_repo() {
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/job-pr.md \
     "$REPO_ROOT"/templates/job-report.md "$REPO_ROOT"/templates/AGENT_JOB.md \
+    "$REPO_ROOT"/templates/SPEC.md \
     "$REPO_ROOT"/templates/codebase \
     "$REPO_ROOT"/templates/research
   [ "$status" -ne 0 ] || {
