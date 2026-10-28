@@ -182,7 +182,7 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
   local r
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
-  cd "$XDG_STATE_HOME/night-shift"
+  cd "$BATS_TEST_TMPDIR"
   run "$VIBE" night start --claude 2026-10-26 --jobs 2
   [ "$status" -eq 0 ]
   grep -q -- "-L night-shift new-session -d -s night -c $NIGHT" "$STUBS/tmux.log"
@@ -360,4 +360,14 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   run "$VIBE" night gpu -- true
   [ "$status" -ne 0 ]
   [[ "$output" == *"inside a night job"* ]] || false
+}
+
+@test "night gpu: --help prints usage and queues nothing" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  NIGHT_SHIFT_JOB_DIR="$NIGHT/jobs/01-a" run "$VIBE" night gpu --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"vibe night start"* ]] || false
+  [ ! -e "$NIGHT/jobs/01-a/gpu-job" ]
 }

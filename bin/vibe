@@ -12,7 +12,9 @@
 #   vibe night status [<dir>]       one line per job of a night (default: the latest)
 #   vibe night report [--<agent>] [--new] [--day] [<dir>...]
 #                                   the day's briefing over the active nights; open a session on it
-#   vibe job list [<repo>...]       recurring jobs per repo: schedule, last run, due
+#   vibe job list [--all] [<repo>...]
+#                                   recurring jobs per repo: schedule, last run, due;
+#                                   --all adds the catalogue jobs not opted into
 #   vibe job due --<agent> [--dry] [--max N]
 #                                   queue every due job on tonight's night (the 01:00 timer)
 #   vibe job run --<agent> <repo> <job>   queue one job now
@@ -38,7 +40,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,19s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,21s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -331,7 +333,7 @@ night_args() {
   [[ "$AGENT" != */* && -f "$SELF_ROOT/$AGENT/vibe-night.sh" ]] ||
     die "no night jobs for '$AGENT' — $SELF_ROOT/$AGENT/vibe-night.sh is missing"
   [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs wants a positive number, got '$JOBS'"
-  [[ -d "$DIR/jobs" ]] || die "$DIR/jobs is missing — the agent-shift skill writes it"
+  DIR="$(night_dir "$DIR")"
   DIR="$(cd -P "$DIR" && pwd)"
   deadline_epoch "$UNTIL" >/dev/null
 }
@@ -534,7 +536,11 @@ cmd_night_start() {
 cmd_night_gpu() {
   local d="${NIGHT_SHIFT_JOB_DIR:-}" id
   [[ -n "$d" && -f "$d/job" ]] || die "vibe night gpu runs inside a night job (NIGHT_SHIFT_JOB_DIR)"
-  if [[ "${1:-}" == -- ]]; then shift; fi
+  case "${1:-}" in
+    -h | --help) usage ;;
+    --) shift ;;
+    -*) die "usage: vibe night gpu -- CMD..." ;;
+  esac
   (($#)) || die "usage: vibe night gpu -- CMD..."
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
     --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" night follow "$d")" -- "$@")" || die "gpu-queue submit failed"
@@ -567,14 +573,15 @@ cmd_night_follow() {
   night_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# night_dir [DIR] — DIR, else the latest night under NIGHT_ROOT.
+# night_dir [DIR] — DIR, or NIGHT_ROOT/DIR; else the latest night under NIGHT_ROOT.
 night_dir() {
   local dir="${1:-}" d
   if [[ -z "$dir" ]]; then
     for d in "$NIGHT_ROOT"/*/; do [[ -d "$d/jobs" ]] && dir="${d%/}"; done
     [[ -n "$dir" ]] || die "no night under $NIGHT_ROOT"
   fi
-  [[ -d "$dir/jobs" ]] || die "$dir/jobs is missing"
+  [[ -d "$dir/jobs" || ! -d "$NIGHT_ROOT/$dir/jobs" ]] || dir="$NIGHT_ROOT/$dir"
+  [[ -d "$dir/jobs" ]] || die "$dir/jobs is missing — the agent-shift skill writes it"
   echo "$dir"
 }
 
@@ -787,8 +794,8 @@ cmd_night() {
 # --- job: recurring jobs, queued on a night by the 01:00 timer (docs/recurring-jobs.md)
 
 JOBS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/agent-jobs"
+JOBS_ROOT="${NIGHT_SHIFT_ROOT:-$(dirname "$SELF_ROOT")}"
 JOBS_CATALOGUE="${AGENT_JOBS_CATALOGUE:-$SELF_ROOT/skills/recurring-jobs/references/jobs}"
-JOBS_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/repos"
 
 # fm_get FILE KEY — `KEY: value` from FILE's frontmatter; empty when absent.
 fm_get() {
@@ -802,22 +809,21 @@ fm_body() {
   awk 'NR == 1 && $0 != "---" { all = 1 } all { print; next } NR > 1 && !on && $0 == "---" { on = 1; next } on { print }' "$1" 2>/dev/null || true
 }
 
-# job_repos [REPO...] — absolute repo paths: the arguments, else the config.
+# job_repos [REPO...] — absolute repo paths: the arguments, else every repo
+# under the root with an .agent-jobs/ opt-in.
 job_repos() {
-  local line
+  local r
   if (($#)); then
-    for line in "$@"; do job_repo_path "$line"; done
+    for r in "$@"; do job_repo_path "$r"; done
     return 0
   fi
-  [[ -f "$JOBS_CONF" ]] || die "no repos — list them in $JOBS_CONF (one per line), or pass them"
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line%%#*}"
-    line="$(echo "$line" | tr -d '[:space:]')"
-    [[ -z "$line" ]] || job_repo_path "$line"
-  done <"$JOBS_CONF"
+  for r in "$JOBS_ROOT"/*/.agent-jobs/; do
+    r="${r%/.agent-jobs/}"
+    if [[ -n "$(job_names "$r")" ]]; then echo "$r"; fi
+  done
 }
 job_repo_path() {
-  case "$1" in */*) echo "$1" ;; *) echo "${NIGHT_SHIFT_ROOT:-$(dirname "$SELF_ROOT")}/$1" ;; esac
+  case "$1" in */*) echo "$1" ;; *) echo "$JOBS_ROOT/$1" ;; esac
 }
 
 # job_names REPO — the jobs REPO opted into: one per <repo>/.agent-jobs/<name>.md.
@@ -908,9 +914,18 @@ job_due() {
   fi
 }
 
-# vibe job list [REPO...] — one row per repo × job.
+# vibe job list [--all] [REPO...] — one row per repo × job; --all adds the
+# catalogue jobs REPO has not opted into, as `available`.
 cmd_job_list() {
-  local repo job last fails why
+  local repo job last fails why all=0 repos=() f
+  for f in "$@"; do
+    case "$f" in
+      --all) all=1 ;;
+      -h | --help) usage ;;
+      -*) die "usage: vibe job list [--all] [<repo>...]" ;;
+      *) repos+=("$f") ;;
+    esac
+  done
   printf '%-18s %-20s %-8s %-4s %-11s %s\n' REPO JOB SCHEDULE DAY LAST-RUN STATE
   while IFS= read -r repo; do
     [[ -d "$repo" ]] || {
@@ -929,7 +944,14 @@ cmd_job_list() {
       printf '%-18s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
         "$(job_key "$repo" "$job" schedule -)" "$(job_key "$repo" "$job" day -)" "${last:-never}" "$why"
     done < <(job_names "$repo")
-  done < <(job_repos "$@")
+    ((all)) || continue
+    for f in "$JOBS_CATALOGUE"/*.md; do
+      job="${f##*/}" && job="${job%.md}"
+      [[ "$job" != _* && ! -f "$repo/.agent-jobs/$job.md" ]] || continue
+      printf '%-18s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
+        "$(fm_get "$f" schedule)" "$(fm_get "$f" day)" - "available — vibe job add $(basename "$repo") $job"
+    done
+  done < <(job_repos "${repos[@]+"${repos[@]}"}")
 }
 
 # job_open_prs REPO — "branch" per open PR a runner opened; empty without gh.

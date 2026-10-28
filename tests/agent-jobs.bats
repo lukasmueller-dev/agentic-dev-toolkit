@@ -43,7 +43,7 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_NIGHT_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
-  export AGENT_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue"
+  export AGENT_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" NIGHT_SHIFT_ROOT="$BATS_TEST_TMPDIR"
   mkdir -p "$AGENT_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/night-shift"
   printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$AGENT_JOBS_CATALOGUE/health.md"
   printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$AGENT_JOBS_CATALOGUE/crashy.md"
@@ -66,14 +66,14 @@ soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
 # jobdir ID — the job dir ID under the dispatcher's night.
 jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
 
-@test "job list: catalogue + repo file, repo-only jobs, invalid files; repos from the config" {
+@test "job list: catalogue + repo file, repo-only jobs, invalid files; every repo with an opt-in" {
   local r
   r="$(make_repo proj)"
+  make_repo bystander >/dev/null
   optin "$r" health "day: $TODAY\n"
   optin "$r" custom "schedule: monthly\n" "Do the custom thing."
   optin "$r" nosched "" "Body without a schedule."
   optin "$r" nobody "schedule: daily\n"
-  echo "$r" >"$XDG_CONFIG_HOME/night-shift/repos"
   state "$r" custom last-run "$(date +%s)"
   run "$VIBE" job list
   echo "$output"
@@ -83,6 +83,11 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [[ "$output" == *"custom"*"monthly"*"-"*"$(date +%F)"*"not due"* ]] || false
   [[ "$output" == *"nosched"*"invalid: no schedule"* ]] || false
   [[ "$output" == *"nobody"*"invalid: not in the catalogue, and the repo file has no instructions"* ]] || false
+  [[ "$output" != *bystander* && "$output" != *available* ]] || false
+  run "$VIBE" job list --all
+  [[ "$output" == *"proj"*"crashy"*"daily"*"available — vibe job add proj crashy"* ]] || false
+  [[ "$output" != *bystander* ]] || false
+  [ "$(printf '%s\n' "$output" | grep -c 'health.*available')" = 0 ]
   run "$VIBE" job list "$BATS_TEST_TMPDIR/nowhere"
   [[ "$output" == *"no directory"* ]] || false
 }
@@ -118,7 +123,6 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   optin "$r" crashy
   state "$r" health last-run 100
   state "$r" crashy last-run 50
-  echo "$r" >"$XDG_CONFIG_HOME/night-shift/repos"
   run "$VIBE" job due --claude --max 1
   echo "$output"
   [ "$status" -eq 0 ]
