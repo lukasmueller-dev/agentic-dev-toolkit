@@ -18,7 +18,7 @@
 
 ## Next action
 
-`/grilling` on the six open questions (naming first) in `SPEC.md`, write the answers into its Decisions, then M1.
+`/grilling` on the four open questions in `SPEC.md`, write the answers into its Decisions, then M1.
 
 ## Blockers
 
