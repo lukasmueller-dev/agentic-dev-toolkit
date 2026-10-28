@@ -62,6 +62,7 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
+  mkdir -p "$HOME/.config/vibe" && echo server >"$HOME/.config/vibe/role"
   Q="$XDG_STATE_HOME/vibe/queue"
   CONF="$XDG_CONFIG_HOME/vibe/queue.conf"
   mkdir -p "$Q" "${CONF%/*}"
