@@ -19,6 +19,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
+- [ ] **Hermetic `queue gpu` test** — `tests/vibe-queue.bats` "gpu: only inside
+      a queue job" runs `vibe queue gpu -- true` with the caller's
+      `VIBE_JOB_DIR`; run it with `env -u VIBE_JOB_DIR` (port of closed PR #112).
+      Done when `VIBE_JOB_DIR=<dir with a job file> bats tests/vibe-queue.bats`
+      passes and leaves no `gpu-job` file.
+
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
 - [ ] **`vibe job triage`** — a runner script, no agent: merges the base into
