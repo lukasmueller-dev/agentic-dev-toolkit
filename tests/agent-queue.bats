@@ -395,6 +395,9 @@ drain() { run "$VIBE" queue run --claude --drain; }
   local a b
   a="$(make_repo alpha)" b="$(make_repo beta)"
   printf '# Roadmap\n\n## Items\n\n- [ ] First item\n      done when x.\n- [x] Finished\n- [ ] Second item\n' >"$b/PROJECT_ROADMAP.md"
+  git -C "$b" add PROJECT_ROADMAP.md
+  git -C "$b" commit -q -m roadmap
+  git -C "$b" push -q
   "$VIBE" start -C "$a" task >/dev/null 2>&1
   printf '## Next action\n\n_placeholder_\n\nRun the eval.\n\n## Blockers\n\nNone.\n' >"$a/.claude/worktrees/task/HANDOFF.md"
   printf 'beta   # first\n\n%s\n' "$a" >"$XDG_CONFIG_HOME/agent-queue/repos"
@@ -410,6 +413,24 @@ drain() { run "$VIBE" queue run --claude --drain; }
   echo "done" >"$Q/01-a/status"
   VIBE_ROOT="$BATS_TEST_TMPDIR" run "$SWEEP"
   [[ "$output" != *"QUEUED"* ]] || false
+}
+
+@test "sweep: reads the roadmap from origin, so an item a merged PR deleted stays gone" {
+  local a o
+  a="$(make_repo alpha)"
+  printf '# Roadmap\n\n- [ ] Done elsewhere\n- [ ] Still open\n' >"$a/PROJECT_ROADMAP.md"
+  git -C "$a" add PROJECT_ROADMAP.md
+  git -C "$a" commit -q -m roadmap
+  git -C "$a" push -q
+  o="$(clone_repo alpha other)"
+  printf '# Roadmap\n\n- [ ] Still open\n' >"$o/PROJECT_ROADMAP.md"
+  git -C "$o" commit -q -am "feat: done elsewhere"
+  git -C "$o" push -q
+  run "$SWEEP" "$a"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"read from: origin/main"*"L3: - [ ] Still open"* ]] || false
+  [[ "$output" != *"Done elsewhere"* ]] || false
+  grep -q "Done elsewhere" "$a/PROJECT_ROADMAP.md"
 }
 
 @test "sweep: arguments override the config; no repos at all fails" {

@@ -42,7 +42,8 @@ The user says skip → go to Phase 2.
 Run `sweep.sh [<repo>...]` from this skill's directory. It reads the
 arguments, else `~/.config/agent-queue/repos` (one repo per line, highest
 rank first). With neither, ask for the repos and offer to write that file.
-If it prints `gh failed`, run it again outside the sandbox.
+It fetches each repo and reads goal and roadmap from `origin`'s default branch.
+If it prints `gh failed` or `fetch failed`, run it again outside the sandbox.
 
 ## Phase 3 — Gate
 

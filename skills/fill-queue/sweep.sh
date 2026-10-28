@@ -3,6 +3,8 @@
 # sweep.sh [<repo>...] — the fill-queue planner's input, per repo in rank
 # order: goal, open roadmap items, handoff next actions, open PRs. Read-only.
 # A worktree whose branch has a job in the agent queue is marked QUEUED.
+# Goal and roadmap come from origin's default branch after a fetch, not from
+# the checkout, so items a merged PR deleted do not come back.
 #
 # Repos: the arguments, else one per line in
 # ${XDG_CONFIG_HOME:-~/.config}/agent-queue/repos (# comments, highest rank
@@ -53,20 +55,38 @@ roadmap() {
     END { flush() }' "$1"
 }
 
+# at_origin DIR REF NAME — NAME as REF holds it into $TMP/NAME, or the
+# checkout's copy when REF is empty; false when there is none.
+at_origin() {
+  rm -f "$TMP/$3"
+  if [[ -n "$2" ]]; then
+    git -C "$1" show "$2:$3" >"$TMP/$3" 2>/dev/null || return 1
+  else
+    cp "$1/$3" "$TMP/$3" 2>/dev/null || return 1
+  fi
+}
+
 sweep_repo() {
-  local rank="$1" repo="$2" dir line wt="" br=""
+  local rank="$1" repo="$2" dir line wt="" br="" ref
   case "$repo" in */*) dir="$repo" ;; *) dir="$ROOT/$repo" ;; esac
   echo "# $rank. $(basename "$dir")  ($dir)"
   if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
     echo "  not a git repo — skipped"
     return 0
   fi
-  if [[ -f "$dir/PROJECT_STATUS.md" ]]; then
+  ref=""
+  if git -C "$dir" remote get-url origin >/dev/null 2>&1; then
+    git -C "$dir" fetch -q origin 2>/dev/null || echo "  fetch failed — run sweep.sh outside the sandbox"
+    ref="$(git -C "$dir" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+    git -C "$dir" rev-parse -q --verify "$ref" >/dev/null || ref=""
+  fi
+  echo "  read from: ${ref:-the checkout (no origin)}"
+  if at_origin "$dir" "$ref" PROJECT_STATUS.md; then
     echo "## goal"
-    md_section "$dir/PROJECT_STATUS.md" Goal "    "
+    md_section "$TMP/PROJECT_STATUS.md" Goal "    "
   fi
   echo "## roadmap"
-  if [[ -f "$dir/PROJECT_ROADMAP.md" ]]; then roadmap "$dir/PROJECT_ROADMAP.md"; else echo "  no PROJECT_ROADMAP.md"; fi
+  if at_origin "$dir" "$ref" PROJECT_ROADMAP.md; then roadmap "$TMP/PROJECT_ROADMAP.md"; else echo "  no PROJECT_ROADMAP.md"; fi
   echo "## handoffs"
   while IFS= read -r line; do
     case "$line" in
@@ -107,6 +127,8 @@ elif [[ -f "$CONF" ]]; then
 fi
 ((${#repos[@]})) || die "no repos — pass them, or list them in $CONF (highest rank first)"
 
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 n=0
 for r in "${repos[@]}"; do
   n=$((n + 1))
