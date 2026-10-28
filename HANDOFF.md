@@ -14,15 +14,15 @@
 
 ## State
 
-`SPEC.md` holds the agreed design; no code yet.
+`SPEC.md` holds the agreed design, grilled 2026-10-28; no code yet.
 
 ## Next action
 
-`/grilling` on the four open questions in `SPEC.md`, write the answers into its Decisions, then M1.
+The user reviews the steps of `/review-jobs` and `/fill-queue`; then M1.
 
 ## Blockers
 
-Base on #113 (`vibe job` repo scan) once it merges; M2 touches the same functions.
+None. Rebase on main first: #113 and #116 changed `bin/vibe`.
 
 ## Gotchas (unpromoted)
 
