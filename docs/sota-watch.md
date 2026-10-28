@@ -11,9 +11,11 @@ recommendations formatted as roadmap items. Repo-local: the skill lives in
 /sota-digest          # in a session at this repo's root
 ```
 
-- Writes only the digest file. Never commits, never edits the roadmap or status.
+- Writes only the digest file; never edits the roadmap or status.
+- The weekly `sota-digest` job (`docs/vibe-jobs.md`) commits it on
+  `jobs/sota-digest` for a draft PR.
 - An existing digest for the week is resumed, not overwritten.
-- Review the file, then commit it (e.g. `commit-push-pr`).
+- On demand: review the file, then commit it (e.g. `commit-push-pr`).
 
 ## Accept or reject a recommendation
 
