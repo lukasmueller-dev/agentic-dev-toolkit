@@ -357,7 +357,7 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
 }
 
 @test "night gpu: only inside a night job" {
-  run "$VIBE" night gpu -- true
+  run env -u NIGHT_SHIFT_JOB_DIR "$VIBE" night gpu -- true
   [ "$status" -ne 0 ]
   [[ "$output" == *"inside a night job"* ]] || false
 }
