@@ -21,7 +21,7 @@ layout and traps: `docs/recurring-jobs.md` in the toolkit.
 ## Phase 1 — Show the state
 
 1. Catalogue: one line per `references/jobs/<job>.md` — name, `schedule`, `day`, `output`, the first body line.
-2. Per repo: `vibe job list` (repos from `~/.config/night-shift/repos`, or named). Show its table as is.
+2. Per repo: `vibe job list` (every repo under `~/github` with `.agent-jobs/`, or named). Show its table as is.
 3. Timer: `systemctl --user list-timers agent-jobs.timer`; say "not installed" when it prints no row.
 
 ## Phase 2 — Act on what the user asked

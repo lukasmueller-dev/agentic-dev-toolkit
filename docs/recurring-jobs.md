@@ -7,7 +7,7 @@ result. Skill: [`skills/recurring-jobs/`](../skills/recurring-jobs/SKILL.md).
 ## Requirements
 
 - Everything `docs/night-shift.md` needs: `tmux`, `gh`, a sandbox that starts.
-- `~/.config/night-shift/repos` lists the repos (highest rank first).
+- Repos sit under `~/github` (`NIGHT_SHIFT_ROOT`). A repo with `.agent-jobs/*.md` is opted in; `~/.config/night-shift/repos` is the agent-shift list only.
 
 ## 1. Opt a repo in
 
@@ -31,6 +31,7 @@ systemctl --user enable --now agent-jobs.timer
 
 ```bash
 vibe job list                            # repo × job: schedule, last run, due / stopped / invalid
+vibe job list --all                      # also the catalogue jobs each repo has not opted into
 vibe job due --claude --dry              # what the next 01:00 run queues
 vibe job run --claude <repo> <job>       # one job now; then: vibe night status
 vibe night report                        # today's briefing over every active night (docs/night-shift.md §3)
