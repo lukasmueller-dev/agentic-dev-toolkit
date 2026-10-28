@@ -84,8 +84,8 @@ tokens in.
 - `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`
   — render `research/` the same way, through `skills/_lib/doc-lib.sh`
 
-- `skills/agent-shift/SKILL.md` — appends `job-pr.md` and `job-report.md` to
-  every job prompt; the job fills them in its job dir. Phase 0 fills `SPEC.md`
+- `skills/fill-queue/SKILL.md` — appends `job-pr.md` and `job-report.md` to
+  every job prompt; the job fills them in its job dir. Phase 1 fills `SPEC.md`
   by hand after a grilling
 - `bin/vibe job` — renders `AGENT_JOB.md` into a repo (`add`), and appends
   `job-pr.md` and `job-report.md` to every recurring job's prompt (`due`, `run`)

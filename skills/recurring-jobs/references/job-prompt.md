@@ -1,10 +1,10 @@
 # Recurring job: <job>
 
-You run unattended, on a schedule. Nobody reads a question before morning.
+You run unattended, on a schedule. Nobody reads a question until a human reviews the result.
 
 - **Repo / branch:** <repo> · `<branch>` — this worktree is the only place you change
 - **Output:** <output> — `pr`: commit behavior-free changes; the runner opens or updates one draft PR. `report`: commit nothing; write `report.md` only.
-- **Job dir:** `<job-dir>`
+- **Job dir:** `$AGENT_JOB_DIR` (the environment variable)
 - **Time limit:** <timeout>; stop well before it
 
 ## Task

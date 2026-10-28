@@ -7,22 +7,22 @@
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
-#   vibe night start --<agent> <dir> [--jobs N] [--until HH:MM] [--timeout DUR]
-#                                   run a shift's jobs in tmux, night or day (<agent>/vibe-night.sh);
-#                                   <dir>: a path, or a name under ~/.local/state/night-shift
-#   vibe night status [<dir>]       one line per job of a shift (default: the latest)
-#   vibe night report [--<agent>] [--new] [--day] [<dir>...]
-#                                   the briefing over the shifts of the last 24 h; --day: today's
-#                                   day shift only; --<agent>: open a session on it
+#   vibe queue status               the queue: running, queued, to review; one line per job by repo
+#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now skips the window
+#   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
+#   vibe queue hold <id> <note>     keep a job for you: first in every briefing
+#   vibe queue archive <id>...      move reviewed jobs out of the queue
+#   vibe queue pause | resume       stop or allow new starts; running jobs finish
+#   vibe queue run --<agent> [--drain]
+#                                   the runner (agent-queue.service); --drain: until nothing can start
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .agent-jobs/, and the repos
-#                                   the agent-shift sweep covers; --all adds the jobs not opted into
-#   vibe job due --<agent> [--dry] [--max N]
-#                                   queue every due job on the running shift, else a new one (01:00)
-#   vibe job run --<agent> <repo> <job>   queue one job now
+#                                   the fill-queue sweep covers; --all adds the jobs not opted into
+#   vibe job due [--dry] [--max N]  queue every due recurring job (the 01:00 timer)
+#   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.agent-jobs/<job>.md
 #
-# Docs: docs/remote-sessions.md, docs/night-shift.md, docs/recurring-jobs.md.
+# Docs: docs/remote-sessions.md, docs/agent-queue.md, docs/recurring-jobs.md.
 set -euo pipefail
 
 script_dir() {
@@ -281,18 +281,73 @@ cmd_update_toolkit() {
   fi
 }
 
-# --- night: unattended jobs, one worktree each (docs/night-shift.md) ---------
+# --- queue: unattended agent jobs, one worktree each (docs/agent-queue.md) ---
 
-NIGHT_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/night-shift"
+QROOT="${XDG_STATE_HOME:-$HOME/.local/state}/agent-queue"
+QDIR="$QROOT/queue"
+QCONF="${XDG_CONFIG_HOME:-$HOME/.config}/agent-queue"
 
 # jget FILE KEY — the value of KEY=value in FILE; empty when absent.
 jget() { awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$1" 2>/dev/null || true; }
 # jstate JOB NAME — first line of a job state file; empty when absent.
 jstate() { head -n 1 "$1/$2" 2>/dev/null || true; }
+# qconf KEY DEFAULT — KEY=value from ~/.config/agent-queue/config, else DEFAULT.
+qconf() {
+  local v
+  v="$(jget "$QCONF/config" "$1")"
+  echo "${v:-$2}"
+}
 
-# night_end JOB STATUS NOTE — final status of a job; a recurring job also
+# secs DUR — seconds of 90s, 30m, 2h, 1d or bare seconds; empty when malformed.
+secs() {
+  [[ "$1" =~ ^([0-9]+)([smhd]?)$ ]] || return 0
+  case "${BASH_REMATCH[2]}" in
+    m) echo $((10#${BASH_REMATCH[1]} * 60)) ;;
+    h) echo $((10#${BASH_REMATCH[1]} * 3600)) ;;
+    d) echo $((10#${BASH_REMATCH[1]} * 86400)) ;;
+    *) echo $((10#${BASH_REMATCH[1]})) ;;
+  esac
+}
+
+# window — the night window HH:MM-HH:MM from the config; the default when malformed.
+window() {
+  local w
+  w="$(qconf night 18:00-07:00)"
+  [[ "$w" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || w=18:00-07:00
+  echo "$w"
+}
+
+# in_window — true while the night window is open.
+in_window() {
+  local w s e m
+  w="$(window)"
+  s=$((10#${w:0:2} * 60 + 10#${w:3:2})) e=$((10#${w:6:2} * 60 + 10#${w:9:2}))
+  m="$(date +%H:%M)"
+  m=$((10#${m:0:2} * 60 + 10#${m:3:2}))
+  if ((s <= e)); then
+    ((m >= s && m < e))
+  else
+    ((m >= s || m < e))
+  fi
+}
+
+# job_timeout JOB — the job's timeout, 2h when it sets none.
+job_timeout() {
+  local t
+  t="$(jget "$1/job" timeout)"
+  echo "${t:-2h}"
+}
+
+# job_heavy JOB — true when the job's timeout is over the config's `heavy` (2h).
+job_heavy() {
+  local t h
+  t="$(secs "$(job_timeout "$1")")" h="$(secs "$(qconf heavy 2h)")"
+  ((${t:-7200} > ${h:-7200}))
+}
+
+# job_end JOB STATUS NOTE — final status of a job; a recurring job also
 # updates its last-run / fails state (docs/recurring-jobs.md).
-night_end() {
+job_end() {
   echo "$2" >"$1/status"
   echo "$3" >"$1/note"
   date '+%F %T' >"$1/ended"
@@ -300,44 +355,10 @@ night_end() {
   [[ -z "$(jget "$1/job" recurring)" ]] || job_state_update "$1" "$2"
 }
 
-# deadline_epoch HH:MM — epoch of the next HH:MM, today or tomorrow.
-deadline_epoch() {
-  local h m now nh nm ns diff
-  [[ "$1" =~ ^([01]?[0-9]|2[0-3]):([0-5][0-9])$ ]] || die "--until wants HH:MM, got '$1'"
-  h="${BASH_REMATCH[1]}" m="${BASH_REMATCH[2]}"
-  read -r now nh nm ns < <(date '+%s %H %M %S')
-  diff=$(((10#$h * 60 + 10#$m - 10#$nh * 60 - 10#$nm + 1440) % 1440))
-  echo $((now - 10#$ns + diff * 60))
-}
-
-# night_args ARGS... — parse start/run options into AGENT DIR JOBS UNTIL TIMEOUT.
-night_args() {
-  AGENT="" DIR="" JOBS=4 UNTIL=06:30 TIMEOUT=3h
-  while (($#)); do
-    case "$1" in
-      --jobs) JOBS="${2:?--jobs needs a number}" && shift 2 ;;
-      --until) UNTIL="${2:?--until needs HH:MM}" && shift 2 ;;
-      --timeout) TIMEOUT="${2:?--timeout needs a duration, e.g. 3h}" && shift 2 ;;
-      -h | --help) usage ;;
-      --?*)
-        [[ -z "$AGENT" ]] || die "one agent only"
-        AGENT="${1#--}"
-        shift
-        ;;
-      *)
-        [[ -z "$DIR" ]] || die "one night directory only"
-        DIR="$1"
-        shift
-        ;;
-    esac
-  done
-  [[ -n "$AGENT" && -n "$DIR" ]] || die "usage: vibe night start --<agent> <dir>, e.g. --claude"
-  [[ "$AGENT" != */* && -f "$SELF_ROOT/$AGENT/vibe-night.sh" ]] ||
-    die "no night jobs for '$AGENT' — $SELF_ROOT/$AGENT/vibe-night.sh is missing"
-  [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs wants a positive number, got '$JOBS'"
-  DIR="$(night_dir "$DIR")"
-  DIR="$(cd -P "$DIR" && pwd)"
-  deadline_epoch "$UNTIL" >/dev/null
+# job_final JOB — true when the job has ended.
+job_final() {
+  case "$(jstate "$1" status)" in "done" | blocked | failed | timeout | skipped) return 0 ;; esac
+  return 1
 }
 
 # branch_ok BRANCH — a slug, or jobs/<slug> (a recurring job's branch).
@@ -346,60 +367,109 @@ branch_ok() {
   [[ "$1" != jobs/*/* && -n "$b" && "$(slug "$b")" == "$b" ]]
 }
 
-# night_prepare JOB — check the job, make or adopt its worktree. Writes
+# queue_add DIR [NOW] — move a prepared job dir (`job`, `prompt.md`) into the
+# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 lets it skip the window.
+queue_add() {
+  local src="${1%/}" now="${2:-0}" repo branch ts d
+  [[ -f "$src/job" ]] || die "no job file in $src"
+  repo="$(jget "$src/job" repo)" branch="$(jget "$src/job" branch)"
+  [[ -n "$repo" && -n "$branch" ]] || die "$src/job needs repo= and branch="
+  branch_ok "$branch" || die "bad branch '$branch'"
+  mkdir -p "$QDIR" "$QROOT/incoming"
+  # One id per second keeps FIFO order: a second add waits for the next second.
+  ts="$(date +%Y%m%d-%H%M%S)"
+  while compgen -G "$QDIR/$ts-*" >/dev/null; do
+    sleep 1
+    ts="$(date +%Y%m%d-%H%M%S)"
+  done
+  d="$QDIR/$ts-$(basename "$repo")-$(echo "$branch" | tr / -)"
+  if ((now)); then echo now=1 >>"$src/job"; fi
+  # A copy lands complete or not at all: the runner never sees half a job.
+  if ! mv "$src" "$d" 2>/dev/null; then
+    cp -R "$src" "$QROOT/incoming/${d##*/}" && mv "$QROOT/incoming/${d##*/}" "$d" && rm -rf "$src"
+  fi
+  echo "$d"
+}
+
+# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order.
+cmd_queue_add() {
+  local now=0 dirs=() d
+  for d in "$@"; do
+    case "$d" in
+      --now) now=1 ;;
+      -h | --help) usage ;;
+      -*) die "usage: vibe queue add [--now] <dir>..." ;;
+      *) dirs+=("$d") ;;
+    esac
+  done
+  ((${#dirs[@]})) || die "usage: vibe queue add [--now] <dir>..."
+  for d in "${dirs[@]}"; do
+    d="$(queue_add "$d" "$now")"
+    echo "queued ${d##*/}"
+  done
+}
+
+# job_prepare JOB — check the job, make or adopt its worktree. Writes
 # JOB/worktree on success, a final status otherwise. Run it in a subshell.
-night_prepare() {
+job_prepare() {
   local d="$1" repo branch main def wt
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
   [[ -f "$d/prompt.md" ]] || {
-    night_end "$d" failed "no prompt.md"
+    job_end "$d" failed "no prompt.md"
     return 0
   }
   cd "$repo" 2>/dev/null || {
-    night_end "$d" failed "no directory '$repo'"
+    job_end "$d" failed "no directory '$repo'"
     return 0
   }
   main="$(main_repo_root 2>/dev/null)" || {
-    night_end "$d" failed "$repo is not a git repo"
+    job_end "$d" failed "$repo is not a git repo"
     return 0
   }
   def="$(default_branch "$main")"
   if [[ -z "$branch" || "$branch" == "$def" ]] || ! branch_ok "$branch"; then
-    night_end "$d" failed "bad branch '$branch'"
+    job_end "$d" failed "bad branch '$branch'"
     return 0
   fi
   wt="$(worktree_of "$main" "$branch")"
   # A GPU follow-up starts in the worktree the run just wrote its outputs to.
   if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 && -n "$(git -C "$wt" status --porcelain)" ]]; then
-    night_end "$d" skipped "$wt has uncommitted changes"
+    job_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
   if [[ -z "$wt" && -e "$(worktree_dir "$branch")" ]]; then
-    night_end "$d" skipped "$(worktree_dir "$branch") exists but does not hold '$branch'"
+    job_end "$d" skipped "$(worktree_dir "$branch") exists but does not hold '$branch'"
     return 0
   fi
   open_worktree "$main" "$branch" "$def"
   if [[ "$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
-    night_end "$d" failed "no worktree for '$branch'"
+    job_end "$d" failed "no worktree for '$branch'"
     return 0
   fi
   echo "$def" >"$d/base"
   echo "$(basename "$main")-${branch//\//-}" >"$d/name"
   echo "$WT" >"$d/worktree"
+  milestones_open "$WT" >"$d/milestones"
 }
 
-# pr_title_fallback JOB — `agent-shift(<id>): <result>` when the job wrote no pr.md.
+# milestones_open WT — open milestones of WT/SPEC.md; empty without one.
+milestones_open() {
+  [[ -f "$1/SPEC.md" ]] || return 0
+  grep -c '^- \[ \]' "$1/SPEC.md" || true
+}
+
+# pr_title_fallback JOB — `agent(<branch>): <result>` when the job wrote no pr.md.
 pr_title_fallback() {
-  local r
-  r="$(jstate "$1" result)"
+  local r b
+  r="$(jstate "$1" result)" b="$(jget "$1/job" branch)"
   r="${r#*: }"
-  echo "agent-shift(${1##*/}): ${r:-${1##*/}}" | cut -c 1-60
+  echo "agent(${b#jobs/}): ${r:-${1##*/}}" | cut -c 1-60
 }
 
-# night_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
+# job_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
-night_publish() {
+job_publish() {
   local d="$1" wt base branch ahead title url
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
@@ -410,7 +480,7 @@ night_publish() {
   fi
   command -v gh >/dev/null 2>&1 || return 0
   if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
-  printf '\n---\n_agent-shift job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
+  printf '\n---\n_agent job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
     (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md") >/dev/null 2>&1 || true
@@ -427,21 +497,33 @@ night_publish() {
   echo "${url:-PR not created}" >"$d/pr"
 }
 
-# night_run_job JOB — the agent in the job's worktree, then publish. Runs in
-# the background; the runner marks it failed if it dies without a status.
-night_run_job() {
-  local d="$1" rc=0 result st note=""
+# job_chain JOB — a SPEC.md job that ticked a milestone and left one open
+# queues the next one, with the same prompt.
+job_chain() {
+  local d="$1" wt before after tmp
+  wt="$(jstate "$d" worktree)" before="$(jstate "$d" milestones)"
+  after="$(milestones_open "$wt")"
+  [[ -n "$before" && -n "$after" ]] || return 0
+  ((after > 0 && after < before)) || return 0
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
+  grep -v '^now=' "$d/job" >"$tmp/job" || true
+  cp "$d/prompt.md" "$tmp/prompt.md"
+  echo "next milestone → $(basename "$(queue_add "$tmp")")"
+}
+
+# job_run JOB — the agent in the job's worktree, then publish. Runs in the
+# background; it writes the final status itself, so it outlives a runner restart.
+job_run() {
+  local d="$1" rc=0 result st note="" t
   date '+%F %T' >"$d/started"
-  # A recurring job carries its own limit; it replaces the night's duration.
+  t="$(job_timeout "$d")"
   local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  local t
-  t="$(jget "$d/job" timeout)"
-  if [[ -n "$t" && ${#tcmd[@]} -gt 0 ]]; then tcmd[${#tcmd[@]} - 1]="$t"; fi
-  NIGHT_SHIFT_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-night.sh" \
+  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
+  AGENT_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
     "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" >"$d/log" 2>&1 || rc=$?
   result="$(jstate "$d" result)"
   if ((rc == 124 || rc == 137)); then
-    st=timeout note="stopped after ${t:-$TIMEOUT}"
+    st=timeout note="stopped after $t"
   elif ((rc != 0)); then
     st=failed note="agent exit $rc: $(tail -n 1 "$d/log" 2>/dev/null | cut -c 1-160 || true)"
   else
@@ -452,108 +534,178 @@ night_run_job() {
       *) st=failed note="no result line" ;;
     esac
   fi
-  night_publish "$d" || true
-  night_end "$d" "$st" "${result:-$note}"
+  job_publish "$d" || true
+  job_end "$d" "$st" "${result:-$note}"
+  if [[ "$st" == "done" ]]; then job_chain "$d"; fi
 }
 
-cmd_night_run() {
-  local d st pid running waiting now deadline queued
-  night_args "$@"
-  deadline="$(deadline_epoch "$UNTIL")"
+# agent_check AGENT — dies unless <agent>/vibe-job.sh exists.
+agent_check() {
+  [[ -n "$1" && "$1" != */* && -f "$SELF_ROOT/$1/vibe-job.sh" ]] ||
+    die "no job runner for '$1' — $SELF_ROOT/$1/vibe-job.sh is missing"
+}
+
+# queue_order JOB... — the jobs that may start now, in start order: --now
+# jobs, then in the night window heavy jobs, then light ones. Paused: none.
+queue_order() {
+  local d night=0 now=() heavy=() light=()
+  [[ ! -e "$QROOT/paused" ]] || return 0
+  if in_window; then night=1; fi
+  for d in "$@"; do
+    if [[ "$(jget "$d/job" now)" == 1 ]]; then
+      now+=("$d")
+    elif job_heavy "$d"; then
+      heavy+=("$d")
+    else
+      light+=("$d")
+    fi
+  done
+  if ((!night)); then heavy=(); fi
+  for d in "${now[@]+"${now[@]}"}" "${heavy[@]+"${heavy[@]}"}" "${light[@]+"${light[@]}"}"; do echo "$d"; done
+}
+
+# branch_key JOB — repo and branch: one running job per branch.
+branch_key() { echo "$(jget "$1/job" repo)#$(jget "$1/job" branch)"; }
+
+# vibe queue run --<agent> [--drain] — the runner: polls the queue for ever and
+# starts jobs in free slots (config slots_day 2, slots_night 4). --drain stops
+# once nothing runs, waits on the GPU or may start.
+cmd_queue_run() {
+  local drain=0 d pid running waiting slots busy started queued=() order
+  AGENT=""
+  while (($#)); do
+    case "$1" in
+      --drain) drain=1 ;;
+      -h | --help) usage ;;
+      --?*)
+        [[ -z "$AGENT" ]] || die "one agent only"
+        AGENT="${1#--}"
+        ;;
+      *) die "usage: vibe queue run --<agent> [--drain], e.g. --claude" ;;
+    esac
+    shift
+  done
+  [[ -n "$AGENT" ]] || die "usage: vibe queue run --<agent> [--drain], e.g. --claude"
+  agent_check "$AGENT"
+  mkdir -p "$QDIR"
   TIMEOUT_CMD=()
   if command -v timeout >/dev/null 2>&1; then
-    TIMEOUT_CMD=(timeout --kill-after=60 "$TIMEOUT")
+    TIMEOUT_CMD=(timeout --kill-after=60)
   elif command -v gtimeout >/dev/null 2>&1; then
-    TIMEOUT_CMD=(gtimeout --kill-after=60 "$TIMEOUT")
+    TIMEOUT_CMD=(gtimeout --kill-after=60)
   else
-    warn "no timeout(1) — jobs run without the $TIMEOUT limit"
+    warn "no timeout(1) — jobs run without a time limit"
   fi
-  info "night $DIR: $JOBS at a time, none started after $UNTIL"
+  info "queue $QDIR: window $(window), slots $(qconf slots_day 2) by day, $(qconf slots_night 4) by night"
   while :; do
-    running=0 waiting=0 queued=()
-    for d in "$DIR"/jobs/*/; do
+    running=0 waiting=0 busy="" queued=()
+    for d in "$QDIR"/*/; do
       d="${d%/}"
       [[ -f "$d/job" ]] || continue
-      st="$(jstate "$d" status)"
-      case "$st" in
+      case "$(jstate "$d" status)" in
         running)
           pid="$(jstate "$d" pid)"
           if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-            running=$((running + 1))
+            running=$((running + 1)) busy+=" $(branch_key "$d")"
           else
-            night_end "$d" failed "job process died"
+            job_end "$d" failed "job process died"
           fi
           ;;
         gpu) waiting=$((waiting + 1)) ;;
         "" | queued) queued+=("$d") ;;
       esac
     done
-    now="$(date +%s)"
-    # A job waiting on its GPU run gets a follow-up job, unless the night is over.
-    if ((${#queued[@]} == 0 && running == 0 && (waiting == 0 || now >= deadline))); then break; fi
-    for d in "${queued[@]+"${queued[@]}"}"; do
-      if ((now >= deadline)); then
-        night_end "$d" skipped "not started before $UNTIL"
-        continue
-      fi
-      ((running < JOBS)) || break
+    order="$(queue_order "${queued[@]+"${queued[@]}"}")"
+    if ((drain && running == 0 && waiting == 0)) && [[ -z "$order" ]]; then break; fi
+    slots="$(qconf slots_day 2)"
+    if in_window; then slots="$(qconf slots_night 4)"; fi
+    started=0
+    while IFS= read -r d; do
+      [[ -n "$d" ]] || continue
+      ((running < slots)) || break
+      [[ " $busy " != *" $(branch_key "$d") "* ]] || continue
       echo running >"$d/status"
-      (night_prepare "$d") >>"$d/runner.log" 2>&1 || true
+      (job_prepare "$d") >>"$d/runner.log" 2>&1 || true
       if [[ "$(jstate "$d" status)" != running || ! -s "$d/worktree" ]]; then
-        [[ "$(jstate "$d" status)" != running ]] || night_end "$d" failed "prepare failed — see runner.log"
+        [[ "$(jstate "$d" status)" != running ]] || job_end "$d" failed "prepare failed — see runner.log"
         continue
       fi
-      night_run_job "$d" >>"$d/runner.log" 2>&1 &
+      job_run "$d" >>"$d/runner.log" 2>&1 &
       echo "$!" >"$d/pid"
-      running=$((running + 1))
-      info "started $(basename "$d")"
-    done
-    sleep "${VIBE_NIGHT_POLL:-30}"
+      running=$((running + 1)) busy+=" $(branch_key "$d")" started=1
+      info "started ${d##*/}"
+    done <<<"$order"
+    # A drain whose only startable jobs wait on a busy branch must not spin.
+    if ((drain && running == 0 && waiting == 0 && !started)); then break; fi
+    sleep "${VIBE_QUEUE_POLL:-30}"
   done
-  info "night finished"
-  cmd_night_status "$DIR"
+  info "queue drained"
 }
 
-cmd_night_start() {
-  local cmd
-  night_args "$@"
-  command -v tmux >/dev/null 2>&1 || die "tmux is required"
-  if tmux -L night-shift has-session -t '=night' 2>/dev/null; then
-    die "a night already runs — tmux -L night-shift attach -t night"
-  fi
-  cmd="$(printf '%q ' "$SELF_ROOT/bin/vibe" night run "--$AGENT" "$DIR" \
-    --jobs "$JOBS" --until "$UNTIL" --timeout "$TIMEOUT")"
-  tmux -L night-shift new-session -d -s night -c "$DIR" "$cmd >>$(printf '%q' "$DIR/runner.log") 2>&1"
-  if ! tmux -L night-shift has-session -t '=gpu' 2>/dev/null; then
-    cmd="$(printf '%q ' "$SELF_ROOT/bin/gpu-queue" run --until "$UNTIL")"
-    tmux -L night-shift new-session -d -s gpu -c "$DIR" "$cmd >>$(printf '%q' "$DIR/gpu-queue.log") 2>&1"
-  fi
-  echo "night started: $DIR"
-  echo "follow:  tail -f $DIR/runner.log"
-  echo "status:  vibe night status $DIR"
+# queue_job ID — the job dir of ID (an id or a path); dies when absent.
+queue_job() {
+  local d="${1%/}"
+  [[ "$d" == */* ]] || d="$QDIR/$d"
+  [[ -f "$d/job" ]] || die "no job $1 in $QDIR"
+  echo "$d"
 }
 
-# vibe night gpu -- CMD... — from inside a night job: queue CMD on the GPU
+# vibe queue hold ID NOTE... — keep a finished job unreviewed, first in every briefing.
+cmd_queue_hold() {
+  local d
+  (($# >= 2)) || die "usage: vibe queue hold <id> <note>"
+  d="$(queue_job "$1")"
+  shift
+  echo "$*" >"$d/held"
+  echo "held ${d##*/}"
+}
+
+# vibe queue archive ID... — move reviewed jobs to archive/<YYYY-MM>/.
+cmd_queue_archive() {
+  local d a
+  (($#)) || die "usage: vibe queue archive <id>..."
+  a="$QROOT/archive/$(date +%Y-%m)"
+  for d in "$@"; do
+    d="$(queue_job "$d")"
+    job_final "$d" || die "${d##*/} has not ended ($(jstate "$d" status)) — archive it once it has"
+    mkdir -p "$a"
+    mv "$d" "$a/"
+    echo "archived ${d##*/}"
+  done
+}
+
+cmd_queue_pause() {
+  mkdir -p "$QROOT"
+  touch "$QROOT/paused"
+  echo "paused: no new job starts; running jobs finish"
+}
+cmd_queue_resume() {
+  rm -f "$QROOT/paused"
+  echo "resumed"
+}
+
+# vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
-cmd_night_gpu() {
-  local d="${NIGHT_SHIFT_JOB_DIR:-}" id
-  [[ -n "$d" && -f "$d/job" ]] || die "vibe night gpu runs inside a night job (NIGHT_SHIFT_JOB_DIR)"
+cmd_queue_gpu() {
+  local d="${AGENT_JOB_DIR:-}" id
+  [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (AGENT_JOB_DIR)"
   case "${1:-}" in
     -h | --help) usage ;;
     --) shift ;;
-    -*) die "usage: vibe night gpu -- CMD..." ;;
+    -*) die "usage: vibe queue gpu -- CMD..." ;;
   esac
-  (($#)) || die "usage: vibe night gpu -- CMD..."
+  (($#)) || die "usage: vibe queue gpu -- CMD..."
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
-    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" night follow "$d")" -- "$@")" || die "gpu-queue submit failed"
+    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
   echo "$id" >"$d/gpu-job"
   echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
-# vibe night follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
-# with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG).
-cmd_night_follow() {
-  local p="${1:?usage: vibe night follow <job dir>}" f n=1
+# vibe queue follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
+# with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG). It sorts right
+# after JOB, so it runs before later jobs.
+cmd_queue_follow() {
+  local p="${1:?usage: vibe queue follow <job dir>}" f n=1
   p="${p%/}"
   [[ -f "$p/job" ]] || die "no job at $p"
   f="$p-gpu"
@@ -563,40 +715,68 @@ cmd_night_follow() {
   done
   mkdir -p "$f"
   {
-    grep -v '^follow=' "$p/job" || true
-    echo "follow=1"
-  } >"$f/job"
-  {
     cat "$p/prompt.md"
     printf '\n## GPU run finished\n\n- Exit: %s\n- Log: %s\n\n' "${GPUQ_EXIT:-?}" "${GPUQ_LOG:-?}"
     echo "An earlier session prepared and queued this run; its commits are on the branch."
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
-  night_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
+  # The job file last: the runner skips a dir without one.
+  {
+    grep -v '^follow=' "$p/job" || true
+    echo "follow=1"
+  } >"$f/job"
+  job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# night_dir [DIR] — DIR, or NIGHT_ROOT/DIR; else the latest night under NIGHT_ROOT.
-night_dir() {
-  local dir="${1:-}" d
-  if [[ -z "$dir" ]]; then
-    for d in "$NIGHT_ROOT"/*/; do [[ -d "$d/jobs" ]] && dir="${d%/}"; done
-    [[ -n "$dir" ]] || die "no night under $NIGHT_ROOT"
-  fi
-  [[ -d "$dir/jobs" || ! -d "$NIGHT_ROOT/$dir/jobs" ]] || dir="$NIGHT_ROOT/$dir"
-  [[ -d "$dir/jobs" ]] || die "$dir/jobs is missing — the agent-shift skill writes it"
-  echo "$dir"
-}
-
-cmd_night_status() {
-  local dir d id st
-  dir="$(night_dir "${1:-}")"
-  echo "night: $dir"
-  for d in "$dir"/jobs/*/; do
+# queue_header — one line: running, queued, to review, window, paused.
+queue_header() {
+  local d st r=0 q=0 h=0 g=0 v=0 open=closed slots
+  for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
-    id="${d##*/}" st="$(jstate "$d" status)"
-    printf '%-32s %-8s %s %s\n' "$id" "${st:-queued}" "$(jstate "$d" pr)" "$(jstate "$d" note)"
+    st="$(jstate "$d" status)"
+    case "$st" in
+      running) r=$((r + 1)) ;;
+      gpu) g=$((g + 1)) ;;
+      "" | queued)
+        q=$((q + 1))
+        if job_heavy "$d"; then h=$((h + 1)); fi
+        ;;
+      *) v=$((v + 1)) ;;
+    esac
   done
+  slots="$(qconf slots_day 2)"
+  if in_window; then open=open slots="$(qconf slots_night 4)"; fi
+  printf 'queue: %s running · %s on the GPU · %s queued (%s heavy, start in the window) · %s to review · window %s %s, %s slots' \
+    "$r" "$g" "$q" "$h" "$v" "$(window)" "$open" "$slots"
+  if [[ -e "$QROOT/paused" ]]; then printf ' · PAUSED'; fi
+  echo
+}
+
+# queue_repos — the repos of the queued jobs, sorted.
+queue_repos() {
+  local d
+  for d in "$QDIR"/*/; do [[ ! -f "$d/job" ]] || jget "$d/job" repo; done | sort -u
+}
+
+# vibe queue status — the header, then one line per job, grouped by repo.
+cmd_queue_status() {
+  local repo d st txt
+  queue_header
+  while IFS= read -r repo; do
+    [[ -n "$repo" ]] || continue
+    echo
+    echo "${repo##*/}"
+    for d in "$QDIR"/*/; do
+      d="${d%/}"
+      [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
+      st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
+      if job_final "$d"; then txt="$(jstate "$d" note)"; fi
+      [[ ! -f "$d/held" ]] || st="held"
+      printf '  %-48s %-8s %-5s %s %s\n' "${d##*/}" "${st:-queued}" \
+        "$(if job_heavy "$d"; then echo heavy; else echo light; fi)" "$(jstate "$d" pr)" "$txt"
+    done
+  done < <(queue_repos)
 }
 
 # in_list NEEDLE WORD... — true when NEEDLE is one of the words.
@@ -631,25 +811,29 @@ report_context() {
   echo "$t"
 }
 
-# report_rows REPO TITLE CLASS... — one table of REPO's jobs in the classes: a
-# status, or `pr` (done with a PR URL; `done` is then done without one). No
-# rows, no table. Reads NIGHTS.
+# report_row JOB TEXT — one table row: id, status, context, TEXT, links.
+report_row() {
+  local d="$1" pr ctx links=""
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")"
+  case "$pr" in http*) links="[PR]($pr)" ;; esac
+  [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
+  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | ${2//|//} | $links |"
+}
+
+# report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
+# the classes: a status, or `pr` (done with a PR URL; `done` is then done
+# without one). No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" dir d st cls pr ctx tldr links rows=""
+  local repo="$1" title="$2" d cls rows=""
   shift 2
-  for dir in "${NIGHTS[@]}"; do
-    for d in "$dir"/jobs/*/; do
-      d="${d%/}"
-      [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
-      st="$(jstate "$d" status)" pr="$(jstate "$d" pr)"
-      st="${st:-queued}" cls="${st:-queued}"
-      case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
-      in_list "$cls" "$@" || continue
-      ctx="$(report_context "$d")" tldr="$(report_tldr "$d")" links=""
-      case "$pr" in http*) links="[PR]($pr)" ;; esac
-      [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
-      rows+="| ${dir##*/}/${d##*/} | $st | ${ctx//|//} | ${tldr//|//} | $links |"$'\n'
-    done
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
+    job_final "$d" || continue
+    cls="$(jstate "$d" status)"
+    case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
+    in_list "$cls" "$@" || continue
+    rows+="$(report_row "$d" "$(report_tldr "$d")")"$'\n'
   done
   [[ -n "$rows" ]] || return 0
   echo
@@ -660,115 +844,67 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# night_report_md DIR... — the briefing over the nights: counts, then per repo
-# ranked tables (needs a human, PRs to read, the rest), then the next action
-# of every job that did not finish.
-night_report_md() {
-  local dir d st wt counts="" s n names="" repo repos
-  NIGHTS=("$@")
-  for dir in "$@"; do names="${names:+$names, }${dir##*/}"; done
-  echo "# Agent jobs — $(date +%F)"
+# queue_report_md — the briefing: the header, held jobs under "Yours", then per
+# repo ranked tables (needs a human, PRs to read, the rest), then the next
+# action of every unheld job that did not finish.
+queue_report_md() {
+  local d st wt repo rows=""
+  echo "# Agent jobs — $(date '+%F %H:%M')"
   echo
-  for s in "done" blocked failed timeout skipped running gpu queued; do
-    n=0
-    for dir in "$@"; do
-      for d in "$dir"/jobs/*/; do
-        [[ -f "$d/job" ]] || continue
-        st="$(jstate "${d%/}" status)"
-        [[ "${st:-queued}" != "$s" ]] || n=$((n + 1))
-      done
-    done
-    ((n == 0)) || counts="${counts:+$counts · }$n $s"
+  queue_header
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    [[ -f "$d/held" ]] || continue
+    rows+="$(report_row "$d" "$(jstate "$d" held)")"$'\n'
   done
-  echo "${counts:-no jobs} — nights: $names"
-  repos="$(for dir in "$@"; do for d in "$dir"/jobs/*/; do jget "$d/job" repo; done; done | sort -u)"
+  if [[ -n "$rows" ]]; then
+    printf '\n## Yours\n\n| Job | Status | Context | Note | Links |\n| --- | --- | --- | --- | --- |\n%s' "$rows"
+  fi
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
+    rows="$(
+      report_rows "$repo" "Needs you" blocked failed timeout skipped
+      report_rows "$repo" "PR ready" pr
+      report_rows "$repo" "Done, nothing to read" "done"
+    )"
+    [[ -n "$rows" ]] || continue
     echo
     echo "## ${repo##*/}"
-    report_rows "$repo" "Needs you" blocked failed timeout skipped
-    report_rows "$repo" "PR ready" pr
-    report_rows "$repo" "Done, nothing to read" "done" running gpu queued
-  done <<<"$repos"
-  for dir in "$@"; do
-    for d in "$dir"/jobs/*/; do
-      d="${d%/}"
-      st="$(jstate "$d" status)"
-      case "$st" in "done" | "") continue ;; esac
-      [[ -f "$d/job" ]] || continue
-      wt="$(jstate "$d" worktree)"
-      echo
-      echo "## ${dir##*/}/${d##*/} — $st"
-      echo
-      echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
-      [[ -z "$wt" ]] || echo "- Worktree: $wt"
-      [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
-      if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
-        echo "- Next action:"
-        md_section "$wt/HANDOFF.md" "Next action" "  "
-        echo "- Blockers:"
-        md_section "$wt/HANDOFF.md" Blockers "  "
-      fi
-      case "$st" in failed | timeout) echo "- Log: $d/log" ;; esac
-    done
-  done
-}
-
-# active_nights — every night with a job file written in the last 24 h.
-active_nights() {
-  local d
-  for d in "$NIGHT_ROOT"/*/; do
-    [[ -d "$d/jobs" ]] || continue
-    [[ -z "$(find "$d/jobs" -type f -mmin -1440 -print -quit 2>/dev/null)" ]] || echo "${d%/}"
-  done
-}
-
-# vibe night report [--<agent>] [--new] [--day] [DIR...] — the day's briefing over
-# DIRs (default: the nights active in the last 24 h) to
-# NIGHT_ROOT/briefings/<date>.md, copied as briefing-<date>.md with note
-# frontmatter to the directory named in ~/.config/night-shift/briefing-dir
-# when that file exists. With an agent,
-# open a session on it (<agent>/vibe-night-report.sh). --new: only when the
-# day has no briefing yet (the morning timer). --day: today's day shift
-# (NIGHT_ROOT/<date>-day) to <date>-day.md; none is no error (the 13:00 timer).
-cmd_night_report() {
-  local agent="" new=0 day=0 dirs=() d file copy dest name
-  while (($#)); do
-    case "$1" in
-      --new) new=1 ;;
-      --day) day=1 ;;
-      -h | --help) usage ;;
-      --?*) agent="${1#--}" ;;
-      *) dirs+=("$(night_dir "$1")") ;;
-    esac
-    shift
-  done
-  if [[ -n "$agent" ]]; then
-    [[ "$agent" != */* && -f "$SELF_ROOT/$agent/vibe-night-report.sh" ]] ||
-      die "no night report for '$agent' — $SELF_ROOT/$agent/vibe-night-report.sh is missing"
-  fi
-  name="$(date +%F)"
-  if ((day)); then
-    name="$name-day"
-    if [[ ! -d "$NIGHT_ROOT/$name/jobs" ]]; then
-      echo "no day shift today: $NIGHT_ROOT/$name"
-      return 0
+    echo "$rows"
+  done < <(queue_repos)
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    st="$(jstate "$d" status)"
+    case "$st" in blocked | failed | timeout | skipped) ;; *) continue ;; esac
+    [[ -f "$d/job" && ! -f "$d/held" ]] || continue
+    wt="$(jstate "$d" worktree)"
+    echo
+    echo "## ${d##*/} — $st"
+    echo
+    echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
+    [[ -z "$wt" ]] || echo "- Worktree: $wt"
+    [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
+    if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
+      echo "- Next action:"
+      md_section "$wt/HANDOFF.md" "Next action" "  "
+      echo "- Blockers:"
+      md_section "$wt/HANDOFF.md" Blockers "  "
     fi
-    dirs=("$NIGHT_ROOT/$name")
-  fi
-  if ((${#dirs[@]} == 0)); then
-    while IFS= read -r d; do [[ -z "$d" ]] || dirs+=("$d"); done < <(active_nights)
-    ((${#dirs[@]})) || dirs=("$(night_dir "")")
-  fi
-  file="$NIGHT_ROOT/briefings/$name.md"
-  if ((new)) && [[ -f "$file" ]]; then
-    echo "briefing $file exists"
-    return 0
-  fi
+    case "$st" in failed | timeout) echo "- Log: $d/log" ;; esac
+  done
+}
+
+# vibe queue report — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
+# copied as briefing-<…>.md with note frontmatter to the directory named in
+# ~/.config/agent-queue/briefing-dir when that file exists.
+cmd_queue_report() {
+  local file copy dest
+  [[ $# -eq 0 ]] || die "usage: vibe queue report"
+  file="$QROOT/briefings/$(date +%F-%H%M).md"
   mkdir -p "${file%/*}"
-  night_report_md "${dirs[@]}" >"$file"
+  queue_report_md >"$file"
   echo "briefing: $file"
-  copy="$(head -n 1 "${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/briefing-dir" 2>/dev/null || true)"
+  copy="$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || true)"
   copy="${copy/#\~/$HOME}"
   if [[ -n "$copy" ]]; then
     dest="$copy/briefing-${file##*/}"
@@ -779,24 +915,21 @@ cmd_night_report() {
     } >"$dest"
     echo "copied: $dest"
   fi
-  if [[ -n "$agent" ]]; then
-    bash "$SELF_ROOT/$agent/vibe-night-report.sh" "$file" "$NIGHT_ROOT"
-  fi
 }
 
-cmd_night() {
+cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    start | run | status | report | gpu | follow) "cmd_night_$sub" "$@" ;;
-    *) die "usage: vibe night start|status|report — see vibe --help" ;;
+    add | run | status | report | hold | archive | pause | resume | gpu | follow) "cmd_queue_$sub" "$@" ;;
+    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume — see vibe --help" ;;
   esac
 }
 
-# --- job: recurring jobs, queued on a night by the 01:00 timer (docs/recurring-jobs.md)
+# --- job: recurring jobs, added to the queue by the 01:00 timer (docs/recurring-jobs.md)
 
 JOBS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/agent-jobs"
-JOBS_ROOT="${NIGHT_SHIFT_ROOT:-$(dirname "$SELF_ROOT")}"
+JOBS_ROOT="${VIBE_ROOT:-$(dirname "$SELF_ROOT")}"
 JOBS_CATALOGUE="${AGENT_JOBS_CATALOGUE:-$SELF_ROOT/skills/recurring-jobs/references/jobs}"
 
 # fm_get FILE KEY — `KEY: value` from FILE's frontmatter; empty when absent.
@@ -957,11 +1090,11 @@ cmd_job_list() {
   sweep_line
 }
 
-# sweep_line — the repos the agent-shift sweep covers (~/.config/night-shift/repos).
+# sweep_line — the repos the fill-queue sweep covers (~/.config/agent-queue/repos).
 sweep_line() {
-  local conf="${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/repos" line names=""
+  local conf="$QCONF/repos" line names=""
   if [[ ! -f "$conf" ]]; then
-    printf '\nagent-shift sweep: no %s\n' "$conf"
+    printf '\nfill-queue sweep: no %s\n' "$conf"
     return 0
   fi
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -971,7 +1104,7 @@ sweep_line() {
   done <"$conf"
   # shellcheck disable=SC2088  # a literal ~ for display
   case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
-  printf '\nagent-shift sweep (%s): %s\n' "$conf" "${names:-none}"
+  printf '\nfill-queue sweep (%s): %s\n' "$conf" "${names:-none}"
 }
 
 # job_open_prs REPO — "branch" per open PR a runner opened; empty without gh.
@@ -980,12 +1113,11 @@ job_open_prs() {
   (cd "$1" && gh pr list --label agent --state open --json headRefName -q '.[].headRefName' 2>/dev/null) || true
 }
 
-# job_write NIGHT-DIR ID REPO JOB — the job dir: `job` and the rendered prompt.
+# job_write DIR REPO JOB — the job dir: `job` and the rendered prompt.
 # Output drops to `report` when the repo already has 2 open job PRs and this
 # job's branch is not one of them.
 job_write() {
-  local dir="$1" id="$2" repo="$3" job="$4" d branch output prs n tpl
-  d="$dir/jobs/$id"
+  local d="$1" repo="$2" job="$3" branch output prs n tpl
   branch="jobs/$job"
   output="$(job_key "$repo" "$job" output pr)"
   if [[ "$output" == pr ]]; then
@@ -993,7 +1125,6 @@ job_write() {
     n="$(printf '%s\n' "$prs" | grep -c '^jobs/' || true)"
     if ((n >= 2)) && ! printf '%s\n' "$prs" | grep -qx "$branch"; then output=report; fi
   fi
-  mkdir -p "$d"
   printf 'repo=%s\nbranch=%s\nmodel=%s\ntimeout=%s\nrecurring=%s\noutput=%s\n' \
     "$repo" "$branch" "$(job_key "$repo" "$job" model sonnet)" "$(job_key "$repo" "$job" timeout 1h)" \
     "$job" "$output" >"$d/job"
@@ -1004,77 +1135,68 @@ job_write() {
     '<branch>' "$branch" \
     '<output>' "$output" \
     '<timeout>' "$(job_key "$repo" "$job" timeout 1h)" \
-    '<job-dir>' "$d" \
     '<catalogue-instructions>' "$(fm_body "$JOBS_CATALOGUE/$job.md")" \
     '<repo-instructions>' "$(fm_body "$repo/.agent-jobs/$job.md")" \
     '<pr-template>' "$(cat "$SELF_ROOT/templates/job-pr.md")" \
     '<report-template>' "$(cat "$SELF_ROOT/templates/job-report.md")" >"$d/prompt.md"
-  echo "queued $id → $d ($output)"
 }
 
-# job_queue AGENT DRY "REPO JOB"... — write the jobs into tonight's night: the
-# running one when there is one, else a new <date>-jobs night, started. Sets
-# QUEUED_DIR to the night used.
+# job_queue DRY "REPO JOB"... — add the jobs to the queue.
 job_queue() {
-  local agent="$1" dry="$2" dir="" item repo job n=0 id
-  shift 2
-  QUEUED_DIR=""
-  (($#)) || {
+  local dry="$1" item tmp d
+  shift
+  if (($# == 0)); then
     echo "nothing to queue"
     return 0
-  }
-  if ((dry)); then
-    for item in "$@"; do echo "would queue: $item"; done
-    return 0
   fi
-  if tmux -L night-shift has-session -t '=night' 2>/dev/null; then
-    dir="$(night_dir "")"
-    info "a night runs — adding to $dir"
-  else
-    dir="$NIGHT_ROOT/$(date +%F)-jobs"
-    mkdir -p "$dir/jobs"
-  fi
-  QUEUED_DIR="$dir"
   for item in "$@"; do
-    repo="${item% *}" job="${item##* }"
-    n=$((n + 1))
-    id="$((89 + n))-$(basename "$repo")-$job"
-    while [[ -e "$dir/jobs/$id" ]]; do id="$id-2"; done
-    job_write "$dir" "$id" "$repo" "$job"
+    if ((dry)); then
+      echo "would queue: $item"
+      continue
+    fi
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
+    job_write "$tmp" "${item% *}" "${item##* }"
+    d="$(queue_add "$tmp")"
+    echo "queued ${d##*/} ($(jget "$d/job" output))"
   done
-  if ! tmux -L night-shift has-session -t '=night' 2>/dev/null; then
-    cmd_night_start "--$agent" "$dir"
-  fi
 }
 
-# job_agent_args ARGS... — parse --<agent>, --dry, --max N; the rest into REST.
-job_agent_args() {
-  AGENT="" DRY=0 MAX=4 REST=()
+# job_args ARGS... — parse --dry, --max N; the rest into REST.
+job_args() {
+  DRY=0 MAX=4 REST=()
   while (($#)); do
     case "$1" in
       --dry) DRY=1 ;;
       --max) MAX="${2:?--max needs a number}" && shift ;;
       -h | --help) usage ;;
-      --?*)
-        [[ -z "$AGENT" ]] || die "one agent only"
-        AGENT="${1#--}"
-        ;;
+      -*) die "unknown option '$1'" ;;
       *) REST+=("$1") ;;
     esac
     shift
   done
-  [[ -n "$AGENT" ]] || die "usage: vibe job due|run --<agent> …, e.g. --claude"
-  [[ "$AGENT" != */* && -f "$SELF_ROOT/$AGENT/vibe-night.sh" ]] ||
-    die "no night jobs for '$AGENT' — $SELF_ROOT/$AGENT/vibe-night.sh is missing"
   [[ "$MAX" =~ ^[1-9][0-9]*$ ]] || die "--max wants a positive number, got '$MAX'"
 }
 
-# vibe job due --<agent> [--dry] [--max N] [REPO...] — queue every due job,
-# oldest last-run first, at most N. A stopped job lands on the night as
-# `skipped` so the morning report shows it under "Needs you".
+# job_stopped REPO JOB — add a `skipped` entry for a stopped job, unless the
+# queue already holds one, so the briefing shows it under "Needs you".
+job_stopped() {
+  local repo="$1" job="$2" d tmp
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    [[ "$(jget "$d/job" repo)" == "$repo" && "$(jget "$d/job" branch)" == "jobs/$job" &&
+    "$(jstate "$d" status)" == skipped ]] && return 0
+  done
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
+  printf 'repo=%s\nbranch=jobs/%s\nmodel=sonnet\n' "$repo" "$job" >"$tmp/job"
+  job_end "$tmp" skipped "stopped after 2 failures — rm $JOBS_STATE/$(basename "$repo")/$job/fails"
+  queue_add "$tmp" >/dev/null
+}
+
+# vibe job due [--dry] [--max N] [REPO...] — add every due job to the queue,
+# oldest last-run first, at most N. A stopped job lands as `skipped`.
 cmd_job_due() {
-  local repo job why last lines="" picked=() stopped=() d
-  job_agent_args "$@"
+  local repo job why last lines="" picked=() stopped=()
+  job_args "$@"
   while IFS= read -r repo; do
     [[ -d "$repo" ]] || continue
     while IFS= read -r job; do
@@ -1094,27 +1216,23 @@ cmd_job_due() {
     ((${#picked[@]} < MAX)) || break
     picked+=("${repo#* }")
   done < <(printf '%s' "$lines" | sort -n -k1,1)
-  job_queue "$AGENT" "$DRY" "${picked[@]+"${picked[@]}"}"
-  [[ -z "${QUEUED_DIR:-}" ]] || for job in "${stopped[@]+"${stopped[@]}"}"; do
-    d="$QUEUED_DIR/jobs/99-$(basename "${job% *}")-${job##* }"
-    [[ ! -e "$d" ]] || continue
-    mkdir -p "$d"
-    printf 'repo=%s\nbranch=jobs/%s\nmodel=sonnet\n' "${job% *}" "${job##* }" >"$d/job"
-    night_end "$d" skipped "stopped after 2 failures — rm $JOBS_STATE/$(basename "${job% *}")/${job##* }/fails"
+  job_queue "$DRY" "${picked[@]+"${picked[@]}"}"
+  for job in "${stopped[@]+"${stopped[@]}"}"; do
+    if ((!DRY)); then job_stopped "${job% *}" "${job##* }"; fi
+    echo "stopped: $job (2 failures)"
   done
-  for job in "${stopped[@]+"${stopped[@]}"}"; do echo "stopped: $job (2 failures)"; done
 }
 
-# vibe job run --<agent> REPO JOB — queue one job now, due or not.
+# vibe job run REPO JOB — add one job to the queue now, due or not.
 cmd_job_run() {
   local repo why
-  job_agent_args "$@"
-  ((${#REST[@]} == 2)) || die "usage: vibe job run --<agent> <repo> <job>"
+  job_args "$@"
+  ((${#REST[@]} == 2)) || die "usage: vibe job run <repo> <job>"
   repo="$(job_repo_path "${REST[0]}")"
   [[ -d "$repo" ]] || die "no directory $repo"
   why="$(job_check "$repo" "${REST[1]}")"
   [[ "$why" == ok ]] || die "${REST[1]} in $(basename "$repo"): $why"
-  job_queue "$AGENT" "$DRY" "$repo ${REST[1]}"
+  job_queue "$DRY" "$repo ${REST[1]}"
 }
 
 # vibe job add REPO JOB — render templates/AGENT_JOB.md to <repo>/.agent-jobs/<job>.md.
@@ -1141,9 +1259,9 @@ cmd_job() {
 }
 
 case "${1:-}" in
-  night)
+  queue)
     shift
-    cmd_night "$@"
+    cmd_queue "$@"
     ;;
   job)
     shift

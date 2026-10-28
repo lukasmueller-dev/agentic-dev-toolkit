@@ -61,10 +61,10 @@ browser. Setup and traps: `~/github/agentic-dev-toolkit/docs/remote-sessions.md`
   clean. The `worktree-cleanup` skill removes the merged ones that are left.
 - The main checkout stays on the default branch: never commit there; work in
   a worktree (`vibe start <task>`).
-- The day: the `check-in` skill on the night's briefing at 08:00 starts a day
-  shift (the night shift, until 12:30); deep work without sessions until 12:00;
-  the day shift's briefing at 13:00; sessions 13:00–18:00; the `shutdown`
-  skill hands off every worktree and starts the night shift.
+- The day: one agent queue runs all the time; heavy jobs start only at night
+  (18:00–07:00). The `check-in` skill (morning, after lunch, any time) reviews
+  finished jobs and refills the queue; the `shutdown` skill hands off every
+  worktree and fills the queue for the night.
 - The toolkit is installed from `~/github/agentic-dev-toolkit` by symlink, so
   `vibe update-toolkit` updates the installed tools in place (pull, install,
   doctor).
@@ -111,7 +111,7 @@ under a minute. Shape: `~/github/agentic-dev-toolkit/templates/job-pr.md`
   At most 12 lines above `<details>`; the rest folds.
 - Job report: at most 25 lines. `Needs you` first; one line per finding.
 - PR title: `<type>(<scope>): <what>`, ≤60 characters. A job's PR carries the
-  job as scope: `agent-shift(01-a): …`, `job(codebase-health): …`.
+  job as scope: `agent(<branch>): …`, `job(codebase-health): …`.
 - Sentences: ≤20 words, active voice, present tense, one instruction each,
   no `-ing` verb forms, the same word for the same thing.
 

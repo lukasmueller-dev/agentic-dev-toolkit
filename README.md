@@ -16,8 +16,8 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `night` runs unattended jobs; `job` queues recurring ones. [Docs](docs/remote-sessions.md), [night](docs/night-shift.md), [jobs](docs/recurring-jobs.md) |
-| [`bin/gpu-queue`](bin/gpu-queue) | One GPU job at a time across all repos; night-shift queues its runs here. [Docs](docs/night-shift.md) |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `queue` runs unattended agent jobs; `job` queues recurring ones. [Docs](docs/remote-sessions.md), [night](docs/night-shift.md), [jobs](docs/recurring-jobs.md) |
+| [`bin/gpu-queue`](bin/gpu-queue) | One GPU job at a time across all repos; the agent queue queues its runs here. [Docs](docs/agent-queue.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
 | [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |
@@ -41,10 +41,11 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
-| [`agent-shift`](skills/agent-shift/) | Plans unattended overnight jobs across the active repos, starts them after you approve; `day`: a shorter day shift |
-| [`check-in`](skills/check-in/) | Morning: one action per briefing row that needs you — merge, requeue, day session, close; then plans the day shift |
-| [`shutdown`](skills/shutdown/) | Evening: pushes and hands off every worktree, then runs `agent-shift` |
-| [`recurring-jobs`](skills/recurring-jobs/) | Lists, installs and checks the jobs the 01:00 timer queues on the night runner |
+| [`fill-queue`](skills/fill-queue/) | Sweeps the active repos for unattended work and adds it to the agent queue after you approve |
+| [`review-jobs`](skills/review-jobs/) | Reviews the queue's finished jobs: merge, requeue, hold, close, after you approve each repo |
+| [`check-in`](skills/check-in/) | Any time: `review-jobs`, then `fill-queue` |
+| [`shutdown`](skills/shutdown/) | Evening: pushes and hands off every worktree, then runs `fill-queue` |
+| [`recurring-jobs`](skills/recurring-jobs/) | Lists, installs and checks the jobs the 01:00 timer adds to the agent queue |
 | [`worktree-cleanup`](skills/worktree-cleanup/) | Removes worktrees (and their branches) whose work has landed, after you approve the list |
 
 Vendored: `grilling`, `grill-me`, and four academic-writing skills
@@ -81,7 +82,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
   · [skill quality](docs/skill-quality.md) · [skill-lint](docs/skill-lint.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
-  · [research skills](docs/research-skills.md) · [night shift](docs/night-shift.md)
+  · [research skills](docs/research-skills.md) · [agent queue](docs/agent-queue.md)
   · [recurring jobs](docs/recurring-jobs.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 

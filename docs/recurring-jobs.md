@@ -1,13 +1,13 @@
 # Recurring jobs
 
-A job is a prompt plus a schedule. At 01:00 `vibe job due` queues every due
-job on the night runner (`docs/night-shift.md`); the 07:00 report shows the
+A job is a prompt plus a schedule. At 01:00 `vibe job due` adds every due
+job to the agent queue (`docs/agent-queue.md`); `/review-jobs` shows the
 result. Skill: [`skills/recurring-jobs/`](../skills/recurring-jobs/SKILL.md).
 
 ## Requirements
 
-- Everything `docs/night-shift.md` needs: `tmux`, `gh`, a sandbox that starts.
-- Repos sit under `~/github` (`NIGHT_SHIFT_ROOT`). A repo with `.agent-jobs/*.md` is opted in; `~/.config/night-shift/repos` is the agent-shift list only.
+- The agent queue running (`docs/agent-queue.md`).
+- Repos sit under `~/github` (`VIBE_ROOT`). A repo with `.agent-jobs/*.md` is opted in; `~/.config/agent-queue/repos` is the fill-queue sweep only.
 
 ## 1. Opt a repo in
 
@@ -32,9 +32,8 @@ systemctl --user enable --now agent-jobs.timer
 ```bash
 vibe job list                            # repo × job: schedule, last run, due / stopped / invalid
 vibe job list --all                      # also the catalogue jobs each repo has not opted into
-vibe job due --claude --dry              # what the next 01:00 run queues
-vibe job run --claude <repo> <job>       # one job now; then: vibe night status
-vibe night report                        # today's briefing over every active night (docs/night-shift.md §3)
+vibe job due --dry                       # what the next 01:00 run queues
+vibe job run <repo> <job>                # one job now; then: vibe queue status
 systemctl --user list-timers agent-jobs.timer
 ```
 
@@ -57,22 +56,22 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 | `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout`, then the task |
 | `<repo>/.agent-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
 | `~/.local/state/agent-jobs/<repo>/<job>/last-run`, `fails` | epoch of the last `done`; failures in a row |
-| `~/.local/state/night-shift/<date>-jobs/jobs/9N-<repo>-<job>/` | the night the dispatcher made; a running night gets the dirs instead |
+| `~/.local/state/agent-queue/queue/<id>/` | the queued job (`docs/agent-queue.md`) |
 | `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` |
 
 Rules the dispatcher keeps:
 
 - Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
-- At most `--max` 4 jobs a night, oldest `last-run` first, ids `90-…` so they queue after the night's own jobs.
-- `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands on the night as `skipped` under "Needs you".
+- At most `--max` 4 jobs a run, oldest `last-run` first.
+- `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
-- A job's `timeout` replaces the night's `--timeout` for that job.
+- A job's `timeout` over the queue's `heavy` (2h) makes it heavy: it starts only in the night window.
 
 ## What breaks it
 
 - `vibe job list` says `invalid: no schedule` → the job is not in the catalogue and the repo file sets no `schedule`.
 - `stopped: 2 failures` → read the last job's `log`, then `rm ~/.local/state/agent-jobs/<repo>/<job>/fails`.
 - Every job drops to `report` → two job PRs are open in that repo; merge or close one.
-- The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --claude --dry` lists nothing.
+- The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `agent-queue.service` is not running.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.

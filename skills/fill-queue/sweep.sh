@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 #
-# sweep.sh [<repo>...] — the agent-shift planner's input, per repo in rank
+# sweep.sh [<repo>...] — the fill-queue planner's input, per repo in rank
 # order: goal, open roadmap items, handoff next actions, open PRs. Read-only.
+# A worktree whose branch has a job in the agent queue is marked QUEUED.
 #
 # Repos: the arguments, else one per line in
-# ${XDG_CONFIG_HOME:-~/.config}/night-shift/repos (# comments, highest rank
-# first). A name without a slash resolves under NIGHT_SHIFT_ROOT (default: the
+# ${XDG_CONFIG_HOME:-~/.config}/agent-queue/repos (# comments, highest rank
+# first). A name without a slash resolves under VIBE_ROOT (default: the
 # directory that holds the toolkit checkout).
 set -euo pipefail
 
@@ -21,12 +22,25 @@ script_dir() {
 
 SKILL_DIR="$(script_dir)"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
-LIB_PROG=agent-shift
+LIB_PROG=fill-queue
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
 . "$SKILL_DIR/../_lib/lib.sh"
 
-ROOT="${NIGHT_SHIFT_ROOT:-$(dirname "$TOOLKIT_HOME")}"
-CONF="${XDG_CONFIG_HOME:-$HOME/.config}/night-shift/repos"
+ROOT="${VIBE_ROOT:-$(dirname "$TOOLKIT_HOME")}"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/agent-queue/repos"
+QDIR="${XDG_STATE_HOME:-$HOME/.local/state}/agent-queue/queue"
+
+# queued — " <repo name>#<branch>" per job in the queue that has not ended.
+queued() {
+  local d st
+  for d in "$QDIR"/*/; do
+    [[ -f "$d/job" ]] || continue
+    st="$(head -n 1 "$d/status" 2>/dev/null || true)"
+    case "$st" in "" | queued | running | gpu) ;; *) continue ;; esac
+    printf ' %s#%s' "$(basename "$(sed -n 's/^repo=//p' "$d/job")")" "$(sed -n 's/^branch=//p' "$d/job")"
+  done
+}
+QUEUED="$(queued) "
 
 # roadmap FILE — headings and open items, an item joined to one line.
 roadmap() {
@@ -60,7 +74,7 @@ sweep_repo() {
       "branch "*) br="${line#branch refs/heads/}" ;;
       "")
         if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
-          echo "  $wt [${br:-detached}]$([[ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ]] || echo ' DIRTY')"
+          echo "  $wt [${br:-detached}]$([[ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ]] || echo ' DIRTY')$([[ "$QUEUED" != *" $(basename "$dir")#$br "* ]] || echo ' QUEUED')"
           echo "   next action:"
           md_section "$wt/HANDOFF.md" "Next action" "    "
           echo "   blockers:"
