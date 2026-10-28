@@ -38,7 +38,7 @@ One always-on job queue replaces the day and night shifts. Two skills, run at an
 ## Open questions (grill before M1)
 
 - Mark reviewed: move the job dir to `archive/`, or a `reviewed` state file?
-- The briefing copy to the vault (`briefing-dir`): on every status, on `review` only, or dropped?
+- The briefing copy to the vault (`briefing-dir`): on every status, on `/review-jobs` only, or dropped?
 - State dir: keep `~/.local/state/night-shift/`, or a new `agent-queue/` with the old nights left as they are?
 - Window and slots: one config file, or flags on the service?
 
