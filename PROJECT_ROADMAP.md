@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-10-27 · turing_
+_Last updated: 2026-10-28 · turing_
 
 ## Items
 
@@ -21,10 +21,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
-- [ ] **`vibe job triage`** — a runner script, no agent: merges the base into
-      every conflicted `agent`-labelled branch and pushes; red CI and unanswered
-      review comments become briefing lines. Done when `tests/vibe-jobs.bats`
-      covers both paths and the 01:00 service runs it before `vibe job due`.
 - [ ] **Catalogue job `dependency-update`** — `uv` first, minor and patch
       only, one PR per repo per week when the suite is green, majors in the
       report. Done when a repo with an outdated lock gets one draft PR with a
