@@ -1,6 +1,6 @@
 ---
 name: check-in
-description: "Morning check-in on the night's agent jobs: reads today's briefing, proposes one action per job that needs a human or has a PR ready — merge, answer and requeue, take into a daytime session, close — carries out only the actions the user approves, then plans the day shift: the night shift, stopped by 12:30. Use when the user says 'check in', 'morning check-in', 'go through the briefing', 'what did the night do', or starts the day and wants the night's results triaged."
+description: "Morning check-in on the night's agent jobs: reads today's briefing, proposes one action per job that needs a human or has a PR ready — merge, answer and requeue, take into a daytime session, close — shows the whole table grouped by repo, then walks the repos one at a time and carries out only the actions the user approves, then plans the day shift: the night shift, stopped by 12:30. Use when the user says 'check in', 'morning check-in', 'go through the briefing', 'what did the night do', or starts the day and wants the night's results triaged."
 disable-model-invocation: true
 ---
 
@@ -12,7 +12,7 @@ shift layout: `docs/night-shift.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
-- **Never merge, close, comment or push without approval of the action table.**
+- **Never merge, close, comment or push without approval of that repo's rows.**
 - **Never merge a PR whose checks fail**, or one the user has not seen the TL;DR of.
 - **Never merge a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
@@ -40,14 +40,23 @@ One action per row:
 | `close` | wrong direction or superseded | `gh pr close` with a one-line reason |
 | `log` | `failed`, `timeout` | read the log tail; propose one of the actions above with the cause |
 
-Show one table: `# · job · status · context · TL;DR · action · why`. For a `requeue`
-row, ask the question the job is blocked on. **Stop and wait for approval.**
-Apply every change the user asks for, then show the table again.
+Show the whole action table first, grouped by repo like the briefing: one
+`### <repo>` heading per repo, then its rows as `# · job · status · context ·
+TL;DR · action · why`. Do not ask for approval yet.
 
-## Phase 3 — Carry out
+## Phase 3 — Walk each repo
 
-Work the approved rows top to bottom. Report each one as one line. A failed
-command stops that row only: report the error and go on.
+Take the repos one at a time, in table order. For each repo:
+
+1. Show its rows again with the full context of each: the `Context` line,
+   the TL;DR, the Verify line of a PR, and the blocker of a blocked job.
+2. For a `requeue` row, ask the question the job is blocked on.
+3. **Stop and wait for approval of this repo's rows.** Apply every change the
+   user asks for, then show the rows again.
+4. Carry out the approved rows top to bottom. Report each one as one line. A
+   failed command stops that row only: report the error and go on.
+
+Then go to the next repo.
 
 For `requeue`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
@@ -69,6 +78,6 @@ part). One line each: repo · task · first step.
 
 ## Done
 
-Done when every approved row is carried out, the day shift is started or
+Done when every repo is walked and its approved rows are carried out, the day shift is started or
 declined, and the day plan is shown. Report in at most 6 lines: merged,
 requeued, closed, day shift jobs, the day plan count, and `Decisions/risks:`.

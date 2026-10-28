@@ -77,7 +77,7 @@ systemctl --user list-timers night-shift-report.timer day-shift-report.timer
 | `worktree`, `base`, `log`, `pr` | runner | worktree path, base branch, agent stream-json, PR URL |
 | `result`, `pr.md`, `report.md` | agent | `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings outside the diff (`templates/job-report.md`) |
 | `gpu-job` | `vibe night gpu` | the `gpu-queue` job id |
-| `briefings/<date>.md`, `<date>-day.md` (under `night-shift/`) | `vibe night report` | the morning and the 13:00 briefing: counts, rows ranked Needs you → PR ready → Done with context, TL;DR and links, next action of each unfinished job |
+| `briefings/<date>.md`, `<date>-day.md` (under `night-shift/`) | `vibe night report` | the morning and the 13:00 briefing: counts, one section per repo with rows ranked Needs you → PR ready → Done with context, TL;DR and links, next action of each unfinished job |
 
 Runner: at most `--jobs` (4) agents at once, none started after `--until`
 (06:30), each stopped after `--timeout` (3h). It pushes the branch and opens a

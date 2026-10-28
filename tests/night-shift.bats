@@ -253,8 +253,9 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   [ "$status" -eq 0 ]
   run cat "$XDG_STATE_HOME/night-shift/briefings/$(date +%F).md"
   [[ "$output" == *"1 done · 1 blocked · 1 failed — nights: 2026-10-26"* ]] || false
-  [[ "$output" == *"## Needs you"*"| 2026-10-26/02-b | blocked |  | blocked: needs a decision |  |"*"| 2026-10-26/03-c | failed | Task c needs a / fix. |"*"| [report](file://$NIGHT/jobs/03-c/report.md) |"*"## PR ready"*"## Done, nothing to read"* ]] || false
-  [[ "$output" == *"## PR ready"*"| 2026-10-26/01-a | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"*"## Done, nothing to read"*"none"* ]] || false
+  [[ "$output" == *"## proj"*"### Needs you"*"| 2026-10-26/02-b | blocked |  | blocked: needs a decision |  |"*"| 2026-10-26/03-c | failed | Task c needs a / fix. |"*"| [report](file://$NIGHT/jobs/03-c/report.md) |"*"### PR ready"* ]] || false
+  [[ "$output" == *"### PR ready"*"| 2026-10-26/01-a | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"* ]] || false
+  [[ "$output" != *"### Done, nothing to read"* ]] || false
   [[ "$output" == *"## 2026-10-26/02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
   [[ "$output" == *"## 2026-10-26/03-c — failed"*"- Report: $NIGHT/jobs/03-c/report.md"*"- Log: $NIGHT/jobs/03-c/log"* ]] || false
   [[ "$output" != *"## 2026-10-26/01-a"* ]] || false
@@ -267,7 +268,7 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   "$VIBE" night run --claude "$NIGHT" --until "$(soon)" >/dev/null 2>&1
   other="$XDG_STATE_HOME/night-shift/2026-10-26-jobs"
   mkdir -p "$other/jobs/90-proj-x" "$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old"
-  printf 'repo=%s\nbranch=x\nmodel=sonnet\n' "$r" >"$other/jobs/90-proj-x/job"
+  printf 'repo=%s\nbranch=x\nmodel=sonnet\n' "$BATS_TEST_TMPDIR/alpha" >"$other/jobs/90-proj-x/job"
   echo blocked >"$other/jobs/90-proj-x/status"
   printf 'repo=%s\nbranch=old\nmodel=sonnet\n' "$r" >"$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old/job"
   touch -t 202601010000 "$XDG_STATE_HOME/night-shift/2026-01-01/jobs/01-old/job"
@@ -280,7 +281,7 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   [ "$(head -n 4 "$BATS_TEST_TMPDIR/vault/_inbox/briefings/briefing-$(date +%F).md")" = "$(printf -- '---\ncreated: %s\ntouched_by_ai: true\n---' "$(date +%F)")" ]
   run cat "$BATS_TEST_TMPDIR/vault/_inbox/briefings/briefing-$(date +%F).md"
   [[ "$output" == *"1 done · 1 blocked — nights: 2026-10-26, 2026-10-26-jobs"* ]] || false
-  [[ "$output" == *"| 2026-10-26-jobs/90-proj-x | blocked |"* ]] || false
+  [[ "$output" == *"## alpha"*"| 2026-10-26-jobs/90-proj-x | blocked |"*"## proj"*"| 2026-10-26/01-a | done |"* ]] || false
   [[ "$output" != *"01-old"* ]] || false
 }
 
