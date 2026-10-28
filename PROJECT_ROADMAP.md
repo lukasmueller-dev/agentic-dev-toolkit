@@ -52,7 +52,3 @@ staged straight from it. Order matters within a track; tracks are independent.
       merged, jobs run, blockers open, per repo. Done when
       `vibe queue report --week` renders it from the week's briefings and PRs.
 
-- [ ] **sota-digest stale lines** — rewrite `PROJECT_STATUS.md` "runs on
-      demand only; no cron" and `docs/sota-watch.md` "Never commits" to the
-      recurring-job behavior. Done when `grep -n 'no cron' PROJECT_STATUS.md`
-      and `grep -n 'Never commits' docs/sota-watch.md` find nothing.
