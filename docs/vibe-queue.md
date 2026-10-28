@@ -1,6 +1,6 @@
-# Agent queue
+# Vibe queue
 
-One queue, always on. Skills and timers add jobs; `agent-queue.service` runs
+One queue, always on. Skills and timers add jobs; `vibe-queue.service` runs
 each as a headless agent in its own worktree and opens a draft PR. You review
 and refill it whenever you like.
 
@@ -10,7 +10,7 @@ and refill it whenever you like.
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row merge, requeue, hold, close, ack; archives what it carried out |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
-| 01:00 timer | adds due recurring jobs: [`recurring-jobs.md`](recurring-jobs.md) |
+| 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |
 
 ## Requirements
 
@@ -22,12 +22,12 @@ and refill it whenever you like.
 ## 1. Configure
 
 ```bash
-mkdir -p ~/.config/agent-queue
-printf '%s\n' thesis pncbf humanoid_bridge >~/.config/agent-queue/repos   # the sweep, highest rank first
-echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/agent-queue/briefing-dir   # optional: briefing copies
+mkdir -p ~/.config/vibe
+printf '%s\n' thesis pncbf humanoid_bridge >~/.config/vibe/repos   # the sweep, highest rank first
+echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # optional: briefing copies
 ```
 
-`~/.config/agent-queue/config`, optional — the defaults:
+`~/.config/vibe/queue.conf`, optional — the defaults:
 
 ```ini
 night=18:00-07:00
@@ -41,15 +41,15 @@ heavy=2h
 Server machine only (`~/.config/vibe/role` holds `server`).
 
 ```bash
-systemctl --user link ~/.claude/systemd/agent-queue.service ~/.claude/systemd/gpu-queue.service
-systemctl --user enable --now agent-queue.service gpu-queue.service
+systemctl --user link ~/.claude/systemd/vibe-queue.service ~/.claude/systemd/gpu-queue.service
+systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
 ## 3. Verify
 
 ```bash
 vibe queue status                                   # header, then one line per job by repo
-journalctl --user -u agent-queue -f                 # the runner's log
+journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
 
@@ -65,7 +65,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 
 ## Layout
 
-`~/.local/state/agent-queue/`
+`~/.local/state/vibe/`
 
 | Path | Holds |
 | --- | --- |
@@ -78,8 +78,8 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", per repo Needs you → PR ready → Done, next actions |
 | `paused` | `vibe queue pause` |
 
-The job finds its dir in `$AGENT_JOB_DIR`. Job settings:
-[`claude/agent-job-settings.json`](../claude/agent-job-settings.json) — no
+The job finds its dir in `$VIBE_JOB_DIR`. Job settings:
+[`claude/vibe-job-settings.json`](../claude/vibe-job-settings.json) — no
 unsandboxed retry, no push to `main`/`master`, no `gh pr merge`.
 
 GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in

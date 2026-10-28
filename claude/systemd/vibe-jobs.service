@@ -1,9 +1,9 @@
-# agent-jobs — adds every due recurring job to the agent queue at 01:00
-# (timer: agent-jobs.timer). Setup: docs/recurring-jobs.md. Skipped unless
+# vibe-jobs — adds every due recurring job to the vibe queue at 01:00
+# (timer: vibe-jobs.timer). Setup: docs/vibe-jobs.md. Skipped unless
 # ~/.config/vibe/role holds 'server'.
 
 [Unit]
-Description=agent-jobs dispatcher
+Description=vibe-jobs dispatcher
 
 [Service]
 Type=oneshot

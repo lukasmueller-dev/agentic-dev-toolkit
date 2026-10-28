@@ -1,5 +1,5 @@
-# agent-queue — the runner: starts queued agent jobs, one worktree each.
-# Setup: docs/agent-queue.md. Skipped unless ~/.config/vibe/role holds 'server'.
+# vibe-queue — the runner: starts queued agent jobs, one worktree each.
+# Setup: docs/vibe-queue.md. Skipped unless ~/.config/vibe/role holds 'server'.
 
 [Unit]
 Description=agent job queue runner

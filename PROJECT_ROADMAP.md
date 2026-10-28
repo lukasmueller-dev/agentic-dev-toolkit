@@ -19,11 +19,11 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
-### Recurring jobs (design: PRs #99–#102, `docs/recurring-jobs.md`)
+### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
 - [ ] **`vibe job triage`** — a runner script, no agent: merges the base into
       every conflicted `agent`-labelled branch and pushes; red CI and unanswered
-      review comments become briefing lines. Done when `tests/agent-jobs.bats`
+      review comments become briefing lines. Done when `tests/vibe-jobs.bats`
       covers both paths and the 01:00 service runs it before `vibe job due`.
 - [ ] **Catalogue job `dependency-update`** — `uv` first, minor and patch
       only, one PR per repo per week when the suite is green, majors in the

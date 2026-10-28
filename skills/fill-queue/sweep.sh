@@ -2,12 +2,12 @@
 #
 # sweep.sh [<repo>...] — the fill-queue planner's input, per repo in rank
 # order: goal, open roadmap items, handoff next actions, open PRs. Read-only.
-# A worktree whose branch has a job in the agent queue is marked QUEUED.
+# A worktree whose branch has a job in the vibe queue is marked QUEUED.
 # Goal and roadmap come from origin's default branch after a fetch, not from
 # the checkout, so items a merged PR deleted do not come back.
 #
 # Repos: the arguments, else one per line in
-# ${XDG_CONFIG_HOME:-~/.config}/agent-queue/repos (# comments, highest rank
+# ${XDG_CONFIG_HOME:-~/.config}/vibe/repos (# comments, highest rank
 # first). A name without a slash resolves under VIBE_ROOT (default: the
 # directory that holds the toolkit checkout).
 set -euo pipefail
@@ -29,8 +29,8 @@ LIB_PROG=fill-queue
 . "$SKILL_DIR/../_lib/lib.sh"
 
 ROOT="${VIBE_ROOT:-$(dirname "$TOOLKIT_HOME")}"
-CONF="${XDG_CONFIG_HOME:-$HOME/.config}/agent-queue/repos"
-QDIR="${XDG_STATE_HOME:-$HOME/.local/state}/agent-queue/queue"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/vibe/repos"
+QDIR="${XDG_STATE_HOME:-$HOME/.local/state}/vibe/queue"
 
 # queued — " <repo name>#<branch>" per job in the queue that has not ended.
 queued() {

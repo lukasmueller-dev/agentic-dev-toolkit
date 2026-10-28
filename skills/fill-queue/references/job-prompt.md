@@ -11,7 +11,7 @@ You run unattended. Nobody reads a question until a human reviews the result.
 - **Source:** <one of: `PROJECT_ROADMAP.md:<line>` · `HANDOFF.md` next action · new>
 - **Kind:** <code | gpu>
 - **Repo / branch:** <repo> · `<branch>` — this worktree is the only place you change
-- **Job dir:** `$AGENT_JOB_DIR` (the environment variable)
+- **Job dir:** `$VIBE_JOB_DIR` (the environment variable)
 - **Time limit:** <timeout>; stop as blocked well before it
 
 ## Rules
