@@ -32,7 +32,12 @@ EOF
 echo "\$*" >>"$STUBS/gh.log"
 case "\$1 \$2 \$3" in
   "pr create "*) echo "https://example.com/pull/1" ;;
-  "pr list --label") [ ! -f "$STUBS/cap" ] || cat "$STUBS/cap" ;;
+  "pr list --label")
+    if [ -f "$STUBS/prs.json" ]; then
+      while [ \$# -gt 1 ]; do [ "\$1" != -q ] || q="\$2"; shift; done
+      jq -r "\$q" "$STUBS/prs.json"
+    elif [ -f "$STUBS/cap" ]; then cat "$STUBS/cap"; fi
+    ;;
 esac
 EOF
   chmod +x "$STUBS/claude" "$STUBS/gh"
@@ -233,9 +238,80 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"not in the catalogue"* ]] || false
 }
 
+# pr NUMBER HEAD MERGEABLE [CHECKS] [COMMENTS] [COMMITS] — one PR object for prs.json.
+pr() {
+  printf '{"number":%s,"url":"https://example.com/pull/%s","headRefName":"%s","baseRefName":"main","mergeable":"%s","statusCheckRollup":[%s],"comments":[%s],"reviews":[],"commits":[%s]}' \
+    "$1" "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-}"
+}
+# branch_off REPO BRANCH FILE TEXT — commit FILE on a new BRANCH off main, push it.
+branch_off() {
+  git -C "$1" checkout -q -b "$2" main
+  echo "$4" >"$1/$3" && git -C "$1" add "$3" && git -C "$1" commit -q -m "feat: $3"
+  git -C "$1" push -q origin "$2"
+  git -C "$1" checkout -q main
+}
+
+@test "job triage: merges the base into a conflicted agent PR and pushes; real conflicts, running jobs and unpushed work stay" {
+  local r
+  r="$(make_repo proj)"
+  branch_off "$r" jobs/clean a.txt a
+  branch_off "$r" jobs/clash f.txt branch
+  branch_off "$r" jobs/local c.txt c
+  branch_off "$r" jobs/busy b.txt b
+  mkdir -p "$Q/1-busy" && printf 'repo=%s\nbranch=jobs/busy\n' "$r" >"$Q/1-busy/job" && echo running >"$Q/1-busy/status"
+  echo local >"$r/l.txt" && git -C "$r" checkout -q jobs/local && git -C "$r" add l.txt && git -C "$r" commit -q -m "wip" && git -C "$r" checkout -q main
+  echo main >"$r/f.txt" && git -C "$r" add f.txt && git -C "$r" commit -q -m "feat: main" && git -C "$r" push -q origin main
+  printf '[%s,%s,%s,%s,%s]' "$(pr 1 jobs/clean CONFLICTING)" "$(pr 2 jobs/clash CONFLICTING)" \
+    "$(pr 3 jobs/local CONFLICTING)" "$(pr 4 jobs/fine MERGEABLE)" "$(pr 5 jobs/busy CONFLICTING)" >"$STUBS/prs.json"
+  run "$VIBE" job triage
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"- proj [#1](https://example.com/pull/1) \`jobs/clean\`: merged main and pushed"* ]] || false
+  [[ "$output" == *"[#2]"*"conflicts with main in f.txt: needs a hand merge"* ]] || false
+  [[ "$output" == *"[#3]"*"not merged: local commits not pushed"* ]] || false
+  [[ "$output" == *"[#5]"*"not merged: a job runs on it"* ]] || false
+  [[ "$output" != *"#4"* ]] || false
+  git -C "$r" fetch -q origin
+  git -C "$r" merge-base --is-ancestor origin/main origin/jobs/clean
+  [ "$(git -C "$r" log -1 --format=%s origin/jobs/clean)" = "Merge branch 'main' into jobs/clean" ]
+  run git -C "$r" merge-base --is-ancestor origin/main origin/jobs/clash
+  [ "$status" -ne 0 ]
+  run git -C "$r" merge-base --is-ancestor origin/main origin/jobs/local
+  [ "$status" -ne 0 ]
+  [ "$(git -C "$r" worktree list | wc -l)" -eq 1 ]
+  "$VIBE" queue report >/dev/null
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"## Triage — "*"merged main and pushed"*"needs a hand merge"* ]] || false
+}
+
+@test "job triage: red CI and review comments since the last commit become briefing lines" {
+  local r checks commits
+  r="$(make_repo proj)"
+  checks='{"name":"test","conclusion":"FAILURE"},{"name":"lint","conclusion":"SUCCESS"},{"context":"ci/old","state":"ERROR"},{"name":"slow","conclusion":null,"status":"IN_PROGRESS"}'
+  commits='{"messageHeadline":"feat: x","committedDate":"2026-10-01T00:00:00Z"},{"messageHeadline":"Merge branch '"'main'"' into jobs/a","committedDate":"2026-10-05T00:00:00Z"}'
+  printf '[%s,%s]' "$(pr 1 jobs/a MERGEABLE "$checks" '{"createdAt":"2026-09-30T00:00:00Z"},{"createdAt":"2026-10-02T00:00:00Z"}' "$commits")" \
+    "$(pr 2 jobs/b MERGEABLE '{"name":"test","conclusion":"SUCCESS"}' '{"createdAt":"2026-09-30T00:00:00Z"}' "$commits")" >"$STUBS/prs.json"
+  run "$VIBE" job triage "$r"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"[#1]"*"\`jobs/a\`: CI red: test, ci/old"* ]] || false
+  [[ "$output" == *"[#1]"*"\`jobs/a\`: unanswered review comments: 1"* ]] || false
+  [[ "$output" != *"#2"* ]] || false
+  "$VIBE" queue report >/dev/null
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"## Triage — "*"CI red: test, ci/old"* ]] || false
+  echo '[]' >"$STUBS/prs.json"
+  run "$VIBE" job triage "$r"
+  [ "$output" = "triage: nothing to report" ]
+  [ ! -f "$XDG_STATE_HOME/vibe/triage.md" ]
+  PATH="$(path_without gh)" run "$VIBE" job triage "$r"
+  [ "$output" = "no gh — nothing to triage" ]
+}
+
 @test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent" {
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
   grep -q '^ExecStart=.*vibe job due$' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
+  [ "$(grep '^ExecStart=' "$REPO_ROOT/claude/systemd/vibe-jobs.service" | head -n 1)" = 'ExecStart=-%h/bin/vibe job triage' ]
   grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
   run grep -c Persistent "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
   [ "$output" = 0 ]

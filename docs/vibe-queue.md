@@ -79,7 +79,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", per repo Needs you → PR ready → Done, next actions |
+| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 

@@ -1,6 +1,6 @@
-# vibe-jobs — adds every due recurring job to the vibe queue at 01:00
-# (timer: vibe-jobs.timer). Setup: docs/vibe-jobs.md. Skipped unless
-# ~/.config/vibe/role holds 'server'.
+# vibe-jobs — triages the agent PRs, then adds every due recurring job to the
+# vibe queue at 01:00 (timer: vibe-jobs.timer). Setup: docs/vibe-jobs.md.
+# Skipped unless ~/.config/vibe/role holds 'server'.
 
 [Unit]
 Description=vibe-jobs dispatcher
@@ -9,4 +9,6 @@ Description=vibe-jobs dispatcher
 Type=oneshot
 Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
 ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+# '-': a failed triage does not stop the dispatcher.
+ExecStart=-%h/bin/vibe job triage
 ExecStart=%h/bin/vibe job due

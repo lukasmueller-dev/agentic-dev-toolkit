@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
+  the base into conflicted `agent` PRs (no agent) and writes red CI and new
+  review comments as briefing lines; then `vibe job due`. Design: PR body.
 - 2026-10-28: **the queue runs only on the server**: a client's `role` is
   `client <host>`; `vibe queue status|report` and `vibe job list` run there
   over ssh, every other `queue`/`job` command stops. Design: PR body.

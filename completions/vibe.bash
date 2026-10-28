@@ -65,7 +65,7 @@ _vibe() {
       ;;
     job)
       if [[ "$COMP_CWORD" -eq 2 ]]; then
-        _vibe_reply "list due run add" "$cur"
+        _vibe_reply "list due run add triage" "$cur"
       else
         _vibe_reply "--all --dry --max" "$cur"
       fi
