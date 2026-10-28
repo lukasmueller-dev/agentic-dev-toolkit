@@ -360,7 +360,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {
   local r
-  run "$VIBE" queue gpu -- true
+  run env -u VIBE_JOB_DIR "$VIBE" queue gpu -- true
   [ "$status" -ne 0 ]
   [[ "$output" == *"inside a queue job"* ]] || false
   r="$(make_repo proj)"
