@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# sweep.sh [<repo>...] — the night-shift planner's input, per repo in rank
+# sweep.sh [<repo>...] — the agent-shift planner's input, per repo in rank
 # order: goal, open roadmap items, handoff next actions, open PRs. Read-only.
 #
 # Repos: the arguments, else one per line in
@@ -21,7 +21,7 @@ script_dir() {
 
 SKILL_DIR="$(script_dir)"
 # shellcheck disable=SC2034  # read by the lib's die/info message prefix
-LIB_PROG=night-shift
+LIB_PROG=agent-shift
 # shellcheck disable=SC1091  # path only exists at runtime, resolved above
 . "$SKILL_DIR/../_lib/lib.sh"
 

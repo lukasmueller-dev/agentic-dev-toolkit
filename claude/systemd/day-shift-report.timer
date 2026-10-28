@@ -1,0 +1,11 @@
+# day-shift-report.timer — the day shift's report at 13:00, or at boot if missed.
+
+[Unit]
+Description=day-shift report at 13:00
+
+[Timer]
+OnCalendar=*-*-* 13:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

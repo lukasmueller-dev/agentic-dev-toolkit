@@ -57,7 +57,7 @@ _vibe() {
       if [[ "$COMP_CWORD" -eq 2 ]]; then
         _vibe_reply "start status report" "$cur"
       elif [[ "$cur" == -* ]]; then
-        _vibe_reply "$(_vibe_agents) --jobs --until --timeout --new" "$cur"
+        _vibe_reply "$(_vibe_agents) --jobs --until --timeout --new --day" "$cur"
       else
         COMPREPLY=()
         while IFS= read -r line; do COMPREPLY+=("$line"); done < <(compgen -d -- "$cur")

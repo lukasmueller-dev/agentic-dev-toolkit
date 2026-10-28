@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Shutdown
 
 Evening: leave every worktree pushed and handed off, then start the night.
-The night half is the `night-shift` skill; this skill runs it last.
+The night half is the `agent-shift` skill; this skill runs it last.
 
 ## Hard boundaries — never do these
 
@@ -40,7 +40,7 @@ Keep the worktrees that are `dirty`, `local`, or have handoff `none` or
 | --- | --- | --- |
 | `session` | its session is open | the user sends it: `Update HANDOFF.md, commit and push.` |
 | `wip` | no session holds it | handoff from the diff and log, `wip:` commit, push |
-| `leave` | not for tonight | nothing; the night-shift gate skips a dirty worktree |
+| `leave` | not for tonight | nothing; the agent-shift gate skips a dirty worktree |
 
 Show one table: `# · worktree · branch · state · handoff · action`. Ask which
 sessions are open. **Stop and wait for approval.** Apply every change the user
@@ -59,7 +59,7 @@ asks for, then show the table again.
 
 ## Phase 4 — Night
 
-Read `../night-shift/SKILL.md` and run its phases 1–6. Its approval gate
+Read `../agent-shift/SKILL.md` and run its phases 0–6. Its approval gate
 holds: show its table and wait. If the user declines the night, stop there.
 
 ## Done
