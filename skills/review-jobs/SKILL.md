@@ -68,10 +68,14 @@ For `requeue`: under `## Next action` and `## Blockers` of the job's
 job's `job` and `prompt.md` into a fresh dir (`mktemp -d`) and run
 `vibe queue add <dir>` outside the sandbox.
 
-Closed branches, and the ones the user merges, keep their worktrees: `/worktree-cleanup` removes them.
+## Phase 4 — Clean up
+
+Read `../worktree-cleanup/SKILL.md` and do every phase of it, for each repo
+walked. It keeps its own approval gate. The user declines → stop.
 
 ## Done
 
-Done when every repo is walked and its approved rows are carried out and
-archived. Report in at most 6 lines: marked ready, requeued, held, closed,
-archived, and `Decisions/risks:`.
+Done when every repo is walked, its approved rows are carried out and
+archived, and the cleanup is done or declined. Report in at most 6 lines:
+marked ready, requeued, held, closed, archived, worktrees removed, and
+`Decisions/risks:`.
