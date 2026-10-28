@@ -348,6 +348,9 @@ vendored code.
 checks the one skill in *this repo's own* Claude config and reports
 success — green, having linted none of the skills you shipped.
 
+**3 `install.bats` tests fail inside a sandboxed agent job** (`.claude/` placeholder
+files in the worktree root). Run that suite again in a `git clone` under `$TMPDIR`.
+
 **Stage a new file under `skills/` before running `bats`.** The suite's
 `the suite creates and deletes nothing under skills/` guard greps
 `git status --porcelain` for `??` and `D` entries there, since a test that
