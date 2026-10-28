@@ -622,15 +622,16 @@ report_context() {
   echo "$t"
 }
 
-# report_rows TITLE CLASS... — one table of the jobs in the classes: a status,
-# or `pr` (done with a PR URL; `done` is then done without one). Reads NIGHTS.
+# report_rows REPO TITLE CLASS... — one table of REPO's jobs in the classes: a
+# status, or `pr` (done with a PR URL; `done` is then done without one). No
+# rows, no table. Reads NIGHTS.
 report_rows() {
-  local title="$1" dir d st cls pr ctx tldr links rows=""
-  shift
+  local repo="$1" title="$2" dir d st cls pr ctx tldr links rows=""
+  shift 2
   for dir in "${NIGHTS[@]}"; do
     for d in "$dir"/jobs/*/; do
       d="${d%/}"
-      [[ -f "$d/job" ]] || continue
+      [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
       st="$(jstate "$d" status)" pr="$(jstate "$d" pr)"
       st="${st:-queued}" cls="${st:-queued}"
       case "$pr" in http*) [[ "$st" != "done" ]] || cls="pr" ;; esac
@@ -641,23 +642,20 @@ report_rows() {
       rows+="| ${dir##*/}/${d##*/} | $st | ${ctx//|//} | ${tldr//|//} | $links |"$'\n'
     done
   done
+  [[ -n "$rows" ]] || return 0
   echo
-  echo "## $title"
+  echo "### $title"
   echo
-  if [[ -z "$rows" ]]; then
-    echo "none"
-  else
-    echo "| Job | Status | Context | TL;DR | Links |"
-    echo "| --- | --- | --- | --- | --- |"
-    printf '%s' "$rows"
-  fi
+  echo "| Job | Status | Context | TL;DR | Links |"
+  echo "| --- | --- | --- | --- | --- |"
+  printf '%s' "$rows"
 }
 
-# night_report_md DIR... — the briefing over the nights: counts, then ranked
-# tables (needs a human, PRs to read, the rest), then the next action of
-# every job that did not finish.
+# night_report_md DIR... — the briefing over the nights: counts, then per repo
+# ranked tables (needs a human, PRs to read, the rest), then the next action
+# of every job that did not finish.
 night_report_md() {
-  local dir d st wt counts="" s n names=""
+  local dir d st wt counts="" s n names="" repo repos
   NIGHTS=("$@")
   for dir in "$@"; do names="${names:+$names, }${dir##*/}"; done
   echo "# Agent jobs — $(date +%F)"
@@ -674,9 +672,15 @@ night_report_md() {
     ((n == 0)) || counts="${counts:+$counts · }$n $s"
   done
   echo "${counts:-no jobs} — nights: $names"
-  report_rows "Needs you" blocked failed timeout skipped
-  report_rows "PR ready" pr
-  report_rows "Done, nothing to read" "done" running gpu queued
+  repos="$(for dir in "$@"; do for d in "$dir"/jobs/*/; do jget "$d/job" repo; done; done | sort -u)"
+  while IFS= read -r repo; do
+    [[ -n "$repo" ]] || continue
+    echo
+    echo "## ${repo##*/}"
+    report_rows "$repo" "Needs you" blocked failed timeout skipped
+    report_rows "$repo" "PR ready" pr
+    report_rows "$repo" "Done, nothing to read" "done" running gpu queued
+  done <<<"$repos"
   for dir in "$@"; do
     for d in "$dir"/jobs/*/; do
       d="${d%/}"
