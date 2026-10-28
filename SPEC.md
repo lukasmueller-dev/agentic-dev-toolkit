@@ -47,14 +47,19 @@ One always-on job queue replaces the day and night shifts. Two skills, run at an
 - `/review-jobs` archives every carried-out row; skipped rows stay unreviewed.
 - `/fill-queue` Phase 0 shows the queue; the sweep skips branches queued or running.
 - No notification on an empty queue.
+- `/review-jobs` actions: merge, requeue, close, `hold` (stays unreviewed with a note; briefings show it first under "Yours"), `ack` (archive only), log. No `day` action, no day plan.
+- `/fill-queue` replaces `/agent-shift`; the `agent-shift` skill is removed. Every run asks for big work and proposes up to 3; big work gets a grilling and a `SPEC.md`.
+- Milestone chain: a `SPEC.md` milestone job that ends `done` with an open milestone left makes the runner append the next one; `blocked`/`failed` stops the chain.
+- No cap in code. `/fill-queue` keeps its per-run limits as skill text (8 jobs, 2 per repo, 1 Opus): running it means you have room.
+- The sweep list moves to `~/.config/agent-queue/repos`; moved once by hand (PR Verify line).
 - Cutover: one PR; `vibe night` and both report timers go; stop the old tmux `gpu` session by hand once (PR Verify line).
 
 ## Milestones
 
 - [ ] Runner: persistent queue, window rule, slots per window, branch lock, `pause`/`resume` — code — done when `bats tests/` covers heavy-waits-by-day, heavy-first-at-night, slots per window
-- [ ] `vibe queue add [--now]`; the dispatcher and GPU follow-ups append to the queue — code — done when `tests/agent-jobs.bats` queues into the one queue dir
+- [ ] `vibe queue add [--now]`, `vibe queue archive`; the dispatcher, GPU follow-ups and the milestone chain append to the queue — code — done when `tests/agent-jobs.bats` queues into the one queue dir
 - [ ] `vibe queue status`: rows grouped by repo with `Context`, unreviewed only — code — done when a bats test checks the grouping and the reviewed filter
-- [ ] Skills `/review-jobs` and `/fill-queue` from `check-in` and `agent-shift`; `/check-in`, `/shutdown` call them — code — done when `./bin/skill-lint --strict skills` passes and no skill names `vibe night`
+- [ ] Skills `/review-jobs` and `/fill-queue` from `check-in` and `agent-shift`; `agent-shift` removed; `/check-in`, `/shutdown` call them — code — done when `./bin/skill-lint --strict skills` passes and no skill names `vibe night`
 - [ ] systemd: one `agent-queue.service`; the two report timers removed; `vibe update-toolkit` migrates the units — code — done when `tests/vibe.bats` unit tests pass and `grep -rn 'vibe night' .` finds nothing outside `vendor/`
 - [ ] End action — rewrite `docs/night-shift.md` into `docs/agent-queue.md`; decisions into the PR body; delete `SPEC.md` and `HANDOFF.md`
 
