@@ -21,6 +21,7 @@
 #   vibe job due [--dry] [--max N]  queue every due recurring job (the 01:00 timer)
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; briefing lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
 set -euo pipefail
@@ -42,7 +43,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,23s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,24s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -860,6 +861,10 @@ queue_report_md() {
   if [[ -n "$rows" ]]; then
     printf '\n## Yours\n\n| Job | Status | Context | Note | Links |\n| --- | --- | --- | --- | --- |\n%s' "$rows"
   fi
+  if [[ -f "$QROOT/triage.md" ]]; then
+    echo
+    cat "$QROOT/triage.md"
+  fi
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
@@ -1235,6 +1240,89 @@ cmd_job_run() {
   job_queue "$DRY" "$repo ${REST[1]}"
 }
 
+# TRIAGE_JQ — one line per PR: number url head base mergeable red-checks new-comments.
+# Split by \037: a tab IFS collapses an empty field. New: after the last non-merge commit.
+# shellcheck disable=SC2016  # jq variables, not shell ones
+TRIAGE_JQ='.[] | ([.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "") as $t
+| [.number, .url, .headRefName, .baseRefName, .mergeable,
+   ([.statusCheckRollup[] | select((.conclusion // .state // "") | test("^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$")) | (.name // .context)] | join(", ")),
+   ([.comments[].createdAt, .reviews[].submittedAt] | map(select(. > $t)) | length)] | map(tostring) | join("\u001f")'
+
+# triage_merge REPO HEAD BASE — merge origin/BASE into origin/HEAD in a scratch
+# worktree and push; one line on what happened. Skips a branch a job runs on
+# or one with unpushed local commits: the push would strand their work.
+triage_merge() {
+  local repo="$1" head="$2" base="$3" d tmp files
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    if [[ "$(jget "$d/job" repo)" == "$repo" && "$(jget "$d/job" branch)" == "$head" &&
+    "$(jstate "$d" status)" == running ]]; then
+      echo "conflicts with $base; not merged: a job runs on it"
+      return 0
+    fi
+  done
+  if [[ "$(git -C "$repo" rev-list --count "origin/$head..refs/heads/$head" 2>/dev/null || echo 0)" != 0 ]]; then
+    echo "conflicts with $base; not merged: local commits not pushed"
+    return 0
+  fi
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-triage.XXXXXX")/wt"
+  if ! git -C "$repo" worktree add -q --detach "$tmp" "origin/$head" >/dev/null 2>&1; then
+    echo "conflicts with $base; not merged: no origin/$head"
+    return 0
+  fi
+  if git -C "$tmp" merge -q --no-edit -m "Merge branch '$base' into $head" "origin/$base" >/dev/null 2>&1; then
+    if git -C "$tmp" push -q origin "HEAD:refs/heads/$head" 2>/dev/null; then
+      echo "merged $base and pushed"
+    else
+      echo "merged $base; push failed"
+    fi
+  else
+    files="$(git -C "$tmp" diff --name-only --diff-filter=U | tr '\n' ' ')"
+    git -C "$tmp" merge --abort 2>/dev/null || true
+    echo "conflicts with $base in ${files% }: needs a hand merge"
+  fi
+  git -C "$repo" worktree remove --force "$tmp" 2>/dev/null || true
+  rm -rf "${tmp%/wt}"
+}
+
+# vibe job triage [REPO...] — every open agent PR of every repo under the
+# root: merge the base into a conflicted one and push; red CI and unanswered
+# review comments become lines in QROOT/triage.md, which the briefing shows.
+cmd_job_triage() {
+  local repo n url head base mergeable red comments out lines="" r
+  command -v gh >/dev/null 2>&1 || {
+    echo "no gh — nothing to triage"
+    return 0
+  }
+  local repos=("$@")
+  if ((${#repos[@]} == 0)); then
+    for r in "$JOBS_ROOT"/*/; do [[ ! -d "$r/.git" ]] || repos+=("${r%/}"); done
+  fi
+  for repo in "${repos[@]+"${repos[@]}"}"; do
+    repo="$(job_repo_path "$repo")"
+    out="$( (cd "$repo" && gh pr list --label agent --state open \
+      --json number,url,headRefName,baseRefName,mergeable,statusCheckRollup,comments,reviews,commits \
+      -q "$TRIAGE_JQ") 2>/dev/null || true)"
+    [[ -n "$out" ]] || continue
+    git -C "$repo" fetch -q origin 2>/dev/null || warn "$(basename "$repo"): fetch failed"
+    while IFS=$'\037' read -r n url head base mergeable red comments; do
+      [[ -n "$n" ]] || continue
+      r="- $(basename "$repo") [#$n]($url) \`$head\`:"
+      if [[ "$mergeable" == CONFLICTING ]]; then lines+="$r $(triage_merge "$repo" "$head" "$base")"$'\n'; fi
+      if [[ -n "$red" ]]; then lines+="$r CI red: $red"$'\n'; fi
+      if ((comments > 0)); then lines+="$r unanswered review comments: $comments"$'\n'; fi
+    done <<<"$out"
+  done
+  mkdir -p "$QROOT"
+  if [[ -z "$lines" ]]; then
+    rm -f "$QROOT/triage.md"
+    echo "triage: nothing to report"
+    return 0
+  fi
+  printf '## Triage — %s\n\n%s' "$(date '+%F %H:%M')" "$lines" >"$QROOT/triage.md"
+  printf '%s' "$lines"
+}
+
 # vibe job add REPO JOB — render templates/VIBE_JOB.md to <repo>/.vibe-jobs/<job>.md.
 cmd_job_add() {
   local repo="${1:?usage: vibe job add <repo> <job>}" job="${2:?usage: vibe job add <repo> <job>}" f
@@ -1253,8 +1341,8 @@ cmd_job() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | due | run | add) "cmd_job_$sub" "$@" ;;
-    *) die "usage: vibe job list|due|run|add — see vibe --help" ;;
+    list | due | run | add | triage) "cmd_job_$sub" "$@" ;;
+    *) die "usage: vibe job list|due|run|add|triage — see vibe --help" ;;
   esac
 }
 
