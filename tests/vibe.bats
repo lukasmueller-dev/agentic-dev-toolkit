@@ -405,10 +405,11 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
-  [ "$(complete_vibe night st | tr '\n' ' ')" = "start status " ]
-  [ "$(complete_vibe night r)" = report ]
-  [ "$(complete_vibe night start --j)" = --jobs ]
-  [ "$(complete_vibe night start --c)" = --claude ]
+  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status " ]
+  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run " ]
+  [ "$(complete_vibe queue add --n)" = --now ]
+  [ "$(complete_vibe queue run --c)" = --claude ]
+  [ "$(complete_vibe job l)" = list ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task

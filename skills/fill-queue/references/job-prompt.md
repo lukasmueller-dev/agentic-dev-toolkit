@@ -1,6 +1,6 @@
-# Night-shift job: <task title>
+# Agent job: <task title>
 
-You run unattended overnight. Nobody reads a question before morning.
+You run unattended. Nobody reads a question until a human reviews the result.
 
 ## Task
 
@@ -11,7 +11,7 @@ You run unattended overnight. Nobody reads a question before morning.
 - **Source:** <one of: `PROJECT_ROADMAP.md:<line>` · `HANDOFF.md` next action · new>
 - **Kind:** <code | gpu>
 - **Repo / branch:** <repo> · `<branch>` — this worktree is the only place you change
-- **Job dir:** `<job-dir>`
+- **Job dir:** `$AGENT_JOB_DIR` (the environment variable)
 - **Time limit:** <timeout>; stop as blocked well before it
 
 ## Rules
@@ -31,14 +31,14 @@ You run unattended overnight. Nobody reads a question before morning.
 13. `SPEC.md` in the worktree: do its first open milestone only, and tick it off in that milestone's last commit. Never change the rest of the spec; a plan that no longer holds is a blocker.
     Not the last milestone: overwrite `HANDOFF.md` with the next milestone as next action, and keep it.
     The last milestone: do the spec's end action, move each decision to `pr.md`, then delete `HANDOFF.md`.
-14. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe night gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
+14. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe queue gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
 
 ## Before you exit
 
 Write these files in the job dir. A human reads them on a phone in a minute.
 
 - `result` — one line: `done: <what changed>`, `queued: <what runs>`, `blocked: <what blocks, who can unblock>` or `failed: <why>`.
-- `pr.md` — the first template below, every `<token>` filled; its Context line is the Context above, verbatim. Line 1 is the title: `agent-shift(<job id>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
+- `pr.md` — the first template below, every `<token>` filled; its Context line is the Context above, verbatim. Line 1 is the title: `agent(<branch>): <what, ≤60 characters>`. At most 12 lines above `<details>`.
 - `report.md` — the second template, only when you have findings outside the diff; Context as in `pr.md`. At most 25 lines.
 
 Sentences: ≤20 words, active voice, one instruction each, no `-ing` verb forms.

@@ -26,7 +26,7 @@
         "~/.cache/pip",
         "~/.cache/uv",
         "~/.local/state/gpu-queue",
-        "~/.local/state/night-shift"
+        "~/.local/state/agent-queue"
       ]
     }
   }

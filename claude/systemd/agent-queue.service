@@ -1,0 +1,20 @@
+# agent-queue — the runner: starts queued agent jobs, one worktree each.
+# Setup: docs/agent-queue.md. Skipped unless ~/.config/vibe/role holds 'server'.
+
+[Unit]
+Description=agent job queue runner
+Wants=network-online.target gpu-queue.service
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+ExecStart=%h/bin/vibe queue run --claude
+# A restart stops the runner only: running jobs finish and write their own status.
+KillMode=process
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

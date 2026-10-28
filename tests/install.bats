@@ -668,8 +668,8 @@ EOF
   jq -e '.sandbox.excludedCommands | length > 0' "$HOME/.claude/settings.json"
 }
 
-@test "claude settings: night-shift jobs have no unsandboxed escape and no default-branch push" {
-  local f="$REPO_ROOT/claude/night-shift-settings.json"
+@test "claude settings: agent jobs have no unsandboxed escape and no default-branch push" {
+  local f="$REPO_ROOT/claude/agent-job-settings.json"
   jq -e '.sandbox.allowUnsandboxedCommands == false' "$f"
   # without it a job whose sandbox cannot start runs every command unsandboxed
   jq -e '.sandbox.failIfUnavailable == true' "$f"

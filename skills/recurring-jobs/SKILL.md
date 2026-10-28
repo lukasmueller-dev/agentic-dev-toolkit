@@ -7,13 +7,13 @@ argument-hint: "[list | add <job> | run <job> | timer]"
 
 # Recurring jobs
 
-A recurring job is a prompt plus a schedule. The 01:00 timer queues every
-due job on the night runner; the morning report shows the result. Runner,
+A recurring job is a prompt plus a schedule. The 01:00 timer adds every
+due job to the agent queue; `/review-jobs` shows the result. Runner,
 layout and traps: `docs/recurring-jobs.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
-- **Never run a job yourself.** You list, install and queue; `vibe night` runs the jobs.
+- **Never run a job yourself.** You list, install and queue; the queue runner runs the jobs.
 - **Never overwrite `.agent-jobs/<job>.md`.** `vibe job add` refuses an existing file; edit it instead.
 - **Never write a catalogue entry from memory.** Copy `references/jobs/_template.md`.
 - **Never queue a job without saying which repo and job.** `vibe job run` is a real start.
@@ -29,8 +29,8 @@ layout and traps: `docs/recurring-jobs.md` in the toolkit.
 - **`add <job>`** in the current repo (or a named one): `vibe job add <repo> <job>`. Then edit
   the new file: keep only the keys the repo overrides, write one line per repo-specific
   instruction. Ask the user to commit it.
-- **`run <job>`**: outside the sandbox, `vibe job run --claude <repo> <job>`. Report the
-  job dir it printed and `vibe night status`.
+- **`run <job>`**: outside the sandbox, `vibe job run <repo> <job>`. Report the
+  job it printed and `vibe queue status`.
 - **`timer`**: outside the sandbox, the two `systemctl --user` lines from `docs/recurring-jobs.md` §3.
 - **A new catalogue job**: copy `references/jobs/_template.md` to `references/jobs/<job>.md`
   in the toolkit checkout; fill the frontmatter and the body. The body is the task: what to
@@ -39,7 +39,7 @@ layout and traps: `docs/recurring-jobs.md` in the toolkit.
 
 ## Phase 3 — Check
 
-`vibe job due --claude --dry` lists what the next 01:00 run queues. Show it.
+`vibe job due --dry` lists what the next 01:00 run queues. Show it.
 
 ## Done
 

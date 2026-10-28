@@ -1,13 +1,13 @@
 ---
 name: shutdown
-description: "End-of-day shutdown across the active repos: pushes every task branch, finds worktrees with uncommitted work or a missing or stale HANDOFF.md, gets each one handed off, then plans and starts the night shift. Use when the user says 'shutdown', 'end of day', 'wrap up the day', 'call it a day', or stops work and wants every session handed off before the night runs."
+description: "End-of-day shutdown across the active repos: pushes every task branch, finds worktrees with uncommitted work or a missing or stale HANDOFF.md, gets each one handed off, then fills the agent queue for the night. Use when the user says 'shutdown', 'end of day', 'wrap up the day', 'call it a day', or stops work and wants every session handed off before the night runs."
 disable-model-invocation: true
 ---
 
 # Shutdown
 
-Evening: leave every worktree pushed and handed off, then start the night.
-The night half is the `agent-shift` skill; this skill runs it last.
+Evening: leave every worktree pushed and handed off, then fill the queue
+for the night. The queue half is the `fill-queue` skill; this skill runs it last.
 
 ## Hard boundaries — never do these
 
@@ -40,7 +40,7 @@ Keep the worktrees that are `dirty`, `local`, or have handoff `none` or
 | --- | --- | --- |
 | `session` | its session is open | the user sends it: `Update HANDOFF.md, commit and push.` |
 | `wip` | no session holds it | handoff from the diff and log, `wip:` commit, push |
-| `leave` | not for tonight | nothing; the agent-shift gate skips a dirty worktree |
+| `leave` | not for tonight | nothing; the fill-queue gate skips a dirty worktree |
 
 Show one table: `# · worktree · branch · state · handoff · action`. Ask which
 sessions are open. **Stop and wait for approval.** Apply every change the user
@@ -57,13 +57,13 @@ asks for, then show the table again.
 2. `session` rows: wait until the user says they are done.
 3. Run Phase 1 again. Show only the rows that changed.
 
-## Phase 4 — Night
+## Phase 4 — Fill
 
-Read `../agent-shift/SKILL.md` and run its phases 0–6. Its approval gate
-holds: show its table and wait. If the user declines the night, stop there.
+Read `../fill-queue/SKILL.md` and do every phase of it. Its approval gate
+holds: show its table and wait. If the user declines, stop there.
 
 ## Done
 
-Done when every row is handed off or `leave`, and the night started or the
-user declined it. Report in at most 6 lines: handed off, left, the night's
-job count and deadline, and `Decisions/risks:`.
+Done when every row is handed off or `leave`, and the queue is filled or the
+user declined it. Report in at most 6 lines: handed off, left, jobs added
+(heavy, light), and `Decisions/risks:`.

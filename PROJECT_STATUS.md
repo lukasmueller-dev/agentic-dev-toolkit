@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-27 · turing_
+_Last updated: 2026-10-28 · turing_
 
 ## Goal
 
@@ -20,21 +20,17 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
-- 2026-10-28: **briefing to the vault, day shift**: the 07:00 report opens no
-  session, it copies `briefing-<date>.md` to the briefing dir; `check-in`
-  runs `agent-shift day` (the `night-shift` skill, renamed), the night shift
-  stopped by 12:30, briefed at 13:00. Design: PR body.
-- 2026-10-27: **day bookends**: `check-in` (morning, works the briefing) and
-  `shutdown` (evening, hands off every worktree, then runs `agent-shift`);
-  both skills only, no new script. Design: PR body.
+- 2026-10-28: **agent queue replaces the shifts**: one always-on queue
+  (`agent-queue.service`); heavy jobs (timeout > 2h) start only 18:00–07:00;
+  `/fill-queue` and `/review-jobs` run any time, `check-in` and `shutdown`
+  call them; a fresh briefing per review, no report timers. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
-  `vibe job due` (01:00 timer) queues due jobs on the night runner, one PR per
+  `vibe job due` (01:00 timer) adds due jobs to the agent queue, one PR per
   run on `jobs/<job>`, cap 2 open job PRs per repo, two failures stop a job.
   Output contract for every job: `memory/GLOBAL.md`, `templates/job-*.md`.
   Design: PRs #99 and the `feat/recurring-jobs` PR.
-- 2026-10-26: **night-shift**: evening skill plans, `vibe night` runs headless
-  Sonnet jobs (max 4 parallel, deadline 06:30) under a fail-closed sandbox;
-  the runner, not the agent, pushes and opens draft PRs. Design: PR body.
+- 2026-10-26: **unattended jobs**: headless Sonnet jobs under a fail-closed
+  sandbox; the runner, not the agent, pushes and opens draft PRs. Design: PR body.
 - 2026-10-25: **vibe returns, small**: `start`, `sync`, `status --<agent>`;
   work moves between machines through git, so the usage-audit line "no
   machine-to-machine git travel" no longer holds. Servers run only where

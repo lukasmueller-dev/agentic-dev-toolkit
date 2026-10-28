@@ -1,9 +1,8 @@
 #!/usr/bin/env bats
 #
 # vibe job — recurring jobs: the catalogue, a repo's opt-in files, the due
-# rule, the dispatcher that writes them onto a night, and the runner's state
-# updates. Stubs as in night-shift.bats; `tmux has-session` says a night runs
-# while $STUBS/night-runs exists.
+# rule, the dispatcher that adds them to the agent queue, and the runner's
+# state updates. Stubs as in agent-queue.bats.
 
 load helper
 
@@ -21,8 +20,8 @@ mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p' | head -n 1)"
 case "\$mode" in
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    printf 'job(health): tidy\n\n**Changed:** work.txt added.\n' >"\$NIGHT_SHIFT_JOB_DIR/pr.md"
-    echo "done: work.txt added" >"\$NIGHT_SHIFT_JOB_DIR/result"
+    printf 'job(health): tidy\n\n**Changed:** work.txt added.\n' >"\$AGENT_JOB_DIR/pr.md"
+    echo "done: work.txt added" >"\$AGENT_JOB_DIR/result"
     ;;
   crash) exit 3 ;;
   sleep) sleep 30 ;;
@@ -36,20 +35,18 @@ case "\$1 \$2 \$3" in
   "pr list --label") [ ! -f "$STUBS/cap" ] || cat "$STUBS/cap" ;;
 esac
 EOF
-  # shellcheck disable=SC2016  # the stub's own $@ and $3
-  printf '#!/bin/sh\necho "$@" >>"%s/tmux.log"\nif [ "$3" = has-session ]; then [ -f "%s/night-runs" ]; fi\n' "$STUBS" "$STUBS" >"$STUBS/tmux"
-  chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/tmux"
+  chmod +x "$STUBS/claude" "$STUBS/gh"
   PATH="$STUBS:$PATH"
-  export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_NIGHT_POLL=0.2
+  export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
-  export AGENT_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" NIGHT_SHIFT_ROOT="$BATS_TEST_TMPDIR"
-  mkdir -p "$AGENT_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/night-shift"
+  export AGENT_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" VIBE_ROOT="$BATS_TEST_TMPDIR"
+  mkdir -p "$AGENT_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/agent-queue"
   printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$AGENT_JOBS_CATALOGUE/health.md"
   printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$AGENT_JOBS_CATALOGUE/crashy.md"
   printf -- '---\nschedule: daily\ntimeout: 2s\n---\n\nMODE=sleep\n' >"$AGENT_JOBS_CATALOGUE/slow.md"
   TODAY="$(LC_ALL=C date +%a | tr '[:upper:]' '[:lower:]')"
-  NIGHTS="$XDG_STATE_HOME/night-shift"
+  Q="$XDG_STATE_HOME/agent-queue/queue"
 }
 
 # optin REPO JOB [FRONTMATTER] [BODY] — the repo's .agent-jobs file.
@@ -62,9 +59,10 @@ state() {
   mkdir -p "$XDG_STATE_HOME/agent-jobs/$(basename "$1")/$2"
   echo "$4" >"$XDG_STATE_HOME/agent-jobs/$(basename "$1")/$2/$3"
 }
-soon() { date -d '+3 hours' +%H:%M 2>/dev/null || date -v+3H +%H:%M; }
-# jobdir ID — the job dir ID under the dispatcher's night.
-jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
+# qjobs SUFFIX — the queue's job dirs whose id ends in SUFFIX, oldest first.
+qjobs() { for d in "$Q"/*-"$1"; do [ ! -d "$d" ] || echo "$d"; done; }
+# drain — run the queue until nothing can start.
+drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
 
 @test "job list: catalogue + repo file, repo-only jobs, invalid files; every repo with an opt-in" {
   local r
@@ -84,10 +82,11 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [[ "$output" == *"nosched"*"invalid: no schedule"* ]] || false
   [[ "$output" == *"nobody"*"invalid: not in the catalogue, and the repo file has no instructions"* ]] || false
   [[ "$output" != *bystander* && "$output" != *available* ]] || false
-  [[ "$output" == *"agent-shift sweep: no "*"night-shift/repos"* ]] || false
-  printf 'proj  # first\n\n%s\n' "$BATS_TEST_TMPDIR/other" >"$XDG_CONFIG_HOME/night-shift/repos"
+  [[ "$output" == *"fill-queue sweep: no "*"agent-queue/repos"* ]] || false
+  mkdir -p "$XDG_CONFIG_HOME/agent-queue"
+  printf 'proj  # first\n\n%s\n' "$BATS_TEST_TMPDIR/other" >"$XDG_CONFIG_HOME/agent-queue/repos"
   run "$VIBE" job list
-  [[ "$output" == *"agent-shift sweep ("*"night-shift/repos): proj, other"* ]] || false
+  [[ "$output" == *"fill-queue sweep ("*"agent-queue/repos): proj, other"* ]] || false
   run "$VIBE" job list --all
   [[ "$output" == *"proj"*"crashy"*"daily"*"available — vibe job add proj crashy"* ]] || false
   [[ "$output" != *bystander* ]] || false
@@ -101,80 +100,75 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   r="$(make_repo proj)"
   optin "$r" health
   optin "$r" crashy
-  run "$VIBE" job due --claude --dry "$r"
+  run "$VIBE" job due --dry "$r"
   [ "$status" -eq 0 ]
   [[ "$output" == *"would queue: $r health"* ]] || false
   [[ "$output" == *"would queue: $r crashy"* ]] || false
   state "$r" health last-run "$(($(date +%s) - 5 * 86400))"
   state "$r" crashy fails 2
-  run "$VIBE" job due --claude --dry "$r"
+  run "$VIBE" job due --dry "$r"
   [[ "$output" == *"nothing to queue"*"stopped: $r crashy (2 failures)"* ]] || false
   [[ "$output" != *"would queue"* ]] || false
   state "$r" health last-run "$(($(date +%s) - 7 * 86400))"
   optin "$r" health "day: $TODAY\n"
-  run "$VIBE" job due --claude --dry "$r"
+  run "$VIBE" job due --dry "$r"
   [[ "$output" == *"would queue: $r health"* ]] || false
   optin "$r" health "day: nosuchday\n"
-  run "$VIBE" job due --claude --dry "$r"
+  run "$VIBE" job due --dry "$r"
   [[ "$output" == *"nothing to queue"* ]] || false
-  [ ! -d "$NIGHTS" ]
+  [ ! -d "$Q" ]
 }
 
-@test "job due: writes a <date>-jobs night and starts it; oldest first, at most --max" {
-  local r
+@test "job due: adds due jobs to the queue, oldest last-run first, at most --max" {
+  local r d
   r="$(make_repo proj)"
   optin "$r" health "" "Skip legacy/."
   optin "$r" crashy
   state "$r" health last-run 100
   state "$r" crashy last-run 50
-  run "$VIBE" job due --claude --max 1
+  run "$VIBE" job due --max 1
   echo "$output"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"queued 90-proj-crashy"*"night started"* ]] || false
-  [ ! -e "$(jobdir 91-proj-health)" ]
-  grep -q -- "-L night-shift new-session -d -s night" "$STUBS/tmux.log"
-  run "$VIBE" job due --claude
-  [[ "$output" == *"queued 90-proj-crashy"*"queued 91-proj-health"* ]] || false
-  [ -e "$(jobdir 90-proj-crashy-2)" ]
-  run cat "$(jobdir 91-proj-health)/job"
+  [[ "$output" == *"queued "*"-proj-jobs-crashy (pr)"* ]] || false
+  [ -z "$(qjobs jobs-health)" ]
+  run "$VIBE" job due
+  [[ "$output" == *"-proj-jobs-crashy"*"-proj-jobs-health"* ]] || false
+  [ "$(qjobs jobs-crashy | wc -l)" -eq 2 ]
+  d="$(qjobs jobs-health)"
+  run cat "$d/job"
   [[ "$output" == *"repo=$r"*"branch=jobs/health"*"model=sonnet"*"timeout=2h"*"recurring=health"*"output=pr"* ]] || false
-  run cat "$(jobdir 91-proj-health)/prompt.md"
-  [[ "$output" == *"# Recurring job: health"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
+  run cat "$d/prompt.md"
+  [[ "$output" == *"# Recurring job: health"*"\`\$AGENT_JOB_DIR\`"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
   [[ "$output" == *"**Context:** <context>"*"**Changed:** <changed>"*"**Context:** <context>"*"**Needs you:** <needs-you>"* ]] || false
   [[ "$output" != *"<catalogue-instructions>"* ]] || false
 }
 
-@test "job due: a running night gets the dirs; a stopped job lands as skipped under Needs you" {
-  local r
+@test "job due: a stopped job lands once as skipped under Needs you" {
+  local r d
   r="$(make_repo proj)"
-  optin "$r" health
   optin "$r" crashy
   state "$r" crashy fails 2
-  mkdir -p "$NIGHTS/2026-10-26/jobs"
-  touch "$STUBS/night-runs"
-  run "$VIBE" job due --claude "$r"
-  echo "$output"
+  run "$VIBE" job due "$r"
   [ "$status" -eq 0 ]
-  [ -f "$NIGHTS/2026-10-26/jobs/90-proj-health/prompt.md" ]
-  [ "$(cat "$NIGHTS/2026-10-26/jobs/99-proj-crashy/status")" = skipped ]
-  [[ "$(cat "$NIGHTS/2026-10-26/jobs/99-proj-crashy/note")" == "stopped after 2 failures — rm "*"/agent-jobs/proj/crashy/fails" ]] || false
-  run grep -c new-session "$STUBS/tmux.log"
-  [ "$output" = 0 ]
-  run "$VIBE" night report "$NIGHTS/2026-10-26"
-  run cat "$NIGHTS/briefings/$(date +%F).md"
-  [[ "$output" == *"## Needs you"*"| 2026-10-26/99-proj-crashy | skipped |  | stopped after 2 failures"* ]] || false
+  "$VIBE" job due "$r" >/dev/null
+  [ "$(qjobs jobs-crashy | wc -l)" -eq 1 ]
+  d="$(qjobs jobs-crashy)"
+  [ "$(cat "$d/status")" = skipped ]
+  [[ "$(cat "$d/note")" == "stopped after 2 failures — rm "*"/agent-jobs/proj/crashy/fails" ]] || false
+  "$VIBE" queue report >/dev/null
+  run cat "$XDG_STATE_HOME"/agent-queue/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| ${d##*/} | skipped |  | stopped after 2 failures"* ]] || false
 }
 
-@test "job run + night run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {
+@test "job run + queue run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {
   local r
   r="$(make_repo proj)"
   optin "$r" health
   optin "$r" crashy
-  run "$VIBE" job run --claude "$r" health
+  run "$VIBE" job run "$r" health
   [ "$status" -eq 0 ]
-  run "$VIBE" night run --claude "$NIGHTS"/*-jobs --until "$(soon)"
-  [ "$status" -eq 0 ]
-  [ "$(cat "$(jobdir 90-proj-health)/status")" = "done" ]
+  drain
+  [ "$(cat "$(qjobs jobs-health)/status")" = "done" ]
   git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/jobs/health
   [ -d "$r/.claude/worktrees/jobs/health" ]
   grep -q -- '--head jobs/health --title job(health): tidy' "$STUBS/gh.log"
@@ -183,30 +177,28 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [ -f "$XDG_STATE_HOME/agent-jobs/proj/health/last-run" ]
   run "$VIBE" job list "$r"
   [[ "$output" == *"health"*"$(date +%F)"*"not due"* ]] || false
-  rm -rf "$NIGHTS"
-  run "$VIBE" job run --claude "$r" crashy
-  "$VIBE" night run --claude "$NIGHTS"/*-jobs --until "$(soon)" >/dev/null 2>&1
+  "$VIBE" job run "$r" crashy >/dev/null
+  drain
   [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/crashy/fails")" = 1 ]
-  rm -rf "$NIGHTS"
-  run "$VIBE" job run --claude "$r" crashy
-  "$VIBE" night run --claude "$NIGHTS"/*-jobs --until "$(soon)" >/dev/null 2>&1
+  "$VIBE" job run "$r" crashy >/dev/null
+  drain
   [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/crashy/fails")" = 2 ]
   run "$VIBE" job list "$r"
   [[ "$output" == *"crashy"*"stopped: 2 failures — rm "* ]] || false
-  run "$VIBE" job run --claude "$r" nosuch
+  run "$VIBE" job run "$r" nosuch
   [ "$status" -ne 0 ]
   [[ "$output" == *"no schedule"* ]] || false
 }
 
-@test "job run: a job's timeout replaces the night's" {
-  local r
+@test "job run: the job's own timeout stops it" {
+  local r d
   r="$(make_repo proj)"
   optin "$r" slow
-  "$VIBE" job run --claude "$r" slow >/dev/null
-  run "$VIBE" night run --claude "$NIGHTS"/*-jobs --until "$(soon)" --timeout 1h
-  [ "$status" -eq 0 ]
-  [ "$(cat "$(jobdir 90-proj-slow)/status")" = timeout ]
-  [ "$(cat "$(jobdir 90-proj-slow)/note")" = "stopped after 2s" ]
+  "$VIBE" job run "$r" slow >/dev/null
+  drain
+  d="$(qjobs jobs-slow)"
+  [ "$(cat "$d/status")" = timeout ]
+  [ "$(cat "$d/note")" = "stopped after 2s" ]
   [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/slow/fails")" = 1 ]
 }
 
@@ -215,12 +207,12 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   r="$(make_repo proj)"
   optin "$r" health
   printf 'jobs/a\njobs/b\nfeat/x\n' >"$STUBS/cap"
-  "$VIBE" job run --claude "$r" health >/dev/null
-  grep -q '^output=report$' "$(jobdir 90-proj-health)/job"
-  grep -q -- '- \*\*Output:\*\* report' "$(jobdir 90-proj-health)/prompt.md"
+  "$VIBE" job run "$r" health >/dev/null
+  grep -q '^output=report$' "$(qjobs jobs-health)/job"
+  grep -q -- '- \*\*Output:\*\* report' "$(qjobs jobs-health)/prompt.md"
   printf 'jobs/a\njobs/health\n' >"$STUBS/cap"
-  "$VIBE" job run --claude "$r" health >/dev/null
-  grep -q '^output=pr$' "$(jobdir 90-proj-health-2)/job"
+  "$VIBE" job run "$r" health >/dev/null
+  grep -q '^output=pr$' "$(qjobs jobs-health | tail -n 1)/job"
 }
 
 @test "job add: renders the opt-in file once; refuses a bad name" {
@@ -242,7 +234,7 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
 
 @test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent" {
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/agent-jobs.service"
-  grep -q '^ExecStart=.*vibe job due --claude$' "$REPO_ROOT/claude/systemd/agent-jobs.service"
+  grep -q '^ExecStart=.*vibe job due$' "$REPO_ROOT/claude/systemd/agent-jobs.service"
   grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$REPO_ROOT/claude/systemd/agent-jobs.timer"
   run grep -c Persistent "$REPO_ROOT/claude/systemd/agent-jobs.timer"
   [ "$output" = 0 ]
