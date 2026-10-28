@@ -51,7 +51,8 @@ render still produces a readable file.
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
 | `<job>`       | Recurring job name (`AGENT_JOB.md`, `job-report.md`) |
-| `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines; the folded detail (`job-pr.md` only, filled by the job itself) |
+| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`; the briefing's Context column) |
+| `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:

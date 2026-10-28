@@ -62,14 +62,15 @@ An item or handoff next action passes only when all are true:
 
 1. Order by the repo's rank, then by order in the repo: handoffs first, then roadmap items top to bottom.
 2. Propose up to 3 new next steps from a repo's goal and roadmap gaps; mark them `new`. Each one must pass the gate.
-3. Per job: id `NN-<branch>` (rank order), branch slug (a handoff keeps its branch), model, kind, one-line done-when.
+3. Per job: id `NN-<branch>` (rank order), branch slug (a handoff keeps its branch), model, kind, one-line done-when,
+   and the context: what the work is about in plain words — the problem, the idea — at most 25 words, no detail.
    Kind `gpu`: the job prepares the code and queues the run; a follow-up job finishes after it.
 4. Propose Opus only for a job that needs design judgment; say why.
 5. A worktree with `SPEC.md`: one job, the next open milestone. Its time limit runs to the shift's end (night 06:30, day 12:30).
 
 ## Phase 4 — Approve
 
-Show one table: `# · repo · task · source · kind · model · branch · done-when`.
+Show one table: `# · repo · task · context · source · kind · model · branch · done-when`.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the table again.
 
@@ -77,7 +78,7 @@ approval.** Apply every change the user asks for, then show the table again.
 
 For each approved job, under `${XDG_STATE_HOME:-~/.local/state}/night-shift/<night dir>/jobs/<id>/`:
 
-- `job` — three lines: `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`.
+- `job` — four lines: `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`.
   A `SPEC.md` job adds `timeout=<its time limit>`, e.g. `timeout=9h`.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled. Time limit: the shift's, unless the user set one.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.

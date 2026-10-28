@@ -132,7 +132,7 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [[ "$output" == *"repo=$r"*"branch=jobs/health"*"model=sonnet"*"timeout=2h"*"recurring=health"*"output=pr"* ]] || false
   run cat "$(jobdir 91-proj-health)/prompt.md"
   [[ "$output" == *"# Recurring job: health"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
-  [[ "$output" == *"**Changed:** <changed>"*"**Needs you:** <needs-you>"* ]] || false
+  [[ "$output" == *"**Context:** <context>"*"**Changed:** <changed>"*"**Context:** <context>"*"**Needs you:** <needs-you>"* ]] || false
   [[ "$output" != *"<catalogue-instructions>"* ]] || false
 }
 
@@ -154,7 +154,7 @@ jobdir() { echo "$NIGHTS"/*-jobs/jobs/"$1"; }
   [ "$output" = 0 ]
   run "$VIBE" night report "$NIGHTS/2026-10-26"
   run cat "$NIGHTS/briefings/$(date +%F).md"
-  [[ "$output" == *"## Needs you"*"| 2026-10-26/99-proj-crashy | skipped | stopped after 2 failures"* ]] || false
+  [[ "$output" == *"## Needs you"*"| 2026-10-26/99-proj-crashy | skipped |  | stopped after 2 failures"* ]] || false
 }
 
 @test "job run + night run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {
