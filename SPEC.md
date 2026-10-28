@@ -50,7 +50,6 @@ One always-on job queue replaces the day and night shifts. Two skills, run at an
 - `/review-jobs` actions: merge, requeue, close, `hold` (stays unreviewed with a note; briefings show it first under "Yours"), `ack` (archive only), log. No `day` action, no day plan.
 - `/fill-queue` replaces `/agent-shift`; the `agent-shift` skill is removed. Every run asks for big work and proposes up to 3; big work gets a grilling and a `SPEC.md`.
 - Milestone chain: a `SPEC.md` milestone job that ends `done` with an open milestone left makes the runner append the next one; `blocked`/`failed` stops the chain.
-- No cap in code. `/fill-queue` keeps its per-run limits as skill text (8 jobs, 2 per repo, 1 Opus): running it means you have room.
 - The sweep list moves to `~/.config/agent-queue/repos`; moved once by hand (PR Verify line).
 - Cutover: one PR; `vibe night` and both report timers go; stop the old tmux `gpu` session by hand once (PR Verify line).
 
