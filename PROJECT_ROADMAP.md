@@ -18,11 +18,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
-- [ ] **Make the night gpu bats test hermetic** — `night gpu: only inside a
-      night job` runs `vibe night gpu` for real when `NIGHT_SHIFT_JOB_DIR` is
-      set, and writes a stray `gpu-job` file into the job dir. Done when
-      `bats tests/night-shift.bats` passes with `NIGHT_SHIFT_JOB_DIR` set to a
-      temp dir and leaves no file there.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/recurring-jobs.md`)
 
