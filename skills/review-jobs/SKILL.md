@@ -1,6 +1,6 @@
 ---
 name: review-jobs
-description: "Reviews the finished agent jobs in the queue: writes a fresh briefing, proposes one action per job that needs a human or has a PR ready — merge, answer and requeue, hold for the user, close, archive — shows the table grouped by repo, then walks the repos one at a time and carries out only the actions the user approves. Use when the user says 'review the jobs', 'what did the agents do', 'go through the briefing', 'merge the agent PRs', or wants the queue's results triaged."
+description: "Reviews the finished agent jobs in the queue: writes a fresh briefing, proposes one action per job that needs a human or has a PR ready — mark ready, answer and requeue, hold for the user, close, archive — shows the table grouped by repo, then walks the repos one at a time, carries out only the actions the user approves and gives the merge order; the user merges. Use when the user says 'review the jobs', 'what did the agents do', 'go through the briefing', 'merge the agent PRs', or wants the queue's results triaged."
 disable-model-invocation: true
 ---
 
@@ -11,9 +11,10 @@ briefing: `docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
-- **Never merge, close, comment, push or archive without approval of that repo's rows.**
-- **Never merge a PR whose checks fail**, or one the user has not seen the TL;DR of.
-- **Never merge a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
+- **Never merge a PR.** You mark it ready and give the merge order; the user merges.
+- **Never mark ready, close, comment, push or archive without approval of that repo's rows.**
+- **Never mark ready a PR whose checks fail**, or one the user has not seen the TL;DR of.
+- **Never mark ready a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
 - **Never archive a row you did not carry out.** A skipped row stays for the next review.
 
@@ -31,7 +32,7 @@ One action per row:
 
 | Action | When | Does |
 | --- | --- | --- |
-| `merge` | PR ready, checks pass or none, Verify line is a quick look | `gh pr ready`, then `gh pr merge` with the method of the repo's last merges |
+| `ready` | PR ready, checks pass or none, Verify line is a quick look | `gh pr ready`; the PR goes into the repo's merge order |
 | `requeue` | blocked on a decision the user can give now | writes the answer into the job's `HANDOFF.md`, commits, pushes, queues a follow-up job |
 | `hold` | needs the user: a big diff, hardware, judgment | `vibe queue hold <id> <note>`; the row leads every briefing under "Yours" |
 | `close` | wrong direction or superseded | `gh pr close` with a one-line reason |
@@ -54,6 +55,10 @@ Take the repos one at a time, in table order. For each repo:
 4. Carry out the approved rows top to bottom. Report each one as one line. A
    failed command stops that row only: report the error and go on.
 5. `vibe queue archive <id>...` for every row carried out, except `hold`.
+6. Give the merge order of the repo's `ready` PRs, one line each:
+   `<n>. #<pr> — <why here>`. Put a PR before the ones whose files it shares,
+   smallest first, and name the PRs that can conflict after it. Give the
+   merge method of the repo's last merges.
 
 Then go to the next repo.
 
@@ -63,10 +68,10 @@ For `requeue`: under `## Next action` and `## Blockers` of the job's
 job's `job` and `prompt.md` into a fresh dir (`mktemp -d`) and run
 `vibe queue add <dir>` outside the sandbox.
 
-Merged and closed branches keep their worktrees: `/worktree-cleanup` removes them.
+Closed branches, and the ones the user merges, keep their worktrees: `/worktree-cleanup` removes them.
 
 ## Done
 
 Done when every repo is walked and its approved rows are carried out and
-archived. Report in at most 6 lines: merged, requeued, held, closed,
+archived. Report in at most 6 lines: marked ready, requeued, held, closed,
 archived, and `Decisions/risks:`.

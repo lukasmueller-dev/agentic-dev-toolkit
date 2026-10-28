@@ -1,6 +1,6 @@
 ---
 name: check-in
-description: "Check-in on the vibe queue, at any time of day: reviews the finished jobs (merge, answer and requeue, hold, close) with the review-jobs skill, then tops the queue up with the fill-queue skill. Use when the user says 'check in', 'morning check-in', 'what did the agents do', 'go through the briefing', or starts a work block and wants the results triaged and the queue full."
+description: "Check-in on the vibe queue, at any time of day: reviews the finished jobs (mark ready, answer and requeue, hold, close) with the review-jobs skill, then tops the queue up with the fill-queue skill. Use when the user says 'check in', 'morning check-in', 'what did the agents do', 'go through the briefing', or starts a work block and wants the results triaged and the queue full."
 disable-model-invocation: true
 ---
 
