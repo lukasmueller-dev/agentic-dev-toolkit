@@ -42,7 +42,7 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
 | [`fill-queue`](skills/fill-queue/) | Sweeps the active repos for unattended work and adds it to the vibe queue after you approve |
-| [`review-jobs`](skills/review-jobs/) | Reviews the queue's finished jobs: merge, requeue, hold, close, after you approve each repo |
+| [`review-jobs`](skills/review-jobs/) | Reviews the queue's finished jobs: ready, requeue, hold, close, after you approve each repo; you merge |
 | [`check-in`](skills/check-in/) | Any time: `review-jobs`, then `fill-queue` |
 | [`shutdown`](skills/shutdown/) | Evening: pushes and hands off every worktree, then runs `fill-queue` |
 | [`recurring-jobs`](skills/recurring-jobs/) | Lists, installs and checks the jobs the 01:00 timer adds to the vibe queue |
