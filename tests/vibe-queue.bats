@@ -43,6 +43,16 @@ case "\$mode" in
     git commit -q -am "feat: a milestone"
     echo "done: one milestone" >"\$VIBE_JOB_DIR/result"
     ;;
+  limit)
+    if [ -f "$STUBS/limit-reset" ]; then
+      echo "\$(cat wip.txt) more" >wip.txt && git add wip.txt && git commit -q -m "feat: wip"
+      echo "done: wip finished" >"\$VIBE_JOB_DIR/result"
+    else
+      echo half >wip.txt
+      echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":'"\$((\$(date +%s) + 3600))"',"rateLimitType":"five_hour"}}'
+      exit 1
+    fi
+    ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
   silent) ;;
@@ -241,6 +251,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   "$VIBE" queue resume >/dev/null
   drain
   [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
+@test "limit: the job requeues with its worktree kept, nothing starts until the reset" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a limit
+  mkjob 02-b "$r" task-b ok
+  window open 1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = queued ]
+  [[ "$(cat "$Q/01-a/note")" == "usage limit — retry after "* ]] || false
+  [ ! -e "$Q/02-b/status" ]
+  [ "$(cat "$r/.claude/worktrees/task-a/wip.txt")" = half ]
+  run git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue status
+  [[ "$output" == *"USAGE LIMIT until"* ]] || false
+  date +%s >"$XDG_STATE_HOME/vibe/limit"
+  touch "$STUBS/limit-reset"
+  drain
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:wip.txt)" = "half more" ]
 }
 
 @test "add: moves a prepared dir in as <time>-<repo>-<branch>, in order; --now; refuses bad input" {
