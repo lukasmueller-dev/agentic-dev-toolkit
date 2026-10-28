@@ -356,6 +356,20 @@ SWEEP="$REPO_ROOT/skills/agent-shift/sweep.sh"
   [ "$(cat "$NIGHT/jobs/01-a-gpu/status")" = "done" ]
 }
 
+@test "night follow: the follow-up prompt names its own job dir, also for a follow-up of a follow-up" {
+  mkjob 01-a /nowhere task-a ok
+  echo "- **Job dir:** \`$NIGHT/jobs/01-a\`" >>"$NIGHT/jobs/01-a/prompt.md"
+  GPUQ_EXIT=0 run "$VIBE" night follow "$NIGHT/jobs/01-a"
+  [ "$status" -eq 0 ]
+  GPUQ_EXIT=0 run "$VIBE" night follow "$NIGHT/jobs/01-a-gpu"
+  [ "$status" -eq 0 ]
+  grep -qF -- "- **Job dir:** \`$NIGHT/jobs/01-a-gpu\`" "$NIGHT/jobs/01-a-gpu/prompt.md"
+  grep -qF -- "- **Job dir:** \`$NIGHT/jobs/01-a-gpu-gpu\`" "$NIGHT/jobs/01-a-gpu-gpu/prompt.md"
+  run grep -c 'Job dir' "$NIGHT/jobs/01-a-gpu-gpu/prompt.md"
+  [ "$output" = 1 ]
+  grep -q -- '- Exit: 0' "$NIGHT/jobs/01-a-gpu-gpu/prompt.md"
+}
+
 @test "night gpu: only inside a night job" {
   run "$VIBE" night gpu -- true
   [ "$status" -ne 0 ]

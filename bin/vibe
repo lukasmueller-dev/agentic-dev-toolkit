@@ -545,7 +545,7 @@ cmd_night_gpu() {
 # vibe night follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
 # with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG).
 cmd_night_follow() {
-  local p="${1:?usage: vibe night follow <job dir>}" f n=1
+  local p="${1:?usage: vibe night follow <job dir>}" f n=1 line
   p="${p%/}"
   [[ -f "$p/job" ]] || die "no job at $p"
   f="$p-gpu"
@@ -559,7 +559,11 @@ cmd_night_follow() {
     echo "follow=1"
   } >"$f/job"
   {
-    cat "$p/prompt.md"
+    # The prompt names the job dir; the follow-up writes its files to its own.
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == '- **Job dir:** '* ]]; then line="- **Job dir:** \`$f\`"; fi
+      printf '%s\n' "$line"
+    done <"$p/prompt.md"
     printf '\n## GPU run finished\n\n- Exit: %s\n- Log: %s\n\n' "${GPUQ_EXIT:-?}" "${GPUQ_LOG:-?}"
     echo "An earlier session prepared and queued this run; its commits are on the branch."
     echo "Read the log and the outputs, check the done-when, finish the task."
