@@ -66,7 +66,11 @@ Merged and closed branches keep their worktrees: `/worktree-cleanup` removes the
 
 ## Phase 4 — Day shift
 
-Read `../agent-shift/SKILL.md` and do every phase of it with the argument `day`.
+First, every approved `merge` row must be merged: the sweep reads the
+roadmaps on main, and new jobs branch from main. For a merge the user does,
+ask and wait until the user says it is done.
+
+Then read `../agent-shift/SKILL.md` and do every phase of it with the argument `day`.
 Its sweep finds the `requeue` answers as handoff next actions. Its approval
 table is the day shift's. The user declines → go to Phase 5.
 
