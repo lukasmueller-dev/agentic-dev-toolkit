@@ -565,7 +565,7 @@ fake_repo() {
   local f
   for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
     templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
-    templates/AGENT_JOB.md templates/SPEC.md; do
+    templates/VIBE_JOB.md templates/SPEC.md; do
     # existence first: grep exits 2 on a missing file, which '-ne 0' accepts as
     # readily as "no match", so a rename would retire the check silently.
     [ -f "$REPO_ROOT/$f" ]
@@ -579,7 +579,7 @@ fake_repo() {
   run grep -rniE 'claude|codex|gemini|copilot|cursor|\bmac(os|book)?\b|\bVPS\b' \
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/job-pr.md \
-    "$REPO_ROOT"/templates/job-report.md "$REPO_ROOT"/templates/AGENT_JOB.md \
+    "$REPO_ROOT"/templates/job-report.md "$REPO_ROOT"/templates/VIBE_JOB.md \
     "$REPO_ROOT"/templates/SPEC.md \
     "$REPO_ROOT"/templates/codebase \
     "$REPO_ROOT"/templates/research
@@ -669,7 +669,7 @@ EOF
 }
 
 @test "claude settings: agent jobs have no unsandboxed escape and no default-branch push" {
-  local f="$REPO_ROOT/claude/agent-job-settings.json"
+  local f="$REPO_ROOT/claude/vibe-job-settings.json"
   jq -e '.sandbox.allowUnsandboxedCommands == false' "$f"
   # without it a job whose sandbox cannot start runs every command unsandboxed
   jq -e '.sandbox.failIfUnavailable == true' "$f"

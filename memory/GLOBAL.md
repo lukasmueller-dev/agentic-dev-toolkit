@@ -61,7 +61,7 @@ browser. Setup and traps: `~/github/agentic-dev-toolkit/docs/remote-sessions.md`
   clean. The `worktree-cleanup` skill removes the merged ones that are left.
 - The main checkout stays on the default branch: never commit there; work in
   a worktree (`vibe start <task>`).
-- The day: one agent queue runs all the time; heavy jobs start only at night
+- The day: one vibe queue runs all the time; heavy jobs start only at night
   (18:00–07:00). The `check-in` skill (morning, after lunch, any time) reviews
   finished jobs and refills the queue; the `shutdown` skill hands off every
   worktree and fills the queue for the night.

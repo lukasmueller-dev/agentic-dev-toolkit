@@ -20,12 +20,12 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
-- 2026-10-28: **agent queue replaces the shifts**: one always-on queue
-  (`agent-queue.service`); heavy jobs (timeout > 2h) start only 18:00–07:00;
+- 2026-10-28: **vibe queue replaces the shifts**: one always-on queue
+  (`vibe-queue.service`); heavy jobs (timeout > 2h) start only 18:00–07:00;
   `/fill-queue` and `/review-jobs` run any time, `check-in` and `shutdown`
   call them; a fresh briefing per review, no report timers. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
-  `vibe job due` (01:00 timer) adds due jobs to the agent queue, one PR per
+  `vibe job due` (01:00 timer) adds due jobs to the vibe queue, one PR per
   run on `jobs/<job>`, cap 2 open job PRs per repo, two failures stop a job.
   Output contract for every job: `memory/GLOBAL.md`, `templates/job-*.md`.
   Design: PRs #99 and the `feat/recurring-jobs` PR.

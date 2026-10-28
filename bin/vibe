@@ -14,15 +14,15 @@
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue run --<agent> [--drain]
-#                                   the runner (agent-queue.service); --drain: until nothing can start
+#                                   the runner (vibe-queue.service); --drain: until nothing can start
 #   vibe job list [--all] [<repo>...]
-#                                   recurring jobs of every repo with .agent-jobs/, and the repos
+#                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
 #   vibe job due [--dry] [--max N]  queue every due recurring job (the 01:00 timer)
 #   vibe job run <repo> <job>       queue one recurring job now
-#   vibe job add <repo> <job>       opt <repo> in: write <repo>/.agent-jobs/<job>.md
+#   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #
-# Docs: docs/remote-sessions.md, docs/agent-queue.md, docs/recurring-jobs.md.
+# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
 set -euo pipefail
 
 script_dir() {
@@ -281,20 +281,20 @@ cmd_update_toolkit() {
   fi
 }
 
-# --- queue: unattended agent jobs, one worktree each (docs/agent-queue.md) ---
+# --- queue: unattended agent jobs, one worktree each (docs/vibe-queue.md) ---
 
-QROOT="${XDG_STATE_HOME:-$HOME/.local/state}/agent-queue"
+QROOT="${XDG_STATE_HOME:-$HOME/.local/state}/vibe"
 QDIR="$QROOT/queue"
-QCONF="${XDG_CONFIG_HOME:-$HOME/.config}/agent-queue"
+QCONF="${XDG_CONFIG_HOME:-$HOME/.config}/vibe"
 
 # jget FILE KEY — the value of KEY=value in FILE; empty when absent.
 jget() { awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$1" 2>/dev/null || true; }
 # jstate JOB NAME — first line of a job state file; empty when absent.
 jstate() { head -n 1 "$1/$2" 2>/dev/null || true; }
-# qconf KEY DEFAULT — KEY=value from ~/.config/agent-queue/config, else DEFAULT.
+# qconf KEY DEFAULT — KEY=value from ~/.config/vibe/queue.conf, else DEFAULT.
 qconf() {
   local v
-  v="$(jget "$QCONF/config" "$1")"
+  v="$(jget "$QCONF/queue.conf" "$1")"
   echo "${v:-$2}"
 }
 
@@ -346,7 +346,7 @@ job_heavy() {
 }
 
 # job_end JOB STATUS NOTE — final status of a job; a recurring job also
-# updates its last-run / fails state (docs/recurring-jobs.md).
+# updates its last-run / fails state (docs/vibe-jobs.md).
 job_end() {
   echo "$2" >"$1/status"
   echo "$3" >"$1/note"
@@ -519,7 +519,7 @@ job_run() {
   t="$(job_timeout "$d")"
   local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#tcmd[@]})); then tcmd+=("$t"); fi
-  AGENT_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
     "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" >"$d/log" 2>&1 || rc=$?
   result="$(jstate "$d" result)"
   if ((rc == 124 || rc == 137)); then
@@ -687,8 +687,8 @@ cmd_queue_resume() {
 # vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
 cmd_queue_gpu() {
-  local d="${AGENT_JOB_DIR:-}" id
-  [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (AGENT_JOB_DIR)"
+  local d="${VIBE_JOB_DIR:-}" id
+  [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
   case "${1:-}" in
     -h | --help) usage ;;
     --) shift ;;
@@ -849,7 +849,7 @@ report_rows() {
 # action of every unheld job that did not finish.
 queue_report_md() {
   local d st wt repo rows=""
-  echo "# Agent jobs — $(date '+%F %H:%M')"
+  echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
   queue_header
   for d in "$QDIR"/*/; do
@@ -896,7 +896,7 @@ queue_report_md() {
 
 # vibe queue report — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
 # copied as briefing-<…>.md with note frontmatter to the directory named in
-# ~/.config/agent-queue/briefing-dir when that file exists.
+# ~/.config/vibe/briefing-dir when that file exists.
 cmd_queue_report() {
   local file copy dest
   [[ $# -eq 0 ]] || die "usage: vibe queue report"
@@ -926,11 +926,11 @@ cmd_queue() {
   esac
 }
 
-# --- job: recurring jobs, added to the queue by the 01:00 timer (docs/recurring-jobs.md)
+# --- job: recurring jobs, added to the queue by the 01:00 timer (docs/vibe-jobs.md)
 
-JOBS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/agent-jobs"
+JOBS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/vibe/jobs"
 JOBS_ROOT="${VIBE_ROOT:-$(dirname "$SELF_ROOT")}"
-JOBS_CATALOGUE="${AGENT_JOBS_CATALOGUE:-$SELF_ROOT/skills/recurring-jobs/references/jobs}"
+JOBS_CATALOGUE="${VIBE_JOBS_CATALOGUE:-$SELF_ROOT/skills/recurring-jobs/references/jobs}"
 
 # fm_get FILE KEY — `KEY: value` from FILE's frontmatter; empty when absent.
 fm_get() {
@@ -945,15 +945,15 @@ fm_body() {
 }
 
 # job_repos [REPO...] — absolute repo paths: the arguments, else every repo
-# under the root with an .agent-jobs/ opt-in.
+# under the root with a .vibe-jobs/ opt-in.
 job_repos() {
   local r
   if (($#)); then
     for r in "$@"; do job_repo_path "$r"; done
     return 0
   fi
-  for r in "$JOBS_ROOT"/*/.agent-jobs/; do
-    r="${r%/.agent-jobs/}"
+  for r in "$JOBS_ROOT"/*/.vibe-jobs/; do
+    r="${r%/.vibe-jobs/}"
     if [[ -n "$(job_names "$r")" ]]; then echo "$r"; fi
   done
 }
@@ -961,10 +961,10 @@ job_repo_path() {
   case "$1" in */*) echo "$1" ;; *) echo "$JOBS_ROOT/$1" ;; esac
 }
 
-# job_names REPO — the jobs REPO opted into: one per <repo>/.agent-jobs/<name>.md.
+# job_names REPO — the jobs REPO opted into: one per <repo>/.vibe-jobs/<name>.md.
 job_names() {
   local f
-  for f in "$1"/.agent-jobs/*.md; do
+  for f in "$1"/.vibe-jobs/*.md; do
     [[ -f "$f" ]] || continue
     f="${f##*/}"
     case "$f" in _*) continue ;; esac
@@ -975,7 +975,7 @@ job_names() {
 # job_key REPO JOB KEY DEFAULT — the repo file's value, else the catalogue's, else DEFAULT.
 job_key() {
   local v
-  v="$(fm_get "$1/.agent-jobs/$2.md" "$3")"
+  v="$(fm_get "$1/.vibe-jobs/$2.md" "$3")"
   [[ -n "$v" ]] || v="$(fm_get "$JOBS_CATALOGUE/$2.md" "$3")"
   echo "${v:-$4}"
 }
@@ -993,7 +993,7 @@ job_check() {
     "") echo "no schedule — not in the catalogue, and the repo file sets none" && return 0 ;;
     *) echo "bad schedule '$sched'" && return 0 ;;
   esac
-  if [[ ! -f "$JOBS_CATALOGUE/$job.md" && -z "$(fm_body "$repo/.agent-jobs/$job.md" | grep -v '^[[:space:]]*$' || true)" ]]; then
+  if [[ ! -f "$JOBS_CATALOGUE/$job.md" && -z "$(fm_body "$repo/.vibe-jobs/$job.md" | grep -v '^[[:space:]]*$' || true)" ]]; then
     echo "not in the catalogue, and the repo file has no instructions"
     return 0
   fi
@@ -1082,7 +1082,7 @@ cmd_job_list() {
     ((all)) || continue
     for f in "$JOBS_CATALOGUE"/*.md; do
       job="${f##*/}" && job="${job%.md}"
-      [[ "$job" != _* && ! -f "$repo/.agent-jobs/$job.md" ]] || continue
+      [[ "$job" != _* && ! -f "$repo/.vibe-jobs/$job.md" ]] || continue
       printf '%-21s %-20s %-8s %-4s %-11s %s\n' "$(basename "$repo")" "$job" \
         "$(fm_get "$f" schedule)" "$(fm_get "$f" day)" - "available — vibe job add $(basename "$repo") $job"
     done
@@ -1090,7 +1090,7 @@ cmd_job_list() {
   sweep_line
 }
 
-# sweep_line — the repos the fill-queue sweep covers (~/.config/agent-queue/repos).
+# sweep_line — the repos the fill-queue sweep covers (~/.config/vibe/repos).
 sweep_line() {
   local conf="$QCONF/repos" line names=""
   if [[ ! -f "$conf" ]]; then
@@ -1136,7 +1136,7 @@ job_write() {
     '<output>' "$output" \
     '<timeout>' "$(job_key "$repo" "$job" timeout 1h)" \
     '<catalogue-instructions>' "$(fm_body "$JOBS_CATALOGUE/$job.md")" \
-    '<repo-instructions>' "$(fm_body "$repo/.agent-jobs/$job.md")" \
+    '<repo-instructions>' "$(fm_body "$repo/.vibe-jobs/$job.md")" \
     '<pr-template>' "$(cat "$SELF_ROOT/templates/job-pr.md")" \
     '<report-template>' "$(cat "$SELF_ROOT/templates/job-report.md")" >"$d/prompt.md"
 }
@@ -1235,17 +1235,17 @@ cmd_job_run() {
   job_queue "$DRY" "$repo ${REST[1]}"
 }
 
-# vibe job add REPO JOB — render templates/AGENT_JOB.md to <repo>/.agent-jobs/<job>.md.
+# vibe job add REPO JOB — render templates/VIBE_JOB.md to <repo>/.vibe-jobs/<job>.md.
 cmd_job_add() {
   local repo="${1:?usage: vibe job add <repo> <job>}" job="${2:?usage: vibe job add <repo> <job>}" f
   repo="$(job_repo_path "$repo")"
   [[ -d "$repo" ]] || die "no directory $repo"
   [[ "$(slug "$job")" == "$job" ]] || die "bad job name '$job'"
   [[ -f "$JOBS_CATALOGUE/$job.md" ]] || info "'$job' is not in the catalogue — the file needs its own schedule and instructions"
-  f="$repo/.agent-jobs/$job.md"
+  f="$repo/.vibe-jobs/$job.md"
   [[ ! -e "$f" ]] || die "$f exists — edit it"
-  mkdir -p "$repo/.agent-jobs"
-  render_template "$SELF_ROOT/templates/AGENT_JOB.md" '<job>' "$job" '<repo>' "$(basename "$repo")" >"$f"
+  mkdir -p "$repo/.vibe-jobs"
+  render_template "$SELF_ROOT/templates/VIBE_JOB.md" '<job>' "$job" '<repo>' "$(basename "$repo")" >"$f"
   echo "wrote $f — edit, then commit it"
 }
 

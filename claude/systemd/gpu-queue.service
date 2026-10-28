@@ -1,5 +1,5 @@
 # gpu-queue — runs queued GPU jobs one at a time, for ever.
-# Setup: docs/agent-queue.md. Skipped unless ~/.config/vibe/role holds 'server'.
+# Setup: docs/vibe-queue.md. Skipped unless ~/.config/vibe/role holds 'server'.
 
 [Unit]
 Description=GPU job queue

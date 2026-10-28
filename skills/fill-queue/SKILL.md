@@ -1,6 +1,6 @@
 ---
 name: fill-queue
-description: "Fills the agent queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, and after approval adds one headless agent job per item, each ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
+description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, and after approval adds one headless agent job per item, each ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
 disable-model-invocation: true
 argument-hint: "[<repo>...]"
 ---
@@ -9,7 +9,7 @@ argument-hint: "[<repo>...]"
 
 Show the queue, sweep the active repos, gate and rank what can run
 unattended, get approval, add the jobs. Runner, window and layout:
-`docs/agent-queue.md` in the toolkit.
+`docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
@@ -40,7 +40,7 @@ The user says skip → go to Phase 2.
 ## Phase 2 — Sweep
 
 Run `sweep.sh [<repo>...]` from this skill's directory. It reads the
-arguments, else `~/.config/agent-queue/repos` (one repo per line, highest
+arguments, else `~/.config/vibe/repos` (one repo per line, highest
 rank first). With neither, ask for the repos and offer to write that file.
 It fetches each repo and reads goal and roadmap from `origin`'s default branch.
 If it prints `gh failed` or `fetch failed`, run it again outside the sandbox.

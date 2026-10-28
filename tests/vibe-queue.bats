@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# vibe queue — the agent queue in throwaway repos with a bare origin. A stub
+# vibe queue — the vibe queue in throwaway repos with a bare origin. A stub
 # `claude` acts on the MODE line of its prompt; a stub `gh` records its calls
 # under $STUBS. The runner runs with --drain, so each test ends.
 
@@ -23,27 +23,27 @@ case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- sh -c 'echo trained >out.txt'
-    echo "queued: training" >"\$AGENT_JOB_DIR/result"
+    echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$AGENT_JOB_DIR/pr.md"
-    echo "done: work.txt added" >"\$AGENT_JOB_DIR/result"
+    printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$VIBE_JOB_DIR/pr.md"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
   nopr)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    echo "done: work.txt added, no pr.md" >"\$AGENT_JOB_DIR/result"
+    echo "done: work.txt added, no pr.md" >"\$VIBE_JOB_DIR/result"
     ;;
   seq)
     echo begin >>"$STUBS/seq" && sleep 0.5 && echo end >>"$STUBS/seq"
-    echo "done: nothing" >"\$AGENT_JOB_DIR/result"
+    echo "done: nothing" >"\$VIBE_JOB_DIR/result"
     ;;
   milestone)
     awk '!t && /^- \[ \]/ { sub(/\[ \]/, "[x]"); t = 1 } { print }' SPEC.md >SPEC.tmp && mv SPEC.tmp SPEC.md
     git commit -q -am "feat: a milestone"
-    echo "done: one milestone" >"\$AGENT_JOB_DIR/result"
+    echo "done: one milestone" >"\$VIBE_JOB_DIR/result"
     ;;
-  blocked) echo "blocked: needs a decision" >"\$AGENT_JOB_DIR/result" ;;
+  blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
   silent) ;;
   sleep) sleep 30 ;;
@@ -62,8 +62,8 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
-  Q="$XDG_STATE_HOME/agent-queue/queue"
-  CONF="$XDG_CONFIG_HOME/agent-queue/config"
+  Q="$XDG_STATE_HOME/vibe/queue"
+  CONF="$XDG_CONFIG_HOME/vibe/queue.conf"
   mkdir -p "$Q" "${CONF%/*}"
 }
 
@@ -119,7 +119,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -eq 0 ]
   grep -q -- '-p --model sonnet --name proj-task-a' "$STUBS/claude.log"
   grep -q -- '--permission-prompts none' "$STUBS/claude.log"
-  grep -q -- "--settings $REPO_ROOT/claude/agent-job-settings.json" "$STUBS/claude.log"
+  grep -q -- "--settings $REPO_ROOT/claude/vibe-job-settings.json" "$STUBS/claude.log"
 }
 
 @test "run: no pr.md titles the PR from the result; an open PR gets its body replaced" {
@@ -298,7 +298,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -eq 0 ]
   run "$VIBE" queue archive 01-a 03-c
   [ "$status" -eq 0 ]
-  [ -d "$XDG_STATE_HOME/agent-queue/archive/$(date +%Y-%m)/01-a" ]
+  [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
   [ ! -e "$Q/01-a" ]
   run "$VIBE" queue status
   [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued (0 heavy"*"1 to review"* ]] || false
@@ -319,10 +319,10 @@ drain() { run "$VIBE" queue run --claude --drain; }
   printf '## Next action\n\nAsk the supervisor.\n\n## Blockers\n\nNeeds a | decision.\n' \
     >"$r/.claude/worktrees/task-b/HANDOFF.md"
   echo findings >"$Q/03-c/report.md"
-  echo "$BATS_TEST_TMPDIR/vault/inbox" >"$XDG_CONFIG_HOME/agent-queue/briefing-dir"
+  echo "$BATS_TEST_TMPDIR/vault/inbox" >"$XDG_CONFIG_HOME/vibe/briefing-dir"
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  f="$(ls "$XDG_STATE_HOME"/agent-queue/briefings/*.md)"
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
   [[ "${f##*/}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}\.md$ ]] || false
   [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}"* ]] || false
   [ "$(head -n 2 "$BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}")" = "$(printf -- '---\ncreated: %s' "$(date +%F)")" ]
@@ -365,7 +365,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [[ "$output" == *"inside a queue job"* ]] || false
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
-  AGENT_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu --help
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu --help
   [ "$status" -eq 0 ]
   [[ "$output" == *"vibe queue status"* ]] || false
   [ ! -e "$Q/01-a/gpu-job" ]
@@ -381,12 +381,12 @@ drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "unit: runner and GPU queue run only with role 'server', survive restarts; no report timers" {
   local u
-  for u in agent-queue gpu-queue; do
+  for u in vibe-queue gpu-queue; do
     grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/$u.service"
     grep -q '^KillMode=process$' "$REPO_ROOT/claude/systemd/$u.service"
     grep -q '^Restart=always$' "$REPO_ROOT/claude/systemd/$u.service"
   done
-  grep -q '^ExecStart=%h/bin/vibe queue run --claude$' "$REPO_ROOT/claude/systemd/agent-queue.service"
+  grep -q '^ExecStart=%h/bin/vibe queue run --claude$' "$REPO_ROOT/claude/systemd/vibe-queue.service"
   grep -q '^ExecStart=%h/bin/gpu-queue run$' "$REPO_ROOT/claude/systemd/gpu-queue.service"
   [ -z "$(ls "$REPO_ROOT"/claude/systemd/*report* 2>/dev/null)" ]
 }
@@ -400,7 +400,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   git -C "$b" push -q
   "$VIBE" start -C "$a" task >/dev/null 2>&1
   printf '## Next action\n\n_placeholder_\n\nRun the eval.\n\n## Blockers\n\nNone.\n' >"$a/.claude/worktrees/task/HANDOFF.md"
-  printf 'beta   # first\n\n%s\n' "$a" >"$XDG_CONFIG_HOME/agent-queue/repos"
+  printf 'beta   # first\n\n%s\n' "$a" >"$XDG_CONFIG_HOME/vibe/repos"
   mkjob 01-a "$a" task ok
   VIBE_ROOT="$BATS_TEST_TMPDIR" run "$SWEEP"
   [ "$status" -eq 0 ]

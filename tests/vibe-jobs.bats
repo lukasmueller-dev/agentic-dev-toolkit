@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 #
 # vibe job — recurring jobs: the catalogue, a repo's opt-in files, the due
-# rule, the dispatcher that adds them to the agent queue, and the runner's
-# state updates. Stubs as in agent-queue.bats.
+# rule, the dispatcher that adds them to the vibe queue, and the runner's
+# state updates. Stubs as in vibe-queue.bats.
 
 load helper
 
@@ -20,8 +20,8 @@ mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p' | head -n 1)"
 case "\$mode" in
   ok)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
-    printf 'job(health): tidy\n\n**Changed:** work.txt added.\n' >"\$AGENT_JOB_DIR/pr.md"
-    echo "done: work.txt added" >"\$AGENT_JOB_DIR/result"
+    printf 'job(health): tidy\n\n**Changed:** work.txt added.\n' >"\$VIBE_JOB_DIR/pr.md"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
   crash) exit 3 ;;
   sleep) sleep 30 ;;
@@ -40,24 +40,24 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
-  export AGENT_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" VIBE_ROOT="$BATS_TEST_TMPDIR"
-  mkdir -p "$AGENT_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/agent-queue"
-  printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$AGENT_JOBS_CATALOGUE/health.md"
-  printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$AGENT_JOBS_CATALOGUE/crashy.md"
-  printf -- '---\nschedule: daily\ntimeout: 2s\n---\n\nMODE=sleep\n' >"$AGENT_JOBS_CATALOGUE/slow.md"
+  export VIBE_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" VIBE_ROOT="$BATS_TEST_TMPDIR"
+  mkdir -p "$VIBE_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/vibe"
+  printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$VIBE_JOBS_CATALOGUE/health.md"
+  printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$VIBE_JOBS_CATALOGUE/crashy.md"
+  printf -- '---\nschedule: daily\ntimeout: 2s\n---\n\nMODE=sleep\n' >"$VIBE_JOBS_CATALOGUE/slow.md"
   TODAY="$(LC_ALL=C date +%a | tr '[:upper:]' '[:lower:]')"
-  Q="$XDG_STATE_HOME/agent-queue/queue"
+  Q="$XDG_STATE_HOME/vibe/queue"
 }
 
-# optin REPO JOB [FRONTMATTER] [BODY] — the repo's .agent-jobs file.
+# optin REPO JOB [FRONTMATTER] [BODY] — the repo's .vibe-jobs file.
 optin() {
-  mkdir -p "$1/.agent-jobs"
-  printf -- '---\n%b---\n\n%s\n' "${3:-}" "${4:-}" >"$1/.agent-jobs/$2.md"
+  mkdir -p "$1/.vibe-jobs"
+  printf -- '---\n%b---\n\n%s\n' "${3:-}" "${4:-}" >"$1/.vibe-jobs/$2.md"
 }
 # state REPO JOB FILE VALUE — a job's state file.
 state() {
-  mkdir -p "$XDG_STATE_HOME/agent-jobs/$(basename "$1")/$2"
-  echo "$4" >"$XDG_STATE_HOME/agent-jobs/$(basename "$1")/$2/$3"
+  mkdir -p "$XDG_STATE_HOME/vibe/jobs/$(basename "$1")/$2"
+  echo "$4" >"$XDG_STATE_HOME/vibe/jobs/$(basename "$1")/$2/$3"
 }
 # qjobs SUFFIX — the queue's job dirs whose id ends in SUFFIX, oldest first.
 qjobs() { for d in "$Q"/*-"$1"; do [ ! -d "$d" ] || echo "$d"; done; }
@@ -82,11 +82,11 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"nosched"*"invalid: no schedule"* ]] || false
   [[ "$output" == *"nobody"*"invalid: not in the catalogue, and the repo file has no instructions"* ]] || false
   [[ "$output" != *bystander* && "$output" != *available* ]] || false
-  [[ "$output" == *"fill-queue sweep: no "*"agent-queue/repos"* ]] || false
-  mkdir -p "$XDG_CONFIG_HOME/agent-queue"
-  printf 'proj  # first\n\n%s\n' "$BATS_TEST_TMPDIR/other" >"$XDG_CONFIG_HOME/agent-queue/repos"
+  [[ "$output" == *"fill-queue sweep: no "*"vibe/repos"* ]] || false
+  mkdir -p "$XDG_CONFIG_HOME/vibe"
+  printf 'proj  # first\n\n%s\n' "$BATS_TEST_TMPDIR/other" >"$XDG_CONFIG_HOME/vibe/repos"
   run "$VIBE" job list
-  [[ "$output" == *"fill-queue sweep ("*"agent-queue/repos): proj, other"* ]] || false
+  [[ "$output" == *"fill-queue sweep ("*"vibe/repos): proj, other"* ]] || false
   run "$VIBE" job list --all
   [[ "$output" == *"proj"*"crashy"*"daily"*"available — vibe job add proj crashy"* ]] || false
   [[ "$output" != *bystander* ]] || false
@@ -138,7 +138,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   run cat "$d/job"
   [[ "$output" == *"repo=$r"*"branch=jobs/health"*"model=sonnet"*"timeout=2h"*"recurring=health"*"output=pr"* ]] || false
   run cat "$d/prompt.md"
-  [[ "$output" == *"# Recurring job: health"*"\`\$AGENT_JOB_DIR\`"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
+  [[ "$output" == *"# Recurring job: health"*"\`\$VIBE_JOB_DIR\`"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
   [[ "$output" == *"**Context:** <context>"*"**Changed:** <changed>"*"**Context:** <context>"*"**Needs you:** <needs-you>"* ]] || false
   [[ "$output" != *"<catalogue-instructions>"* ]] || false
 }
@@ -154,9 +154,9 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [ "$(qjobs jobs-crashy | wc -l)" -eq 1 ]
   d="$(qjobs jobs-crashy)"
   [ "$(cat "$d/status")" = skipped ]
-  [[ "$(cat "$d/note")" == "stopped after 2 failures — rm "*"/agent-jobs/proj/crashy/fails" ]] || false
+  [[ "$(cat "$d/note")" == "stopped after 2 failures — rm "*"/vibe/jobs/proj/crashy/fails" ]] || false
   "$VIBE" queue report >/dev/null
-  run cat "$XDG_STATE_HOME"/agent-queue/briefings/*.md
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### Needs you"*"| ${d##*/} | skipped |  | stopped after 2 failures"* ]] || false
 }
 
@@ -174,15 +174,15 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   grep -q -- '--head jobs/health --title job(health): tidy' "$STUBS/gh.log"
   grep -qF -- 'api --method POST repos/{owner}/{repo}/issues/1/labels -f labels[]=agent' "$STUBS/gh.log"
   grep -q -- '--name proj-jobs-health' "$STUBS/claude.log"
-  [ -f "$XDG_STATE_HOME/agent-jobs/proj/health/last-run" ]
+  [ -f "$XDG_STATE_HOME/vibe/jobs/proj/health/last-run" ]
   run "$VIBE" job list "$r"
   [[ "$output" == *"health"*"$(date +%F)"*"not due"* ]] || false
   "$VIBE" job run "$r" crashy >/dev/null
   drain
-  [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/crashy/fails")" = 1 ]
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/crashy/fails")" = 1 ]
   "$VIBE" job run "$r" crashy >/dev/null
   drain
-  [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/crashy/fails")" = 2 ]
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/crashy/fails")" = 2 ]
   run "$VIBE" job list "$r"
   [[ "$output" == *"crashy"*"stopped: 2 failures — rm "* ]] || false
   run "$VIBE" job run "$r" nosuch
@@ -199,7 +199,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   d="$(qjobs jobs-slow)"
   [ "$(cat "$d/status")" = timeout ]
   [ "$(cat "$d/note")" = "stopped after 2s" ]
-  [ "$(cat "$XDG_STATE_HOME/agent-jobs/proj/slow/fails")" = 1 ]
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/slow/fails")" = 1 ]
 }
 
 @test "job due: output drops to report at 2 open job PRs, unless this job's branch is one" {
@@ -220,7 +220,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   r="$(make_repo proj)"
   run "$VIBE" job add "$r" health
   [ "$status" -eq 0 ]
-  run cat "$r/.agent-jobs/health.md"
+  run cat "$r/.vibe-jobs/health.md"
   [[ "$output" == "---"*"# health in proj."*"_One line per instruction"* ]] || false
   [[ "$output" != *"<job>"* ]] || false
   run "$VIBE" job add "$r" health
@@ -233,10 +233,10 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
 }
 
 @test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent" {
-  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/agent-jobs.service"
-  grep -q '^ExecStart=.*vibe job due$' "$REPO_ROOT/claude/systemd/agent-jobs.service"
-  grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$REPO_ROOT/claude/systemd/agent-jobs.timer"
-  run grep -c Persistent "$REPO_ROOT/claude/systemd/agent-jobs.timer"
+  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
+  grep -q '^ExecStart=.*vibe job due$' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
+  grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
+  run grep -c Persistent "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
   [ "$output" = 0 ]
 }
 

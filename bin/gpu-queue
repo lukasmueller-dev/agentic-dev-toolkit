@@ -9,7 +9,7 @@
 #   gpu-queue lock -- CMD...        run CMD holding the GPU lock (manual runs, other queues)
 #   gpu-queue status                queued, running and finished jobs
 #
-# --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/agent-queue.md.
+# --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/vibe-queue.md.
 set -euo pipefail
 
 usage() {

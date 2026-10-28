@@ -1,18 +1,18 @@
 # Recurring jobs
 
 A job is a prompt plus a schedule. At 01:00 `vibe job due` adds every due
-job to the agent queue (`docs/agent-queue.md`); `/review-jobs` shows the
+job to the vibe queue (`docs/vibe-queue.md`); `/review-jobs` shows the
 result. Skill: [`skills/recurring-jobs/`](../skills/recurring-jobs/SKILL.md).
 
 ## Requirements
 
-- The agent queue running (`docs/agent-queue.md`).
-- Repos sit under `~/github` (`VIBE_ROOT`). A repo with `.agent-jobs/*.md` is opted in; `~/.config/agent-queue/repos` is the fill-queue sweep only.
+- The vibe queue running (`docs/vibe-queue.md`).
+- Repos sit under `~/github` (`VIBE_ROOT`). A repo with `.vibe-jobs/*.md` is opted in; `~/.config/vibe/repos` is the fill-queue sweep only.
 
 ## 1. Opt a repo in
 
 ```bash
-vibe job add <repo> codebase-health      # writes <repo>/.agent-jobs/codebase-health.md
+vibe job add <repo> codebase-health      # writes <repo>/.vibe-jobs/codebase-health.md
 ```
 
 Edit the file (keys override the catalogue; the body is repo-specific
@@ -23,8 +23,8 @@ instruction), commit it. `/recurring-jobs add <job>` does the same in a session.
 Server machine only (`~/.config/vibe/role` holds `server`).
 
 ```bash
-systemctl --user link ~/.claude/systemd/agent-jobs.service ~/.claude/systemd/agent-jobs.timer
-systemctl --user enable --now agent-jobs.timer
+systemctl --user link ~/.claude/systemd/vibe-jobs.service ~/.claude/systemd/vibe-jobs.timer
+systemctl --user enable --now vibe-jobs.timer
 ```
 
 ## 3. Verify
@@ -34,7 +34,7 @@ vibe job list                            # repo × job: schedule, last run, due 
 vibe job list --all                      # also the catalogue jobs each repo has not opted into
 vibe job due --dry                       # what the next 01:00 run queues
 vibe job run <repo> <job>                # one job now; then: vibe queue status
-systemctl --user list-timers agent-jobs.timer
+systemctl --user list-timers vibe-jobs.timer
 ```
 
 ## Catalogue
@@ -54,9 +54,9 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 | Where | Holds |
 | --- | --- |
 | `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout`, then the task |
-| `<repo>/.agent-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
-| `~/.local/state/agent-jobs/<repo>/<job>/last-run`, `fails` | epoch of the last `done`; failures in a row |
-| `~/.local/state/agent-queue/queue/<id>/` | the queued job (`docs/agent-queue.md`) |
+| `<repo>/.vibe-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
+| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails` | epoch of the last `done`; failures in a row |
+| `~/.local/state/vibe/queue/<id>/` | the queued job (`docs/vibe-queue.md`) |
 | `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` |
 
 Rules the dispatcher keeps:
@@ -71,7 +71,7 @@ Rules the dispatcher keeps:
 ## What breaks it
 
 - `vibe job list` says `invalid: no schedule` → the job is not in the catalogue and the repo file sets no `schedule`.
-- `stopped: 2 failures` → read the last job's `log`, then `rm ~/.local/state/agent-jobs/<repo>/<job>/fails`.
+- `stopped: 2 failures` → read the last job's `log`, then `rm ~/.local/state/vibe/jobs/<repo>/<job>/fails`.
 - Every job drops to `report` → two job PRs are open in that repo; merge or close one.
-- The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `agent-queue.service` is not running.
+- The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.

@@ -1,6 +1,6 @@
 ---
 name: shutdown
-description: "End-of-day shutdown across the active repos: pushes every task branch, finds worktrees with uncommitted work or a missing or stale HANDOFF.md, gets each one handed off, then fills the agent queue for the night. Use when the user says 'shutdown', 'end of day', 'wrap up the day', 'call it a day', or stops work and wants every session handed off before the night runs."
+description: "End-of-day shutdown across the active repos: pushes every task branch, finds worktrees with uncommitted work or a missing or stale HANDOFF.md, gets each one handed off, then fills the vibe queue for the night. Use when the user says 'shutdown', 'end of day', 'wrap up the day', 'call it a day', or stops work and wants every session handed off before the night runs."
 disable-model-invocation: true
 ---
 

@@ -1,8 +1,8 @@
-# agent-jobs.timer — the dispatcher at 01:00. Not persistent: a missed night
+# vibe-jobs.timer — the dispatcher at 01:00. Not persistent: a missed night
 # is due again the next one, never at a daytime hour.
 
 [Unit]
-Description=agent-jobs dispatcher at 01:00
+Description=vibe-jobs dispatcher at 01:00
 
 [Timer]
 OnCalendar=*-*-* 01:00:00

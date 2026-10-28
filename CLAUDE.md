@@ -51,7 +51,7 @@ came about. If a tool needs to emit a document, it reads `templates/`.
 
 Templates must not name a specific CLI, machine, or agent. CI fails the build
 if `templates/HANDOFF.md`, `templates/PROJECT_STATUS.md`,
-`templates/PROJECT_ROADMAP.md`, `templates/AGENT_JOB.md`, `templates/SPEC.md`, `templates/job-*.md`,
+`templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/job-*.md`,
 or anything under `templates/codebase/` or `templates/research/` mentions one.
 
 ## Global memory lives in `memory/`

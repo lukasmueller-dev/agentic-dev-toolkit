@@ -7,7 +7,7 @@ disable-model-invocation: true
 # Review jobs
 
 Turn the finished jobs into decisions and carry them out. Queue layout and
-briefing: `docs/agent-queue.md` in the toolkit.
+briefing: `docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
