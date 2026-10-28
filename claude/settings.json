@@ -1,5 +1,9 @@
 {
   "remoteControlAtStartup": true,
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "permissions": {
     "defaultMode": "auto",
     "allow": [
