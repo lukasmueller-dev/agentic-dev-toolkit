@@ -45,6 +45,9 @@ systemctl --user link ~/.claude/systemd/vibe-queue.service ~/.claude/systemd/gpu
 systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
+Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
+There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
+
 ## 3. Verify
 
 ```bash
@@ -59,6 +62,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Heavy job: `timeout` > `heavy`. It starts only in the night window, before light jobs; it may run into the day.
 - Slots: `slots_day`, `slots_night` agents at once. One job per branch at a time.
 - `vibe queue add --now` skips the window. `vibe queue pause`: no new start; running jobs finish.
+- Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry is a new session.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.
@@ -77,6 +81,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
 | `paused` | `vibe queue pause` |
+| `limit` | reset epoch of the last usage limit; no starts before it |
 
 The job finds its dir in `$VIBE_JOB_DIR`. Job settings:
 [`claude/vibe-job-settings.json`](../claude/vibe-job-settings.json) — no
@@ -99,4 +104,5 @@ gpu-queue lock -- python train.py     # a manual run that waits for the queue's 
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
+- `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

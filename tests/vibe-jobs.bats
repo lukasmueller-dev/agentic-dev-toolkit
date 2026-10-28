@@ -45,6 +45,7 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
+  mkdir -p "$HOME/.config/vibe" && echo server >"$HOME/.config/vibe/role"
   export VIBE_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" VIBE_ROOT="$BATS_TEST_TMPDIR"
   mkdir -p "$VIBE_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/vibe"
   printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$VIBE_JOBS_CATALOGUE/health.md"

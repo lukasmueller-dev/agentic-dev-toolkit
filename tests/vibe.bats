@@ -451,3 +451,42 @@ zcomplete_vibe() {
   cd "$r"
   [ "$(zcomplete_vibe start '')" = zsh-task ]
 }
+
+@test "client: queue status, report and job list run on the server over ssh" {
+  printf '#!/bin/sh\necho "$@" >>"%s/ssh.log"\necho "from server"\n' "$STUBS" >"$STUBS/ssh"
+  chmod +x "$STUBS/ssh"
+  mkdir -p "$HOME/.config/vibe"
+  echo "client turing" >"$HOME/.config/vibe/role"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$output" = "from server" ]
+  "$VIBE" queue report
+  "$VIBE" job list --all proj
+  [ "$(sed -n 1p "$STUBS/ssh.log")" = "turing \$HOME/bin/vibe queue status" ]
+  [ "$(sed -n 3p "$STUBS/ssh.log")" = "turing \$HOME/bin/vibe job list --all proj" ]
+}
+
+@test "client: queue and job commands that change state stop, ssh not called" {
+  printf '#!/bin/sh\necho "$@" >>"%s/ssh.log"\n' "$STUBS" >"$STUBS/ssh"
+  chmod +x "$STUBS/ssh"
+  mkdir -p "$HOME/.config/vibe"
+  echo "client turing" >"$HOME/.config/vibe/role"
+  for c in "queue add x" "queue pause" "queue run --claude" "job due" "job add proj health"; do
+    # shellcheck disable=SC2086  # split the subcommand words
+    run "$VIBE" $c
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"the queue runs on the server — ssh turing"* ]] || false
+  done
+  [ ! -e "$STUBS/ssh.log" ]
+}
+
+@test "client: no server configured stops every queue command" {
+  run "$VIBE" queue status
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no server configured"* ]] || false
+  mkdir -p "$HOME/.config/vibe"
+  echo client >"$HOME/.config/vibe/role"
+  run "$VIBE" job list
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no server configured"* ]] || false
+}

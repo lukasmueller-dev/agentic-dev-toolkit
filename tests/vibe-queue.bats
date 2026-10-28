@@ -43,6 +43,16 @@ case "\$mode" in
     git commit -q -am "feat: a milestone"
     echo "done: one milestone" >"\$VIBE_JOB_DIR/result"
     ;;
+  limit)
+    if [ -f "$STUBS/limit-reset" ]; then
+      echo "\$(cat wip.txt) more" >wip.txt && git add wip.txt && git commit -q -m "feat: wip"
+      echo "done: wip finished" >"\$VIBE_JOB_DIR/result"
+    else
+      echo half >wip.txt
+      echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":'"\$((\$(date +%s) + 3600))"',"rateLimitType":"five_hour"}}'
+      exit 1
+    fi
+    ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
   silent) ;;
@@ -62,6 +72,7 @@ EOF
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
   export XDG_STATE_HOME="$BATS_TEST_TMPDIR/state" XDG_CONFIG_HOME="$BATS_TEST_TMPDIR/config"
+  mkdir -p "$HOME/.config/vibe" && echo server >"$HOME/.config/vibe/role"
   Q="$XDG_STATE_HOME/vibe/queue"
   CONF="$XDG_CONFIG_HOME/vibe/queue.conf"
   mkdir -p "$Q" "${CONF%/*}"
@@ -242,6 +253,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
+@test "limit: the job requeues with its worktree kept, nothing starts until the reset" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a limit
+  mkjob 02-b "$r" task-b ok
+  window open 1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = queued ]
+  [[ "$(cat "$Q/01-a/note")" == "usage limit — retry after "* ]] || false
+  [ ! -e "$Q/02-b/status" ]
+  [ "$(cat "$r/.claude/worktrees/task-a/wip.txt")" = half ]
+  run git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue status
+  [[ "$output" == *"USAGE LIMIT until"* ]] || false
+  date +%s >"$XDG_STATE_HOME/vibe/limit"
+  touch "$STUBS/limit-reset"
+  drain
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:wip.txt)" = "half more" ]
+}
+
 @test "add: moves a prepared dir in as <time>-<repo>-<branch>, in order; --now; refuses bad input" {
   local r a b
   r="$(make_repo proj)"
@@ -307,6 +342,18 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -ne 0 ]
 }
 
+@test "status: the columns line up for ids of any length" {
+  local r a b
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-a-much-longer-id-than-the-other "$r" task-b ok
+  run "$VIBE" queue status
+  a="$(grep ' 01-a ' <<<"$output")" b="$(grep ' 02-a-much' <<<"$output")"
+  a="${a%%queued*}" b="${b%%queued*}"
+  [ "${#a}" -gt 6 ]
+  [ "${#a}" -eq "${#b}" ]
+}
+
 @test "report: header, held jobs under Yours, per repo tables, next actions; copied to the briefing dir" {
   local r f
   r="$(make_repo proj)"
@@ -360,7 +407,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {
   local r
-  run "$VIBE" queue gpu -- true
+  run env -u VIBE_JOB_DIR "$VIBE" queue gpu -- true
   [ "$status" -ne 0 ]
   [[ "$output" == *"inside a queue job"* ]] || false
   r="$(make_repo proj)"

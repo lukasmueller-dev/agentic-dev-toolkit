@@ -6,7 +6,7 @@ set -euo pipefail
 role_file="$HOME/.config/vibe/role"
 role=client
 if [[ -f "$role_file" ]]; then
-  read -r role <"$role_file" || true
+  read -r role _ <"$role_file" || true
 fi
 echo "role: ${role:-client}  ($role_file)"
 

@@ -23,7 +23,7 @@ cd ~/github/<repo> && claude    # accept the trust prompt, then /exit
 Servers machine only — on every other machine the unit skips itself.
 
 ```bash
-mkdir -p ~/.config/vibe && echo server > ~/.config/vibe/role
+mkdir -p ~/.config/vibe && echo server > ~/.config/vibe/role   # other machines: client <host>
 systemctl --user link ~/.claude/systemd/claude-rc@.service
 loginctl enable-linger "$USER"    # servers keep running with nobody logged in
 ```
