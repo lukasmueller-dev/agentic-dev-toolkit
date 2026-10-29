@@ -14,16 +14,15 @@
 
 ## State
 
-Milestones 1–4 are done and ticked in `SPEC.md`. `group_of JOB` (`bin/vibe`) sets `GROUP` and the lane row for `vibe queue status` and `report_rows`. `bats tests/vibe-queue.bats` passes (30).
+Milestones 1–5 are done and ticked in `SPEC.md`. `origin/main` (#144, no day/night window) is merged. `/fill-queue` writes `lane=` and `item=`; `docs/vibe-queue.md` has a `## Lanes` section. `bats tests/` passes except 3 sandbox-only `install.bats` tests.
 
 ## Next action
 
-Milestone 5 of `SPEC.md` (`/fill-queue` + docs). Done when `./bin/skill-lint --strict skills` and `bats tests/` pass, and `grep -c 'lane=' docs/vibe-queue.md skills/fill-queue/SKILL.md` prints ≥1 for each file.
+Milestone 6 of `SPEC.md` (`/review-jobs`). Done when `./bin/skill-lint --strict skills` and `bats tests/` pass, and `grep -c 'lane' skills/review-jobs/SKILL.md` prints ≥3.
 
-- `skills/fill-queue/SKILL.md`: Phase 4 proposes lanes (one tag or one roadmap heading, light non-GPU items). Phase 5 table gets a `lane` column. Phase 6 writes `lane=` and `item=` and one job per item on the lane branch.
-- The queued-branch rule (line 20, `QUEUED` from `skills/fill-queue/sweep.sh`) admits the jobs of one new lane. No item joins a queued or open lane branch.
-- `docs/vibe-queue.md` gets the lane rules and both keys. The status and briefing lines already name the lane row.
-- `skills/fill-queue/references/job-prompt.md` already holds the lane TL;DR rule (milestone 2).
+- `skills/review-jobs/SKILL.md`: a lane row gets one decision (ready, requeue, hold, close). Offer it only when each item is done or out of the lane; until then the row shows its progress (`3/5`).
+- Requeue of an item out of the lane (`side` in its job dir): queue it on the lane branch while the lane PR is open, else on a new branch from the default branch. Its prompt names `git diff <start>..<side-branch>` as an earlier try. The `requeue` text in Phase 3 now assumes `HANDOFF.md` on the job's own branch; a side branch has the WIP commit instead.
+- Add one line to `docs/vibe-queue.md` `## Lanes` for the retry rule.
 - Stage new files under `skills/` before `bats tests/`.
 
 ## Blockers
@@ -32,7 +31,7 @@ None.
 
 ## Gotchas (unpromoted)
 
-- `origin/main` has 2 new commits (#144, `refactor(queue)`: no day/night window). The merge is clean, but its `tests/vibe-queue.bats` has no `window` helper. After the merge, replace `window closed 1` in the lane tests with `slots 1`, or drop it.
 - PR #133 (runner gate) and the queued `job-review` job also change `job_run` / `job_publish`. If one is on `main`, merge `origin/main` first.
-- 3 `tests/install.bats` tests (45, 51, 52) fail inside the job sandbox: `.claude/` placeholder files. In a `git clone` under `$TMPDIR` all 55 pass.
+- 3 `tests/install.bats` tests (45, 51, 52) fail inside the job sandbox: `.claude/` placeholder files. In a `git clone` under `$TMPDIR` all 55 pass. Check from a clone: commit first, then `git fetch <worktree> HEAD` in the clone.
+- `shfmt -f .` and `shellcheck` hit permission errors on the placeholder files: run them over `git ls-files`.
 - `lane_leave` runs under `|| true`, so errexit is off inside it: each step guards itself with `|| return 0`.
