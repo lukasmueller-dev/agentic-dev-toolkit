@@ -47,4 +47,17 @@ staged straight from it. Order matters within a track; tracks are independent.
 - [ ] **Briefing `--week`** — a Sunday section of `vibe queue report`: PRs
       merged, jobs run, blockers open, per repo. Done when
       `vibe queue report --week` renders it from the week's briefings and PRs.
+- [ ] **Catalogue job `repo-review`; delete `codebase-review`** — monthly,
+      `output=report`, Sonnet, 1h: `/code-review high .` on the whole repo;
+      toolkit focus lines in `.vibe-jobs/repo-review.md`. Done when one run
+      writes a `report.md` with ranked findings and `skills/codebase-review/`
+      is gone.
+
+### Vibe queue follow-ups (design: PR for `job-review`)
+
+- [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
+      review or a `/fix` comment starts a fix job; a red CI check later.
+      Done when a `/fix` comment from your login yields one fix job and one
+      summary comment on the PR, and a collaborator's comment only a
+      briefing line.
 
