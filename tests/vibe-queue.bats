@@ -415,6 +415,54 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [[ "$output" != *"## 04-d — "* ]] || false
 }
 
+@test "report --week: per repo jobs run, PRs merged, blockers open; old jobs count only while open" {
+  local r f since
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b blocked
+  mkjob 03-c "$r" task-c crash
+  drain
+  "$VIBE" queue archive 01-a >/dev/null
+  mkdir -p "$Q/00-oldblock" "$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch"
+  printf 'repo=%s\nbranch=old\n' "$r" | tee "$Q/00-oldblock/job" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/job"
+  echo blocked >"$Q/00-oldblock/status"
+  echo "blocked: ancient" >"$Q/00-oldblock/note"
+  echo "2020-01-01 00:00:00" | tee "$Q/00-oldblock/ended" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/ended"
+  echo "done" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/status"
+  cat >"$STUBS/gh" <<EOF
+#!/bin/sh
+echo "\$*" >>"$STUBS/gh.log"
+echo "  - [#5](https://example.com/pull/5) feat: merged work"
+EOF
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  [ "$(grep -c '^## Week' "$f")" -eq 0 ]
+  rm "$f"
+  run "$VIBE" queue report --week
+  [ "$status" -eq 0 ]
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
+  grep -qF -- "merged:>=$since" "$STUBS/gh.log"
+  run cat "$f"
+  [[ "$output" == *"## proj"*"## Week since $since"*"### proj"*"- Jobs run: 3 (1 done, 1 blocked, 1 failed)"*"- PRs merged: 1"*"  - [#5](https://example.com/pull/5) feat: merged work"*"- Blockers open: 3"*"  - 00-oldblock — blocked: ancient"*"  - 02-b — blocked: needs a decision"*"  - 03-c — agent exit 3"* ]] || false
+  [[ "$output" != *"00-oldarch"* ]] || false
+}
+
+@test "report --week: no merged PRs say none; a failing gh says unknown; other arguments are refused" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a blocked
+  drain
+  run "$VIBE" queue report --week
+  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- Jobs run: 1 (1 blocked)"*"- PRs merged: none"* ]] || false
+  printf '#!/bin/sh\nexit 1\n' >"$STUBS/gh"
+  run "$VIBE" queue report --week
+  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- PRs merged: unknown (gh failed)"* ]] || false
+  run "$VIBE" queue report --bogus
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage: vibe queue report [--week]"* ]] || false
+}
+
 @test "gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {
   local r pid
   r="$(make_repo proj)"

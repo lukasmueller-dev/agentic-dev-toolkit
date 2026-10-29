@@ -25,7 +25,4 @@ staged straight from it. Order matters within a track; tracks are independent.
       the job queues the canonical eval through `gpu-queue`; the follow-up
       compares the headline metric with the last run. Done when a drop opens
       a roadmap item and the briefing shows both numbers.
-- [ ] **Briefing `--week`** — a Sunday section of `vibe queue report`: PRs
-      merged, jobs run, blockers open, per repo. Done when
-      `vibe queue report --week` renders it from the week's briefings and PRs.
 
