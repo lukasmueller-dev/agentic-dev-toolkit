@@ -14,16 +14,16 @@
 
 ## State
 
-Milestones 1 and 2 are done and ticked in `SPEC.md`. `lane_body` (`bin/vibe`) prints the PR in the `pr.md` shape: line 1 is the title, then the TL;DR of the latest done item. `job_prepare` writes `lane-pr.md`. `bats tests/vibe-queue.bats` passes.
+Milestones 1–3 are done and ticked in `SPEC.md`. `lane_leave` (`bin/vibe`) runs in `job_run` before `job_publish`. It WIP-commits, keeps the work on `<branch>-<item>`, resets the lane worktree to `$job/start`, and writes `$job/side`. `bats tests/vibe-queue.bats` passes (28).
 
 ## Next action
 
-Milestone 3 of `SPEC.md` (failure path). Done when `bats tests/vibe-queue.bats` passes with a new test: a failed lane job leaves the lane branch at its start commit and its work on `<branch>-<item>`, and the next lane job runs.
+Milestone 4 of `SPEC.md` (lane rows). Done when `bats tests/vibe-queue.bats` passes with a new test: a 3-job lane prints one row in `vibe queue status`.
 
-- Write the start commit in `job_prepare` (job dir file, for example `start`).
-- Write the side-branch name to `$job/side`. `lane_body` already reads that file; without it, it falls back to `<branch>-<item>`.
-- `job_publish JOB STATUS` takes the job's status as arg 2. Run the failure path in `job_run` before that call.
-- The test stub has a mode `item` (reads `item=` from the job file, commits `<item>.txt`) and `blocked`, `crash` modes. A failed lane job with a commit needs a new stub mode.
+- `cmd_queue_status` and `queue_report_md` (`bin/vibe`) print one line per job today. Group by repo and branch when the branch has 2+ jobs with `lane=`.
+- Row: `<branch> · <done>/<total> · <running or next item> · <PR>` and the `lane=` line. Below it: one row per job that needs the user (`blocked`, `failed`, `timeout`, `skipped`, with its `$job/side`).
+- `lane_jobs JOB` lists the lane jobs of a branch; `lane_body` counts done and total the same way.
+- A one-job branch prints as today.
 
 ## Blockers
 
@@ -31,5 +31,7 @@ None.
 
 ## Gotchas (unpromoted)
 
-- PR #133 (runner gate) and the queued `job-review` job also change `job_run` / `job_publish` in `bin/vibe`. If one of them is on `main`, merge `origin/main` first. On 2026-10-29 `origin/main` has neither.
-- 3 `tests/install.bats` tests (45, 51, 52) fail inside the job sandbox: `.claude/` placeholder files in the worktree root.
+- `origin/main` has 2 new commits (#144, `refactor(queue)`: no day/night window). The merge is clean, but its `tests/vibe-queue.bats` has no `window` helper. After the merge, replace `window closed 1` in the lane tests with `slots 1`, or drop it.
+- PR #133 (runner gate) and the queued `job-review` job also change `job_run` / `job_publish`. If one is on `main`, merge `origin/main` first.
+- 3 `tests/install.bats` tests (45, 51, 52) fail inside the job sandbox: `.claude/` placeholder files. In a `git clone` under `$TMPDIR` all 55 pass.
+- `lane_leave` runs under `|| true`, so errexit is off inside it: each step guards itself with `|| return 0`.
