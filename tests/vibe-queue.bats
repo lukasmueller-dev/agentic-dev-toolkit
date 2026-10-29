@@ -255,6 +255,38 @@ drain() { run "$VIBE" queue run --claude --drain; }
   grep -q '^\*\*Changed:\*\* work.txt added.$' "$Q/03-c/pr-body.md"
 }
 
+@test "lane: status prints one row per lane with its progress, and a row only for the item out of the lane" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  drain
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  mkjob 04-d "$r" solo ok
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'lane-x · ' <<<"$output")" = 1 ]
+  [[ "$output" == *"  lane-x · 1/3 · gamma · https://example.com/pull/1"$'\n'"    Fix health"$'\n'* ]] || false
+  [[ "$output" == *"    02-b  blocked  blocked: beta needs a decision → lane-x-beta"* ]] || false
+  [ "$(grep -c '01-a\|03-c' <<<"$output")" = 0 ]
+  [ "$(grep -c '04-d  queued   light' <<<"$output")" = 1 ]
+}
+
+@test "lane: the report holds the lane in one row, and the item out of the lane under Needs you" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  drain
+  [ "$status" -eq 0 ]
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| 02-b | blocked |  | blocked: beta needs a decision → lane-x-beta | [PR](https://example.com/pull/1) |"*"### PR ready"*"| lane-x | 2/3 | Fix health | - | [PR](https://example.com/pull/1) |"* ]] || false
+  [ "$(grep -c '| 01-a \|| 03-c ' <<<"$output")" = 0 ]
+}
+
 @test "run: blocked without commits pushes nothing; crash and silence fail" {
   local r
   r="$(make_repo proj)"

@@ -492,17 +492,58 @@ pr_title_fallback() {
   echo "agent(${b#jobs/}): ${r:-${1##*/}}" | cut -c 1-60
 }
 
+# branch_jobs REPO BRANCH — the job dirs in the queue on REPO's BRANCH, in id order.
+branch_jobs() {
+  awk -v r="repo=$1" -v b="branch=$2" '
+    function flush() { if (nr && nb) print dir }
+    FNR == 1 { flush(); nr = nb = 0; dir = FILENAME; sub(/\/job$/, "", dir) }
+    $0 == r { nr = 1 }
+    $0 == b { nb = 1 }
+    END { flush() }' "$QDIR"/*/job 2>/dev/null || true
+}
+
+# job_item JOB — `item=` of the job, else its id.
+job_item() {
+  local i
+  i="$(jget "$1/job" item)"
+  echo "${i:-${1##*/}}"
+}
+
+# side_suffix JOB — ` → <side-branch>` when the job left its lane, else nothing.
+side_suffix() {
+  local s
+  s="$(jstate "$1" side)"
+  if [[ -n "$s" ]]; then echo " → $s"; fi
+}
+
 # lane_jobs JOB — the lane jobs (`lane=`) in the queue on JOB's repo and branch, in id order.
 lane_jobs() {
-  local d repo branch
-  repo="$(jget "$1/job" repo)" branch="$(jget "$1/job" branch)"
-  for d in "$QDIR"/*/; do
-    d="${d%/}"
-    if [[ -f "$d/job" && -n "$(jget "$d/job" lane)" && "$(jget "$d/job" repo)" == "$repo" &&
-    "$(jget "$d/job" branch)" == "$branch" ]]; then
-      echo "$d"
-    fi
-  done
+  local j
+  while IFS= read -r j; do
+    if [[ -n "$(jget "$j/job" lane)" ]]; then echo "$j"; fi
+  done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
+}
+
+# group_of JOB — sets GROUP, the jobs on JOB's repo and branch, and for their row
+# G_PROGRESS (done/total), G_NEXT (running or next item), G_PR, G_CTX (`lane=`, else the latest context).
+group_of() {
+  local d s c run="" nxt="" ok=0
+  GROUP=() G_PR="" G_CTX=""
+  while IFS= read -r d; do
+    GROUP+=("$d")
+    s="$(jstate "$d" status)"
+    case "$s" in
+      "done") ok=$((ok + 1)) ;;
+      running | gpu) run="$(job_item "$d")" ;;
+      "" | queued) [[ -n "$nxt" ]] || nxt="$(job_item "$d")" ;;
+    esac
+    c="$(jstate "$d" pr)"
+    if [[ -n "$c" ]]; then G_PR="$c"; fi
+    c="$(jget "$d/job" lane)"
+    [[ -n "$c" ]] || c="$(report_context "$d")"
+    if [[ -n "$c" ]]; then G_CTX="$c"; fi
+  done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
+  G_PROGRESS="$ok/${#GROUP[@]}" G_NEXT="${run:-${nxt:--}}"
 }
 
 # lane_body JOB STATUS — the lane PR in the pr.md shape: the title and TL;DR of the
@@ -513,7 +554,7 @@ lane_body() {
   branch="$(jget "$d/job" branch)"
   while IFS= read -r j; do
     [[ -n "$j" ]] || continue
-    item="$(jget "$j/job" item)" item="${item:-${j##*/}}" r="$(jstate "$j" result)"
+    item="$(job_item "$j")" r="$(jstate "$j" result)"
     s="$(jstate "$j" status)"
     if [[ "$j" == "$d" ]]; then s="$2"; fi
     n=$((n + 1))
@@ -551,7 +592,7 @@ lane_leave() {
   start="$(jstate "$d" start)"
   [[ -n "$start" ]] || return 0
   wt="$(jstate "$d" worktree)" branch="$(jget "$d/job" branch)"
-  item="$(jget "$d/job" item)" item="${item:-${d##*/}}" side="$branch-$item"
+  item="$(job_item "$d")" side="$branch-$item"
   if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
     git -C "$wt" add -A && git -C "$wt" commit -q --no-verify -m "wip: $item ($2)" || return 0
   fi
@@ -895,9 +936,10 @@ queue_repos() {
   for d in "$QDIR"/*/; do [[ ! -f "$d/job" ]] || jget "$d/job" repo; done | sort -u
 }
 
-# vibe queue status — the header, then one line per job, grouped by repo.
+# vibe queue status — the header, then per repo one line per job, or one row per
+# branch with 2+ jobs (group_of) and a line below it for each job that needs the user.
 cmd_queue_status() {
-  local repo d st txt w=0
+  local repo d j st b txt w=0 seen
   queue_header
   for d in "$QDIR"/*/; do
     d="${d%/}" && d="${d##*/}"
@@ -907,9 +949,27 @@ cmd_queue_status() {
     [[ -n "$repo" ]] || continue
     echo
     echo "${repo##*/}"
+    seen=$'\n'
     for d in "$QDIR"/*/; do
       d="${d%/}"
       [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
+      b="$(jget "$d/job" branch)"
+      [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
+      group_of "$d"
+      if ((${#GROUP[@]} > 1)); then
+        seen+="$b"$'\n'
+        printf '  %s · %s · %s%s\n    %s\n' "$b" "$G_PROGRESS" "$G_NEXT" "${G_PR:+ · $G_PR}" "$G_CTX"
+        for j in "${GROUP[@]}"; do
+          st="$(jstate "$j" status)"
+          [[ ! -f "$j/held" ]] || st="held"
+          case "$st" in
+            held | blocked | failed | timeout | skipped)
+              printf '    %-*s  %-8s %s%s\n' "$w" "${j##*/}" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")"
+              ;;
+          esac
+        done
+        continue
+      fi
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
@@ -962,18 +1022,31 @@ report_row() {
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
 # the classes: a status, or `pr` (done with a PR URL; `done` is then done
-# without one). No rows, no table.
+# without one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done`
+# table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" d cls rows=""
+  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links
   shift 2
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
     job_final "$d" || continue
     cls="$(jstate "$d" status)"
+    group_of "$d"
+    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then
+      case "$G_PR" in http*) cls="pr" ;; esac
+      in_list "$cls" "$@" || continue
+      b="$(jget "$d/job" branch)"
+      [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
+      seen+="$b"$'\n'
+      links=""
+      case "$G_PR" in http*) links="[PR]($G_PR)" ;; esac
+      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | $G_NEXT | $links |"$'\n'
+      continue
+    fi
     case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
     in_list "$cls" "$@" || continue
-    rows+="$(report_row "$d" "$(report_tldr "$d")")"$'\n'
+    rows+="$(report_row "$d" "$(report_tldr "$d")$(side_suffix "$d")")"$'\n'
   done
   [[ -n "$rows" ]] || return 0
   echo
