@@ -63,6 +63,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
+A lane card folds out to one line per job: item, status, note.
 Serve it on the tailnet once:
 
 ```bash

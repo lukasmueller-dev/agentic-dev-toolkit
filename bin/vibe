@@ -1260,10 +1260,11 @@ short_id() {
 
 # queue_jobs PRINTER — `PRINTER repo NAME` per repo, then per job
 # `PRINTER job NAME STATUS TEXT PR DIR`, or per branch with 2+ jobs (group_of)
-# `PRINTER lane BRANCH STATUS PROGRESS NEXT PR CONTEXT DIR ITEMS`, then `PRINTER end`.
+# `PRINTER lane BRANCH STATUS PROGRESS NEXT PR CONTEXT DIR ITEMS ALL`, then `PRINTER end`.
 # ITEMS: a `NAME STATUS NOTE` line per lane job that needs you; DIR: its running job.
+# ALL: a tab-separated `ITEM STATUS NOTE` line per lane job.
 queue_jobs() {
-  local repo d j st b txt seen run you wait items dir
+  local repo d j st b txt seen run you wait items dir all
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     "$1" repo "${repo##*/}"
@@ -1276,10 +1277,11 @@ queue_jobs() {
       group_of "$d"
       if ((${#GROUP[@]} > 1)); then
         seen+="$b"$'\n'
-        run=0 you=0 wait=0 items="" dir=""
+        run=0 you=0 wait=0 items="" dir="" all=""
         for j in "${GROUP[@]}"; do
           st="$(jstate "$j" status)"
           [[ ! -f "$j/held" ]] || st="held"
+          all+="$(printf '%s\t%s\t%s' "$(job_item "$j")" "${st:-queued}" "$(jstate "$j" note)$(side_suffix "$j")")"$'\n'
           case "$st" in
             running | gpu) run=1 dir="$j" ;;
             "" | queued) wait=1 ;;
@@ -1291,7 +1293,7 @@ queue_jobs() {
         done
         st="done"
         if ((run)); then st=running; elif ((you)); then st=blocked; elif ((wait)); then st=queued; fi
-        "$1" lane "$b" "$st" "$G_PROGRESS" "$G_NEXT" "$G_PR" "$G_CTX" "$dir" "${items%$'\n'}"
+        "$1" lane "$b" "$st" "$G_PROGRESS" "$G_NEXT" "$G_PR" "$G_CTX" "$dir" "${items%$'\n'}" "${all%$'\n'}"
         continue
       fi
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
@@ -1338,12 +1340,12 @@ job_steps() {
 
 # status_card repo|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane.
 status_card() {
-  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n'
+  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" n s note list=""
   case "$1" in
     repo) printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")" ;;
     end) echo '</div>' ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
-    lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" ;;
+    lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" ;;
   esac
   if [[ "$1" != job && "$1" != lane ]]; then return 0; fi
   case "$pr" in
@@ -1360,6 +1362,12 @@ status_card() {
   if [[ -n "$steps" ]]; then
     t="$(stat -c %Y "$dir/log" 2>/dev/null || stat -f %m "$dir/log" 2>/dev/null || echo 0)"
     details="<details><summary>$(at_time "$t" | cut -c 12-) · $(esc "${steps##*"$nl"}")</summary><ol>$(esc "$steps" | sed 's#.*#<li>&</li>#')</ol></details>"
+  fi
+  if [[ -n "$all" ]]; then
+    while IFS=$'\t' read -r n s note; do
+      list+="<li><b>$(esc "$n")</b> $(esc "$s")${note:+ · $(esc "$note")}</li>"
+    done <<<"$all"
+    details+="<details><summary>${pill#*/} jobs</summary><ul>$list</ul></details>"
   fi
   printf '<div class="job s-%s"><div class="top"><b>%s</b><span class="pill">%s</span></div><p>%s%s</p>%s%s</div>\n' \
     "$(esc "$3")" "$(esc "$2")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
