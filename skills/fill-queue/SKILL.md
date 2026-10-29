@@ -80,7 +80,7 @@ approval.** Apply every change the user asks for, then show the tables again.
 
 For each approved job, in rank order, write a fresh dir (`mktemp -d`):
 
-- `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`.
+- `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`; `effort=<level>` only when the user names one.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.
 
