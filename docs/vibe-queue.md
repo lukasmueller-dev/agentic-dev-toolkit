@@ -79,7 +79,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
+| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
@@ -96,10 +96,29 @@ gpu-queue status                      # queued, running, finished (exit code)
 gpu-queue lock -- python train.py     # a manual run that waits for the queue's GPU job
 ```
 
+## Cost per job
+
+The PR footer line and the briefing row end with the job's size, from the last `result` event of `queue/<id>/log`:
+
+```text
+≈$1.04 API · ≈2% 5h est. · 40 turns · 11m
+```
+
+| Field | From |
+| --- | --- |
+| `≈$ API` | `total_cost_usd`: the API-price equivalent; the subscription pays, nothing bills |
+| `≈% 5h est.` | the job's 5h utilization delta (last minus first `rate_limit_event`) × its `$` ÷ the `$` of all jobs that ran at the same time (itself included), each scaled by its overlap time |
+| `turns`, `m` | `num_turns`; `duration_ms` in minutes |
+
+- Interactive sessions are not in the sum, so the share is too high.
+- No share when `resetsAt` changes during the job, the log has under two events, or a job that overlaps has no `result` event.
+- The footer is written at publish: a job still running then has no `result` event, so the briefing row can show a share the footer lacks.
+- The briefing header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
+
 ## What breaks it
 
 - A heavy job never starts → it waits for the window; `vibe queue status` shows it. Now: `vibe queue add --now`.
-- Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`.
+- Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`, or, after an update, `-p` defaults to `--bare`, which does not read the login: give `claude/vibe-job.sh` the opt-out.
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
