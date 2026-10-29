@@ -52,6 +52,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ```bash
 vibe queue status                                   # header, then one line per job by repo
+vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
@@ -79,7 +80,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
+| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions, `--week`: "Week since" section |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 

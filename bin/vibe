@@ -9,7 +9,8 @@
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #   vibe queue status               the queue: running, queued, to review; one line per job by repo
 #   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now skips the window
-#   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
+#   vibe queue report [--week]      a fresh briefing of the jobs to review; copied to the briefing dir;
+#                                   --week adds the last 7 days: PRs merged, jobs run, blockers open
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
@@ -949,15 +950,91 @@ queue_report_md() {
   done
 }
 
-# vibe queue report — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
+# week_jobs SINCE — one line per job, queue and archive: repo, status, ran,
+# open, id, note, tab-separated. ran: ended on or after the date SINCE
+# ("2026-10-22 03:00:00" > "2026-10-22"). open: unarchived and needs a human.
+week_jobs() {
+  local since="$1" d m st ended ran open
+  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" ]] || continue
+    ran=0 open=0
+    case "$d" in
+      "$QDIR"/*) ;;
+      *)
+        m="${d%/*}" m="${m##*/}"
+        if [[ "$m" < "${since:0:7}" ]]; then continue; fi
+        ;;
+    esac
+    st="$(jstate "$d" status)" ended="$(jstate "$d" ended)"
+    if [[ -n "$ended" && "$ended" > "$since" ]]; then ran=1; fi
+    case "$d:$st" in "$QDIR"/*:blocked | "$QDIR"/*:failed | "$QDIR"/*:timeout | "$QDIR"/*:skipped) open=1 ;; esac
+    if ((ran + open)); then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(jget "$d/job" repo)" "$st" "$ran" "$open" "${d##*/}" "$(jstate "$d" note)"
+    fi
+  done
+}
+
+# week_list LABEL LINES — "- LABEL: N" and the lines; "none" without lines.
+week_list() {
+  if [[ -z "$2" ]]; then
+    echo "- $1: none"
+    return 0
+  fi
+  echo "- $1: $(printf '%s\n' "$2" | awk 'END { print NR }')"
+  echo "$2"
+}
+
+# queue_week_md — the Sunday section: per repo the PRs merged, the jobs run
+# and the blockers open over the last 7 days.
+queue_week_md() {
+  local since rows repo merged
+  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
+  rows="$(week_jobs "$since")"
+  echo "## Week since $since"
+  while IFS= read -r repo; do
+    [[ -n "$repo" ]] || continue
+    echo
+    echo "### ${repo##*/}"
+    echo
+    echo "- Jobs run: $(awk -F'\t' -v r="$repo" '
+      $1 == r && $3 { n[$2]++; t++ }
+      END {
+        if (!t) { print "none"; exit }
+        split("done blocked failed timeout skipped", k, " ")
+        for (i = 1; i <= 5; i++) if (n[k[i]]) s = s (s ? ", " : "") n[k[i]] " " k[i]
+        print t " (" s ")"
+      }' <<<"$rows")"
+    if merged="$(cd "$repo" && gh pr list --state merged --search "merged:>=$since" --json number,title,url \
+      -q '.[] | "  - [#\(.number)](\(.url)) \(.title)"' 2>/dev/null)"; then
+      week_list "PRs merged" "$merged"
+    else
+      echo "- PRs merged: unknown (gh failed)"
+    fi
+    week_list "Blockers open" "$(awk -F'\t' -v r="$repo" '$1 == r && $4 { print "  - " $5 " — " $6 }' <<<"$rows")"
+  done < <(cut -f1 <<<"$rows" | sort -u)
+}
+
+# vibe queue report [--week] — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
 # copied as briefing-<…>.md with note frontmatter to the directory named in
-# ~/.config/vibe/briefing-dir when that file exists.
+# ~/.config/vibe/briefing-dir when that file exists. --week ends it with the
+# Sunday section.
 cmd_queue_report() {
-  local file copy dest
-  [[ $# -eq 0 ]] || die "usage: vibe queue report"
+  local file copy dest week=""
+  if [[ "${1:-}" == --week ]]; then
+    week=1
+    shift
+  fi
+  [[ $# -eq 0 ]] || die "usage: vibe queue report [--week]"
   file="$QROOT/briefings/$(date +%F-%H%M).md"
   mkdir -p "${file%/*}"
-  queue_report_md >"$file"
+  {
+    queue_report_md
+    if [[ -n "$week" ]]; then
+      echo
+      queue_week_md
+    fi
+  } >"$file"
   echo "briefing: $file"
   copy="$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || true)"
   copy="${copy/#\~/$HOME}"
