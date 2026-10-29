@@ -39,3 +39,8 @@ staged straight from it. Order matters within a track; tracks are independent.
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
 
+- [ ] **`update-toolkit` restarts the queue runner** — on a server, when the
+      pull changed `bin/vibe` or `skills/_lib/lib.sh`; running jobs survive
+      (`KillMode=process`). Done when `bats tests/vibe.bats` has a test that a
+      changed runner restarts `vibe-queue.service` on a server only, and an
+      unchanged one restarts nothing.
