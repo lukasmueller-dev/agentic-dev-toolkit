@@ -14,11 +14,15 @@
 
 ## State
 
-`SPEC.md` is written from a grilling; no code yet.
+Milestone 1 is done and ticked in `SPEC.md`: `job_publish` builds the lane PR (`lane_body`, `lane_jobs` in `bin/vibe`). `bats tests/vibe-queue.bats` passes.
 
 ## Next action
 
-Milestone 1 of `SPEC.md` (lane PR in `job_publish`). Done when `bats tests/vibe-queue.bats` passes with a new test: 2 done lane jobs give one PR body with both Changed lines.
+Milestone 2 of `SPEC.md` (failure path). Done when `bats tests/vibe-queue.bats` passes with a new test: a failed lane job leaves the lane branch at its start commit and its work on `<branch>-<item>`, and the next lane job runs.
+
+- Write the side-branch name to `$job/side`. `lane_body` already reads that file; without it, it falls back to `<branch>-<item>`.
+- `job_publish JOB STATUS` takes the job's status as arg 2. Run the failure path in `job_run` before that call.
+- The test stub has a mode `item` (reads `item=` from the job file, commits `<item>.txt`).
 
 ## Blockers
 
@@ -26,4 +30,5 @@ None.
 
 ## Gotchas (unpromoted)
 
-- PR #133 (runner gate) and the queued `job-review` job also change `job_run` / `job_publish` in `bin/vibe`. If one of them is on `main`, merge `origin/main` first.
+- PR #133 (runner gate) and the queued `job-review` job also change `job_run` / `job_publish` in `bin/vibe`. If one of them is on `main`, merge `origin/main` first. On 2026-10-29 `origin/main` has neither.
+- 3 `tests/install.bats` tests (45, 51, 52) fail inside the job sandbox: `.claude/` placeholder files in the worktree root.
