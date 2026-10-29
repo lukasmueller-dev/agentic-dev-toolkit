@@ -41,6 +41,7 @@ case "\$1 \$2 \$3" in
 esac
 EOF
   chmod +x "$STUBS/claude" "$STUBS/gh"
+  stub_systemd_run "$STUBS"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1

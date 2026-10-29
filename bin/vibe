@@ -479,8 +479,8 @@ job_gate() {
   git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
   cmd="$(git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
   [[ -n "$cmd" ]] || return 0
-  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  if ((${#tcmd[@]})); then tcmd+=("$(job_timeout "$d")"); fi
+  local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$(job_timeout "$d")"); fi
   printf '$ %s\n' "$cmd" >"$d/gate.log"
   (cd "$wt" && "${tcmd[@]+"${tcmd[@]}"}" bash -c "$cmd") </dev/null >>"$d/gate.log" 2>&1 || rc=$?
   echo "$rc" >"$d/gate"
@@ -770,13 +770,24 @@ limited() {
   [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
 }
 
-# agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT under timeout(1), JOB as $VIBE_JOB_DIR.
+# secs DURATION — a timeout(1) duration, N[smhd], in whole seconds.
+secs() {
+  awk -v t="$1" 'BEGIN {
+    u = substr(t, length(t)); m = u == "m" ? 60 : u == "h" ? 3600 : u == "d" ? 86400 : 1
+    printf "%d\n", t * m }'
+}
+
+# agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
+# timeout(1), JOB as $VIBE_JOB_DIR. Exit 124: the time limit; 137: killed before it.
 agent_exec() {
-  local d="$1" t="$2" s="$3"
+  local d="$1" t="$2" s="$3" rc=0 start="$SECONDS"
   shift 3
-  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@"
+  local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" || rc=$?
+  # timeout(1) exits 137 too, when TERM left the agent running past --kill-after.
+  if ((rc == 137 && ${#TIMEOUT_CMD[@]})) && ((SECONDS - start >= $(secs "$t"))); then rc=124; fi
+  return "$rc"
 }
 
 # job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
@@ -931,7 +942,7 @@ job_review() {
   n="$(jget "$d/job" review)" t="$(job_timeout "$d")" wt="$(jstate "$d" worktree)"
   : >"$d/log"
   review_agent "$d" "$t" "$n" || rc=$?
-  if ((rc == 124 || rc == 137)); then
+  if ((rc == 124)); then
     line="R$n: timeout"
   elif ((rc != 0)) || ! review_findings "$d"; then
     line="R$n: review failed"
@@ -942,7 +953,7 @@ job_review() {
     if ((count > 0)); then
       before="$(git -C "$wt" rev-parse HEAD)"
       review_fix "$d" "$t" || rc=$?
-      if ((rc == 124 || rc == 137)); then
+      if ((rc == 124)); then
         line+=" → timeout"
       else
         line+=" → $(review_tally "$d" "$count")"
@@ -998,10 +1009,12 @@ job_run() {
     rm -f "$d/pid"
     return 0
   fi
-  if ((rc == 124 || rc == 137)); then
+  if ((rc == 124)); then
     st=timeout note="stopped after $t"
     job_handoff "$d"
     result="$(jstate "$d" result)"
+  elif ((rc == 137)); then
+    st=failed result="" note="agent killed (SIGKILL): past its memory cap (${MEM_MAX:-none}), or oomd"
   elif ((rc != 0)); then
     st=failed note="agent exit $rc: $(tail -n 1 "$d/log" 2>/dev/null | cut -c 1-160 || true)"
   else
@@ -1048,6 +1061,24 @@ queue_order() {
 # branch_key JOB — repo and branch: one running job per branch.
 branch_key() { echo "$(jget "$1/job" repo)#$(jget "$1/job" branch)"; }
 
+# mem_setup — MEM_CMD and MEM_MAX: every agent and gate runs in its own systemd
+# scope capped at memory_max (queue.conf; default 100% ÷ slots, read at start), so a
+# job past its cap, or the one oomd picks, dies alone instead of vibe-queue.service.
+# No user manager (macOS, a container): no cap, no scope.
+mem_setup() {
+  local slots
+  slots="$(qconf slots 4)"
+  ((slots > 0)) || slots=1
+  MEM_MAX="$(qconf memory_max "$((100 / slots))%")"
+  MEM_CMD=(systemd-run --user --scope --quiet --collect -p "MemoryMax=$MEM_MAX" -p MemorySwapMax=0)
+  if command -v systemd-run >/dev/null 2>&1 && "${MEM_CMD[@]}" true >/dev/null 2>&1; then
+    info "memory cap per job: $MEM_MAX"
+  else
+    MEM_CMD=() MEM_MAX=""
+    warn "no systemd user manager — jobs run without a memory cap"
+  fi
+}
+
 # vibe queue run --<agent> [--drain] — the runner: polls the queue for ever and
 # starts jobs in free slots (config slots, 4). --drain stops
 # once nothing runs, waits on the GPU or may start.
@@ -1077,6 +1108,7 @@ cmd_queue_run() {
   else
     warn "no timeout(1) — jobs run without a time limit"
   fi
+  mem_setup
   info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
