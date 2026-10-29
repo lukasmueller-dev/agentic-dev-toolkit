@@ -483,6 +483,22 @@ pr_title_fallback() {
   echo "agent(${b#jobs/}): ${r:-${1##*/}}" | cut -c 1-60
 }
 
+# job_gate JOB — run origin's `.vibe-jobs/gate` (default branch, a fresh
+# fetch: never the worktree or a ref the job could move) in the job's worktree,
+# unsandboxed, bounded by the job's timeout. Exit code: JOB/gate; output: JOB/gate.log.
+job_gate() {
+  local d="$1" wt cmd rc=0
+  wt="$(jstate "$d" worktree)"
+  git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
+  cmd="$(git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
+  [[ -n "$cmd" ]] || return 0
+  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#tcmd[@]})); then tcmd+=("$(job_timeout "$d")"); fi
+  printf '$ %s\n' "$cmd" >"$d/gate.log"
+  (cd "$wt" && "${tcmd[@]+"${tcmd[@]}"}" bash -c "$cmd") </dev/null >>"$d/gate.log" 2>&1 || rc=$?
+  echo "$rc" >"$d/gate"
+}
+
 # job_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
@@ -497,6 +513,10 @@ job_publish() {
   fi
   command -v gh >/dev/null 2>&1 || return 0
   if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
+  if [[ -f "$d/gate" ]]; then
+    # shellcheck disable=SC2016  # markdown fences, not command substitution
+    printf '\n**Gate:** exit %s\n\n```\n%s\n```\n' "$(jstate "$d" gate)" "$(tail -n 20 "$d/gate.log")" >>"$d/pr-body.md"
+  fi
   printf '\n---\n_agent job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
@@ -546,7 +566,7 @@ limited() {
   [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
 }
 
-# job_run JOB — the agent in the job's worktree, then publish. Runs in the
+# job_run JOB — the agent in the job's worktree, the gate, then publish. Runs in the
 # background; it writes the final status itself, so it outlives a runner restart.
 job_run() {
   local d="$1" rc=0 result st note="" t reset
@@ -578,6 +598,7 @@ job_run() {
       *) st=failed note="no result line" ;;
     esac
   fi
+  job_gate "$d" || true
   job_publish "$d" || true
   job_end "$d" "$st" "${result:-$note}"
   if [[ "$st" == "done" ]]; then job_chain "$d"; fi
@@ -862,18 +883,22 @@ report_context() {
   echo "$t"
 }
 
-# report_row JOB TEXT — one table row: id, status, context, TEXT, links.
+# report_row JOB TEXT — one table row: id, status, context, gate and TEXT, links.
 report_row() {
-  local d="$1" pr ctx links=""
-  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")"
+  local d="$1" pr ctx g txt="$2" links=""
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)"
   case "$pr" in http*) links="[PR]($pr)" ;; esac
   [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
-  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | ${2//|//} | $links |"
+  if [[ -n "$g" ]]; then
+    links="${links:+$links · }[gate](file://$d/gate.log)"
+    if [[ "$g" == 0 ]]; then txt="gate exit 0 · $txt"; else txt="**gate exit $g** · $txt"; fi
+  fi
+  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | ${txt//|//} | $links |"
 }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
-# the classes: a status, or `pr` (done with a PR URL; `done` is then done
-# without one). No rows, no table.
+# the classes: a status, `gate` (done with a failing gate), or `pr` (done with
+# a PR URL; `done` is then done without one). No rows, no table.
 report_rows() {
   local repo="$1" title="$2" d cls rows=""
   shift 2
@@ -882,6 +907,7 @@ report_rows() {
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
     job_final "$d" || continue
     cls="$(jstate "$d" status)"
+    if [[ "$cls" == "done" && "$(jstate "$d" gate)" =~ ^[1-9] ]]; then cls=gate; fi
     case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
     in_list "$cls" "$@" || continue
     rows+="$(report_row "$d" "$(report_tldr "$d")")"$'\n'
@@ -897,9 +923,9 @@ report_rows() {
 
 # queue_report_md — the briefing: the header, held jobs under "Yours", then per
 # repo ranked tables (needs a human, PRs to read, the rest), then the next
-# action of every unheld job that did not finish.
+# action of every unheld job that did not finish or failed its gate.
 queue_report_md() {
-  local d st wt repo rows=""
+  local d st g wt repo rows=""
   echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
   queue_header
@@ -918,7 +944,7 @@ queue_report_md() {
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
-      report_rows "$repo" "Needs you" blocked failed timeout skipped
+      report_rows "$repo" "Needs you" blocked failed timeout skipped gate
       report_rows "$repo" "PR ready" pr
       report_rows "$repo" "Done, nothing to read" "done"
     )"
@@ -929,14 +955,20 @@ queue_report_md() {
   done < <(queue_repos)
   for d in "$QDIR"/*/; do
     d="${d%/}"
-    st="$(jstate "$d" status)"
-    case "$st" in blocked | failed | timeout | skipped) ;; *) continue ;; esac
+    st="$(jstate "$d" status)" g="$(jstate "$d" gate)"
+    [[ "$g" =~ ^[1-9] ]] || g=""
+    case "$st" in blocked | failed | timeout | skipped) ;; *) [[ -n "$g" ]] || continue ;; esac
     [[ -f "$d/job" && ! -f "$d/held" ]] || continue
     wt="$(jstate "$d" worktree)"
     echo
-    echo "## ${d##*/} — $st"
+    echo "## ${d##*/} — $st${g:+ · gate exit $g}"
     echo
     echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
+    if [[ -n "$g" ]]; then
+      printf -- '- Gate: %s\n\n```\n' "$d/gate.log"
+      tail -n 20 "$d/gate.log"
+      printf '```\n'
+    fi
     [[ -z "$wt" ]] || echo "- Worktree: $wt"
     [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
     if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
