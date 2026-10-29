@@ -8,7 +8,7 @@ argument-hint: "[<repo>...]"
 # Fill queue
 
 Show the queue, sweep the active repos, gate and rank what can run
-unattended, get approval, add the jobs. Runner, window and layout:
+unattended, get approval, add the jobs. Runner and layout:
 `docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
@@ -22,7 +22,7 @@ unattended, get approval, add the jobs. Runner, window and layout:
 ## Phase 0 — Queue
 
 Run `vibe queue status`. Show its header, and per repo the jobs that are
-queued or running: id, heavy or light, context.
+queued or running: id, context.
 
 ## Phase 1 — Big work
 
@@ -59,20 +59,18 @@ An item or handoff next action passes only when all are true:
 ## Phase 4 — Rank and plan
 
 1. Order by the repo's rank, then by order in the repo: handoffs first, then roadmap items top to bottom.
-   After 17:00, heavy jobs first: the night window opens at 18:00.
 2. Propose up to 3 new next steps from a repo's goal and roadmap gaps; mark them `new`. Each one must pass the gate.
 3. Per job: branch slug (a handoff keeps its branch), model, kind, one-line done-when, timeout,
    and the context: what the work is about in plain words — the problem, the idea — at most 25 words, no detail.
    Kind `gpu`: the job prepares the code and queues the run; a follow-up job finishes after it.
-4. Timeout: 2h, a light job. More only for a `SPEC.md` milestone, GPU prep, or work the user calls big —
-   a heavy job, which starts only in the night window.
+4. Timeout: 2h. More only for a `SPEC.md` milestone, GPU prep, or work the user calls big.
 5. Propose Opus only for a job that needs design judgment; say why.
 6. A worktree with `SPEC.md`: one job. Its task is "the first open milestone of `SPEC.md`"; the runner
    queues the next milestone when one is done.
 
 ## Phase 5 — Approve
 
-Show one table per repo, in rank order: `# · task · context · source · kind · heavy/light · timeout · model · branch · done-when`.
+Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · done-when`.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the tables again.
 
@@ -84,11 +82,10 @@ For each approved job, in rank order, write a fresh dir (`mktemp -d`):
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.
 
-Then, outside the sandbox: `vibe queue add <dir>...` in rank order. A job the user wants now,
-whatever the window: `vibe queue add --now <dir>`.
+Then, outside the sandbox: `vibe queue add <dir>...` in rank order. A job the user wants
+before the rest: `vibe queue add --now <dir>`.
 
 ## Done
 
 Done when `vibe queue add` printed one `queued` line per approved job. Report
-in 3 lines: jobs added (heavy, light), the heavy ones waiting for the window,
-`vibe queue status`.
+in 2 lines: jobs added, `vibe queue status`.
