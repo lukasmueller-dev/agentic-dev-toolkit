@@ -7,7 +7,7 @@
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
-#   vibe queue status               the queue: running, queued, to review; one line per job by repo
+#   vibe queue status               the queue: running, queued, to review; two lines per job by repo
 #   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now starts them first
 #   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
@@ -1072,6 +1072,7 @@ cmd_queue_run() {
   fi
   info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
+    queue_web || warn "queue page not written: $QROOT/web/index.html"
     running=0 waiting=0 busy="" queued=()
     for d in "$QDIR"/*/; do
       d="${d%/}"
@@ -1210,25 +1211,35 @@ cmd_queue_follow() {
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# queue_header — one line: running, queued, to review, slots, paused.
-queue_header() {
-  local d st r=0 q=0 g=0 v=0
+# queue_counts — four numbers: running, on the GPU, queued, to review.
+queue_counts() {
+  local d r=0 q=0 g=0 v=0
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
-    st="$(jstate "$d" status)"
-    case "$st" in
+    case "$(jstate "$d" status)" in
       running) r=$((r + 1)) ;;
       gpu) g=$((g + 1)) ;;
       "" | queued) q=$((q + 1)) ;;
       *) v=$((v + 1)) ;;
     esac
   done
-  printf 'queue: %s running · %s on the GPU · %s queued · %s to review · %s slots' \
-    "$r" "$g" "$q" "$v" "$(qconf slots 4)"
+  echo "$r $g $q $v"
+}
+
+# queue_flags — the slots, PAUSED, the usage limit.
+queue_flags() {
+  printf '%s slots' "$(qconf slots 4)"
   if [[ -e "$QROOT/paused" ]]; then printf ' · PAUSED'; fi
   if limited; then printf ' · USAGE LIMIT until %s' "$(at_time "$(head -n 1 "$QROOT/limit")")"; fi
   echo
+}
+
+# queue_header — one line: the counts, then the flags.
+queue_header() {
+  local r g q v
+  read -r r g q v <<<"$(queue_counts)"
+  echo "queue: $r running · $g on the GPU · $q queued · $v to review · $(queue_flags)"
 }
 
 # queue_repos — the repos of the queued jobs, sorted.
@@ -1237,19 +1248,25 @@ queue_repos() {
   for d in "$QDIR"/*/; do [[ ! -f "$d/job" ]] || jget "$d/job" repo; done | sort -u
 }
 
-# vibe queue status — the header, then per repo one line per job, or one row per
-# branch with 2+ jobs (group_of) and a line below it for each job that needs the user.
-cmd_queue_status() {
-  local repo d j st b txt w=0 seen
-  queue_header
-  for d in "$QDIR"/*/; do
-    d="${d%/}" && d="${d##*/}"
-    if [[ -f "$QDIR/$d/job" && ${#d} -gt $w ]]; then w=${#d}; fi
-  done
+# short_id JOB REPO — the job's id without <time>-<repo>-.
+short_id() {
+  local id="${1##*/}" re='^[0-9]{8}-[0-9]{6}-'
+  if [[ "$id" =~ $re ]]; then
+    id="${id#"${BASH_REMATCH[0]}"}"
+    id="${id#"${2##*/}"-}"
+  fi
+  echo "$id"
+}
+
+# queue_jobs PRINTER — `PRINTER repo NAME` per repo, then per job
+# `PRINTER job NAME STATUS TEXT PR DIR`, or per branch with 2+ jobs (group_of)
+# `PRINTER lane BRANCH STATUS PROGRESS NEXT PR CONTEXT DIR ITEMS`, then `PRINTER end`.
+# ITEMS: a `NAME STATUS NOTE` line per lane job that needs you; DIR: its running job.
+queue_jobs() {
+  local repo d j st b txt seen run you wait items dir
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
-    echo
-    echo "${repo##*/}"
+    "$1" repo "${repo##*/}"
     seen=$'\n'
     for d in "$QDIR"/*/; do
       d="${d%/}"
@@ -1259,24 +1276,145 @@ cmd_queue_status() {
       group_of "$d"
       if ((${#GROUP[@]} > 1)); then
         seen+="$b"$'\n'
-        printf '  %s · %s · %s%s\n    %s\n' "$b" "$G_PROGRESS" "$G_NEXT" "${G_PR:+ · $G_PR}" "$G_CTX"
+        run=0 you=0 wait=0 items="" dir=""
         for j in "${GROUP[@]}"; do
           st="$(jstate "$j" status)"
           [[ ! -f "$j/held" ]] || st="held"
           case "$st" in
+            running | gpu) run=1 dir="$j" ;;
+            "" | queued) wait=1 ;;
             held | blocked | failed | timeout | skipped)
-              printf '    %-*s  %-8s %s%s\n' "$w" "${j##*/}" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")"
+              you=1
+              items+="$(printf '%s  %-8s %s%s' "$(short_id "$j" "$repo")" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")")"$'\n'
               ;;
           esac
         done
+        st="done"
+        if ((run)); then st=running; elif ((you)); then st=blocked; elif ((wait)); then st=queued; fi
+        "$1" lane "$b" "$st" "$G_PROGRESS" "$G_NEXT" "$G_PR" "$G_CTX" "$dir" "${items%$'\n'}"
         continue
       fi
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
-      printf '  %-*s  %-8s %s %s\n' "$w" "${d##*/}" "${st:-queued}" "$txt" "$(jstate "$d" pr)"
+      "$1" job "$(short_id "$d" "$repo")" "${st:-queued}" "$txt" "$(jstate "$d" pr)" "$d"
     done
+    "$1" end
   done < <(queue_repos)
+}
+
+# status_line repo|job|lane|end … — queue_jobs for a narrow terminal: name and status, text below.
+status_line() {
+  case "$1" in
+    repo) printf '\n%s\n' "$2" ;;
+    job)
+      printf '  %s  %s\n' "$2" "$3"
+      if [[ -n "$4$5" ]]; then printf '    %s\n' "$4${5:+ $5}"; fi
+      ;;
+    lane)
+      printf '  %s · %s · %s%s\n    %s\n' "$2" "$4" "$5" "${6:+ · $6}" "$7"
+      if [[ -n "$9" ]]; then printf '%s\n' "$9" | sed 's/^/    /'; fi
+      ;;
+  esac
+}
+
+# vibe queue status — the header, then per repo each job on two lines, or one row
+# per branch with 2+ jobs and a line below it for each job that needs the user.
+cmd_queue_status() {
+  queue_header
+  queue_jobs status_line
+}
+
+# esc TEXT — TEXT with & < > " as HTML entities.
+esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
+
+# job_steps JOB — the last 10 tool steps of the job's log, oldest first; empty without jq.
+job_steps() {
+  command -v jq >/dev/null 2>&1 || return 0
+  tail -n 400 "$1/log" 2>/dev/null | jq -R -r 'fromjson? | select(.type == "assistant") | .message.content[]?
+    | select(.type == "tool_use") | (.input.description // (.name + " " + (.input.command // .input.file_path // .input.pattern // .input.path // "" | tostring | .[0:100])))
+    | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
+}
+
+# status_card repo|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane.
+status_card() {
+  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n'
+  case "$1" in
+    repo) printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")" ;;
+    end) echo '</div>' ;;
+    job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
+    lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" ;;
+  esac
+  if [[ "$1" != job && "$1" != lane ]]; then return 0; fi
+  case "$pr" in
+    http*) link=" <a href=\"$(esc "$pr")\">PR</a>" ;;
+    ?*) txt="$txt $pr" ;;
+  esac
+  if [[ "$1" == lane && "$5" != - ]]; then extra="<p>next: $(esc "$5")</p>"; fi
+  if [[ -n "$items" ]]; then extra+="$(esc "$items" | sed 's#.*#<p>&</p>#')"; fi
+  if [[ "$1" == job ]]; then
+    t="$(job_stats "$dir")"
+    if [[ -n "$t" ]]; then extra+="<p class=\"stats\">$(esc "$t")</p>"; fi
+  fi
+  case "$(jstate "${dir:-/nonexistent}" status)" in running | gpu) steps="$(job_steps "$dir")" ;; esac
+  if [[ -n "$steps" ]]; then
+    t="$(stat -c %Y "$dir/log" 2>/dev/null || stat -f %m "$dir/log" 2>/dev/null || echo 0)"
+    details="<details><summary>$(at_time "$t" | cut -c 12-) · $(esc "${steps##*"$nl"}")</summary><ol>$(esc "$steps" | sed 's#.*#<li>&</li>#')</ol></details>"
+  fi
+  printf '<div class="job s-%s"><div class="top"><b>%s</b><span class="pill">%s</span></div><p>%s%s</p>%s%s</div>\n' \
+    "$(esc "$3")" "$(esc "$2")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
+}
+
+# md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.
+md_html() {
+  local md out
+  md="$(sed -E 's/\[([^]]*)\]\(file:[^)]*\)/\1/g')"
+  if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers -t html 2>/dev/null)"; then
+    printf '%s\n' "$out"
+  else
+    printf '<pre>%s</pre>\n' "$(esc "$md")"
+  fi
+}
+
+# config_md — the queue settings, then `vibe job list` as a table and its sweep line.
+config_md() {
+  local limit=none conf="$QCONF"
+  if limited; then limit="until $(at_time "$(head -n 1 "$QROOT/limit")")"; fi
+  printf '## Queue\n\n| Setting | Value |\n| --- | --- |\n'
+  printf '| Slots | %s |\n' "$(qconf slots 4)"
+  printf '| Paused | %s |\n' "$(if [[ -e "$QROOT/paused" ]]; then echo yes; else echo no; fi)"
+  printf '| Usage limit | %s |\n' "$limit"
+  printf '| Briefing copies | %s |\n' "$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || echo none)"
+  # shellcheck disable=SC2088  # a literal ~ for display
+  case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
+  # shellcheck disable=SC2016  # Markdown backticks, not an expansion
+  printf '\nFrom `%s`: `queue.conf`, `repos`, `briefing-dir`.\n\n## Recurring jobs\n\n' "$conf"
+  # shellcheck disable=SC2119  # no arguments: every repo
+  cmd_job_list | awk '
+    NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
+    /^$/ || /^fill-queue sweep/ { print; next }
+    { s = $0; for (i = 1; i <= 5; i++) sub(/^[^ ]+ +/, "", s); printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, s }'
+}
+
+# queue_web — QROOT/web/index.html from templates/queue-page.html; the runner writes it each pass.
+queue_web() {
+  local f="$QROOT/web/index.html" r g q v jobs lim
+  read -r r g q v <<<"$(queue_counts)"
+  lim="$(limit_line)"
+  jobs="$(queue_jobs status_card)"
+  mkdir -p "${f%/*}" || return 1
+  if render_template "$SELF_ROOT/templates/queue-page.html" \
+    '<updated>' "$(date '+%F %H:%M:%S')" \
+    '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued "$v" "to review")" \
+    '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
+    '<jobs>' "${jobs:-<p>No jobs.</p>}" \
+    '<briefing>' "$(queue_report_md | md_html)" \
+    '<config>' "$(config_md | md_html)" >"$f.tmp"; then
+    mv -f "$f.tmp" "$f"
+  else
+    rm -f "$f.tmp"
+    return 1
+  fi
 }
 
 # in_list NEEDLE WORD... — true when NEEDLE is one of the words.
@@ -1666,6 +1804,7 @@ job_due() {
 
 # vibe job list [--all] [REPO...] — one row per repo × job; --all adds the
 # catalogue jobs REPO has not opted into, as `available`.
+# shellcheck disable=SC2120  # config_md calls it with no arguments
 cmd_job_list() {
   local repo job last fails why all=0 repos=() f
   for f in "$@"; do

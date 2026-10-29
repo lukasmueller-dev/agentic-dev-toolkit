@@ -626,16 +626,134 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -ne 0 ]
 }
 
-@test "status: the columns line up for ids of any length" {
-  local r a b
+@test "status: short names, two lines per job, no text line without text" {
+  local r
   r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a ok
-  mkjob 02-a-much-longer-id-than-the-other "$r" task-b ok
+  mkjob 20261029-081414-proj-task-a "$r" task-a ok "context=Do task a."
+  mkjob 02-b "$r" task-b ok
   run "$VIBE" queue status
-  a="$(grep ' 01-a ' <<<"$output")" b="$(grep ' 02-a-much' <<<"$output")"
-  a="${a%%queued*}" b="${b%%queued*}"
-  [ "${#a}" -gt 6 ]
-  [ "${#a}" -eq "${#b}" ]
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 2 queued · 0 to review · 4 slots" ]
+  grep -qx '  task-a  queued' <<<"$output"
+  grep -qx '    Do task a.' <<<"$output"
+  grep -qx '  02-b  queued' <<<"$output"
+  [ "$(wc -l <<<"$output")" -eq 6 ]
+}
+
+# pandoc_stub OK|FAIL — a pandoc that prints a marker, or one that fails.
+pandoc_stub() {
+  if [ "$1" = OK ]; then
+    printf '#!/bin/sh\ncat >/dev/null\necho "<p>PANDOC</p>"\n' >"$STUBS/pandoc"
+  else
+    printf '#!/bin/sh\nexit 1\n' >"$STUBS/pandoc"
+  fi
+  chmod +x "$STUBS/pandoc"
+}
+
+@test "page: the runner writes job cards with escaped text and the briefing through pandoc" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  pandoc_stub OK
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked
+  drain
+  mkjob 20261029-081415-proj-task-b "$r" task-b ok 'context=<b>A & B</b>'
+  "$VIBE" queue pause >/dev/null
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<div class="job s-blocked"><div class="top"><b>task-a</b><span class="pill">blocked</span>' "$f"
+  grep -qx '<div class="repo"><h2>proj</h2>' "$f"
+  [ "$(grep -A1 '<b>task-b</b>' "$f" | tail -n 1)" = '</div>' ]
+  grep -qF '<b>task-b</b><span class="pill">queued</span></div><p>&lt;b&gt;A &amp; B&lt;/b&gt;</p>' "$f"
+  grep -qF '<span class="chip"><b>1</b> queued</span>' "$f"
+  grep -qF '<p>PANDOC</p>' "$f"
+  run grep -c '<b>A &' "$f"
+  [ "$output" = 0 ]
+  [ ! -e "$f.tmp" ]
+}
+
+@test "page: with no working pandoc briefing and config are escaped Markdown in <pre>, file links as text" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  pandoc_stub FAIL
+  export VIBE_ROOT="$BATS_TEST_TMPDIR"
+  mkdir -p "$r/.vibe-jobs"
+  printf -- '---\nschedule: weekly\nday: sun\noutput: pr\n---\n\nCheck.\n' >"$r/.vibe-jobs/health.md"
+  echo proj >"${CONF%/*}/repos"
+  mkjob 01-a "$r" task-a blocked
+  mkdir -p "$Q/01-a" && echo report >"$Q/01-a/report.md"
+  drain
+  [ "$status" -eq 0 ]
+  grep -q '^<pre># Vibe queue' "$f"
+  grep -qF '| 01-a | blocked |' "$f"
+  grep -q '^<pre>## Queue' "$f"
+  grep -qF '| Slots | 4 |' "$f"
+  grep -q '^| proj | health | weekly | sun | never | ' "$f"
+  grep -qF 'fill-queue sweep (' "$f"
+  run grep -c 'file:' "$f"
+  [ "$output" = 0 ]
+}
+
+@test "page: a running card shows its last step and the last 10 from the log, escaped" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" pid runner i
+  command -v jq >/dev/null || skip "no jq"
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a sleep
+  {
+    for i in 1 2 3 4 5 6 7 8 9 10 11; do
+      printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"description":"step %s"}}]}}\n' "$i"
+    done
+    printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"git status"}}]}}\n'
+    printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/x/<y>.md"}}]}}\n'
+    printf '{"type":"assistant","message":'
+  } >"$Q/01-a/log"
+  sleep 30 &
+  pid=$!
+  echo running >"$Q/01-a/status"
+  echo "$pid" >"$Q/01-a/pid"
+  "$VIBE" queue run --claude --drain >/dev/null 2>&1 &
+  runner=$!
+  for i in $(seq 100); do
+    if grep -q '<details>' "$f" 2>/dev/null; then break; fi
+    sleep 0.1
+  done
+  kill "$pid"
+  wait "$runner" || true
+  grep -q '<details><summary>[0-9][0-9]:[0-9][0-9] · Read /x/&lt;y&gt;.md</summary><ol><li>step 4</li>' "$f"
+  grep -qF '<li>Bash git status</li>' "$f"
+  [ "$(grep -o '<li>' "$f" | wc -l)" -eq 10 ]
+}
+
+@test "page: a lane is one card with its progress, next item and the item out of the lane; a done job shows its cost" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  pandoc_stub OK
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  mkjob 05-e "$r" solo ok
+  drain
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  printf '{"type":"result","total_cost_usd":1.5,"num_turns":7,"duration_ms":120000}\n' >"$Q/05-e/log"
+  "$VIBE" queue pause >/dev/null
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<div class="job s-blocked"><div class="top"><b>lane-x</b><span class="pill">1/3</span></div><p>Fix health' "$f"
+  grep -qF '<p>next: gamma</p><p>02-b  blocked  blocked: beta needs a decision → lane-x-beta</p>' "$f"
+  run grep -c '<b>01-a</b>\|<b>03-c</b>' "$f"
+  [ "$output" = 0 ]
+  # shellcheck disable=SC2016  # a literal $ in the expected text
+  grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
+}
+
+@test "page: a failed write warns and the runner goes on" {
+  local r
+  r="$(make_repo proj)"
+  mkdir -p "$XDG_STATE_HOME/vibe"
+  echo file >"$XDG_STATE_HOME/vibe/web"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"queue page not written"* ]] || false
+  [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
 @test "report: header, held jobs under Yours, per repo tables, next actions; copied to the briefing dir" {
