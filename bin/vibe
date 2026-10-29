@@ -555,7 +555,7 @@ job_run() {
   local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#tcmd[@]})); then tcmd+=("$t"); fi
   VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
-    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" >"$d/log" 2>&1 || rc=$?
+    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" "$(jget "$d/job" effort)" >"$d/log" 2>&1 || rc=$?
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
   if [[ -n "$reset" && "$result" != "done:"* ]]; then

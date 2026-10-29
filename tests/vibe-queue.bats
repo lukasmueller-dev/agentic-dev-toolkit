@@ -133,6 +133,15 @@ drain() { run "$VIBE" queue run --claude --drain; }
   grep -q -- "--settings $REPO_ROOT/claude/vibe-job-settings.json" "$STUBS/claude.log"
 }
 
+@test "run: effort= in the job file reaches the agent as --effort" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok effort=xhigh
+  drain
+  [ "$status" -eq 0 ]
+  grep -q -- '-p --model sonnet --effort xhigh --name proj-task-a' "$STUBS/claude.log"
+}
+
 @test "run: no pr.md titles the PR from the result; an open PR gets its body replaced" {
   local r
   r="$(make_repo proj)"
