@@ -30,6 +30,12 @@ case "\$mode" in
     printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$VIBE_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
+  lock)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    l="\$(cd "\$(git rev-parse --git-common-dir)" && pwd)/config.lock"
+    rm -f "\$l" && : >"\$l" && chmod 444 "\$l"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
   nopr)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     echo "done: work.txt added, no pr.md" >"\$VIBE_JOB_DIR/result"
@@ -132,6 +138,46 @@ drain() { run "$VIBE" queue run --claude --drain; }
   drain
   [ "$status" -eq 0 ]
   grep -q -- '-p --model sonnet --effort xhigh --name proj-task-a' "$STUBS/claude.log"
+}
+
+@test "run: an empty read-only .git/config.lock does not stop a job from starting" {
+  local r
+  r="$(make_repo proj)"
+  git -C "$r" push -q origin main:refs/heads/task-a
+  : >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$r" config branch.task-a.remote)" = origin ]
+  [ ! -e "$r/.git/config.lock" ]
+}
+
+@test "run: a config.lock the job's own sandbox leaves does not stop the push -u" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a lock
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$r" config branch.task-a.remote)" = origin ]
+  [ ! -e "$r/.git/config.lock" ]
+}
+
+@test "run: a config.lock with content, or a writable one, stays" {
+  local r
+  r="$(make_repo proj)"
+  git -C "$r" push -q origin main:refs/heads/task-a main:refs/heads/task-b
+  echo pid >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$r/.git/config.lock")" = pid ]
+  [ "$(cat "$Q/01-a/status")" != "done" ]
+  rm -f "$r/.git/config.lock" && : >"$r/.git/config.lock"
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ -e "$r/.git/config.lock" ]
+  [ "$(cat "$Q/02-b/status")" != "done" ]
 }
 
 @test "run: no pr.md titles the PR from the result; an open PR gets its body replaced" {

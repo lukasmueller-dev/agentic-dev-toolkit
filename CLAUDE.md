@@ -351,6 +351,11 @@ success — green, having linted none of the skills you shipped.
 **3 `install.bats` tests fail inside a sandboxed agent job** (`.claude/` placeholder
 files in the worktree root). Run that suite again in a `git clone` under `$TMPDIR`.
 
+**An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
+It is the sandbox's mount point for its write-deny on `.git/config`; no setting
+removes it. `worktree add --track` and `push -u` fail on it. `vibe` clears it
+(`clear_config_lock`); by hand, `rm -f` it only if it is empty and read-only.
+
 **Stage a new file under `skills/` before running `bats`.** The suite's
 `the suite creates and deletes nothing under skills/` guard greps
 `git status --porcelain` for `??` and `D` entries there, since a test that
