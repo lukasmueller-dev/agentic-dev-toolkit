@@ -6,7 +6,7 @@ and refill it whenever you like.
 
 | Skill | Does |
 | --- | --- |
-| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, your approval; `vibe queue add` |
+| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, lanes, your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
@@ -63,17 +63,32 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.
 
+## Lanes
+
+Related light items run as one lane: one branch, one PR, one row, one review.
+`/fill-queue` proposes lanes; you change them before you approve.
+
+- A lane is the unarchived jobs on one branch whose job file has `lane=<one-line context>` and `item=<slug>`. One job and one commit per item, in series.
+- Only `code` items, 2h timeout. No GPU job, no `SPEC.md` chain.
+- No item joins a lane that is queued or has an open PR. The lane closes when its last item finishes.
+- An item that ends `failed`, `blocked` or `timeout` leaves the lane: WIP commit, pushed to `<branch>-<item>` without a PR, lane branch reset to the item's start commit. The next item runs.
+- A usage limit only pauses the lane; the job keeps its id.
+- After each item the runner writes the lane PR again: title and TL;DR from the latest done item's `pr.md`, a `<item> → <side-branch>` line per item out of the lane, one `<details>` per item.
+- The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
+- `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you.
+
 ## Layout
 
 `~/.local/state/vibe/`
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `context=` `now=` `follow=`; the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `context=` `lane=` `item=` `now=` `follow=`; the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
+| `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions |
 | `paused` | `vibe queue pause` |
