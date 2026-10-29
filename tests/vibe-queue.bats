@@ -326,12 +326,15 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -ne 0 ]
   run "$VIBE" queue status
   [[ "$output" == *"USAGE LIMIT until"* ]] || false
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 0 ]
   date +%s >"$XDG_STATE_HOME/vibe/limit"
   touch "$STUBS/limit-reset"
   drain
   [ "$(cat "$Q/01-a/status")" = "done" ]
   [ "$(cat "$Q/02-b/status")" = "done" ]
   [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:wip.txt)" = "half more" ]
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 1 ]
+  [ "$(grep -- '--resume sess-01-a ' "$STUBS/claude.log" | grep -c proj-task-a)" = 1 ]
 }
 
 @test "add: moves a prepared dir in as <time>-<repo>-<branch>, in order; --now; refuses bad input" {

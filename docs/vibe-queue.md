@@ -62,7 +62,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Heavy job: `timeout` > `heavy`. It starts only in the night window, before light jobs; it may run into the day.
 - Slots: `slots_day`, `slots_night` agents at once. One job per branch at a time.
 - `vibe queue add --now` skips the window. `vibe queue pause`: no new start; running jobs finish.
-- Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry is a new session.
+- Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.

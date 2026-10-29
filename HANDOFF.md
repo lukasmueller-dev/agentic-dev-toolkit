@@ -14,11 +14,11 @@
 
 ## State
 
-Milestones 1 and 2 are done. `job_agent` in `bin/vibe` runs one session (args: job, timeout, prompt, session, max turns) and appends to `log`. `job_handoff` resumes after exit 124/137 with `resume.md`, `--max-turns 5`, a 10m limit. `job_run` truncates `log` at start.
+Milestones 1–3 are done. `job_agent` in `bin/vibe` runs one session (args: job, timeout, prompt, session, max turns) and appends to `log`. `job_handoff` resumes after exit 124/137. `job_run` passes `$d/session` to the first call, so a retry after a usage limit resumes.
 
 ## Next action
 
-Milestone 3 of `SPEC.md`: the retry after a usage limit resumes the session. In `job_run`, pass `$d/session` to `job_agent` when it exists (a fresh dir has none). Done when a test shows the retry of a limited job got `--resume`: the `limit` stub mode in `tests/vibe-queue.bats` already runs twice, so check `claude.log` for `--resume sess-<id>` on the second call.
+Milestone 4 of `SPEC.md`: the review loop. Read the Decisions section first. Start with `cmd_queue_follow` (the GPU follow-up) in `bin/vibe`: generalize it for `<id>-review<n>` dirs. Then add `claude/vibe-review.sh`, the `queue.conf` keys and the PR-body round lines. Done-when: the three tests in the milestone. The stub `claude` in `tests/vibe-queue.bats` needs a review mode that prints a `structured_output` result. Split the milestone into small commits.
 
 ## Blockers
 

@@ -579,14 +579,15 @@ job_handoff() {
   job_agent "$d" 10m "$d/resume.md" "$(jstate "$d" session)" 5 || true
 }
 
-# job_run JOB — the agent in the job's worktree, then publish. Runs in the
-# background; it writes the final status itself, so it outlives a runner restart.
+# job_run JOB — the agent in the job's worktree, then publish. A retry after a
+# usage limit resumes the saved session. Runs in the background; it writes the
+# final status itself, so it outlives a runner restart.
 job_run() {
   local d="$1" rc=0 result st note="" t reset
   date '+%F %T' >"$d/started"
   t="$(job_timeout "$d")"
   : >"$d/log"
-  job_agent "$d" "$t" "$d/prompt.md" || rc=$?
+  job_agent "$d" "$t" "$d/prompt.md" "$(jstate "$d" session)" || rc=$?
   job_session "$d"
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
