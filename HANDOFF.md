@@ -14,17 +14,16 @@
 
 ## State
 
-Milestone 1 is done and ticked in `SPEC.md`: `job_publish` builds the lane PR (`lane_body`, `lane_jobs` in `bin/vibe`). `bats tests/vibe-queue.bats` passes.
+Milestones 1 and 2 are done and ticked in `SPEC.md`. `lane_body` (`bin/vibe`) prints the PR in the `pr.md` shape: line 1 is the title, then the TL;DR of the latest done item. `job_prepare` writes `lane-pr.md`. `bats tests/vibe-queue.bats` passes.
 
 ## Next action
 
-Milestone 2 of `SPEC.md` (lane TL;DR, added after milestone 1). Done when `bats tests/vibe-queue.bats` passes with a new test: a 3-item lane body has the TL;DR of the last done item, one `<details>` per item, and ≤12 lines above the first `<details>`.
+Milestone 3 of `SPEC.md` (failure path). Done when `bats tests/vibe-queue.bats` passes with a new test: a failed lane job leaves the lane branch at its start commit and its work on `<branch>-<item>`, and the next lane job runs.
 
-Then milestone 3 (failure path):
-
+- Write the start commit in `job_prepare` (job dir file, for example `start`).
 - Write the side-branch name to `$job/side`. `lane_body` already reads that file; without it, it falls back to `<branch>-<item>`.
 - `job_publish JOB STATUS` takes the job's status as arg 2. Run the failure path in `job_run` before that call.
-- The test stub has a mode `item` (reads `item=` from the job file, commits `<item>.txt`).
+- The test stub has a mode `item` (reads `item=` from the job file, commits `<item>.txt`) and `blocked`, `crash` modes. A failed lane job with a commit needs a new stub mode.
 
 ## Blockers
 
