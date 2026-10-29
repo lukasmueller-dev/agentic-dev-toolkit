@@ -38,4 +38,14 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
+- [ ] **Memory cap per job** — the runner starts each job in its own cgroup
+      with a memory limit, so one job cannot get the whole
+      `vibe-queue.service` killed (oomd incident: runner journal,
+      2026-10-29 13:31). Done when a job past its cap ends alone as `failed`
+      and the other running jobs keep running.
+- [ ] **Re-queue a job whose process died** — the runner sets such a job back
+      to `queued` one time, in place of `failed "job process died"`
+      (`bin/vibe:1093`), and the job continues in its own worktree. Done when
+      a killed job runs again on the next poll, and a second death ends it
+      as `failed`.
 
