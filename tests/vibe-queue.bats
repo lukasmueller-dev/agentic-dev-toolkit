@@ -215,7 +215,6 @@ drain() { run "$VIBE" queue run --claude --drain; }
 @test "lane: a blocked item with work leaves the lane on <branch>-<item>; the lane branch stays at its start and the next item runs" {
   local r o="$BATS_TEST_TMPDIR/proj.git" start
   r="$(make_repo proj)"
-  window closed 1
   touch "$STUBS/pr-exists"
   mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
   mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
