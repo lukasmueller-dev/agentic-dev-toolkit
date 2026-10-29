@@ -2,7 +2,8 @@
 #
 # vibe queue — the vibe queue in throwaway repos with a bare origin. A stub
 # `claude` acts on the MODE line of its prompt; a stub `gh` records its calls
-# under $STUBS. The runner runs with --drain, so each test ends.
+# under $STUBS. The stub prints a system/init event (session id sess-<job id>)
+# unless $STUBS/no-init exists. The runner runs with --drain, so each test ends.
 
 load helper
 
@@ -17,8 +18,19 @@ setup() {
 #!/usr/bin/env bash
 echo "\$*" >>"$STUBS/claude.log"
 prompt="\$(cat)"
+case "\$prompt" in
+  /code-review*)
+    echo "\$prompt" >>"$STUBS/claude.log"
+    k=\$((\$(cat "$STUBS/review-count" 2>/dev/null || echo 0) + 1))
+    echo "\$k" >"$STUBS/review-count"
+    [ ! -f "$STUBS/review-sleep" ] || sleep 30
+    if [ -f "$STUBS/review-\$k.json" ]; then cat "$STUBS/review-\$k.json"; else echo '{"type":"result","result":"no schema"}'; fi
+    exit 0
+    ;;
+esac
+[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -88,6 +100,17 @@ case "\$mode" in
   crash) exit 3 ;;
   silent) ;;
   sleep) sleep 30 ;;
+  slow) echo half >wip.txt && sleep 30 ;;
+  fix)
+    if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
+    if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
+    sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
+    ;;
+  handoff)
+    printf '## State\n\nwip.txt is half done.\n' >HANDOFF.md
+    git add HANDOFF.md wip.txt && git commit -q -m "wip: handoff"
+    echo "failed: out of time — wip.txt" >"\$VIBE_JOB_DIR/result"
+    ;;
 esac
 EOF
   cat >"$STUBS/gh" <<EOF
@@ -108,6 +131,7 @@ EOF
   Q="$XDG_STATE_HOME/vibe/queue"
   CONF="$XDG_CONFIG_HOME/vibe/queue.conf"
   mkdir -p "$Q" "${CONF%/*}"
+  echo after= >"$CONF"
 }
 
 # mkjob ID REPO BRANCH MODE [JOB-LINE...] — one job dir in the queue.
@@ -121,8 +145,8 @@ mkjob() {
     for l in "$@"; do echo "$l"; done
   } >"$Q/$id/job"
 }
-# slots N — the queue runs N agents at once.
-slots() { echo "slots=$1" >"$CONF"; }
+# slots N — the queue runs N agents at once; the review step stays off.
+slots() { printf 'after=\nslots=%s\n' "$1" >"$CONF"; }
 drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "run: jobs in id order, commits pushed, draft PR from pr.md" {
@@ -163,6 +187,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   drain
   [ "$status" -eq 0 ]
   grep -q -- '-p --model sonnet --effort xhigh --name proj-task-a' "$STUBS/claude.log"
+}
+
+@test "session: the runner keeps the init event's session id; vibe-job.sh resumes a given one" {
+  local r wt
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$Q/01-a/session")" = sess-01-a ]
+  wt="$(cat "$Q/01-a/worktree")"
+  echo MODE=silent >"$BATS_TEST_TMPDIR/prompt.md"
+  run bash "$REPO_ROOT/claude/vibe-job.sh" "$wt" proj-task-a sonnet "$BATS_TEST_TMPDIR/prompt.md" "" "$(cat "$Q/01-a/session")"
+  [ "$status" -eq 0 ]
+  [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '-p --model sonnet --resume sess-01-a --name proj-task-a')" = 1 ]
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 1 ]
+}
+
+@test "session: a log without an init event leaves no session file" {
+  local r
+  r="$(make_repo proj)"
+  touch "$STUBS/no-init"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$Q/01-a/session" ]
 }
 
 @test "run: an empty read-only .git/config.lock does not stop a job from starting" {
@@ -356,14 +404,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(cat "$Q/03-c/note")" = "no result line" ]
 }
 
-@test "run: a job over its own time limit is stopped" {
+@test "run: a job over its own time limit is stopped; without a session there is no handoff turn" {
   command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
   local r
   r="$(make_repo proj)"
+  touch "$STUBS/no-init"
   mkjob 01-a "$r" task-a sleep timeout=1s
   drain
   [ "$(cat "$Q/01-a/status")" = timeout ]
   [ "$(cat "$Q/01-a/note")" = "stopped after 1s" ]
+  [ "$(wc -l <"$STUBS/claude.log")" -eq 1 ]
+}
+
+@test "run: a job over its time limit gets one more turn that commits HANDOFF.md" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a slow timeout=1s
+  drain
+  [ "$(cat "$Q/01-a/status")" = timeout ]
+  [ "$(cat "$Q/01-a/note")" = "failed: out of time — wip.txt" ]
+  [ "$(git -C "$r/.claude/worktrees/task-a" status --porcelain)" = "" ]
+  git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:HANDOFF.md | grep -q 'wip.txt is half done'
+  [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '--resume sess-01-a .*--max-turns 5')" = 1 ]
+  [ "$(grep -c -- '--max-turns' "$STUBS/claude.log")" = 1 ]
 }
 
 @test "run: skips a dirty worktree, fails a bad branch, a missing repo and a dead job" {
@@ -486,12 +550,15 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -ne 0 ]
   run "$VIBE" queue status
   [[ "$output" == *"USAGE LIMIT until"* ]] || false
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 0 ]
   date +%s >"$XDG_STATE_HOME/vibe/limit"
   touch "$STUBS/limit-reset"
   drain
   [ "$(cat "$Q/01-a/status")" = "done" ]
   [ "$(cat "$Q/02-b/status")" = "done" ]
   [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:wip.txt)" = "half more" ]
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 1 ]
+  [ "$(grep -- '--resume sess-01-a ' "$STUBS/claude.log" | grep -c proj-task-a)" = 1 ]
 }
 
 @test "add: moves a prepared dir in as <time>-<repo>-<branch>, in order; --now; refuses bad input" {
@@ -768,6 +835,118 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"vibe queue status"* ]] || false
   [ ! -e "$Q/01-a/gpu-job" ]
+}
+
+# two_findings — the stub reviewer's first answer: two findings.
+two_findings() {
+  printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
+}
+
+@test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
+  local r b
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '%s' '{"type":"result","structured_output":{"findings":[]}}' >"$STUBS/review-2.json"
+  printf '1=fixed @SHA@\n2=rejected not reachable\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-big"
+  drain
+  [ "$status" -eq 0 ]
+  for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = "done" ]; done
+  [ ! -e "$Q/01-a/pr" ]
+  [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
+  [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
+  [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 4 ]
+  [ "$(grep -c '^/code-review high origin/main\.\.\.HEAD$' "$STUBS/claude.log")" = 2 ]
+  grep -q -- '--disallowedTools Edit,Write,NotebookEdit' "$STUBS/claude.log"
+  grep -q -- '--output-format json --json-schema' "$STUBS/claude.log"
+  [ "$(grep -c -- '--resume sess-01-a ' "$STUBS/claude.log")" = 1 ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:fix.txt)" = fixed ]
+  grep -q '^follow=1$' "$Q/01-a-review1/job"
+  grep -q '^review=2$' "$Q/01-a-review2/job"
+  b="$(cat "$Q/01-a-review2/pr-body.md")"
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 rejected · R2: 0 findings$' "$Q/01-a-review2/pr-body.md"
+  # shellcheck disable=SC2016 # the backticks are literal
+  [[ "$b" == *"**Review:**"*"<details>"*'1. `work.txt:1` — empty file Failure: reads nothing → fixed '*'2. `x.sh:?` — quote it Failure: word split → rejected not reachable'*"**R2** — 0 findings"*"</details>"* ]] || false
+  [[ "$b" == *"**Changed:** work.txt added."* ]] || false
+}
+
+@test "review: a trivial fix ends the review; open findings stay; review_model and review_level reach the reviewer" {
+  local r
+  r="$(make_repo proj)"
+  echo review_level=low >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review review_model=opus
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-md"
+  drain
+  [ ! -e "$Q/01-a-review2" ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open$' "$Q/01-a-review1/pr-body.md"
+  grep -q -- '-p --model opus --name proj-task-a-review1 ' "$STUBS/claude.log"
+  grep -q '^/code-review low origin/main\.\.\.HEAD$' "$STUBS/claude.log"
+}
+
+@test "review: review_rounds caps the rounds; review_trivial sets the bar" {
+  local r
+  r="$(make_repo proj)"
+  printf 'review_rounds=1\n' >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '1=fixed @SHA@\n2=fixed @SHA@\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-big"
+  drain
+  [ ! -e "$Q/01-a-review2" ]
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 2 fixed$' "$Q/01-a-review1/pr-body.md"
+  rm -f "$STUBS/review-count" "$STUBS/fix-big"
+  printf 'after=\nreview_trivial=0\n' >"$CONF"
+  touch "$STUBS/fix-md"
+  mkjob 02-b "$r" task-b ok after=review
+  drain
+  [ -d "$Q/02-b-review2" ]
+}
+
+@test "review: on by default; no structured_output → the PR opens with 'R1: review failed'" {
+  local r b
+  r="$(make_repo proj)"
+  : >"$CONF"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: review failed" ]
+  [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 2 ]
+  [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
+  grep -q -- 'pr create --draft --base main --head task-a --title feat: queue work' "$STUBS/gh.log"
+  b="$(cat "$Q/01-a-review1/pr-body.md")"
+  [[ "$b" == *"**Review:** R1: review failed"*"<details>"*"**R1** — review failed"*"</details>"* ]] || false
+  git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+}
+
+@test "review: a reviewer past review_timeout → 'R1: timeout', the PR opens" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r
+  r="$(make_repo proj)"
+  printf 'review_timeout=1s\n' >>"$CONF"
+  touch "$STUBS/review-sleep"
+  mkjob 01-a "$r" task-a ok after=review
+  drain
+  [ "$(cat "$Q/01-a-review1/status")" = "done" ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: timeout" ]
+  [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
+}
+
+@test "review: none with after= empty (job over queue.conf), without commits, or for a report-only job" {
+  local r
+  r="$(make_repo proj)"
+  echo after=review >"$CONF"
+  mkjob 01-a "$r" task-a ok after=
+  mkjob 02-b "$r" task-b seq after=review
+  mkjob 03-c "$r" task-c ok after=review output=report
+  drain
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
+  [ "$(cat "$Q/01-a/pr")" = "https://example.com/pull/1" ]
+  [ "$(cat "$Q/03-c/pr")" = "https://example.com/pull/1" ]
+  [ "$(grep -c '^/code-review' "$STUBS/claude.log" || true)" = 0 ]
 }
 
 @test "run: refuses a missing or unknown agent" {

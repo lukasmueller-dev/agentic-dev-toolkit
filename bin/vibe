@@ -736,6 +736,15 @@ job_chain() {
   echo "next milestone → $(basename "$(queue_add "$tmp")")"
 }
 
+# job_session JOB — keep the session id of the `system/init` event in JOB/log
+# as JOB/session; a log without one leaves the file as it is.
+job_session() {
+  local ev
+  ev="$(grep -m 1 '"subtype":"init"' "$1/log" 2>/dev/null || true)"
+  [[ "$ev" =~ \"session_id\":\"([A-Za-z0-9_-]+)\" ]] || return 0
+  echo "${BASH_REMATCH[1]}" >"$1/session"
+}
+
 # limit_reset LOG — the reset epoch when the agent stopped on a usage limit; empty else.
 limit_reset() {
   local ev
@@ -754,16 +763,224 @@ limited() {
   [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
 }
 
-# job_run JOB — the agent in the job's worktree, the gate, then publish. Runs in the
-# background; it writes the final status itself, so it outlives a runner restart.
+# agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT under timeout(1), JOB as $VIBE_JOB_DIR.
+agent_exec() {
+  local d="$1" t="$2" s="$3"
+  shift 3
+  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@"
+}
+
+# job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
+# job's worktree, appended to JOB/log; its exit code. SESSION resumes that session.
+job_agent() {
+  agent_exec "$1" "$2" vibe-job.sh "$(jstate "$1" worktree)" "$(jstate "$1" name)" "$(jget "$1/job" model)" \
+    "$3" "$(jget "$1/job" effort)" "${4:-}" "${5:-}" >>"$1/log" 2>&1
+}
+
+# job_handoff JOB — after a timeout: resume the job's session for one turn
+# that commits HANDOFF.md and writes `result`. No session, no resume.
+job_handoff() {
+  local d="$1"
+  [[ -s "$d/session" ]] || return 0
+  {
+    echo "The time limit stopped this job."
+    echo "Overwrite HANDOFF.md in the worktree root with State, Next action and Blockers."
+    echo "Commit it with any work in progress."
+    echo "If $d/result does not exist, write it: failed: out of time — <what is left>."
+  } >"$d/resume.md"
+  job_agent "$d" 10m "$d/resume.md" "$(jstate "$d" session)" 5 || true
+}
+
+# job_after JOB — what runs after the job's commits: `after=` in the job file,
+# else in queue.conf, else `review`. Present but empty means nothing.
+job_after() {
+  local f
+  for f in "$1/job" "$QCONF/queue.conf"; do
+    if grep -q '^after=' "$f" 2>/dev/null; then
+      jget "$f" after
+      return 0
+    fi
+  done
+  echo review
+}
+
+# review_due JOB — true when the job wants a review and has commits ahead of its base.
+review_due() {
+  local d="$1" ahead
+  [[ "$(job_after "$d")" == review && "$(jget "$d/job" output)" != report ]] || return 1
+  ahead="$(git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
+  ((ahead > 0))
+}
+
+# review_follow JOB N — queue round N of the review: a follow-up job on the same
+# branch, <id>-review<N>. It carries the PR text, the result, the session and the rounds so far.
+review_follow() {
+  local d="$1" n="$2" b="$1" f x r
+  r="$(jget "$d/job" review)"
+  if [[ -n "$r" ]]; then b="${d%-review"$r"}"; fi
+  f="$b-review$n"
+  mkdir -p "$f"
+  for x in prompt.md pr.md result session rounds round-details.md; do
+    if [[ -f "$d/$x" ]]; then cp "$d/$x" "$f/$x"; fi
+  done
+  follow_job "$d" "$f" "review=$n" "timeout=$(qconf review_timeout 1h)"
+}
+
+# review_agent JOB TIMEOUT N — the reviewer: its JSON result in JOB/review.json; its exit code.
+review_agent() {
+  local d="$1" model
+  model="$(jget "$d/job" review_model)"
+  agent_exec "$d" "$2" vibe-review.sh "$(jstate "$d" worktree)" "$(jstate "$d" name)-review$3" \
+    "${model:-$(qconf review_model sonnet)}" "$(qconf review_level high)" "$(jstate "$d" base)" \
+    >"$d/review.json" 2>>"$d/log"
+}
+
+# review_findings JOB — JOB/findings from JOB/review.json: one numbered line per
+# finding. Fails when the reviewer left no structured_output.findings array.
+review_findings() {
+  jq -e '.structured_output.findings | type == "array"' "$1/review.json" >/dev/null 2>&1 || return 1
+  jq -r '.structured_output.findings | to_entries[] | "\(.key + 1). `\(.value.file):\(.value.line // "?")` — \(.value.summary | tostring | gsub("\n"; " ")) Failure: \(.value.failure_scenario | tostring | gsub("\n"; " "))"' \
+    "$1/review.json" >"$1/findings"
+}
+
+# review_fix JOB TIMEOUT — resume the job's session: it fixes or rejects each
+# finding and writes JOB/verdicts. No session, no fix: every finding stays open.
+review_fix() {
+  local d="$1"
+  [[ -s "$d/session" ]] || return 0
+  {
+    echo "A reviewer found problems in your commits on this branch."
+    echo "Check each one. Fix it in a new commit, or reject it with a reason."
+    echo
+    cat "$d/findings"
+    echo
+    echo "Write $d/verdicts, one line per finding:"
+    echo "<number>=fixed <commit sha>, <number>=rejected <reason>, or <number>=open."
+    echo "Do not change result or pr.md. Do not push."
+  } >"$d/fix.md"
+  job_agent "$d" "$2" "$d/fix.md" "$(jstate "$d" session)"
+}
+
+# review_big WORKTREE BEFORE — true when the commits since BEFORE are not trivial:
+# over `review_trivial` changed lines, or a file outside *.md.
+review_big() {
+  local add del file lines=0 big=0
+  while IFS=$'\t' read -r add del file; do
+    [[ -n "$file" ]] || continue
+    case "$file" in *.md) ;; *) big=1 ;; esac
+    lines=$((lines + ${add//-/0} + ${del//-/0}))
+  done < <(git -C "$1" diff --numstat "$2" HEAD)
+  ((big || lines > $(qconf review_trivial 20)))
+}
+
+# review_tally JOB COUNT — "3 fixed, 1 rejected, 1 open" from JOB/verdicts.
+review_tally() {
+  local d="$1" i fixed=0 rej=0 out=""
+  for ((i = 1; i <= $2; i++)); do
+    case "$(jget "$d/verdicts" "$i")" in
+      fixed*) fixed=$((fixed + 1)) ;;
+      rejected*) rej=$((rej + 1)) ;;
+    esac
+  done
+  if ((fixed)); then out="$fixed fixed"; fi
+  if ((rej)); then out+="${out:+, }$rej rejected"; fi
+  if (($2 - fixed - rej)); then out+="${out:+, }$(($2 - fixed - rej)) open"; fi
+  echo "$out"
+}
+
+# review_pr_md JOB — JOB/pr.md with the review: the rounds on one line above
+# <details>, the findings and verdicts at the end of it. Makes a missing pr.md
+# (fallback title) or <details> block.
+review_pr_md() {
+  local d="$1"
+  {
+    if [[ -f "$d/pr.md" ]]; then cat "$d/pr.md"; else pr_title_fallback "$d"; fi
+    if ! grep -q '^<details>' "$d/pr.md" 2>/dev/null || ! grep -q '^</details>' "$d/pr.md"; then
+      printf '\n<details>\n<summary>Details</summary>\n\n</details>\n'
+    fi
+  } >"$d/pr.base"
+  awk -v rounds="**Review:** $(cat "$d/rounds")" -v det="$d/round-details.md" '
+    function cat(f,  l) { while ((getline l < f) > 0) print l; close(f) }
+    { line[NR] = $0 }
+    /^<details>/ && !first { first = NR }
+    /^<\/details>/ { last = NR }
+    END {
+      for (i = 1; i <= NR; i++) {
+        if (i == first) { print rounds; print "" }
+        if (i == last) { if (line[i - 1] != "") print ""; cat(det) }
+        print line[i]
+      }
+    }' "$d/pr.base" >"$d/pr.md"
+  rm -f "$d/pr.base"
+}
+
+# job_review JOB — round N of a review: a fresh reviewer on base...HEAD, then the
+# job's session fixes what it found. A fix that is not trivial earns another round;
+# the last round publishes the PR with the rounds in its body.
+job_review() {
+  local d="$1" n t rc=0 count=0 before wt line f v i=0 s=s next=0 prev
+  n="$(jget "$d/job" review)" t="$(job_timeout "$d")" wt="$(jstate "$d" worktree)"
+  : >"$d/log"
+  review_agent "$d" "$t" "$n" || rc=$?
+  if ((rc == 124 || rc == 137)); then
+    line="R$n: timeout"
+  elif ((rc != 0)) || ! review_findings "$d"; then
+    line="R$n: review failed"
+  else
+    count="$(grep -c '' "$d/findings" || true)"
+    if ((count == 1)); then s=""; fi
+    line="R$n: $count finding$s"
+    if ((count > 0)); then
+      before="$(git -C "$wt" rev-parse HEAD)"
+      review_fix "$d" "$t" || rc=$?
+      if ((rc == 124 || rc == 137)); then
+        line+=" → timeout"
+      else
+        line+=" → $(review_tally "$d" "$count")"
+        if ((n < $(qconf review_rounds 2))) && review_big "$wt" "$before"; then next=1; fi
+      fi
+    fi
+  fi
+  {
+    echo "**R$n** — ${line#*: }"
+    echo
+    if [[ -f "$d/findings" ]]; then
+      while IFS= read -r f; do
+        i=$((i + 1)) v="$(jget "$d/verdicts" "$i")"
+        echo "$f → ${v:-open}"
+      done <"$d/findings"
+      echo
+    fi
+  } >>"$d/round-details.md"
+  prev="$(cat "$d/rounds" 2>/dev/null || true)"
+  echo "${prev:+$prev · }$line" >"$d/rounds"
+  if ((next)); then
+    review_follow "$d" $((n + 1))
+  else
+    review_pr_md "$d"
+    job_gate "$d" || true
+    job_publish "$d" || true
+  fi
+  job_end "$d" "done" "$line"
+}
+
+# job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
+# review due queues the review instead, and the review gates and publishes. A retry after a usage
+# limit resumes the saved session. Runs in the background; it writes the final
+# status itself, so it outlives a runner restart.
 job_run() {
   local d="$1" rc=0 result st note="" t reset
   date '+%F %T' >"$d/started"
+  if [[ -n "$(jget "$d/job" review)" ]]; then
+    job_review "$d"
+    return 0
+  fi
   t="$(job_timeout "$d")"
-  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
-    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" "$(jget "$d/job" effort)" >"$d/log" 2>&1 || rc=$?
+  : >"$d/log"
+  job_agent "$d" "$t" "$d/prompt.md" "$(jstate "$d" session)" || rc=$?
+  job_session "$d"
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
   if [[ -n "$reset" && "$result" != "done:"* ]]; then
@@ -776,6 +993,8 @@ job_run() {
   fi
   if ((rc == 124 || rc == 137)); then
     st=timeout note="stopped after $t"
+    job_handoff "$d"
+    result="$(jstate "$d" result)"
   elif ((rc != 0)); then
     st=failed note="agent exit $rc: $(tail -n 1 "$d/log" 2>/dev/null | cut -c 1-160 || true)"
   else
@@ -787,8 +1006,12 @@ job_run() {
     esac
   fi
   case "$st" in failed | blocked | timeout) lane_leave "$d" "$st" || true ;; esac
-  job_gate "$d" || true
-  job_publish "$d" "$st" || true
+  if [[ "$st" == "done" ]] && review_due "$d" && review_follow "$d" 1; then
+    :
+  else
+    job_gate "$d" || true
+    job_publish "$d" "$st" || true
+  fi
   job_end "$d" "$st" "${result:-$note}"
   if [[ "$st" == "done" ]]; then job_chain "$d"; fi
 }
@@ -951,6 +1174,19 @@ cmd_queue_gpu() {
   echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
+# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1 and the
+# KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
+follow_job() {
+  local from="$1" to="$2" l keys=follow
+  shift 2
+  for l in "$@"; do keys+="|${l%%=*}"; done
+  {
+    grep -Ev "^($keys)=" "$from/job" || true
+    echo "follow=1"
+    for l in "$@"; do echo "$l"; done
+  } >"$to/job"
+}
+
 # vibe queue follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
 # with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG). It sorts right
 # after JOB, so it runs before later jobs.
@@ -970,11 +1206,7 @@ cmd_queue_follow() {
     echo "An earlier session prepared and queued this run; its commits are on the branch."
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
-  # The job file last: the runner skips a dir without one.
-  {
-    grep -v '^follow=' "$p/job" || true
-    echo "follow=1"
-  } >"$f/job"
+  follow_job "$p" "$f"
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
@@ -1314,6 +1546,14 @@ fm_get() {
     NR > 1 && $0 == "---" { exit }
     NR > 1 && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v); print v; exit }' "$1" 2>/dev/null || true
 }
+# fm_has FILE KEY — true when FILE's frontmatter has KEY, even with no value.
+fm_has() {
+  awk -v k="$2" '
+    NR == 1 && $0 != "---" { exit }
+    NR > 1 && $0 == "---" { exit }
+    NR > 1 && index($0, k ":") == 1 { f = 1; exit }
+    END { exit !f }' "$1" 2>/dev/null
+}
 # fm_body FILE — FILE after its frontmatter (the whole file without one).
 fm_body() {
   awk 'NR == 1 && $0 != "---" { all = 1 } all { print; next } NR > 1 && !on && $0 == "---" { on = 1; next } on { print }' "$1" 2>/dev/null || true
@@ -1492,7 +1732,7 @@ job_open_prs() {
 # Output drops to `report` when the repo already has 2 open job PRs and this
 # job's branch is not one of them.
 job_write() {
-  local d="$1" repo="$2" job="$3" branch output prs n tpl
+  local d="$1" repo="$2" job="$3" branch output prs n tpl f
   branch="jobs/$job"
   output="$(job_key "$repo" "$job" output pr)"
   if [[ "$output" == pr ]]; then
@@ -1503,6 +1743,12 @@ job_write() {
   printf 'repo=%s\nbranch=%s\nmodel=%s\ntimeout=%s\nrecurring=%s\noutput=%s\n' \
     "$repo" "$branch" "$(job_key "$repo" "$job" model sonnet)" "$(job_key "$repo" "$job" timeout 1h)" \
     "$job" "$output" >"$d/job"
+  for f in "$repo/.vibe-jobs/$job.md" "$JOBS_CATALOGUE/$job.md"; do
+    if fm_has "$f" after; then
+      echo "after=$(fm_get "$f" after)" >>"$d/job"
+      break
+    fi
+  done
   tpl="$SELF_ROOT/skills/recurring-jobs/references/job-prompt.md"
   render_template "$tpl" \
     '<job>' "$job" \

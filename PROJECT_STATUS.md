@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-28 · turing_
+_Last updated: 2026-10-29 · job-review_
 
 ## Goal
 
@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-10-29: **review before the PR**: a `done` job with commits gets up to 2
+  fresh read-only review rounds (`<id>-review<n>`); the job's own session
+  fixes or rejects; the last round opens the PR with `R<n>` lines. A timeout
+  and a usage-limit retry resume the saved session. Design: PR body.
 - 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
   review comments as briefing lines; then `vibe job due`. Design: PR body.
