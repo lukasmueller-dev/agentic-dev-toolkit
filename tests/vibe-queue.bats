@@ -80,7 +80,8 @@ case "\$1 \$2" in
   "pr list") [ ! -f "$STUBS/pr-exists" ] || echo "https://example.com/pull/9" ;;
 esac
 EOF
-  chmod +x "$STUBS/claude" "$STUBS/gh"
+  printf '#!/bin/sh\n' >"$STUBS/code"
+  chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/code"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
