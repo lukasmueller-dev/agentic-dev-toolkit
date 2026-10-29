@@ -14,16 +14,17 @@
 
 ## State
 
-Milestones 1–3 are done and ticked in `SPEC.md`. `lane_leave` (`bin/vibe`) runs in `job_run` before `job_publish`. It WIP-commits, keeps the work on `<branch>-<item>`, resets the lane worktree to `$job/start`, and writes `$job/side`. `bats tests/vibe-queue.bats` passes (28).
+Milestones 1–4 are done and ticked in `SPEC.md`. `group_of JOB` (`bin/vibe`) sets `GROUP` and the lane row for `vibe queue status` and `report_rows`. `bats tests/vibe-queue.bats` passes (30).
 
 ## Next action
 
-Milestone 4 of `SPEC.md` (lane rows). Done when `bats tests/vibe-queue.bats` passes with a new test: a 3-job lane prints one row in `vibe queue status`.
+Milestone 5 of `SPEC.md` (`/fill-queue` + docs). Done when `./bin/skill-lint --strict skills` and `bats tests/` pass, and `grep -c 'lane=' docs/vibe-queue.md skills/fill-queue/SKILL.md` prints ≥1 for each file.
 
-- `cmd_queue_status` and `queue_report_md` (`bin/vibe`) print one line per job today. Group by repo and branch when the branch has 2+ jobs with `lane=`.
-- Row: `<branch> · <done>/<total> · <running or next item> · <PR>` and the `lane=` line. Below it: one row per job that needs the user (`blocked`, `failed`, `timeout`, `skipped`, with its `$job/side`).
-- `lane_jobs JOB` lists the lane jobs of a branch; `lane_body` counts done and total the same way.
-- A one-job branch prints as today.
+- `skills/fill-queue/SKILL.md`: Phase 4 proposes lanes (one tag or one roadmap heading, light non-GPU items). Phase 5 table gets a `lane` column. Phase 6 writes `lane=` and `item=` and one job per item on the lane branch.
+- The queued-branch rule (line 20, `QUEUED` from `skills/fill-queue/sweep.sh`) admits the jobs of one new lane. No item joins a queued or open lane branch.
+- `docs/vibe-queue.md` gets the lane rules and both keys. The status and briefing lines already name the lane row.
+- `skills/fill-queue/references/job-prompt.md` already holds the lane TL;DR rule (milestone 2).
+- Stage new files under `skills/` before `bats tests/`.
 
 ## Blockers
 
