@@ -82,6 +82,48 @@ setup() {
 }
 
 # ---------------------------------------------------------------------------
+# clear-config-lock.sh
+# ---------------------------------------------------------------------------
+lock_input() { printf '{"cwd":"%s","tool_input":{"command":"git push","dangerouslyDisableSandbox":%s}}' "$1" "$2"; }
+
+@test "config-lock: removes an empty read-only lock before an unsandboxed command, also from a worktree" {
+  local r="$BATS_TEST_TMPDIR/r"
+  git init -q "$r" && git -C "$r" commit -q --allow-empty -m init
+  git -C "$r" worktree add -q "$BATS_TEST_TMPDIR/wt"
+  : >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  run bash -c "$(declare -f lock_input); lock_input '$BATS_TEST_TMPDIR/wt' true | '$HOOKS/clear-config-lock.sh'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -e "$r/.git/config.lock" ]
+}
+
+@test "config-lock: leaves the lock before a sandboxed command, and a real lock always" {
+  local r="$BATS_TEST_TMPDIR/r"
+  git init -q "$r"
+  : >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  run bash -c "$(declare -f lock_input); lock_input '$r' false | '$HOOKS/clear-config-lock.sh'"
+  [ "$status" -eq 0 ]
+  [ -e "$r/.git/config.lock" ]
+  rm -f "$r/.git/config.lock" && echo pid >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  run bash -c "$(declare -f lock_input); lock_input '$r' true | '$HOOKS/clear-config-lock.sh'"
+  [ "$(cat "$r/.git/config.lock")" = pid ]
+  rm -f "$r/.git/config.lock" && : >"$r/.git/config.lock"
+  run bash -c "$(declare -f lock_input); lock_input '$r' true | '$HOOKS/clear-config-lock.sh'"
+  [ -e "$r/.git/config.lock" ]
+}
+
+@test "config-lock: silent no-op outside a repo, on malformed stdin, and without jq" {
+  run bash -c "$(declare -f lock_input); lock_input '$BATS_TEST_TMPDIR' true | '$HOOKS/clear-config-lock.sh'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run bash -c "echo 'not json' | '$HOOKS/clear-config-lock.sh'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run env PATH= /bin/bash "$HOOKS/clear-config-lock.sh" </dev/null
+  [ "$status" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
 # statusline.sh
 # ---------------------------------------------------------------------------
 @test "statusline: prints repo and branch in a plain checkout" {
