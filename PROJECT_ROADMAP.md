@@ -31,10 +31,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 - [ ] **Catalogue job `codebase-map`** — refreshes `docs/CODEBASE_MAP.md`
       after upstream pulls via the `codebase-map` skill. Done when a changed
       entry point produces one docs-only commit on `jobs/codebase-map`.
-- [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
-      the job queues the canonical eval through `gpu-queue`; the follow-up
-      compares the headline metric with the last run. Done when a drop opens
-      a roadmap item and the briefing shows both numbers.
 - [ ] **Catalogue job `fresh-env`** — `uv sync` in a clean env plus one smoke
       step. Done when a missing dependency yields one report line with the
       failing import.
