@@ -52,6 +52,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `fresh-env` | weekly, mon | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
 | `codebase-map` | weekly, wed | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
 | `dependency-update` | weekly, mon | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
+| `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
@@ -87,4 +88,5 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
+- `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.
