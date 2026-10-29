@@ -25,9 +25,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       only, one PR per repo per week when the suite is green, majors in the
       report. Done when a repo with an outdated lock gets one draft PR with a
       green suite, and a red suite yields a report line naming the package.
-- [ ] **Catalogue job `flaky-tests`** — runs the suite N times, reports tests
-      that fail in some runs. Done when a seeded flaky test shows up as one
-      report line with its pass/fail counts.
 - [ ] **Catalogue job `codebase-map`** — refreshes `docs/CODEBASE_MAP.md`
       after upstream pulls via the `codebase-map` skill. Done when a changed
       entry point produces one docs-only commit on `jobs/codebase-map`.
