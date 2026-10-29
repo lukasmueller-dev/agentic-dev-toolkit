@@ -397,7 +397,8 @@ cmd_queue_add() {
 }
 
 # job_prepare JOB — check the job, make or adopt its worktree. Writes
-# JOB/worktree on success, a final status otherwise. Run it in a subshell.
+# JOB/worktree on success, a final status otherwise. A lane job also gets
+# JOB/start (the branch tip) and JOB/lane-pr.md (the lane PR so far). Run it in a subshell.
 job_prepare() {
   local d="$1" repo branch main def wt
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
@@ -438,6 +439,11 @@ job_prepare() {
   echo "$(basename "$main")-${branch//\//-}" >"$d/name"
   echo "$WT" >"$d/worktree"
   milestones_open "$WT" >"$d/milestones"
+  if [[ -n "$(jget "$d/job" lane)" ]]; then
+    # A job a usage limit stopped keeps its first start commit.
+    [[ -f "$d/start" ]] || git -C "$WT" rev-parse HEAD >"$d/start"
+    lane_body "$d" running >"$d/lane-pr.md"
+  fi
 }
 
 # milestones_open WT — open milestones of WT/SPEC.md; empty without one.
@@ -446,12 +452,141 @@ milestones_open() {
   grep -c '^- \[ \]' "$1/SPEC.md" || true
 }
 
-# pr_title_fallback JOB — `agent(<branch>): <result>` when the job wrote no pr.md.
+# pr_title_fallback JOB — `agent(<branch>): <lane or result>` when the job wrote no pr.md.
 pr_title_fallback() {
   local r b
-  r="$(jstate "$1" result)" b="$(jget "$1/job" branch)"
-  r="${r#*: }"
+  r="$(jget "$1/job" lane)" b="$(jget "$1/job" branch)"
+  if [[ -z "$r" ]]; then
+    r="$(jstate "$1" result)"
+    r="${r#*: }"
+  fi
   echo "agent(${b#jobs/}): ${r:-${1##*/}}" | cut -c 1-60
+}
+
+# job_gate JOB — run origin's `.vibe-jobs/gate` (default branch, a fresh
+# fetch: never the worktree or a ref the job could move) in the job's worktree,
+# unsandboxed, bounded by the job's timeout. Exit code: JOB/gate; output: JOB/gate.log.
+job_gate() {
+  local d="$1" wt cmd rc=0
+  wt="$(jstate "$d" worktree)"
+  git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
+  cmd="$(git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
+  [[ -n "$cmd" ]] || return 0
+  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#tcmd[@]})); then tcmd+=("$(job_timeout "$d")"); fi
+  printf '$ %s\n' "$cmd" >"$d/gate.log"
+  (cd "$wt" && "${tcmd[@]+"${tcmd[@]}"}" bash -c "$cmd") </dev/null >>"$d/gate.log" 2>&1 || rc=$?
+  echo "$rc" >"$d/gate"
+}
+
+# branch_jobs REPO BRANCH — the job dirs in the queue on REPO's BRANCH, in id order.
+branch_jobs() {
+  awk -v r="repo=$1" -v b="branch=$2" '
+    function flush() { if (nr && nb) print dir }
+    FNR == 1 { flush(); nr = nb = 0; dir = FILENAME; sub(/\/job$/, "", dir) }
+    $0 == r { nr = 1 }
+    $0 == b { nb = 1 }
+    END { flush() }' "$QDIR"/*/job 2>/dev/null || true
+}
+
+# job_item JOB — `item=` of the job, else its id.
+job_item() {
+  local i
+  i="$(jget "$1/job" item)"
+  echo "${i:-${1##*/}}"
+}
+
+# side_suffix JOB — ` → <side-branch>` when the job left its lane, else nothing.
+side_suffix() {
+  local s
+  s="$(jstate "$1" side)"
+  if [[ -n "$s" ]]; then echo " → $s"; fi
+}
+
+# lane_jobs JOB — the lane jobs (`lane=`) in the queue on JOB's repo and branch, in id order.
+lane_jobs() {
+  local j
+  while IFS= read -r j; do
+    if [[ -n "$(jget "$j/job" lane)" ]]; then echo "$j"; fi
+  done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
+}
+
+# group_of JOB — sets GROUP, the jobs on JOB's repo and branch, and for their row
+# G_PROGRESS (done/total), G_NEXT (running or next item), G_PR, G_CTX (`lane=`, else the latest context).
+group_of() {
+  local d s c run="" nxt="" ok=0
+  GROUP=() G_PR="" G_CTX=""
+  while IFS= read -r d; do
+    GROUP+=("$d")
+    s="$(jstate "$d" status)"
+    case "$s" in
+      "done") ok=$((ok + 1)) ;;
+      running | gpu) run="$(job_item "$d")" ;;
+      "" | queued) [[ -n "$nxt" ]] || nxt="$(job_item "$d")" ;;
+    esac
+    c="$(jstate "$d" pr)"
+    if [[ -n "$c" ]]; then G_PR="$c"; fi
+    c="$(jget "$d/job" lane)"
+    [[ -n "$c" ]] || c="$(report_context "$d")"
+    if [[ -n "$c" ]]; then G_CTX="$c"; fi
+  done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
+  G_PROGRESS="$ok/${#GROUP[@]}" G_NEXT="${run:-${nxt:--}}"
+}
+
+# lane_body JOB STATUS — the lane PR in the pr.md shape: the title and TL;DR of the
+# latest done item, a `<item> → <side-branch>` line per item out of the lane, one
+# <details> per item. STATUS is JOB's status, still `running` while it publishes.
+lane_body() {
+  local d="$1" j item s r side more branch last="" out="" det="" n=0 ok=0 title="" t="" verify="" risks=""
+  branch="$(jget "$d/job" branch)"
+  while IFS= read -r j; do
+    [[ -n "$j" ]] || continue
+    item="$(job_item "$j")" r="$(jstate "$j" result)"
+    s="$(jstate "$j" status)"
+    if [[ "$j" == "$d" ]]; then s="$2"; fi
+    n=$((n + 1))
+    case "$s" in
+      "done")
+        ok=$((ok + 1)) last="$j"
+        more="$(awk '/^<\/details>/ { f = 0 } f && (NF || p) { print; p = 1 } /^<summary>/ { f = 1 }' "$j/pr.md" 2>/dev/null || true)"
+        det+=$'\n'"<details>"$'\n'"<summary>$item — done</summary>"$'\n\n'"${more:-${r#*: }}"$'\n\n'"_job ${j##*/}_"$'\n\n'"</details>"$'\n'
+        ;;
+      blocked | failed | timeout)
+        side="$(jstate "$j" side)"
+        side="${side:-$branch-$item}"
+        out+="- $item → $side"$'\n'
+        det+=$'\n'"<details>"$'\n'"<summary>$item — $s</summary>"$'\n\n'"${r:-$(jstate "$j" note)}"$'\n\n'"_job ${j##*/}_"$'\n\n'"</details>"$'\n'
+        ;;
+    esac
+  done < <(lane_jobs "$d")
+  if [[ -n "$last" ]]; then
+    title="$(head -n 1 "$last/pr.md" 2>/dev/null || true)"
+    t="$(md_line "$last/pr.md" Changed)"
+    verify="$(md_line "$last/pr.md" Verify)" risks="$(md_line "$last/pr.md" Decisions/risks)"
+    if [[ -z "$t" ]]; then
+      t="$(jstate "$last" result)" t="${t#*: }"
+    fi
+  fi
+  printf '%s\n\n**Context:** %s\n**Changed:** %s\n%s**Verify:** %s\n**Decisions/risks:** %s\n%s\n---\n_agent lane: %s/%s done_\n' \
+    "${title:-$(pr_title_fallback "$d")}" "$(jget "$d/job" lane)" "${t:-none}" "$out" "${verify:-none}" "${risks:-none}" "$det" "$ok" "$n"
+}
+
+# lane_leave JOB STATUS — a lane job that did not finish leaves the lane: a WIP commit
+# of its changes, its work on <branch>-<item> (pushed, no PR), the lane worktree back at
+# JOB/start. Only a lane job has JOB/start. Runs under `|| true`, so each step guards itself.
+lane_leave() {
+  local d="$1" wt branch item start side
+  start="$(jstate "$d" start)"
+  [[ -n "$start" ]] || return 0
+  wt="$(jstate "$d" worktree)" branch="$(jget "$d/job" branch)"
+  item="$(job_item "$d")" side="$branch-$item"
+  if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
+    git -C "$wt" add -A && git -C "$wt" commit -q --no-verify -m "wip: $item ($2)" || return 0
+  fi
+  git -C "$wt" branch -f "$side" HEAD || return 0
+  git -C "$wt" reset -q --hard "$start" || return 0
+  echo "$side" >"$d/side"
+  git -C "$wt" push -q --force origin "$side" || echo "push of $side failed" >&2
 }
 
 # epoch_of 'YYYY-MM-DD HH:MM:SS' — the epoch seconds of a local time, GNU or BSD date; empty when malformed.
@@ -535,11 +670,21 @@ limit_line() {
   done < <(ls -t "$QDIR"/*/log 2>/dev/null)
 }
 
-# job_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
+# gate_md JOB — the PR-body block for the job's gate result; nothing when no gate ran.
+gate_md() {
+  [[ -f "$1/gate" ]] || return 0
+  # shellcheck disable=SC2016  # markdown fences, not command substitution
+  printf '\n**Gate:** exit %s\n\n```\n%s\n```\n' "$(jstate "$1" gate)" "$(tail -n 20 "$1/gate.log")"
+}
+
+# job_publish JOB [STATUS] — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
+# A lane job (`lane=`) writes the PR from every lane job on the branch (lane_body);
+# STATUS is the job's own status, not final yet.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title url stats
+  local d="$1" wt base branch ahead title="" url lane stats
+  local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
@@ -549,14 +694,23 @@ job_publish() {
     return 0
   fi
   command -v gh >/dev/null 2>&1 || return 0
-  if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
-  stats="$(job_stats "$d")"
-  printf '\n---\n_agent job %s: %s%s_\n' "$(basename "$d")" "$(jstate "$d" result)" "${stats:+ · $stats}" >>"$d/pr-body.md"
+  lane="$(jget "$d/job" lane)"
+  if [[ -n "$lane" ]]; then
+    lane_body "$d" "${2:-}" >"$d/lane-pr.md"
+    title="$(head -n 1 "$d/lane-pr.md")" tflag=(-f "title=$title")
+    tail -n +2 "$d/lane-pr.md" >"$d/pr-body.md"
+    gate_md "$d" >>"$d/pr-body.md"
+  else
+    if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
+    gate_md "$d" >>"$d/pr-body.md"
+    stats="$(job_stats "$d")"
+    printf '\n---\n_agent job %s: %s%s_\n' "$(basename "$d")" "$(jstate "$d" result)" "${stats:+ · $stats}" >>"$d/pr-body.md"
+  fi
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
-    (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md") >/dev/null 2>&1 || true
+    (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md" "${tflag[@]+"${tflag[@]}"}") >/dev/null 2>&1 || true
   else
-    title="$(head -n 1 "$d/pr.md" 2>/dev/null || true)"
+    if [[ -z "$lane" ]]; then title="$(head -n 1 "$d/pr.md" 2>/dev/null || true)"; fi
     [[ -n "$title" ]] || title="$(pr_title_fallback "$d")"
     url="$( (cd "$wt" && gh pr create --draft --base "$base" --head "$branch" \
       --title "$title" --body-file "$d/pr-body.md") | tail -n 1 || true)"
@@ -806,13 +960,14 @@ job_review() {
     review_follow "$d" $((n + 1))
   else
     review_pr_md "$d"
+    job_gate "$d" || true
     job_publish "$d" || true
   fi
   job_end "$d" "done" "$line"
 }
 
-# job_run JOB — the agent in the job's worktree, then publish; a job with a review
-# due queues the review instead, and the review publishes. A retry after a usage
+# job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
+# review due queues the review instead, and the review gates and publishes. A retry after a usage
 # limit resumes the saved session. Runs in the background; it writes the final
 # status itself, so it outlives a runner restart.
 job_run() {
@@ -850,10 +1005,12 @@ job_run() {
       *) st=failed note="no result line" ;;
     esac
   fi
-  if [[ "$st" == "done" ]] && review_due "$d"; then
-    review_follow "$d" 1 || job_publish "$d" || true
+  case "$st" in failed | blocked | timeout) lane_leave "$d" "$st" || true ;; esac
+  if [[ "$st" == "done" ]] && review_due "$d" && review_follow "$d" 1; then
+    :
   else
-    job_publish "$d" || true
+    job_gate "$d" || true
+    job_publish "$d" "$st" || true
   fi
   job_end "$d" "$st" "${result:-$note}"
   if [[ "$st" == "done" ]]; then job_chain "$d"; fi
@@ -1080,9 +1237,10 @@ queue_repos() {
   for d in "$QDIR"/*/; do [[ ! -f "$d/job" ]] || jget "$d/job" repo; done | sort -u
 }
 
-# vibe queue status — the header, then one line per job, grouped by repo.
+# vibe queue status — the header, then per repo one line per job, or one row per
+# branch with 2+ jobs (group_of) and a line below it for each job that needs the user.
 cmd_queue_status() {
-  local repo d st txt w=0
+  local repo d j st b txt w=0 seen
   queue_header
   for d in "$QDIR"/*/; do
     d="${d%/}" && d="${d##*/}"
@@ -1092,9 +1250,27 @@ cmd_queue_status() {
     [[ -n "$repo" ]] || continue
     echo
     echo "${repo##*/}"
+    seen=$'\n'
     for d in "$QDIR"/*/; do
       d="${d%/}"
       [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
+      b="$(jget "$d/job" branch)"
+      [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
+      group_of "$d"
+      if ((${#GROUP[@]} > 1)); then
+        seen+="$b"$'\n'
+        printf '  %s · %s · %s%s\n    %s\n' "$b" "$G_PROGRESS" "$G_NEXT" "${G_PR:+ · $G_PR}" "$G_CTX"
+        for j in "${GROUP[@]}"; do
+          st="$(jstate "$j" status)"
+          [[ ! -f "$j/held" ]] || st="held"
+          case "$st" in
+            held | blocked | failed | timeout | skipped)
+              printf '    %-*s  %-8s %s%s\n' "$w" "${j##*/}" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")"
+              ;;
+          esac
+        done
+        continue
+      fi
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
@@ -1135,30 +1311,48 @@ report_context() {
   echo "$t"
 }
 
-# report_row JOB TEXT — one table row: id, status, context, TEXT and the job's cost, links.
+# report_row JOB TEXT — one table row: id, status, context, gate and TEXT and the job's cost, links.
 report_row() {
-  local d="$1" pr ctx links="" txt="${2//|//}" stats
-  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" stats="$(job_stats "$d")"
+  local d="$1" pr ctx g links="" txt="${2//|//}" stats
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)" stats="$(job_stats "$d")"
   case "$pr" in http*) links="[PR]($pr)" ;; esac
   [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
   if [[ -n "$stats" ]]; then txt="${txt:+$txt · }$stats"; fi
+  if [[ -n "$g" ]]; then
+    links="${links:+$links · }[gate](file://$d/gate.log)"
+    if [[ "$g" == 0 ]]; then txt="gate exit 0 · $txt"; else txt="**gate exit $g** · $txt"; fi
+  fi
   echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | $txt | $links |"
 }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
-# the classes: a status, or `pr` (done with a PR URL; `done` is then done
-# without one). No rows, no table.
+# the classes: a status, `gate` (done with a failing gate), or `pr` (done with a PR URL;
+# `done` is then done without one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done`
+# table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" d cls rows=""
+  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links
   shift 2
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
     job_final "$d" || continue
     cls="$(jstate "$d" status)"
+    if [[ "$cls" == "done" && "$(jstate "$d" gate)" =~ ^[1-9] ]]; then cls=gate; fi
+    group_of "$d"
+    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then
+      case "$G_PR" in http*) cls="pr" ;; esac
+      in_list "$cls" "$@" || continue
+      b="$(jget "$d/job" branch)"
+      [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
+      seen+="$b"$'\n'
+      links=""
+      case "$G_PR" in http*) links="[PR]($G_PR)" ;; esac
+      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | $G_NEXT | $links |"$'\n'
+      continue
+    fi
     case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
     in_list "$cls" "$@" || continue
-    rows+="$(report_row "$d" "$(report_tldr "$d")")"$'\n'
+    rows+="$(report_row "$d" "$(report_tldr "$d")$(side_suffix "$d")")"$'\n'
   done
   [[ -n "$rows" ]] || return 0
   echo
@@ -1171,9 +1365,9 @@ report_rows() {
 
 # queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", then per
 # repo ranked tables (needs a human, PRs to read, the rest), then the next
-# action of every unheld job that did not finish.
+# action of every unheld job that did not finish or failed its gate.
 queue_report_md() {
-  local d st wt repo rows="" lim
+  local d st g wt repo rows="" lim
   echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
   lim="$(limit_line)"
@@ -1193,7 +1387,7 @@ queue_report_md() {
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
-      report_rows "$repo" "Needs you" blocked failed timeout skipped
+      report_rows "$repo" "Needs you" blocked failed timeout skipped gate
       report_rows "$repo" "PR ready" pr
       report_rows "$repo" "Done, nothing to read" "done"
     )"
@@ -1204,14 +1398,20 @@ queue_report_md() {
   done < <(queue_repos)
   for d in "$QDIR"/*/; do
     d="${d%/}"
-    st="$(jstate "$d" status)"
-    case "$st" in blocked | failed | timeout | skipped) ;; *) continue ;; esac
+    st="$(jstate "$d" status)" g="$(jstate "$d" gate)"
+    [[ "$g" =~ ^[1-9] ]] || g=""
+    case "$st" in blocked | failed | timeout | skipped) ;; *) [[ -n "$g" ]] || continue ;; esac
     [[ -f "$d/job" && ! -f "$d/held" ]] || continue
     wt="$(jstate "$d" worktree)"
     echo
-    echo "## ${d##*/} — $st"
+    echo "## ${d##*/} — $st${g:+ · gate exit $g}"
     echo
     echo "- Repo: $(jget "$d/job" repo) · branch \`$(jget "$d/job" branch)\`"
+    if [[ -n "$g" ]]; then
+      printf -- '- Gate: %s\n\n```\n' "$d/gate.log"
+      tail -n 20 "$d/gate.log"
+      printf '```\n'
+    fi
     [[ -z "$wt" ]] || echo "- Worktree: $wt"
     [[ ! -f "$d/report.md" ]] || echo "- Report: $d/report.md"
     if [[ -n "$wt" && -f "$wt/HANDOFF.md" ]]; then
