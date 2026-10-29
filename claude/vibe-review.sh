@@ -3,6 +3,7 @@
 # vibe-review.sh WORKTREE NAME MODEL LEVEL BASE — `vibe queue run` hook: one headless, read-only
 # Claude review of origin/BASE...HEAD in WORKTREE. Prints one JSON result; the findings are
 # in `.structured_output.findings`. Nothing answers a permission prompt; the job settings keep it sandboxed.
+# A bare `/code-review` prompt runs as a local command: no model turn, no structured output.
 set -euo pipefail
 
 dir="$1" name="$2" model="${3:-sonnet}" level="${4:-high}" base="$5"
@@ -16,4 +17,4 @@ exec claude -p --model "$model" --name "$name" \
   --permission-mode auto --permission-prompts none \
   --settings "$here/vibe-job-settings.json" \
   --append-system-prompt "$rules" \
-  --output-format json --json-schema "$schema" <<<"/code-review $level origin/$base...HEAD"
+  --output-format json --json-schema "$schema" <<<"Run /code-review $level origin/$base...HEAD. Then return its findings through the structured output."

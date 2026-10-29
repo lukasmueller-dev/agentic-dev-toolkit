@@ -19,7 +19,7 @@ setup() {
 echo "\$*" >>"$STUBS/claude.log"
 prompt="\$(cat)"
 case "\$prompt" in
-  /code-review*)
+  "Run /code-review"*)
     echo "\$prompt" >>"$STUBS/claude.log"
     k=\$((\$(cat "$STUBS/review-count" 2>/dev/null || echo 0) + 1))
     echo "\$k" >"$STUBS/review-count"
@@ -976,7 +976,7 @@ two_findings() {
   [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
   [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
   [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 4 ]
-  [ "$(grep -c '^/code-review high origin/main\.\.\.HEAD$' "$STUBS/claude.log")" = 2 ]
+  [ "$(grep -c '^Run /code-review high origin/main\.\.\.HEAD\. ' "$STUBS/claude.log")" = 2 ]
   grep -q -- '--disallowedTools Edit,Write,NotebookEdit' "$STUBS/claude.log"
   grep -q -- '--output-format json --json-schema' "$STUBS/claude.log"
   [ "$(grep -c -- '--resume sess-01-a ' "$STUBS/claude.log")" = 1 ]
@@ -1003,7 +1003,7 @@ two_findings() {
   [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
   grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open$' "$Q/01-a-review1/pr-body.md"
   grep -q -- '-p --model opus --name proj-task-a-review1 ' "$STUBS/claude.log"
-  grep -q '^/code-review low origin/main\.\.\.HEAD$' "$STUBS/claude.log"
+  grep -q '^Run /code-review low origin/main\.\.\.HEAD\. ' "$STUBS/claude.log"
 }
 
 @test "review: review_rounds caps the rounds; review_trivial sets the bar" {
@@ -1065,7 +1065,7 @@ two_findings() {
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
   [ "$(cat "$Q/01-a/pr")" = "https://example.com/pull/1" ]
   [ "$(cat "$Q/03-c/pr")" = "https://example.com/pull/1" ]
-  [ "$(grep -c '^/code-review' "$STUBS/claude.log" || true)" = 0 ]
+  [ "$(grep -c '^Run /code-review' "$STUBS/claude.log" || true)" = 0 ]
 }
 
 @test "run: refuses a missing or unknown agent" {
