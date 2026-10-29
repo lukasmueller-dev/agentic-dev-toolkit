@@ -740,6 +740,7 @@ pandoc_stub() {
   grep -qF '<p>next: gamma</p><p>02-b  blocked  blocked: beta needs a decision → lane-x-beta</p>' "$f"
   run grep -c '<b>01-a</b>\|<b>03-c</b>' "$f"
   [ "$output" = 0 ]
+  grep -qF '<details><summary>3 jobs</summary><ul><li><b>alpha</b> done · done: alpha.txt added</li><li><b>beta</b> blocked · blocked: beta needs a decision → lane-x-beta</li><li><b>gamma</b> queued</li></ul></details>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
 }
