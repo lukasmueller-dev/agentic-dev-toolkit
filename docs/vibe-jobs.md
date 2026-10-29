@@ -46,6 +46,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `stale-state` | weekly, sun | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
+| `flaky-tests` | weekly, fri | report, 1h | runs the suite 5 times; tests that pass in some runs and fail in others, with pass/fail counts |
 | `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
