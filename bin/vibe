@@ -483,11 +483,92 @@ pr_title_fallback() {
   echo "agent(${b#jobs/}): ${r:-${1##*/}}" | cut -c 1-60
 }
 
+# epoch_of 'YYYY-MM-DD HH:MM:SS' — the epoch seconds of a local time, GNU or BSD date; empty when malformed.
+epoch_of() {
+  [[ -n "$1" ]] || return 0
+  date -d "$1" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1" +%s 2>/dev/null || true
+}
+
+# ev_num EVENT KEY — the number after "KEY": in a stream-json EVENT; empty when absent.
+ev_num() {
+  local re="\"$2\":(-?[0-9][0-9.eE+-]*)"
+  if [[ "$1" =~ $re ]]; then echo "${BASH_REMATCH[1]}"; fi
+}
+
+# job_result JOB — the last `result` event of the job's log; empty without one.
+job_result() { grep '"type":"result"' "$1/log" 2>/dev/null | tail -n 1 || true; }
+
+# job_span JOB — "<start> <end>" epoch seconds of the job's run (end: now while it runs); empty without a start.
+job_span() {
+  local s e
+  s="$(epoch_of "$(jstate "$1" started)")" e="$(epoch_of "$(jstate "$1" ended)")"
+  if [[ -n "$s" ]]; then echo "$s ${e:-$(date +%s)}"; fi
+}
+
+# job_delta JOB — 5h-limit use in points, last minus first rate_limit_event of the job's log; empty under 2 events or when resetsAt changes.
+job_delta() {
+  grep -oE '"five_hour":\{"utilization":[0-9.eE+-]+,"resetsAt":[0-9]+' "$1/log" 2>/dev/null |
+    awk -F'[:,]' 'NR == 1 { u0 = $3; r0 = $5 } { u1 = $3; if ($5 != r0) moved = 1 }
+      END { if (NR > 1 && !moved) printf "%.4f", (u1 - u0) * 100 }' || true
+}
+
+# job_limit_pct JOB — the job's share of its 5h-limit delta in %: its $ over the $ of every
+# job that ran at the same time (the job included), each scaled by its overlap time.
+# Empty when the delta or any overlapping job's cost is missing. Interactive use is not in the sum.
+job_limit_pct() {
+  local d="$1" delta s e k ks ke ov c rows="" self=""
+  delta="$(job_delta "$d")"
+  read -r s e <<<"$(job_span "$d")"
+  [[ -n "$delta" && -n "${s:-}" ]] || return 0
+  for k in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    k="${k%/}"
+    [[ -f "$k/started" ]] || continue
+    read -r ks ke <<<"$(job_span "$k")"
+    [[ -n "${ks:-}" ]] || continue
+    # Times have 1s resolution: a run from t to t spans one second.
+    ov=$(((ke < e ? ke : e) - (ks > s ? ks : s) + 1))
+    ((ov > 0)) || continue
+    c="$(ev_num "$(job_result "$k")" total_cost_usd)"
+    [[ -n "$c" ]] || return 0
+    rows+="$c $ov $((ke - ks + 1))"$'\n'
+    if [[ "${k##*/}" == "${d##*/}" ]]; then self="$c"; fi
+  done
+  [[ -n "$self" ]] || return 0
+  printf '%s' "$rows" | awk -v delta="$delta" -v self="$self" \
+    '{ tot += $1 * $2 / $3 } END { if (tot > 0) printf "%.0f", delta * self / tot }'
+}
+
+# job_stats JOB — `≈$1.04 API · ≈2% 5h est. · 40 turns · 11m` from the job's last `result`
+# event (the $ is the API price, not a bill); empty without one.
+job_stats() {
+  local ev cost turns ms
+  ev="$(job_result "$1")"
+  cost="$(ev_num "$ev" total_cost_usd)" turns="$(ev_num "$ev" num_turns)" ms="$(ev_num "$ev" duration_ms)"
+  [[ -n "$cost" && -n "$turns" && -n "$ms" ]] || return 0
+  awk -v c="$cost" -v p="$(job_limit_pct "$1")" -v t="$turns" -v ms="$ms" 'BEGIN {
+    printf "≈$%.2f API", c
+    if (p != "") printf " · ≈%d%% 5h est.", p
+    printf " · %d turns · %.0fm\n", t, ms / 60000 }'
+}
+
+# limit_line — `limit 5h: 46%, resets 14:30` from the newest rate_limit_event in any job log; empty without one.
+limit_line() {
+  local f ev u t re='"five_hour":\{"utilization":([0-9.eE+-]+),"resetsAt":([0-9]+)'
+  while IFS= read -r f; do
+    ev="$(grep '"type":"rate_limit_event"' "$f" 2>/dev/null | tail -n 1 || true)"
+    [[ "$ev" =~ $re ]] || continue
+    u="$(awk -v u="${BASH_REMATCH[1]}" 'BEGIN { printf "%.0f", u * 100 }')"
+    t="$(at_time "${BASH_REMATCH[2]}")"
+    echo "limit 5h: $u%, resets ${t#* }"
+    return 0
+  done < <(ls -t "$QDIR"/*/log 2>/dev/null)
+}
+
 # job_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title url
+  local d="$1" wt base branch ahead title url stats
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
@@ -497,7 +578,8 @@ job_publish() {
   fi
   command -v gh >/dev/null 2>&1 || return 0
   if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
-  printf '\n---\n_agent job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
+  stats="$(job_stats "$d")"
+  printf '\n---\n_agent job %s: %s%s_\n' "$(basename "$d")" "$(jstate "$d" result)" "${stats:+ · $stats}" >>"$d/pr-body.md"
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
     (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md") >/dev/null 2>&1 || true
@@ -862,13 +944,14 @@ report_context() {
   echo "$t"
 }
 
-# report_row JOB TEXT — one table row: id, status, context, TEXT, links.
+# report_row JOB TEXT — one table row: id, status, context, TEXT and the job's cost, links.
 report_row() {
-  local d="$1" pr ctx links=""
-  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")"
+  local d="$1" pr ctx links="" txt="${2//|//}" stats
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" stats="$(job_stats "$d")"
   case "$pr" in http*) links="[PR]($pr)" ;; esac
   [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
-  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | ${2//|//} | $links |"
+  if [[ -n "$stats" ]]; then txt="${txt:+$txt · }$stats"; fi
+  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | $txt | $links |"
 }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
@@ -895,14 +978,15 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# queue_report_md — the briefing: the header, held jobs under "Yours", then per
+# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", then per
 # repo ranked tables (needs a human, PRs to read, the rest), then the next
 # action of every unheld job that did not finish.
 queue_report_md() {
-  local d st wt repo rows=""
+  local d st wt repo rows="" lim
   echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
-  queue_header
+  lim="$(limit_line)"
+  echo "$(queue_header)${lim:+ · $lim}"
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/held" ]] || continue

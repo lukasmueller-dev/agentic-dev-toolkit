@@ -53,6 +53,12 @@ case "\$mode" in
       exit 1
     fi
     ;;
+  cost)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.46,"resetsAt":1793269800,"status":"allowed"}}}}'
+    echo '{"type":"result","subtype":"success","duration_ms":647191,"num_turns":40,"total_cost_usd":1.04}'
+    echo "done: costed" >"\$VIBE_JOB_DIR/result"
+    ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
   silent) ;;
@@ -390,6 +396,93 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [[ "$output" == *"## 02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
   [[ "$output" == *"## 03-c — failed"*"- Report: $Q/03-c/report.md"*"- Log: $Q/03-c/log"* ]] || false
   [[ "$output" != *"## 04-d — "* ]] || false
+}
+
+# endedjob ID REPO START END COST UTIL0 UTIL1 [RESET] — an ended job with a log of two
+# rate_limit_events and a result event; START and END are HH:MM:SS today.
+endedjob() {
+  local id="$1" r="${8:-1793269800}"
+  mkjob "$id" "$2" "b-$id" ok
+  echo "done" >"$Q/$id/status"
+  echo "done: $id" >"$Q/$id/note"
+  echo "$(date +%F) $3" >"$Q/$id/started"
+  echo "$(date +%F) $4" >"$Q/$id/ended"
+  {
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":'"$6"',"resetsAt":1793269800}}}}'
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":'"$7"',"resetsAt":'"$r"'}}}}'
+    echo '{"type":"result","duration_ms":60000,"num_turns":3,"total_cost_usd":'"$5"'}'
+  } >"$Q/$id/log"
+}
+
+@test "cost: the PR footer and the briefing row show the API price, turns and minutes" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a cost
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF -- "_agent job 01-a: done: costed · ≈\$1.04 API · 40 turns · 11m_" "$Q/01-a/pr-body.md"
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"| 01-a | done |"*"≈\$1.04 API · 40 turns · 11m |"* ]] || false
+  [[ "$output" != *"5h est."* ]] || false
+}
+
+@test "cost: the limit share is the job cost over the cost of the jobs it overlaps, scaled by overlap time" {
+  local r f files
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · ≈2% 5h est. · 3 turns · 1m"
+  grep -F '| 02-b |' "$f" | grep -qF "≈\$3.00 API · ≈6% 5h est. · 3 turns · 1m"
+  # 03-c runs in the last tenth of 01-a and 02-b: its $20 counts for $2.
+  endedjob 03-c "$r" 10:09:00 10:18:59 20 0.48 0.50
+  "$VIBE" queue report >/dev/null
+  files=("$XDG_STATE_HOME"/vibe/briefings/*.md)
+  f="${files[${#files[@]} - 1]}"
+  grep -F '| 01-a |' "$f" | grep -qF '≈1% 5h est.'
+  grep -F '| 02-b |' "$f" | grep -qF '≈4% 5h est.'
+}
+
+@test "cost: no limit share when resetsAt changes, a neighbour has no cost, or the log has one event" {
+  local r f
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48 1793287800
+  endedjob 02-b "$r" 11:00:00 11:09:59 1 0.40 0.48
+  endedjob 03-c "$r" 11:00:00 11:09:59 1 0.40 0.48
+  : >"$Q/03-c/log"
+  endedjob 05-e "$r" 12:00:00 12:09:59 1 0.40 0.48
+  sed -i.bak '2d' "$Q/05-e/log" && rm "$Q/05-e/log.bak"
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  grep -F '| 02-b |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  grep -F '| 05-e |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  run grep -c '5h est.' "$f"
+  [ "$output" = 0 ]
+  run grep -F '| 03-c |' "$f"
+  [[ "$output" != *"API"* ]] || false
+}
+
+@test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
+  local r f at
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a cost
+  drain
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  at="$(date -d @1793269800 +%H:%M 2>/dev/null || date -r 1793269800 +%H:%M)"
+  [[ "$(sed -n 3p "$f")" == "queue: "*" · limit 5h: 46%, resets $at" ]] || false
+  rm "$Q/01-a/log"
+  "$VIBE" queue report >/dev/null
+  run cat "$f"
+  [[ "$output" != *"limit 5h"* ]] || false
+}
+
+@test "docs: the --bare trap is in docs/vibe-queue.md" {
+  grep -q -- '--bare' "$REPO_ROOT/docs/vibe-queue.md"
 }
 
 @test "gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {
