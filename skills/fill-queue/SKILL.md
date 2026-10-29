@@ -1,6 +1,6 @@
 ---
 name: fill-queue
-description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, and after approval adds one headless agent job per item, each ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
+description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
 disable-model-invocation: true
 argument-hint: "[<repo>...]"
 ---
@@ -17,7 +17,8 @@ unattended, get approval, add the jobs. Runner and layout:
 - **Never change a repo yourself.** You write only job dirs, and in Phase 1 a new branch's `SPEC.md` and `HANDOFF.md`; the jobs do the work.
 - **Never write a `SPEC.md` without a grilling the user took part in.**
 - **Never list an item that fails the gate.** Show it under "Rejected" with the reason.
-- **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`.
+- **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`. The jobs of one new lane share their new branch.
+- **Never add an item to a lane branch that is queued or has an open PR.** A lane closes when its last item finishes.
 
 ## Phase 0 — Queue
 
@@ -67,10 +68,16 @@ An item or handoff next action passes only when all are true:
 5. Propose Opus only for a job that needs design judgment; say why.
 6. A worktree with `SPEC.md`: one job. Its task is "the first open milestone of `SPEC.md`"; the runner
    queues the next milestone when one is done.
+7. Lanes: group 2 or more related items into one lane — one branch, one PR, one review.
+   Take the items of one tag (`[health]`) or one roadmap heading. Only kind `code` with a 2h timeout; no `SPEC.md`, no GPU.
+   Give the lane a new branch slug, a one-line lane context (same rules as the context) and an item slug per item.
+   The other items stay one job each.
 
 ## Phase 5 — Approve
 
-Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · done-when`.
+Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · done-when`.
+The `lane` column holds the lane context, or `-` for a job alone; rows with the same value share one branch.
+The user moves an item in or out of a lane by changing that column.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the tables again.
 
@@ -79,8 +86,10 @@ approval.** Apply every change the user asks for, then show the tables again.
 For each approved job, in rank order, write a fresh dir (`mktemp -d`):
 
 - `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`; `effort=<level>` only when the user names one.
+  A lane item adds `lane=<lane context>` and `item=<item slug>`; every item of the lane has the lane's `branch`.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.
+  For a lane item, `<context>` is the lane context and the task is that item only.
 
 Then, outside the sandbox: `vibe queue add <dir>...` in rank order. A job the user wants
 before the rest: `vibe queue add --now <dir>`.
@@ -88,4 +97,4 @@ before the rest: `vibe queue add --now <dir>`.
 ## Done
 
 Done when `vibe queue add` printed one `queued` line per approved job. Report
-in 2 lines: jobs added, `vibe queue status`.
+in 2 lines: jobs added and lanes among them, `vibe queue status`.
