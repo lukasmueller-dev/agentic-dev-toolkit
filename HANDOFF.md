@@ -18,7 +18,9 @@ Milestone 1 is done and ticked in `SPEC.md`: `job_publish` builds the lane PR (`
 
 ## Next action
 
-Milestone 2 of `SPEC.md` (failure path). Done when `bats tests/vibe-queue.bats` passes with a new test: a failed lane job leaves the lane branch at its start commit and its work on `<branch>-<item>`, and the next lane job runs.
+Milestone 2 of `SPEC.md` (lane TL;DR, added after milestone 1). Done when `bats tests/vibe-queue.bats` passes with a new test: a 3-item lane body has the TL;DR of the last done item, one `<details>` per item, and ≤12 lines above the first `<details>`.
+
+Then milestone 3 (failure path):
 
 - Write the side-branch name to `$job/side`. `lane_body` already reads that file; without it, it falls back to `<branch>-<item>`.
 - `job_publish JOB STATUS` takes the job's status as arg 2. Run the failure path in `job_run` before that call.
