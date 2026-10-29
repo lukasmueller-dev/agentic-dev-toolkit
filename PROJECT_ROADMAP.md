@@ -19,6 +19,13 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
+- [ ] **Runner gate** — `vibe queue run` runs the repo's gate command (read
+      from the default branch on `origin`) in the job worktree after the
+      agent exits, unsandboxed; exit code and last lines go to the PR body and
+      the briefing. Done when a bats test shows a default-branch gate runs and
+      its exit code reaches the PR body, a gate on the job branch alone is
+      ignored, and a repo without one runs as today.
+
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
 - [ ] **Catalogue job `dependency-update`** — `uv` first, minor and patch
