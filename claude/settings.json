@@ -201,6 +201,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/clear-config-lock.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "extraKnownMarketplaces": {
