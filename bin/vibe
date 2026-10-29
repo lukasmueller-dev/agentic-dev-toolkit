@@ -8,7 +8,7 @@
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #   vibe queue status               the queue: running, queued, to review; one line per job by repo
-#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now skips the window
+#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now starts them first
 #   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
@@ -314,51 +314,11 @@ qconf() {
   echo "${v:-$2}"
 }
 
-# secs DUR — seconds of 90s, 30m, 2h, 1d or bare seconds; empty when malformed.
-secs() {
-  [[ "$1" =~ ^([0-9]+)([smhd]?)$ ]] || return 0
-  case "${BASH_REMATCH[2]}" in
-    m) echo $((10#${BASH_REMATCH[1]} * 60)) ;;
-    h) echo $((10#${BASH_REMATCH[1]} * 3600)) ;;
-    d) echo $((10#${BASH_REMATCH[1]} * 86400)) ;;
-    *) echo $((10#${BASH_REMATCH[1]})) ;;
-  esac
-}
-
-# window — the night window HH:MM-HH:MM from the config; the default when malformed.
-window() {
-  local w
-  w="$(qconf night 18:00-07:00)"
-  [[ "$w" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || w=18:00-07:00
-  echo "$w"
-}
-
-# in_window — true while the night window is open.
-in_window() {
-  local w s e m
-  w="$(window)"
-  s=$((10#${w:0:2} * 60 + 10#${w:3:2})) e=$((10#${w:6:2} * 60 + 10#${w:9:2}))
-  m="$(date +%H:%M)"
-  m=$((10#${m:0:2} * 60 + 10#${m:3:2}))
-  if ((s <= e)); then
-    ((m >= s && m < e))
-  else
-    ((m >= s || m < e))
-  fi
-}
-
 # job_timeout JOB — the job's timeout, 2h when it sets none.
 job_timeout() {
   local t
   t="$(jget "$1/job" timeout)"
   echo "${t:-2h}"
-}
-
-# job_heavy JOB — true when the job's timeout is over the config's `heavy` (2h).
-job_heavy() {
-  local t h
-  t="$(secs "$(job_timeout "$1")")" h="$(secs "$(qconf heavy 2h)")"
-  ((${t:-7200} > ${h:-7200}))
 }
 
 # job_end JOB STATUS NOTE — final status of a job; a recurring job also
@@ -384,7 +344,7 @@ branch_ok() {
 }
 
 # queue_add DIR [NOW] — move a prepared job dir (`job`, `prompt.md`) into the
-# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 lets it skip the window.
+# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 starts it first.
 queue_add() {
   local src="${1%/}" now="${2:-0}" repo branch ts d
   [[ -f "$src/job" ]] || die "no job file in $src"
@@ -590,31 +550,26 @@ agent_check() {
 }
 
 # queue_order JOB... — the jobs that may start now, in start order: --now
-# jobs, then in the night window heavy jobs, then light ones. Paused or
-# limited: none.
+# jobs, then the rest. Paused or limited: none.
 queue_order() {
-  local d night=0 now=() heavy=() light=()
+  local d now=() rest=()
   [[ ! -e "$QROOT/paused" ]] || return 0
   if limited; then return 0; fi
-  if in_window; then night=1; fi
   for d in "$@"; do
     if [[ "$(jget "$d/job" now)" == 1 ]]; then
       now+=("$d")
-    elif job_heavy "$d"; then
-      heavy+=("$d")
     else
-      light+=("$d")
+      rest+=("$d")
     fi
   done
-  if ((!night)); then heavy=(); fi
-  for d in "${now[@]+"${now[@]}"}" "${heavy[@]+"${heavy[@]}"}" "${light[@]+"${light[@]}"}"; do echo "$d"; done
+  for d in "${now[@]+"${now[@]}"}" "${rest[@]+"${rest[@]}"}"; do echo "$d"; done
 }
 
 # branch_key JOB — repo and branch: one running job per branch.
 branch_key() { echo "$(jget "$1/job" repo)#$(jget "$1/job" branch)"; }
 
 # vibe queue run --<agent> [--drain] — the runner: polls the queue for ever and
-# starts jobs in free slots (config slots_day 2, slots_night 4). --drain stops
+# starts jobs in free slots (config slots, 4). --drain stops
 # once nothing runs, waits on the GPU or may start.
 cmd_queue_run() {
   local drain=0 d pid running waiting slots busy started queued=() order
@@ -642,7 +597,7 @@ cmd_queue_run() {
   else
     warn "no timeout(1) — jobs run without a time limit"
   fi
-  info "queue $QDIR: window $(window), slots $(qconf slots_day 2) by day, $(qconf slots_night 4) by night"
+  info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
     running=0 waiting=0 busy="" queued=()
     for d in "$QDIR"/*/; do
@@ -663,8 +618,7 @@ cmd_queue_run() {
     done
     order="$(queue_order "${queued[@]+"${queued[@]}"}")"
     if ((drain && running == 0 && waiting == 0)) && [[ -z "$order" ]]; then break; fi
-    slots="$(qconf slots_day 2)"
-    if in_window; then slots="$(qconf slots_night 4)"; fi
+    slots="$(qconf slots 4)"
     started=0
     while IFS= read -r d; do
       [[ -n "$d" ]] || continue
@@ -774,9 +728,9 @@ cmd_queue_follow() {
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# queue_header — one line: running, queued, to review, window, paused.
+# queue_header — one line: running, queued, to review, slots, paused.
 queue_header() {
-  local d st r=0 q=0 h=0 g=0 v=0 open=closed slots
+  local d st r=0 q=0 g=0 v=0
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
@@ -784,17 +738,12 @@ queue_header() {
     case "$st" in
       running) r=$((r + 1)) ;;
       gpu) g=$((g + 1)) ;;
-      "" | queued)
-        q=$((q + 1))
-        if job_heavy "$d"; then h=$((h + 1)); fi
-        ;;
+      "" | queued) q=$((q + 1)) ;;
       *) v=$((v + 1)) ;;
     esac
   done
-  slots="$(qconf slots_day 2)"
-  if in_window; then open=open slots="$(qconf slots_night 4)"; fi
-  printf 'queue: %s running · %s on the GPU · %s queued (%s heavy, start in the window) · %s to review · window %s %s, %s slots' \
-    "$r" "$g" "$q" "$h" "$v" "$(window)" "$open" "$slots"
+  printf 'queue: %s running · %s on the GPU · %s queued · %s to review · %s slots' \
+    "$r" "$g" "$q" "$v" "$(qconf slots 4)"
   if [[ -e "$QROOT/paused" ]]; then printf ' · PAUSED'; fi
   if limited; then printf ' · USAGE LIMIT until %s' "$(at_time "$(head -n 1 "$QROOT/limit")")"; fi
   echo
@@ -824,8 +773,7 @@ cmd_queue_status() {
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
-      printf '  %-*s  %-8s %-5s  %s %s\n' "$w" "${d##*/}" "${st:-queued}" \
-        "$(if job_heavy "$d"; then echo heavy; else echo light; fi)" "$txt" "$(jstate "$d" pr)"
+      printf '  %-*s  %-8s %s %s\n' "$w" "${d##*/}" "${st:-queued}" "$txt" "$(jstate "$d" pr)"
     done
   done < <(queue_repos)
 }

@@ -67,7 +67,6 @@ Rules the dispatcher keeps:
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
-- A job's `timeout` over the queue's `heavy` (2h) makes it heavy: it starts only in the night window.
 
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 
