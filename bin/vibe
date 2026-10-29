@@ -8,7 +8,7 @@
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #   vibe queue status               the queue: running, queued, to review; one line per job by repo
-#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now skips the window
+#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now starts them first
 #   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
@@ -92,6 +92,16 @@ ensure_exclude() {
   grep -qxF '.claude/worktrees/' "$f" 2>/dev/null || echo '.claude/worktrees/' >>"$f"
 }
 
+# clear_config_lock DIR — remove the empty read-only .git/config.lock a sandboxed
+# agent leaves behind; a git lock is writable. It blocks worktree add and push -u.
+clear_config_lock() {
+  local f
+  f="$(git -C "$1" rev-parse --git-common-dir 2>/dev/null)" || return 0
+  case "$f" in /*) ;; *) f="$1/$f" ;; esac
+  f="$f/config.lock"
+  if [[ -f "$f" && ! -s "$f" && ! -w "$f" ]]; then rm -f "$f"; fi
+}
+
 # worktree_of MAIN BRANCH — path of the worktree that has BRANCH checked out.
 worktree_of() {
   git -C "$1" worktree list --porcelain | awk -v b="refs/heads/$2" '
@@ -112,6 +122,7 @@ pr_of() { printf '%s\n' "$1" | awk -F'\t' -v b="$2" '$1 == b { print $2; exit }'
 open_worktree() {
   local main="$1" branch="$2" def="$3" s
   ensure_exclude "$main"
+  clear_config_lock "$main"
   git -C "$main" fetch -q origin 2>/dev/null || warn "fetch failed — using the last fetched refs"
   WT="$(worktree_of "$main" "$branch")"
   if [[ -z "$WT" ]]; then
@@ -314,51 +325,11 @@ qconf() {
   echo "${v:-$2}"
 }
 
-# secs DUR — seconds of 90s, 30m, 2h, 1d or bare seconds; empty when malformed.
-secs() {
-  [[ "$1" =~ ^([0-9]+)([smhd]?)$ ]] || return 0
-  case "${BASH_REMATCH[2]}" in
-    m) echo $((10#${BASH_REMATCH[1]} * 60)) ;;
-    h) echo $((10#${BASH_REMATCH[1]} * 3600)) ;;
-    d) echo $((10#${BASH_REMATCH[1]} * 86400)) ;;
-    *) echo $((10#${BASH_REMATCH[1]})) ;;
-  esac
-}
-
-# window — the night window HH:MM-HH:MM from the config; the default when malformed.
-window() {
-  local w
-  w="$(qconf night 18:00-07:00)"
-  [[ "$w" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || w=18:00-07:00
-  echo "$w"
-}
-
-# in_window — true while the night window is open.
-in_window() {
-  local w s e m
-  w="$(window)"
-  s=$((10#${w:0:2} * 60 + 10#${w:3:2})) e=$((10#${w:6:2} * 60 + 10#${w:9:2}))
-  m="$(date +%H:%M)"
-  m=$((10#${m:0:2} * 60 + 10#${m:3:2}))
-  if ((s <= e)); then
-    ((m >= s && m < e))
-  else
-    ((m >= s || m < e))
-  fi
-}
-
 # job_timeout JOB — the job's timeout, 2h when it sets none.
 job_timeout() {
   local t
   t="$(jget "$1/job" timeout)"
   echo "${t:-2h}"
-}
-
-# job_heavy JOB — true when the job's timeout is over the config's `heavy` (2h).
-job_heavy() {
-  local t h
-  t="$(secs "$(job_timeout "$1")")" h="$(secs "$(qconf heavy 2h)")"
-  ((${t:-7200} > ${h:-7200}))
 }
 
 # job_end JOB STATUS NOTE — final status of a job; a recurring job also
@@ -384,7 +355,7 @@ branch_ok() {
 }
 
 # queue_add DIR [NOW] — move a prepared job dir (`job`, `prompt.md`) into the
-# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 lets it skip the window.
+# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 starts it first.
 queue_add() {
   local src="${1%/}" now="${2:-0}" repo branch ts d
   [[ -f "$src/job" ]] || die "no job file in $src"
@@ -499,14 +470,96 @@ job_gate() {
   echo "$rc" >"$d/gate"
 }
 
+# epoch_of 'YYYY-MM-DD HH:MM:SS' — the epoch seconds of a local time, GNU or BSD date; empty when malformed.
+epoch_of() {
+  [[ -n "$1" ]] || return 0
+  date -d "$1" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1" +%s 2>/dev/null || true
+}
+
+# ev_num EVENT KEY — the number after "KEY": in a stream-json EVENT; empty when absent.
+ev_num() {
+  local re="\"$2\":(-?[0-9][0-9.eE+-]*)"
+  if [[ "$1" =~ $re ]]; then echo "${BASH_REMATCH[1]}"; fi
+}
+
+# job_result JOB — the last `result` event of the job's log; empty without one.
+job_result() { grep '"type":"result"' "$1/log" 2>/dev/null | tail -n 1 || true; }
+
+# job_span JOB — "<start> <end>" epoch seconds of the job's run (end: now while it runs); empty without a start.
+job_span() {
+  local s e
+  s="$(epoch_of "$(jstate "$1" started)")" e="$(epoch_of "$(jstate "$1" ended)")"
+  if [[ -n "$s" ]]; then echo "$s ${e:-$(date +%s)}"; fi
+}
+
+# job_delta JOB — 5h-limit use in points, last minus first rate_limit_event of the job's log; empty under 2 events or when resetsAt changes.
+job_delta() {
+  grep -oE '"five_hour":\{"utilization":[0-9.eE+-]+,"resetsAt":[0-9]+' "$1/log" 2>/dev/null |
+    awk -F'[:,]' 'NR == 1 { u0 = $3; r0 = $5 } { u1 = $3; if ($5 != r0) moved = 1 }
+      END { if (NR > 1 && !moved) printf "%.4f", (u1 - u0) * 100 }' || true
+}
+
+# job_limit_pct JOB — the job's share of its 5h-limit delta in %: its $ over the $ of every
+# job that ran at the same time (the job included), each scaled by its overlap time.
+# Empty when the delta or any overlapping job's cost is missing. Interactive use is not in the sum.
+job_limit_pct() {
+  local d="$1" delta s e k ks ke ov c rows="" self=""
+  delta="$(job_delta "$d")"
+  read -r s e <<<"$(job_span "$d")"
+  [[ -n "$delta" && -n "${s:-}" ]] || return 0
+  for k in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    k="${k%/}"
+    [[ -f "$k/started" ]] || continue
+    read -r ks ke <<<"$(job_span "$k")"
+    [[ -n "${ks:-}" ]] || continue
+    # Times have 1s resolution: a run from t to t spans one second.
+    ov=$(((ke < e ? ke : e) - (ks > s ? ks : s) + 1))
+    ((ov > 0)) || continue
+    c="$(ev_num "$(job_result "$k")" total_cost_usd)"
+    [[ -n "$c" ]] || return 0
+    rows+="$c $ov $((ke - ks + 1))"$'\n'
+    if [[ "${k##*/}" == "${d##*/}" ]]; then self="$c"; fi
+  done
+  [[ -n "$self" ]] || return 0
+  printf '%s' "$rows" | awk -v delta="$delta" -v self="$self" \
+    '{ tot += $1 * $2 / $3 } END { if (tot > 0) printf "%.0f", delta * self / tot }'
+}
+
+# job_stats JOB — `≈$1.04 API · ≈2% 5h est. · 40 turns · 11m` from the job's last `result`
+# event (the $ is the API price, not a bill); empty without one.
+job_stats() {
+  local ev cost turns ms
+  ev="$(job_result "$1")"
+  cost="$(ev_num "$ev" total_cost_usd)" turns="$(ev_num "$ev" num_turns)" ms="$(ev_num "$ev" duration_ms)"
+  [[ -n "$cost" && -n "$turns" && -n "$ms" ]] || return 0
+  awk -v c="$cost" -v p="$(job_limit_pct "$1")" -v t="$turns" -v ms="$ms" 'BEGIN {
+    printf "≈$%.2f API", c
+    if (p != "") printf " · ≈%d%% 5h est.", p
+    printf " · %d turns · %.0fm\n", t, ms / 60000 }'
+}
+
+# limit_line — `limit 5h: 46%, resets 14:30` from the newest rate_limit_event in any job log; empty without one.
+limit_line() {
+  local f ev u t re='"five_hour":\{"utilization":([0-9.eE+-]+),"resetsAt":([0-9]+)'
+  while IFS= read -r f; do
+    ev="$(grep '"type":"rate_limit_event"' "$f" 2>/dev/null | tail -n 1 || true)"
+    [[ "$ev" =~ $re ]] || continue
+    u="$(awk -v u="${BASH_REMATCH[1]}" 'BEGIN { printf "%.0f", u * 100 }')"
+    t="$(at_time "${BASH_REMATCH[2]}")"
+    echo "limit 5h: $u%, resets ${t#* }"
+    return 0
+  done < <(ls -t "$QDIR"/*/log 2>/dev/null)
+}
+
 # job_publish JOB — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title url
+  local d="$1" wt base branch ahead title url stats
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
+  clear_config_lock "$wt"
   if ! git -C "$wt" push -q -u origin "$branch"; then
     echo "push failed" >"$d/pr"
     return 0
@@ -517,7 +570,8 @@ job_publish() {
     # shellcheck disable=SC2016  # markdown fences, not command substitution
     printf '\n**Gate:** exit %s\n\n```\n%s\n```\n' "$(jstate "$d" gate)" "$(tail -n 20 "$d/gate.log")" >>"$d/pr-body.md"
   fi
-  printf '\n---\n_agent job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
+  stats="$(job_stats "$d")"
+  printf '\n---\n_agent job %s: %s%s_\n' "$(basename "$d")" "$(jstate "$d" result)" "${stats:+ · $stats}" >>"$d/pr-body.md"
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
     (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md") >/dev/null 2>&1 || true
@@ -611,31 +665,26 @@ agent_check() {
 }
 
 # queue_order JOB... — the jobs that may start now, in start order: --now
-# jobs, then in the night window heavy jobs, then light ones. Paused or
-# limited: none.
+# jobs, then the rest. Paused or limited: none.
 queue_order() {
-  local d night=0 now=() heavy=() light=()
+  local d now=() rest=()
   [[ ! -e "$QROOT/paused" ]] || return 0
   if limited; then return 0; fi
-  if in_window; then night=1; fi
   for d in "$@"; do
     if [[ "$(jget "$d/job" now)" == 1 ]]; then
       now+=("$d")
-    elif job_heavy "$d"; then
-      heavy+=("$d")
     else
-      light+=("$d")
+      rest+=("$d")
     fi
   done
-  if ((!night)); then heavy=(); fi
-  for d in "${now[@]+"${now[@]}"}" "${heavy[@]+"${heavy[@]}"}" "${light[@]+"${light[@]}"}"; do echo "$d"; done
+  for d in "${now[@]+"${now[@]}"}" "${rest[@]+"${rest[@]}"}"; do echo "$d"; done
 }
 
 # branch_key JOB — repo and branch: one running job per branch.
 branch_key() { echo "$(jget "$1/job" repo)#$(jget "$1/job" branch)"; }
 
 # vibe queue run --<agent> [--drain] — the runner: polls the queue for ever and
-# starts jobs in free slots (config slots_day 2, slots_night 4). --drain stops
+# starts jobs in free slots (config slots, 4). --drain stops
 # once nothing runs, waits on the GPU or may start.
 cmd_queue_run() {
   local drain=0 d pid running waiting slots busy started queued=() order
@@ -663,7 +712,7 @@ cmd_queue_run() {
   else
     warn "no timeout(1) — jobs run without a time limit"
   fi
-  info "queue $QDIR: window $(window), slots $(qconf slots_day 2) by day, $(qconf slots_night 4) by night"
+  info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
     running=0 waiting=0 busy="" queued=()
     for d in "$QDIR"/*/; do
@@ -684,8 +733,7 @@ cmd_queue_run() {
     done
     order="$(queue_order "${queued[@]+"${queued[@]}"}")"
     if ((drain && running == 0 && waiting == 0)) && [[ -z "$order" ]]; then break; fi
-    slots="$(qconf slots_day 2)"
-    if in_window; then slots="$(qconf slots_night 4)"; fi
+    slots="$(qconf slots 4)"
     started=0
     while IFS= read -r d; do
       [[ -n "$d" ]] || continue
@@ -795,9 +843,9 @@ cmd_queue_follow() {
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# queue_header — one line: running, queued, to review, window, paused.
+# queue_header — one line: running, queued, to review, slots, paused.
 queue_header() {
-  local d st r=0 q=0 h=0 g=0 v=0 open=closed slots
+  local d st r=0 q=0 g=0 v=0
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
@@ -805,17 +853,12 @@ queue_header() {
     case "$st" in
       running) r=$((r + 1)) ;;
       gpu) g=$((g + 1)) ;;
-      "" | queued)
-        q=$((q + 1))
-        if job_heavy "$d"; then h=$((h + 1)); fi
-        ;;
+      "" | queued) q=$((q + 1)) ;;
       *) v=$((v + 1)) ;;
     esac
   done
-  slots="$(qconf slots_day 2)"
-  if in_window; then open=open slots="$(qconf slots_night 4)"; fi
-  printf 'queue: %s running · %s on the GPU · %s queued (%s heavy, start in the window) · %s to review · window %s %s, %s slots' \
-    "$r" "$g" "$q" "$h" "$v" "$(window)" "$open" "$slots"
+  printf 'queue: %s running · %s on the GPU · %s queued · %s to review · %s slots' \
+    "$r" "$g" "$q" "$v" "$(qconf slots 4)"
   if [[ -e "$QROOT/paused" ]]; then printf ' · PAUSED'; fi
   if limited; then printf ' · USAGE LIMIT until %s' "$(at_time "$(head -n 1 "$QROOT/limit")")"; fi
   echo
@@ -845,8 +888,7 @@ cmd_queue_status() {
       st="$(jstate "$d" status)" txt="$(jget "$d/job" context)"
       if job_final "$d"; then txt="$(jstate "$d" note)"; fi
       [[ ! -f "$d/held" ]] || st="held"
-      printf '  %-*s  %-8s %-5s  %s %s\n' "$w" "${d##*/}" "${st:-queued}" \
-        "$(if job_heavy "$d"; then echo heavy; else echo light; fi)" "$txt" "$(jstate "$d" pr)"
+      printf '  %-*s  %-8s %s %s\n' "$w" "${d##*/}" "${st:-queued}" "$txt" "$(jstate "$d" pr)"
     done
   done < <(queue_repos)
 }
@@ -883,17 +925,18 @@ report_context() {
   echo "$t"
 }
 
-# report_row JOB TEXT — one table row: id, status, context, gate and TEXT, links.
+# report_row JOB TEXT — one table row: id, status, context, gate and TEXT and the job's cost, links.
 report_row() {
-  local d="$1" pr ctx g txt="$2" links=""
-  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)"
+  local d="$1" pr ctx g links="" txt="${2//|//}" stats
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)" stats="$(job_stats "$d")"
   case "$pr" in http*) links="[PR]($pr)" ;; esac
   [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
+  if [[ -n "$stats" ]]; then txt="${txt:+$txt · }$stats"; fi
   if [[ -n "$g" ]]; then
     links="${links:+$links · }[gate](file://$d/gate.log)"
     if [[ "$g" == 0 ]]; then txt="gate exit 0 · $txt"; else txt="**gate exit $g** · $txt"; fi
   fi
-  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | ${txt//|//} | $links |"
+  echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | $txt | $links |"
 }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
@@ -921,14 +964,15 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# queue_report_md — the briefing: the header, held jobs under "Yours", then per
+# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", then per
 # repo ranked tables (needs a human, PRs to read, the rest), then the next
 # action of every unheld job that did not finish or failed its gate.
 queue_report_md() {
-  local d st g wt repo rows=""
+  local d st g wt repo rows="" lim
   echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
-  queue_header
+  lim="$(limit_line)"
+  echo "$(queue_header)${lim:+ · $lim}"
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/held" ]] || continue
@@ -981,15 +1025,91 @@ queue_report_md() {
   done
 }
 
-# vibe queue report — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
+# week_jobs SINCE — one line per job, queue and archive: repo, status, ran,
+# open, id, note, tab-separated. ran: ended on or after the date SINCE
+# ("2026-10-22 03:00:00" > "2026-10-22"). open: unarchived and needs a human.
+week_jobs() {
+  local since="$1" d m st ended ran open
+  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    d="${d%/}"
+    [[ -f "$d/job" ]] || continue
+    ran=0 open=0
+    case "$d" in
+      "$QDIR"/*) ;;
+      *)
+        m="${d%/*}" m="${m##*/}"
+        if [[ "$m" < "${since:0:7}" ]]; then continue; fi
+        ;;
+    esac
+    st="$(jstate "$d" status)" ended="$(jstate "$d" ended)"
+    if [[ -n "$ended" && "$ended" > "$since" ]]; then ran=1; fi
+    case "$d:$st" in "$QDIR"/*:blocked | "$QDIR"/*:failed | "$QDIR"/*:timeout | "$QDIR"/*:skipped) open=1 ;; esac
+    if ((ran + open)); then
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(jget "$d/job" repo)" "$st" "$ran" "$open" "${d##*/}" "$(jstate "$d" note)"
+    fi
+  done
+}
+
+# week_list LABEL LINES — "- LABEL: N" and the lines; "none" without lines.
+week_list() {
+  if [[ -z "$2" ]]; then
+    echo "- $1: none"
+    return 0
+  fi
+  echo "- $1: $(printf '%s\n' "$2" | awk 'END { print NR }')"
+  echo "$2"
+}
+
+# queue_week_md — the Sunday section: per repo the PRs merged, the jobs run
+# and the blockers open over the last 7 days.
+queue_week_md() {
+  local since rows repo merged
+  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
+  rows="$(week_jobs "$since")"
+  echo "## Week since $since"
+  while IFS= read -r repo; do
+    [[ -n "$repo" ]] || continue
+    echo
+    echo "### ${repo##*/}"
+    echo
+    echo "- Jobs run: $(awk -F'\t' -v r="$repo" '
+      $1 == r && $3 { n[$2]++; t++ }
+      END {
+        if (!t) { print "none"; exit }
+        split("done blocked failed timeout skipped", k, " ")
+        for (i = 1; i <= 5; i++) if (n[k[i]]) s = s (s ? ", " : "") n[k[i]] " " k[i]
+        print t " (" s ")"
+      }' <<<"$rows")"
+    if merged="$(cd "$repo" && gh pr list --state merged --search "merged:>=$since" --json number,title,url \
+      -q '.[] | "  - [#\(.number)](\(.url)) \(.title)"' 2>/dev/null)"; then
+      week_list "PRs merged" "$merged"
+    else
+      echo "- PRs merged: unknown (gh failed)"
+    fi
+    week_list "Blockers open" "$(awk -F'\t' -v r="$repo" '$1 == r && $4 { print "  - " $5 " — " $6 }' <<<"$rows")"
+  done < <(cut -f1 <<<"$rows" | sort -u)
+}
+
+# vibe queue report [--week] — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
 # copied as briefing-<…>.md with note frontmatter to the directory named in
-# ~/.config/vibe/briefing-dir when that file exists.
+# ~/.config/vibe/briefing-dir when that file exists. --week ends it with the
+# Sunday section.
 cmd_queue_report() {
-  local file copy dest
-  [[ $# -eq 0 ]] || die "usage: vibe queue report"
+  local file copy dest week=""
+  if [[ "${1:-}" == --week ]]; then
+    week=1
+    shift
+  fi
+  [[ $# -eq 0 ]] || die "usage: vibe queue report [--week]"
   file="$QROOT/briefings/$(date +%F-%H%M).md"
   mkdir -p "${file%/*}"
-  queue_report_md >"$file"
+  {
+    queue_report_md
+    if [[ -n "$week" ]]; then
+      echo
+      queue_week_md
+    fi
+  } >"$file"
   echo "briefing: $file"
   copy="$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || true)"
   copy="${copy/#\~/$HOME}"
