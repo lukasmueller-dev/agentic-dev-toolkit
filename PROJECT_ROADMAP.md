@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-10-28 · turing_
+_Last updated: 2026-10-29 · turing_
 
 ## Items
 
@@ -21,29 +21,8 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
-- [ ] **Catalogue job `dependency-update`** — `uv` first, minor and patch
-      only, one PR per repo per week when the suite is green, majors in the
-      report. Done when a repo with an outdated lock gets one draft PR with a
-      green suite, and a red suite yields a report line naming the package.
-- [ ] **Catalogue job `flaky-tests`** — runs the suite N times, reports tests
-      that fail in some runs. Done when a seeded flaky test shows up as one
-      report line with its pass/fail counts.
-- [ ] **Catalogue job `codebase-map`** — refreshes `docs/CODEBASE_MAP.md`
-      after upstream pulls via the `codebase-map` skill. Done when a changed
-      entry point produces one docs-only commit on `jobs/codebase-map`.
 - [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
       the job queues the canonical eval through `gpu-queue`; the follow-up
       compares the headline metric with the last run. Done when a drop opens
       a roadmap item and the briefing shows both numbers.
-- [ ] **Catalogue job `fresh-env`** — `uv sync` in a clean env plus one smoke
-      step. Done when a missing dependency yields one report line with the
-      failing import.
-- [ ] **Catalogue job `bib-check`** — bib entries vs arXiv (new versions,
-      venue), dead DOIs; corrected entries as one commit. Done when a stale
-      preprint entry becomes a commit and a dead DOI a report line.
-- [ ] **Catalogue job `config-drift`** — config keys no code reads, code
-      flags no config sets; roadmap items only. Done when one unread key
-      yields one roadmap item with a grep-checkable done-when.
-- [ ] **Briefing `--week`** — a Sunday section of `vibe queue report`: PRs
-      merged, jobs run, blockers open, per repo. Done when
-      `vibe queue report --week` renders it from the week's briefings and PRs.
+

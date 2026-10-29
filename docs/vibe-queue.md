@@ -7,6 +7,7 @@ and refill it whenever you like.
 | Skill | Does |
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, or a `SPEC.md` branch for big work; your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
@@ -30,10 +31,7 @@ echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # opt
 `~/.config/vibe/queue.conf`, optional — the defaults:
 
 ```ini
-night=18:00-07:00
-slots_day=2
-slots_night=4
-heavy=2h
+slots=4
 ```
 
 ## 2. Install the runner
@@ -52,6 +50,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ```bash
 vibe queue status                                   # header, then one line per job by repo
+vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
@@ -59,9 +58,8 @@ vibe queue run --claude --drain                     # by hand, without the servi
 ## Rules the runner keeps
 
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job.
-- Heavy job: `timeout` > `heavy`. It starts only in the night window, before light jobs; it may run into the day.
-- Slots: `slots_day`, `slots_night` agents at once. One job per branch at a time.
-- `vibe queue add --now` skips the window. `vibe queue pause`: no new start; running jobs finish.
+- Slots: `slots` agents at once. One job per branch at a time.
+- `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry is a new session.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
@@ -79,7 +77,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
+| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions, `--week`: "Week since" section |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
@@ -117,7 +115,6 @@ The PR footer line and the briefing row end with the job's size, from the last `
 
 ## What breaks it
 
-- A heavy job never starts → it waits for the window; `vibe queue status` shows it. Now: `vibe queue add --now`.
 - Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`, or, after an update, `-p` defaults to `--bare`, which does not read the login: give `claude/vibe-job.sh` the opt-out.
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
