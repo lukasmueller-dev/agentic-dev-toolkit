@@ -92,6 +92,16 @@ ensure_exclude() {
   grep -qxF '.claude/worktrees/' "$f" 2>/dev/null || echo '.claude/worktrees/' >>"$f"
 }
 
+# clear_config_lock DIR — remove the empty read-only .git/config.lock a sandboxed
+# agent leaves behind; a git lock is writable. It blocks worktree add and push -u.
+clear_config_lock() {
+  local f
+  f="$(git -C "$1" rev-parse --git-common-dir 2>/dev/null)" || return 0
+  case "$f" in /*) ;; *) f="$1/$f" ;; esac
+  f="$f/config.lock"
+  if [[ -f "$f" && ! -s "$f" && ! -w "$f" ]]; then rm -f "$f"; fi
+}
+
 # worktree_of MAIN BRANCH — path of the worktree that has BRANCH checked out.
 worktree_of() {
   git -C "$1" worktree list --porcelain | awk -v b="refs/heads/$2" '
@@ -112,6 +122,7 @@ pr_of() { printf '%s\n' "$1" | awk -F'\t' -v b="$2" '$1 == b { print $2; exit }'
 open_worktree() {
   local main="$1" branch="$2" def="$3" s
   ensure_exclude "$main"
+  clear_config_lock "$main"
   git -C "$main" fetch -q origin 2>/dev/null || warn "fetch failed — using the last fetched refs"
   WT="$(worktree_of "$main" "$branch")"
   if [[ -z "$WT" ]]; then
@@ -491,6 +502,7 @@ job_publish() {
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
+  clear_config_lock "$wt"
   if ! git -C "$wt" push -q -u origin "$branch"; then
     echo "push failed" >"$d/pr"
     return 0
