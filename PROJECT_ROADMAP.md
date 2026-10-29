@@ -38,9 +38,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 - [ ] **Catalogue job `fresh-env`** — `uv sync` in a clean env plus one smoke
       step. Done when a missing dependency yields one report line with the
       failing import.
-- [ ] **Catalogue job `bib-check`** — bib entries vs arXiv (new versions,
-      venue), dead DOIs; corrected entries as one commit. Done when a stale
-      preprint entry becomes a commit and a dead DOI a report line.
 - [ ] **Catalogue job `config-drift`** — config keys no code reads, code
       flags no config sets; roadmap items only. Done when one unread key
       yields one roadmap item with a grep-checkable done-when.
