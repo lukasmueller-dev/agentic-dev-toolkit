@@ -14,11 +14,11 @@
 
 ## State
 
-Milestone 1 is done: `job_session` in `bin/vibe` writes `queue/<id>/session` after every run; `claude/vibe-job.sh` takes the session as its 6th argument and passes `--resume`. Nothing passes a session yet.
+Milestones 1 and 2 are done. `job_agent` in `bin/vibe` runs one session (args: job, timeout, prompt, session, max turns) and appends to `log`. `job_handoff` resumes after exit 124/137 with `resume.md`, `--max-turns 5`, a 10m limit. `job_run` truncates `log` at start.
 
 ## Next action
 
-Milestone 2 of `SPEC.md`: on exit 124 the runner resumes the session for one turn (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Done when a test with a stub past its timeout ends `timeout` with `HANDOFF.md` committed on the branch. `vibe-job.sh` needs a way to pass `--max-turns`; the stub `claude` in `tests/vibe-queue.bats` prints a `system/init` event (`sess-<job id>`).
+Milestone 3 of `SPEC.md`: the retry after a usage limit resumes the session. In `job_run`, pass `$d/session` to `job_agent` when it exists (a fresh dir has none). Done when a test shows the retry of a limited job got `--resume`: the `limit` stub mode in `tests/vibe-queue.bats` already runs twice, so check `claude.log` for `--resume sess-<id>` on the second call.
 
 ## Blockers
 

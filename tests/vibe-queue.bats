@@ -20,7 +20,7 @@ echo "\$*" >>"$STUBS/claude.log"
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 prompt="\$(cat)"
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -59,6 +59,12 @@ case "\$mode" in
   crash) exit 3 ;;
   silent) ;;
   sleep) sleep 30 ;;
+  slow) echo half >wip.txt && sleep 30 ;;
+  handoff)
+    printf '## State\n\nwip.txt is half done.\n' >HANDOFF.md
+    git add HANDOFF.md wip.txt && git commit -q -m "wip: handoff"
+    echo "failed: out of time — wip.txt" >"\$VIBE_JOB_DIR/result"
+    ;;
 esac
 EOF
   cat >"$STUBS/gh" <<EOF
@@ -202,14 +208,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(cat "$Q/03-c/note")" = "no result line" ]
 }
 
-@test "run: a job over its own time limit is stopped" {
+@test "run: a job over its own time limit is stopped; without a session there is no handoff turn" {
   command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
   local r
   r="$(make_repo proj)"
+  touch "$STUBS/no-init"
   mkjob 01-a "$r" task-a sleep timeout=1s
   drain
   [ "$(cat "$Q/01-a/status")" = timeout ]
   [ "$(cat "$Q/01-a/note")" = "stopped after 1s" ]
+  [ "$(wc -l <"$STUBS/claude.log")" -eq 1 ]
+}
+
+@test "run: a job over its time limit gets one more turn that commits HANDOFF.md" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a slow timeout=1s
+  drain
+  [ "$(cat "$Q/01-a/status")" = timeout ]
+  [ "$(cat "$Q/01-a/note")" = "failed: out of time — wip.txt" ]
+  [ "$(git -C "$r/.claude/worktrees/task-a" status --porcelain)" = "" ]
+  git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:HANDOFF.md | grep -q 'wip.txt is half done'
+  [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '--resume sess-01-a .*--max-turns 5')" = 1 ]
+  [ "$(grep -c -- '--max-turns' "$STUBS/claude.log")" = 1 ]
 }
 
 @test "run: skips a dirty worktree, fails a bad branch, a missing repo and a dead job" {

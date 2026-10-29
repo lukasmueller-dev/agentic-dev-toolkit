@@ -555,16 +555,38 @@ limited() {
   [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
 }
 
+# job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
+# job's worktree, appended to JOB/log; its exit code. SESSION resumes that session.
+job_agent() {
+  local d="$1" t="$2"
+  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
+    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$3" "$(jget "$d/job" effort)" "${4:-}" "${5:-}" >>"$d/log" 2>&1
+}
+
+# job_handoff JOB — after a timeout: resume the job's session for one turn
+# that commits HANDOFF.md and writes `result`. No session, no resume.
+job_handoff() {
+  local d="$1"
+  [[ -s "$d/session" ]] || return 0
+  {
+    echo "The time limit stopped this job."
+    echo "Overwrite HANDOFF.md in the worktree root with State, Next action and Blockers."
+    echo "Commit it with any work in progress."
+    echo "If $d/result does not exist, write it: failed: out of time — <what is left>."
+  } >"$d/resume.md"
+  job_agent "$d" 10m "$d/resume.md" "$(jstate "$d" session)" 5 || true
+}
+
 # job_run JOB — the agent in the job's worktree, then publish. Runs in the
 # background; it writes the final status itself, so it outlives a runner restart.
 job_run() {
   local d="$1" rc=0 result st note="" t reset
   date '+%F %T' >"$d/started"
   t="$(job_timeout "$d")"
-  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
-    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" "$(jget "$d/job" effort)" >"$d/log" 2>&1 || rc=$?
+  : >"$d/log"
+  job_agent "$d" "$t" "$d/prompt.md" || rc=$?
   job_session "$d"
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
@@ -578,6 +600,8 @@ job_run() {
   fi
   if ((rc == 124 || rc == 137)); then
     st=timeout note="stopped after $t"
+    job_handoff "$d"
+    result="$(jstate "$d" result)"
   elif ((rc != 0)); then
     st=failed note="agent exit $rc: $(tail -n 1 "$d/log" 2>/dev/null | cut -c 1-160 || true)"
   else
