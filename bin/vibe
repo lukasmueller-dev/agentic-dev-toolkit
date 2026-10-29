@@ -1226,6 +1226,14 @@ fm_get() {
     NR > 1 && $0 == "---" { exit }
     NR > 1 && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^[ \t]+/, "", v); sub(/[ \t]+$/, "", v); print v; exit }' "$1" 2>/dev/null || true
 }
+# fm_has FILE KEY — true when FILE's frontmatter has KEY, even with no value.
+fm_has() {
+  awk -v k="$2" '
+    NR == 1 && $0 != "---" { exit }
+    NR > 1 && $0 == "---" { exit }
+    NR > 1 && index($0, k ":") == 1 { f = 1; exit }
+    END { exit !f }' "$1" 2>/dev/null
+}
 # fm_body FILE — FILE after its frontmatter (the whole file without one).
 fm_body() {
   awk 'NR == 1 && $0 != "---" { all = 1 } all { print; next } NR > 1 && !on && $0 == "---" { on = 1; next } on { print }' "$1" 2>/dev/null || true
@@ -1404,7 +1412,7 @@ job_open_prs() {
 # Output drops to `report` when the repo already has 2 open job PRs and this
 # job's branch is not one of them.
 job_write() {
-  local d="$1" repo="$2" job="$3" branch output prs n tpl
+  local d="$1" repo="$2" job="$3" branch output prs n tpl f
   branch="jobs/$job"
   output="$(job_key "$repo" "$job" output pr)"
   if [[ "$output" == pr ]]; then
@@ -1415,6 +1423,12 @@ job_write() {
   printf 'repo=%s\nbranch=%s\nmodel=%s\ntimeout=%s\nrecurring=%s\noutput=%s\n' \
     "$repo" "$branch" "$(job_key "$repo" "$job" model sonnet)" "$(job_key "$repo" "$job" timeout 1h)" \
     "$job" "$output" >"$d/job"
+  for f in "$repo/.vibe-jobs/$job.md" "$JOBS_CATALOGUE/$job.md"; do
+    if fm_has "$f" after; then
+      echo "after=$(fm_get "$f" after)" >>"$d/job"
+      break
+    fi
+  done
   tpl="$SELF_ROOT/skills/recurring-jobs/references/job-prompt.md"
   render_template "$tpl" \
     '<job>' "$job" \

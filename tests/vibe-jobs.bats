@@ -48,6 +48,7 @@ EOF
   mkdir -p "$HOME/.config/vibe" && echo server >"$HOME/.config/vibe/role"
   export VIBE_JOBS_CATALOGUE="$BATS_TEST_TMPDIR/catalogue" VIBE_ROOT="$BATS_TEST_TMPDIR"
   mkdir -p "$VIBE_JOBS_CATALOGUE" "$XDG_CONFIG_HOME/vibe"
+  echo after= >"$XDG_CONFIG_HOME/vibe/queue.conf"
   printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$VIBE_JOBS_CATALOGUE/health.md"
   printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$VIBE_JOBS_CATALOGUE/crashy.md"
   printf -- '---\nschedule: daily\ntimeout: 2s\n---\n\nMODE=sleep\n' >"$VIBE_JOBS_CATALOGUE/slow.md"
@@ -194,6 +195,22 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   run "$VIBE" job run "$r" nosuch
   [ "$status" -ne 0 ]
   [[ "$output" == *"no schedule"* ]] || false
+}
+
+@test "job run: the key after reaches the job file (repo file over catalogue); sota-digest turns the review off" {
+  local r
+  r="$(make_repo proj)"
+  printf -- '---\nschedule: weekly\nafter:\n---\n\nMODE=ok\n' >"$VIBE_JOBS_CATALOGUE/digest.md"
+  optin "$r" health
+  optin "$r" digest
+  "$VIBE" job run "$r" health >/dev/null
+  "$VIBE" job run "$r" digest >/dev/null
+  [ "$(grep -c '^after=' "$(qjobs jobs-health)/job" || true)" = 0 ]
+  grep -qx 'after=' "$(qjobs jobs-digest)/job"
+  optin "$r" digest "after: review\n"
+  "$VIBE" job run "$r" digest >/dev/null
+  grep -qx 'after=review' "$(qjobs jobs-digest | tail -n 1)/job"
+  grep -qx 'after:' "$REPO_ROOT/skills/recurring-jobs/references/jobs/sota-digest.md"
 }
 
 @test "job run: the job's own timeout stops it" {

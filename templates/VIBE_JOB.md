@@ -5,6 +5,7 @@
 # output: pr | report
 # model: sonnet
 # timeout: 1h
+# after: review | (empty = no review)
 ---
 
 _One line per instruction for this repo: paths to skip, what "healthy" means here, a command to run._
