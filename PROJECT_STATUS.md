@@ -27,7 +27,7 @@ contract and the installer's auto-discovery rules.
   `client <host>`; `vibe queue status|report` and `vibe job list` run there
   over ssh, every other `queue`/`job` command stops. Design: PR body.
 - 2026-10-28: **vibe queue replaces the shifts**: one always-on queue
-  (`vibe-queue.service`); heavy jobs (timeout > 2h) start only 18:00–07:00;
+  (`vibe-queue.service`), 4 slots, no day/night window (2026-10-29);
   `/fill-queue` and `/review-jobs` run any time, `check-in` and `shutdown`
   call them; a fresh briefing per review, no report timers. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
