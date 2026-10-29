@@ -183,7 +183,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
 @test "lane: a 3-item lane body has the TL;DR of the last done item, one <details> per item, 12 lines above the first" {
   local r
   r="$(make_repo proj)"
-  window closed 1
+  slots 1
   touch "$STUBS/pr-exists"
   mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
   mkjob 02-b "$r" lane-x blocked "lane=Fix health" item=beta
@@ -234,7 +234,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
 @test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
   local r
   r="$(make_repo proj)"
-  window closed 1
+  slots 1
   mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
   mkjob 02-b "$r" lane-x blocked "lane=Fix health" item=beta
   mkjob 03-c "$r" solo ok
@@ -260,7 +260,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [[ "$output" == *"  lane-x · 1/3 · gamma · https://example.com/pull/1"$'\n'"    Fix health"$'\n'* ]] || false
   [[ "$output" == *"    02-b  blocked  blocked: beta needs a decision → lane-x-beta"* ]] || false
   [ "$(grep -c '01-a\|03-c' <<<"$output")" = 0 ]
-  [ "$(grep -c '04-d  queued   light' <<<"$output")" = 1 ]
+  [ "$(grep -c '04-d  queued' <<<"$output")" = 1 ]
 }
 
 @test "lane: the report holds the lane in one row, and the item out of the lane under Needs you" {
