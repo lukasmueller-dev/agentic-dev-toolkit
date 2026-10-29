@@ -47,6 +47,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
 | `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `eval-regression` | weekly, sat | pr, 30m, gpu | research repo: the canonical eval through `gpu-queue`; the follow-up compares the headline metric with the last run; a drop → roadmap item |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
