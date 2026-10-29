@@ -30,6 +30,19 @@ case "\$mode" in
     printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$VIBE_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
+  item)
+    n="\$(sed -n 's/^item=//p' "\$VIBE_JOB_DIR/job")"
+    cp "\$VIBE_JOB_DIR/lane-pr.md" "\$VIBE_JOB_DIR/seen-lane-pr.md" 2>/dev/null || true
+    echo "\$n" >"\$n.txt" && git add "\$n.txt" && git commit -q -m "feat: \$n"
+    printf 'feat: %s\n\n**Context:** ctx %s.\n**Changed:** %s.txt added.\n**Verify:** cat *.txt\n**Decisions/risks:** none\n\n<details>\n<summary>Details</summary>\n\nmore %s\n\n</details>\n' "\$n" "\$n" "\$n" "\$n" >"\$VIBE_JOB_DIR/pr.md"
+    echo "done: \$n.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
+  itemwip)
+    n="\$(sed -n 's/^item=//p' "\$VIBE_JOB_DIR/job")"
+    echo "\$n" >"\$n.txt" && git add "\$n.txt" && git commit -q -m "feat: \$n"
+    echo half >"\$n.wip"
+    echo "blocked: \$n needs a decision" >"\$VIBE_JOB_DIR/result"
+    ;;
   lock)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     l="\$(cd "\$(git rev-parse --git-common-dir)" && pwd)/config.lock"
@@ -199,6 +212,123 @@ drain() { run "$VIBE" queue run --claude --drain; }
   grep -qF -- "api --method PATCH repos/{owner}/{repo}/pulls/9 -F body=@$Q/02-b/pr-body.md" "$STUBS/gh.log"
   run grep -c -- 'pr create --draft --base main --head task-b' "$STUBS/gh.log"
   [ "$output" = 0 ]
+}
+
+@test "lane: 2 done jobs on one branch give one PR with the title and TL;DR of the latest item" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix two health items" item=alpha
+  mkjob 02-b "$r" lane-x item "lane=Fix two health items" item=beta
+  drain
+  [ "$status" -eq 0 ]
+  grep -q -- 'pr create --draft --base main --head lane-x --title feat: beta' "$STUBS/gh.log"
+  [ "$(grep -c '^\*\*Context:\*\* Fix two health items$' "$Q/02-b/pr-body.md")" = 1 ]
+  grep -q '^\*\*Changed:\*\* beta.txt added.$' "$Q/02-b/pr-body.md"
+  run grep -c 'alpha.txt added' "$Q/02-b/pr-body.md"
+  [ "$output" = 0 ]
+  grep -q '^\*\*Verify:\*\* cat \*.txt$' "$Q/02-b/pr-body.md"
+  grep -q '^\*\*Decisions/risks:\*\* none$' "$Q/02-b/pr-body.md"
+  [ "$(grep -c '^<details>$' "$Q/02-b/pr-body.md")" = 2 ]
+  grep -q '^more alpha$' "$Q/02-b/pr-body.md"
+  grep -q '^_agent lane: 2/2 done_$' "$Q/02-b/pr-body.md"
+}
+
+@test "lane: a 3-item lane body has the TL;DR of the last done item, one <details> per item, 12 lines above the first" {
+  local r
+  r="$(make_repo proj)"
+  slots 1
+  touch "$STUBS/pr-exists"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x blocked "lane=Fix health" item=beta
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  drain
+  [ "$status" -eq 0 ]
+  # the third item was handed the lane so far: alpha's TL;DR and beta out of the lane
+  grep -q '^\*\*Changed:\*\* alpha.txt added.$' "$Q/03-c/seen-lane-pr.md"
+  grep -q '^- beta → lane-x-beta$' "$Q/03-c/seen-lane-pr.md"
+  grep -q '^\*\*Changed:\*\* gamma.txt added.$' "$Q/03-c/pr-body.md"
+  grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
+  run grep -c 'alpha.txt added' "$Q/03-c/pr-body.md"
+  [ "$output" = 0 ]
+  [ "$(grep -c '^<details>$' "$Q/03-c/pr-body.md")" = 3 ]
+  [ "$(awk '/^<details>$/ { exit } { n++ } END { print n }' "$Q/03-c/pr-body.md")" -le 12 ]
+  grep -q '^_agent lane: 2/3 done_$' "$Q/03-c/pr-body.md"
+  grep -qF -- "-F body=@$Q/03-c/pr-body.md -f title=feat: gamma" "$STUBS/gh.log"
+}
+
+@test "lane: a blocked item with work leaves the lane on <branch>-<item>; the lane branch stays at its start and the next item runs" {
+  local r o="$BATS_TEST_TMPDIR/proj.git" start
+  r="$(make_repo proj)"
+  touch "$STUBS/pr-exists"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-b/status")" = blocked ]
+  [ "$(cat "$Q/03-c/status")" = "done" ]
+  start="$(git -C "$o" rev-parse lane-x~1)"
+  [ "$(cat "$Q/02-b/start")" = "$start" ]
+  [ "$(cat "$Q/02-b/side")" = lane-x-beta ]
+  # the lane branch holds alpha and gamma, in a straight line
+  [ "$(git -C "$o" log --format=%s lane-x | head -n 2 | tr '\n' ' ')" = "feat: gamma feat: alpha " ]
+  run git -C "$o" cat-file -e lane-x:beta.txt
+  [ "$status" -ne 0 ]
+  # beta's work, with the WIP commit, sits on the side branch at the lane tip it started from
+  [ "$(git -C "$o" rev-parse lane-x-beta~2)" = "$start" ]
+  [ "$(git -C "$o" log -n 1 --format=%s lane-x-beta)" = "wip: beta (blocked)" ]
+  git -C "$o" cat-file -e lane-x-beta:beta.txt
+  git -C "$o" cat-file -e lane-x-beta:beta.wip
+  run grep -c -- '--head lane-x-beta' "$STUBS/gh.log"
+  [ "$output" = 0 ]
+  grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
+}
+
+@test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
+  local r
+  r="$(make_repo proj)"
+  slots 1
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x blocked "lane=Fix health" item=beta
+  mkjob 03-c "$r" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  grep -q '^\*\*Changed:\*\* alpha.txt added.$' "$Q/02-b/pr-body.md"
+  grep -q '^- beta → lane-x-beta$' "$Q/02-b/pr-body.md"
+  grep -q '^_agent lane: 1/2 done_$' "$Q/02-b/pr-body.md"
+  grep -q '^\*\*Changed:\*\* work.txt added.$' "$Q/03-c/pr-body.md"
+}
+
+@test "lane: status prints one row per lane with its progress, and a row only for the item out of the lane" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  drain
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  mkjob 04-d "$r" solo ok
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'lane-x · ' <<<"$output")" = 1 ]
+  [[ "$output" == *"  lane-x · 1/3 · gamma · https://example.com/pull/1"$'\n'"    Fix health"$'\n'* ]] || false
+  [[ "$output" == *"    02-b  blocked  blocked: beta needs a decision → lane-x-beta"* ]] || false
+  [ "$(grep -c '01-a\|03-c' <<<"$output")" = 0 ]
+  [ "$(grep -c '04-d  queued' <<<"$output")" = 1 ]
+}
+
+@test "lane: the report holds the lane in one row, and the item out of the lane under Needs you" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  drain
+  [ "$status" -eq 0 ]
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| 02-b | blocked |  | blocked: beta needs a decision → lane-x-beta | [PR](https://example.com/pull/1) |"*"### PR ready"*"| lane-x | 2/3 | Fix health | - | [PR](https://example.com/pull/1) |"* ]] || false
+  [ "$(grep -c '| 01-a \|| 03-c ' <<<"$output")" = 0 ]
 }
 
 @test "run: blocked without commits pushes nothing; crash and silence fail" {
