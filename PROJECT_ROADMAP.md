@@ -47,8 +47,3 @@ staged straight from it. Order matters within a track; tracks are independent.
 - [ ] **Briefing `--week`** — a Sunday section of `vibe queue report`: PRs
       merged, jobs run, blockers open, per repo. Done when
       `vibe queue report --week` renders it from the week's briefings and PRs.
-- [ ] **Job cost in PR footer and briefing** — per job from the last
-      `result` event: `≈$ API · ≈% 5h est. · turns · minutes`; briefing header
-      `limit 5h: <utilization>%, resets <HH:MM>`; the `--bare` trap in
-      `docs/vibe-queue.md`. Done when the `tests/vibe-queue.bats` cost tests
-      pass and `grep -- --bare docs/vibe-queue.md` finds the trap.
