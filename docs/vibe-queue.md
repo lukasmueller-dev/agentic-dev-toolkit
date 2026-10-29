@@ -70,9 +70,10 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 
 - A lane is the unarchived jobs on one branch whose job file has `lane=<one-line context>` and `item=<slug>`. One job and one commit per item, in series.
 - Only `code` items, 2h timeout. No GPU job, no `SPEC.md` chain.
-- No item joins a lane that is queued or has an open PR. The lane closes when its last item finishes.
+- `/fill-queue` adds no item to a lane that is queued or has an open PR. The lane closes when its last item finishes.
 - An item that ends `failed`, `blocked` or `timeout` leaves the lane: WIP commit, pushed to `<branch>-<item>` without a PR, lane branch reset to the item's start commit. The next item runs.
 - A usage limit only pauses the lane; the job keeps its id.
+- `/review-jobs` retries an item out of the lane from the current tip: the lane branch while its PR is open, else `<branch>-<item>-retry` from the default branch. Its prompt names `git diff <start>..<side-branch>`.
 - After each item the runner writes the lane PR again: title and TL;DR from the latest done item's `pr.md`, a `<item> → <side-branch>` line per item out of the lane, one `<details>` per item.
 - The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
 - `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you.
