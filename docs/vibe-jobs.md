@@ -47,6 +47,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
 | `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
@@ -83,4 +84,5 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
+- `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.
