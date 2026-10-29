@@ -98,6 +98,7 @@ case "\$mode" in
     ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
+  oom) echo half >wip.txt && kill -9 \$\$ ;;
   silent) ;;
   sleep) sleep 30 ;;
   slow) echo half >wip.txt && sleep 30 ;;
@@ -123,6 +124,7 @@ esac
 EOF
   printf '#!/bin/sh\n' >"$STUBS/code"
   chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/code"
+  stub_systemd_run "$STUBS"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
@@ -428,6 +430,48 @@ drain() { run "$VIBE" queue run --claude --drain; }
   git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:HANDOFF.md | grep -q 'wip.txt is half done'
   [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '--resume sess-01-a .*--max-turns 5')" = 1 ]
   [ "$(grep -c -- '--max-turns' "$STUBS/claude.log")" = 1 ]
+}
+
+@test "memory: each agent runs in its own scope, capped at 100% ÷ slots; memory_max= overrides" {
+  local r
+  r="$(make_repo proj)"
+  slots 2
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"memory cap per job: 50%"* ]] || false
+  grep -q -- "^--user --scope --quiet --collect -p MemoryMax=50% -p MemorySwapMax=0 .*vibe-job.sh .*proj-task-a" "$STUBS/systemd-run.log"
+  echo memory_max=6G >>"$CONF"
+  mkjob 02-b "$r" task-b ok
+  drain
+  grep -q -- "-p MemoryMax=6G .*proj-task-b" "$STUBS/systemd-run.log"
+}
+
+@test "memory: a job killed before its time limit ends alone as failed; the other job runs on" {
+  local r
+  r="$(make_repo proj)"
+  slots 2
+  mkjob 01-a "$r" task-a oom
+  mkjob 02-b "$r" task-b seq
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = "agent killed (SIGKILL): past its memory cap (50%), or oomd" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ "$(cat "$STUBS/seq")" = "$(printf 'begin\nend')" ]
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 0 ]
+}
+
+@test "memory: without a systemd user manager the runner warns and runs jobs uncapped" {
+  local r
+  r="$(make_repo proj)"
+  touch "$STUBS/no-systemd"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no systemd user manager — jobs run without a memory cap"* ]] || false
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$STUBS/systemd-run.log" ]
 }
 
 @test "run: skips a dirty worktree, fails a bad branch, a missing repo and a dead job" {

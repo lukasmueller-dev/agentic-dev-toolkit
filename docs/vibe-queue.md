@@ -15,7 +15,7 @@ and refill it whenever you like.
 
 ## Requirements
 
-- `gh` logged in, `timeout` (coreutils), systemd user services.
+- `gh` logged in, `timeout` (coreutils), systemd user services; `systemd-run --user` for the memory cap.
 - The repos trusted once (`docs/remote-sessions.md` step 1).
 - A sandbox that starts: `bwrap --ro-bind / / --unshare-net true` exits 0.
   Jobs exit instead of running unsandboxed (`failIfUnavailable`).
@@ -38,6 +38,7 @@ review_model=sonnet
 review_level=high
 review_timeout=1h
 after=review
+memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 ```
 
 Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
@@ -95,6 +96,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.
+- Memory: each agent, and the gate, runs in its own systemd scope with `MemoryMax=<memory_max>`, no swap. Past it the kernel kills the biggest process in that scope; oomd picks one scope too. The agent killed: `failed`, `agent killed (SIGKILL)`; a test it ran: the agent sees the kill and goes on. Other jobs and the runner keep running. `memory_max` is read at runner start.
 
 ## Lanes
 
@@ -168,6 +170,8 @@ The PR footer line and the briefing row end with the job's size, from the last `
 
 - Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`, or, after an update, `-p` defaults to `--bare`, which does not read the login: give `claude/vibe-job.sh` the opt-out.
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
+- A job `failed`, note `agent killed (SIGKILL)` → past its memory cap, or oomd under memory pressure; raise `memory_max=` or lower `slots=`, then restart the runner.
+- `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
