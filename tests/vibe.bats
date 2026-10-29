@@ -344,6 +344,44 @@ make_kit() {
   [[ "$output" == *"restart 'claude-rc@*'"* ]] || false
 }
 
+@test "update-toolkit: a changed runner restarts vibe-queue on a server only" {
+  local t o
+  t="$(make_kit)"
+  o="$(clone_repo kit kit-other)"
+  printf '#!/bin/sh\necho "$@" >>"%s/systemctl.log"\n' "$STUBS" >"$STUBS/systemctl"
+  chmod +x "$STUBS/systemctl"
+  mkdir -p "$o/bin" "$o/skills/_lib"
+  echo one >"$o/bin/vibe"
+  echo one >"$o/skills/_lib/lib.sh"
+  git -C "$o" add bin skills
+  git -C "$o" commit -q -m "runner"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUBS/systemctl.log" ]
+  mkdir -p "$HOME/.config/vibe"
+  echo server >"$HOME/.config/vibe/role"
+  echo two >"$o/bin/vibe"
+  git -C "$o" commit -q -am "vibe changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user restart vibe-queue.service" ]
+  [[ "$output" == *"runner restarted"* ]] || false
+  rm "$STUBS/systemctl.log"
+  echo two >"$o/skills/_lib/lib.sh"
+  git -C "$o" commit -q -am "lib changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$(cat "$STUBS/systemctl.log")" = "--user restart vibe-queue.service" ]
+  rm "$STUBS/systemctl.log"
+  git -C "$o" commit -q --allow-empty -m "other"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUBS/systemctl.log" ]
+}
+
 @test "sync: leaves a behind toolkit checkout to update-toolkit" {
   local t o
   t="$(make_kit)"

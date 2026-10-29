@@ -274,7 +274,7 @@ cmd_status() {
 }
 
 cmd_update_toolkit() {
-  local t="$TOOLKIT" def unit before after
+  local t="$TOOLKIT" def unit before after rbefore rafter
   [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
   def="$(default_branch "$t")"
@@ -282,14 +282,21 @@ cmd_update_toolkit() {
   [[ -z "$(git -C "$t" status --porcelain --untracked-files=no)" ]] || die "$t has uncommitted changes"
   unit="claude/systemd/claude-rc@.service"
   before="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  rbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
   after="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  rafter="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
   "$t/install.sh" || die "install.sh failed"
   "$t/install.sh" doctor || die "doctor reports problems"
   if [[ "$before" != "$after" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     systemctl --user daemon-reload
     echo "unit changed; restart stops running sessions: systemctl --user restart 'claude-rc@*'"
+  fi
+  # The runner holds bin/vibe and the lib in memory; running jobs survive (KillMode=process).
+  if [[ "$rbefore" != "$rafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
+    systemctl --user restart vibe-queue.service
+    echo "runner restarted: vibe-queue.service"
   fi
 }
 

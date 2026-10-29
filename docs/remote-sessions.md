@@ -57,7 +57,7 @@ The app's new-session picker offers the repo on this machine.
 | Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
 | Finish | `/commit-push-pr`, merge; a clean worktree is removed when its session ends |
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
-| Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed. `vibe sync` never pulls the toolkit |
+| Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed; on a server restarts `vibe-queue.service` if `bin/vibe` or `skills/_lib/lib.sh` changed (running jobs keep going). `vibe sync` never pulls the toolkit |
 
 `vibe sync [--all]` result per worktree: `pushed`, `pulled`, `ok`, `empty`
 (no commits, not pushed), `merged` (upstream gone, never pushed again —
