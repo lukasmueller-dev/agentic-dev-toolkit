@@ -35,9 +35,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       the job queues the canonical eval through `gpu-queue`; the follow-up
       compares the headline metric with the last run. Done when a drop opens
       a roadmap item and the briefing shows both numbers.
-- [ ] **Catalogue job `fresh-env`** — `uv sync` in a clean env plus one smoke
-      step. Done when a missing dependency yields one report line with the
-      failing import.
 - [ ] **Catalogue job `bib-check`** — bib entries vs arXiv (new versions,
       venue), dead DOIs; corrected entries as one commit. Done when a stale
       preprint entry becomes a commit and a dead DOI a report line.
