@@ -48,3 +48,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       merged, jobs run, blockers open, per repo. Done when
       `vibe queue report --week` renders it from the week's briefings and PRs.
 
+### Research guards (design: PR for `research-guards`)
+
+- [ ] **W&B MCP + `eval-paths` in humanoid-locoman-vla and safety-critic** —
+      after `research-guards` merges; one job per repo: a read-only
+      `.mcp.json` entry from `docs/wandb-mcp.md`, `.vibe-jobs/eval-paths`
+      from the protocol files, safety-critic `CLAUDE.md`: a queued GPU run
+      sets `WANDB=1`. Needs you: create `~/.config/wandb-mcp/key`. Done when
+      each glob matches a file and one job's MCP call returns a run per repo.
+
