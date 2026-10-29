@@ -72,6 +72,12 @@ case "\$mode" in
       exit 1
     fi
     ;;
+  gate)
+    mkdir -p .vibe-jobs && echo 'touch hacked.txt' >.vibe-jobs/gate
+    git add .vibe-jobs && git commit -q -m "feat: my own gate"
+    git update-ref refs/remotes/origin/main HEAD
+    echo "done: gate on the branch" >"\$VIBE_JOB_DIR/result"
+    ;;
   cost)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.46,"resetsAt":1793269800,"status":"allowed"}}}}'
@@ -380,6 +386,49 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(cat "$Q/04-d/status")" = failed ]
   [ "$(cat "$Q/04-d/note")" = "job process died" ]
   [ ! -e "$STUBS/claude.log" ]
+}
+
+@test "gate: origin's default branch declares it; it runs in the worktree, exit code in the PR body and briefing" {
+  local r f
+  r="$(make_repo proj)"
+  mkdir -p "$r/.vibe-jobs"
+  # shellcheck disable=SC2016  # the gate expands $PWD, not the test
+  printf 'echo "docker stage red in ${PWD##*/}"\ntest -f work.txt && exit 3\n' >"$r/.vibe-jobs/gate"
+  git -C "$r" add .vibe-jobs && git -C "$r" commit -q -m "chore: gate" && git -C "$r" push -q origin main
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a/gate")" = 3 ]
+  grep -q '^docker stage red in task-a$' "$Q/01-a/gate.log"
+  grep -qF '**Gate:** exit 3' "$Q/01-a/pr-body.md"
+  grep -q '^docker stage red in task-a$' "$Q/01-a/pr-body.md"
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" == *"### Needs you"*"| 01-a | done | The repo lacks work.txt. | **gate exit 3** · work.txt added. |"*"[gate](file://$Q/01-a/gate.log) |"* ]] || false
+  [[ "$output" != *"### PR ready"* ]] || false
+  [[ "$output" == *"## 01-a — done · gate exit 3"*"docker stage red in task-a"* ]] || false
+}
+
+@test "gate: a gate on the job branch alone is ignored; no gate on origin runs as today" {
+  local r f
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a gate
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$r/.claude/worktrees/task-a/hacked.txt" ]
+  [ ! -e "$Q/01-a/gate" ]
+  [ ! -e "$Q/02-b/gate" ]
+  run grep -c 'Gate' "$Q/01-a/pr-body.md" "$Q/02-b/pr-body.md"
+  [ "$output" = "$(printf '%s:0\n%s:0' "$Q/01-a/pr-body.md" "$Q/02-b/pr-body.md")" ]
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" == *"### PR ready"*"| 02-b | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"* ]] || false
+  [[ "$output" != *"gate exit"* && "$output" != *"gate.log"* ]] || false
 }
 
 @test "run: --now jobs start first; a long timeout starts at once" {

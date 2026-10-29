@@ -34,6 +34,13 @@ echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # opt
 slots=4
 ```
 
+Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
+Commit it to the default branch; the runner reads it from there on `origin`.
+
+```bash
+echo 'tools/test.sh --docker' >.vibe-jobs/gate    # a shell command; runs unsandboxed in the job's worktree
+```
+
 ## 2. Install the runner
 
 Server machine only (`~/.config/vibe/role` holds `server`).
@@ -61,6 +68,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry is a new session.
+- Gate: after the agent, before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.
@@ -90,6 +98,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
+| `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
