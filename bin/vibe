@@ -426,7 +426,8 @@ cmd_queue_add() {
 }
 
 # job_prepare JOB — check the job, make or adopt its worktree. Writes
-# JOB/worktree on success, a final status otherwise. Run it in a subshell.
+# JOB/worktree on success, a final status otherwise. A lane job also gets
+# JOB/lane-pr.md, the lane PR so far. Run it in a subshell.
 job_prepare() {
   local d="$1" repo branch main def wt
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
@@ -467,6 +468,7 @@ job_prepare() {
   echo "$(basename "$main")-${branch//\//-}" >"$d/name"
   echo "$WT" >"$d/worktree"
   milestones_open "$WT" >"$d/milestones"
+  if [[ -n "$(jget "$d/job" lane)" ]]; then lane_body "$d" running >"$d/lane-pr.md"; fi
 }
 
 # milestones_open WT — open milestones of WT/SPEC.md; empty without one.
@@ -499,16 +501,11 @@ lane_jobs() {
   done
 }
 
-# join_uniq — stdin lines without blanks, duplicates or `none`, joined by " · ".
-join_uniq() {
-  awk 'NF && tolower($0) !~ /^none\.?$/ && !seen[$0]++ { out = out (out == "" ? "" : " · ") $0 } END { print out }'
-}
-
-# lane_body JOB STATUS — the lane PR body in the templates/job-pr.md shape: one
-# Changed line per done item, `<item> → <side-branch>` per item out of the lane,
-# one <details> per item. STATUS is JOB's status, still `running` while it publishes.
+# lane_body JOB STATUS — the lane PR in the pr.md shape: the title and TL;DR of the
+# latest done item, a `<item> → <side-branch>` line per item out of the lane, one
+# <details> per item. STATUS is JOB's status, still `running` while it publishes.
 lane_body() {
-  local d="$1" j item s r t side more branch changed="" verify="" risks="" det="" n=0 ok=0
+  local d="$1" j item s r side more branch last="" out="" det="" n=0 ok=0 title="" t="" verify="" risks=""
   branch="$(jget "$d/job" branch)"
   while IFS= read -r j; do
     [[ -n "$j" ]] || continue
@@ -518,25 +515,28 @@ lane_body() {
     n=$((n + 1))
     case "$s" in
       "done")
-        ok=$((ok + 1))
-        t="$(md_line "$j/pr.md" Changed)"
-        changed+="- $item: ${t:-${r#*: }}"$'\n'
-        verify+="$(md_line "$j/pr.md" Verify)"$'\n'
-        risks+="$(md_line "$j/pr.md" Decisions/risks)"$'\n'
+        ok=$((ok + 1)) last="$j"
         more="$(awk '/^<\/details>/ { f = 0 } f && (NF || p) { print; p = 1 } /^<summary>/ { f = 1 }' "$j/pr.md" 2>/dev/null || true)"
         det+=$'\n'"<details>"$'\n'"<summary>$item — done</summary>"$'\n\n'"${more:-${r#*: }}"$'\n\n'"_job ${j##*/}_"$'\n\n'"</details>"$'\n'
         ;;
       blocked | failed | timeout)
         side="$(jstate "$j" side)"
         side="${side:-$branch-$item}"
-        changed+="- $item → $side"$'\n'
+        out+="- $item → $side"$'\n'
         det+=$'\n'"<details>"$'\n'"<summary>$item — $s</summary>"$'\n\n'"${r:-$(jstate "$j" note)}"$'\n\n'"_job ${j##*/}_"$'\n\n'"</details>"$'\n'
         ;;
     esac
   done < <(lane_jobs "$d")
-  verify="$(join_uniq <<<"$verify")" risks="$(join_uniq <<<"$risks")"
-  printf '**Context:** %s\n**Changed:**\n%s**Verify:** %s\n**Decisions/risks:** %s\n%s\n---\n_agent lane: %s/%s done_\n' \
-    "$(jget "$d/job" lane)" "$changed" "${verify:-none}" "${risks:-none}" "$det" "$ok" "$n"
+  if [[ -n "$last" ]]; then
+    title="$(head -n 1 "$last/pr.md" 2>/dev/null || true)"
+    t="$(md_line "$last/pr.md" Changed)"
+    verify="$(md_line "$last/pr.md" Verify)" risks="$(md_line "$last/pr.md" Decisions/risks)"
+    if [[ -z "$t" ]]; then
+      t="$(jstate "$last" result)" t="${t#*: }"
+    fi
+  fi
+  printf '%s\n\n**Context:** %s\n**Changed:** %s\n%s**Verify:** %s\n**Decisions/risks:** %s\n%s\n---\n_agent lane: %s/%s done_\n' \
+    "${title:-$(pr_title_fallback "$d")}" "$(jget "$d/job" lane)" "${t:-none}" "$out" "${verify:-none}" "${risks:-none}" "$det" "$ok" "$n"
 }
 
 # job_publish JOB [STATUS] — push the job's commits; open a draft PR from JOB/pr.md,
@@ -546,6 +546,7 @@ lane_body() {
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
   local d="$1" wt base branch ahead title="" url lane
+  local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
@@ -556,14 +557,16 @@ job_publish() {
   command -v gh >/dev/null 2>&1 || return 0
   lane="$(jget "$d/job" lane)"
   if [[ -n "$lane" ]]; then
-    lane_body "$d" "${2:-}" >"$d/pr-body.md"
+    lane_body "$d" "${2:-}" >"$d/lane-pr.md"
+    title="$(head -n 1 "$d/lane-pr.md")" tflag=(-f "title=$title")
+    tail -n +2 "$d/lane-pr.md" >"$d/pr-body.md"
   else
     if [[ -f "$d/pr.md" ]]; then tail -n +2 "$d/pr.md" >"$d/pr-body.md"; else : >"$d/pr-body.md"; fi
     printf '\n---\n_agent job %s: %s_\n' "$(basename "$d")" "$(jstate "$d" result)" >>"$d/pr-body.md"
   fi
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
-    (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md") >/dev/null 2>&1 || true
+    (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md" "${tflag[@]+"${tflag[@]}"}") >/dev/null 2>&1 || true
   else
     if [[ -z "$lane" ]]; then title="$(head -n 1 "$d/pr.md" 2>/dev/null || true)"; fi
     [[ -n "$title" ]] || title="$(pr_title_fallback "$d")"
