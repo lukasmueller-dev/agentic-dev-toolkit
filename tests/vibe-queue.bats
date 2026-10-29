@@ -42,6 +42,12 @@ case "\$mode" in
     printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$VIBE_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
+  lock)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    l="\$(cd "\$(git rev-parse --git-common-dir)" && pwd)/config.lock"
+    rm -f "\$l" && : >"\$l" && chmod 444 "\$l"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
   nopr)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     echo "done: work.txt added, no pr.md" >"\$VIBE_JOB_DIR/result"
@@ -64,6 +70,12 @@ case "\$mode" in
       echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":'"\$((\$(date +%s) + 3600))"',"rateLimitType":"five_hour"}}'
       exit 1
     fi
+    ;;
+  cost)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":0.46,"resetsAt":1793269800,"status":"allowed"}}}}'
+    echo '{"type":"result","subtype":"success","duration_ms":647191,"num_turns":40,"total_cost_usd":1.04}'
+    echo "done: costed" >"\$VIBE_JOB_DIR/result"
     ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
   crash) exit 3 ;;
@@ -90,7 +102,8 @@ case "\$1 \$2" in
   "pr list") [ ! -f "$STUBS/pr-exists" ] || echo "https://example.com/pull/9" ;;
 esac
 EOF
-  chmod +x "$STUBS/claude" "$STUBS/gh"
+  printf '#!/bin/sh\n' >"$STUBS/code"
+  chmod +x "$STUBS/claude" "$STUBS/gh" "$STUBS/code"
   PATH="$STUBS:$PATH"
   export VIBE_TOOLKIT="$BATS_TEST_TMPDIR/no-toolkit" VIBE_QUEUE_POLL=0.2
   export GPU_QUEUE_DIR="$BATS_TEST_TMPDIR/gpu-queue" GPUQ_POLL=0.1
@@ -113,23 +126,14 @@ mkjob() {
     for l in "$@"; do echo "$l"; done
   } >"$Q/$id/job"
 }
-# hm OFFSET — the time OFFSET hours from now, HH:MM.
-hm() { date -d "$1 hour" +%H:%M 2>/dev/null || date -v"$1"H +%H:%M; }
-# window open|closed [SLOTS] — the night window around now, or an hour ahead.
-window() {
-  if [ "$1" = open ]; then
-    printf 'night=%s-%s\n' "$(hm -1)" "$(hm +1)" >"$CONF"
-  else
-    printf 'night=%s-%s\n' "$(hm +1)" "$(hm +2)" >"$CONF"
-  fi
-  printf 'after=\nslots_day=%s\nslots_night=%s\n' "${2:-2}" "${2:-4}" >>"$CONF"
-}
+# slots N — the queue runs N agents at once; the review step stays off.
+slots() { printf 'after=\nslots=%s\n' "$1" >"$CONF"; }
 drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "run: jobs in id order, commits pushed, draft PR from pr.md" {
   local r
   r="$(make_repo proj)"
-  window closed 1
+  slots 1
   mkjob 01-a "$r" task-a ok
   mkjob 02-b "$r" task-b ok
   drain
@@ -188,6 +192,46 @@ drain() { run "$VIBE" queue run --claude --drain; }
   drain
   [ "$(cat "$Q/01-a/status")" = "done" ]
   [ ! -e "$Q/01-a/session" ]
+}
+
+@test "run: an empty read-only .git/config.lock does not stop a job from starting" {
+  local r
+  r="$(make_repo proj)"
+  git -C "$r" push -q origin main:refs/heads/task-a
+  : >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$r" config branch.task-a.remote)" = origin ]
+  [ ! -e "$r/.git/config.lock" ]
+}
+
+@test "run: a config.lock the job's own sandbox leaves does not stop the push -u" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a lock
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$r" config branch.task-a.remote)" = origin ]
+  [ ! -e "$r/.git/config.lock" ]
+}
+
+@test "run: a config.lock with content, or a writable one, stays" {
+  local r
+  r="$(make_repo proj)"
+  git -C "$r" push -q origin main:refs/heads/task-a main:refs/heads/task-b
+  echo pid >"$r/.git/config.lock" && chmod 444 "$r/.git/config.lock"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$r/.git/config.lock")" = pid ]
+  [ "$(cat "$Q/01-a/status")" != "done" ]
+  rm -f "$r/.git/config.lock" && : >"$r/.git/config.lock"
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ -e "$r/.git/config.lock" ]
+  [ "$(cat "$Q/02-b/status")" != "done" ]
 }
 
 @test "run: no pr.md titles the PR from the result; an open PR gets its body replaced" {
@@ -272,38 +316,23 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ ! -e "$STUBS/claude.log" ]
 }
 
-@test "window: by day a heavy job waits and a light one runs; --now skips the window" {
+@test "run: --now jobs start first; a long timeout starts at once" {
   local r
   r="$(make_repo proj)"
-  window closed
-  mkjob 01-a "$r" task-a ok timeout=3h
-  mkjob 02-b "$r" task-b ok
-  mkjob 03-c "$r" task-c ok timeout=9h now=1
+  slots 1
+  mkjob 01-a "$r" task-a ok timeout=9h
+  mkjob 02-b "$r" task-b ok now=1
   drain
   [ "$status" -eq 0 ]
-  [ ! -e "$Q/01-a/status" ]
-  [ "$(cat "$Q/02-b/status")" = "done" ]
-  [ "$(cat "$Q/03-c/status")" = "done" ]
-  window open
-  drain
-  [ "$(cat "$Q/01-a/status")" = "done" ]
-}
-
-@test "window: in the night window heavy jobs start first" {
-  local r
-  r="$(make_repo proj)"
-  window open 1
-  mkjob 01-a "$r" task-a ok
-  mkjob 02-b "$r" task-b ok timeout=4h
-  drain
   [ "$(sed -n 1p "$STUBS/claude.log" | grep -c proj-task-b)" = 1 ]
   [ "$(sed -n 2p "$STUBS/claude.log" | grep -c proj-task-a)" = 1 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
 @test "run: one job per branch at a time" {
   local r
   r="$(make_repo proj)"
-  window closed 2
+  slots 2
   mkjob 01-a "$r" task-a seq
   mkjob 02-a "$r" task-a seq
   drain
@@ -331,7 +360,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a limit
   mkjob 02-b "$r" task-b ok
-  window open 1
+  slots 1
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = queued ]
@@ -412,7 +441,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
   [ ! -e "$Q/01-a" ]
   run "$VIBE" queue status
-  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued (0 heavy"*"1 to review"* ]] || false
+  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued · 1 to review"* ]] || false
   [[ "$output" == *"proj"*"02-b"*"held"*"04-d"*"queued"* ]] || false
   run "$VIBE" queue archive nosuch
   [ "$status" -ne 0 ]
@@ -457,6 +486,141 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [[ "$output" == *"## 02-b — blocked"*"Ask the supervisor."*"Needs a | decision."* ]] || false
   [[ "$output" == *"## 03-c — failed"*"- Report: $Q/03-c/report.md"*"- Log: $Q/03-c/log"* ]] || false
   [[ "$output" != *"## 04-d — "* ]] || false
+}
+
+# endedjob ID REPO START END COST UTIL0 UTIL1 [RESET] — an ended job with a log of two
+# rate_limit_events and a result event; START and END are HH:MM:SS today.
+endedjob() {
+  local id="$1" r="${8:-1793269800}"
+  mkjob "$id" "$2" "b-$id" ok
+  echo "done" >"$Q/$id/status"
+  echo "done: $id" >"$Q/$id/note"
+  echo "$(date +%F) $3" >"$Q/$id/started"
+  echo "$(date +%F) $4" >"$Q/$id/ended"
+  {
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":'"$6"',"resetsAt":1793269800}}}}'
+    echo '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{"five_hour":{"utilization":'"$7"',"resetsAt":'"$r"'}}}}'
+    echo '{"type":"result","duration_ms":60000,"num_turns":3,"total_cost_usd":'"$5"'}'
+  } >"$Q/$id/log"
+}
+
+@test "cost: the PR footer and the briefing row show the API price, turns and minutes" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a cost
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF -- "_agent job 01-a: done: costed · ≈\$1.04 API · 40 turns · 11m_" "$Q/01-a/pr-body.md"
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"| 01-a | done |"*"≈\$1.04 API · 40 turns · 11m |"* ]] || false
+  [[ "$output" != *"5h est."* ]] || false
+}
+
+@test "cost: the limit share is the job cost over the cost of the jobs it overlaps, scaled by overlap time" {
+  local r f files
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · ≈2% 5h est. · 3 turns · 1m"
+  grep -F '| 02-b |' "$f" | grep -qF "≈\$3.00 API · ≈6% 5h est. · 3 turns · 1m"
+  # 03-c runs in the last tenth of 01-a and 02-b: its $20 counts for $2.
+  endedjob 03-c "$r" 10:09:00 10:18:59 20 0.48 0.50
+  "$VIBE" queue report >/dev/null
+  files=("$XDG_STATE_HOME"/vibe/briefings/*.md)
+  f="${files[${#files[@]} - 1]}"
+  grep -F '| 01-a |' "$f" | grep -qF '≈1% 5h est.'
+  grep -F '| 02-b |' "$f" | grep -qF '≈4% 5h est.'
+}
+
+@test "cost: no limit share when resetsAt changes, a neighbour has no cost, or the log has one event" {
+  local r f
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48 1793287800
+  endedjob 02-b "$r" 11:00:00 11:09:59 1 0.40 0.48
+  endedjob 03-c "$r" 11:00:00 11:09:59 1 0.40 0.48
+  : >"$Q/03-c/log"
+  endedjob 05-e "$r" 12:00:00 12:09:59 1 0.40 0.48
+  sed -i.bak '2d' "$Q/05-e/log" && rm "$Q/05-e/log.bak"
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  grep -F '| 02-b |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  grep -F '| 05-e |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
+  run grep -c '5h est.' "$f"
+  [ "$output" = 0 ]
+  run grep -F '| 03-c |' "$f"
+  [[ "$output" != *"API"* ]] || false
+}
+
+@test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
+  local r f at
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a cost
+  drain
+  "$VIBE" queue report >/dev/null
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  at="$(date -d @1793269800 +%H:%M 2>/dev/null || date -r 1793269800 +%H:%M)"
+  [[ "$(sed -n 3p "$f")" == "queue: "*" · limit 5h: 46%, resets $at" ]] || false
+  rm "$Q/01-a/log"
+  "$VIBE" queue report >/dev/null
+  run cat "$f"
+  [[ "$output" != *"limit 5h"* ]] || false
+}
+
+@test "docs: the --bare trap is in docs/vibe-queue.md" {
+  grep -q -- '--bare' "$REPO_ROOT/docs/vibe-queue.md"
+}
+
+@test "report --week: per repo jobs run, PRs merged, blockers open; old jobs count only while open" {
+  local r f since
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b blocked
+  mkjob 03-c "$r" task-c crash
+  drain
+  "$VIBE" queue archive 01-a >/dev/null
+  mkdir -p "$Q/00-oldblock" "$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch"
+  printf 'repo=%s\nbranch=old\n' "$r" | tee "$Q/00-oldblock/job" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/job"
+  echo blocked >"$Q/00-oldblock/status"
+  echo "blocked: ancient" >"$Q/00-oldblock/note"
+  echo "2020-01-01 00:00:00" | tee "$Q/00-oldblock/ended" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/ended"
+  echo "done" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/status"
+  cat >"$STUBS/gh" <<EOF
+#!/bin/sh
+echo "\$*" >>"$STUBS/gh.log"
+echo "  - [#5](https://example.com/pull/5) feat: merged work"
+EOF
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  [ "$(grep -c '^## Week' "$f")" -eq 0 ]
+  rm "$f"
+  run "$VIBE" queue report --week
+  [ "$status" -eq 0 ]
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
+  grep -qF -- "merged:>=$since" "$STUBS/gh.log"
+  run cat "$f"
+  [[ "$output" == *"## proj"*"## Week since $since"*"### proj"*"- Jobs run: 3 (1 done, 1 blocked, 1 failed)"*"- PRs merged: 1"*"  - [#5](https://example.com/pull/5) feat: merged work"*"- Blockers open: 3"*"  - 00-oldblock — blocked: ancient"*"  - 02-b — blocked: needs a decision"*"  - 03-c — agent exit 3"* ]] || false
+  [[ "$output" != *"00-oldarch"* ]] || false
+}
+
+@test "report --week: no merged PRs say none; a failing gh says unknown; other arguments are refused" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a blocked
+  drain
+  run "$VIBE" queue report --week
+  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- Jobs run: 1 (1 blocked)"*"- PRs merged: none"* ]] || false
+  printf '#!/bin/sh\nexit 1\n' >"$STUBS/gh"
+  run "$VIBE" queue report --week
+  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- PRs merged: unknown (gh failed)"* ]] || false
+  run "$VIBE" queue report --bogus
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage: vibe queue report [--week]"* ]] || false
 }
 
 @test "gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {

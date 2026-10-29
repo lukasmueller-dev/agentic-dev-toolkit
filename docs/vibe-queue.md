@@ -7,6 +7,7 @@ and refill it whenever you like.
 | Skill | Does |
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, or a `SPEC.md` branch for big work; your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
@@ -30,10 +31,7 @@ echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # opt
 `~/.config/vibe/queue.conf`, optional — the defaults:
 
 ```ini
-night=18:00-07:00
-slots_day=2
-slots_night=4
-heavy=2h
+slots=4
 review_rounds=2
 review_trivial=20
 review_model=sonnet
@@ -58,6 +56,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ```bash
 vibe queue status                                   # header, then one line per job by repo
+vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
@@ -65,9 +64,8 @@ vibe queue run --claude --drain                     # by hand, without the servi
 ## Rules the runner keeps
 
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job.
-- Heavy job: `timeout` > `heavy`. It starts only in the night window, before light jobs; it may run into the day.
-- Slots: `slots_day`, `slots_night` agents at once. One job per branch at a time.
-- `vibe queue add --now` skips the window. `vibe queue pause`: no new start; running jobs finish.
+- Slots: `slots` agents at once. One job per branch at a time.
+- `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
@@ -93,7 +91,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 | `queue/<id>/session` | the agent's `session_id`; a timeout, a usage-limit retry and a review fix resume it |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header, "Yours", triage lines, per repo Needs you → PR ready → Done, next actions |
+| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions, `--week`: "Week since" section |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
@@ -110,10 +108,28 @@ gpu-queue status                      # queued, running, finished (exit code)
 gpu-queue lock -- python train.py     # a manual run that waits for the queue's GPU job
 ```
 
+## Cost per job
+
+The PR footer line and the briefing row end with the job's size, from the last `result` event of `queue/<id>/log`:
+
+```text
+≈$1.04 API · ≈2% 5h est. · 40 turns · 11m
+```
+
+| Field | From |
+| --- | --- |
+| `≈$ API` | `total_cost_usd`: the API-price equivalent; the subscription pays, nothing bills |
+| `≈% 5h est.` | the job's 5h utilization delta (last minus first `rate_limit_event`) × its `$` ÷ the `$` of all jobs that ran at the same time (itself included), each scaled by its overlap time |
+| `turns`, `m` | `num_turns`; `duration_ms` in minutes |
+
+- Interactive sessions are not in the sum, so the share is too high.
+- No share when `resetsAt` changes during the job, the log has under two events, or a job that overlaps has no `result` event.
+- The footer is written at publish: a job still running then has no `result` event, so the briefing row can show a share the footer lacks.
+- The briefing header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
+
 ## What breaks it
 
-- A heavy job never starts → it waits for the window; `vibe queue status` shows it. Now: `vibe queue add --now`.
-- Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`.
+- Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`, or, after an update, `-p` defaults to `--bare`, which does not read the login: give `claude/vibe-job.sh` the opt-out.
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.

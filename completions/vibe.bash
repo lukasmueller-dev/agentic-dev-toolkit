@@ -57,7 +57,7 @@ _vibe() {
       if [[ "$COMP_CWORD" -eq 2 ]]; then
         _vibe_reply "status add report hold archive pause resume run" "$cur"
       elif [[ "$cur" == -* ]]; then
-        _vibe_reply "$(_vibe_agents) --now --drain" "$cur"
+        _vibe_reply "$(_vibe_agents) --now --drain --week" "$cur"
       else
         COMPREPLY=()
         while IFS= read -r line; do COMPREPLY+=("$line"); done < <(compgen -d -- "$cur")
