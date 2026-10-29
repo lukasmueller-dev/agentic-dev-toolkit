@@ -47,6 +47,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
 | `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `codebase-map` | weekly, wed | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
 | `dependency-update` | weekly, mon | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.

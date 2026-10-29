@@ -24,9 +24,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 - [ ] **Catalogue job `flaky-tests`** — runs the suite N times, reports tests
       that fail in some runs. Done when a seeded flaky test shows up as one
       report line with its pass/fail counts.
-- [ ] **Catalogue job `codebase-map`** — refreshes `docs/CODEBASE_MAP.md`
-      after upstream pulls via the `codebase-map` skill. Done when a changed
-      entry point produces one docs-only commit on `jobs/codebase-map`.
 - [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
       the job queues the canonical eval through `gpu-queue`; the follow-up
       compares the headline metric with the last run. Done when a drop opens
