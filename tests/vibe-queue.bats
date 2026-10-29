@@ -102,23 +102,14 @@ mkjob() {
     for l in "$@"; do echo "$l"; done
   } >"$Q/$id/job"
 }
-# hm OFFSET — the time OFFSET hours from now, HH:MM.
-hm() { date -d "$1 hour" +%H:%M 2>/dev/null || date -v"$1"H +%H:%M; }
-# window open|closed [SLOTS] — the night window around now, or an hour ahead.
-window() {
-  if [ "$1" = open ]; then
-    printf 'night=%s-%s\n' "$(hm -1)" "$(hm +1)" >"$CONF"
-  else
-    printf 'night=%s-%s\n' "$(hm +1)" "$(hm +2)" >"$CONF"
-  fi
-  printf 'slots_day=%s\nslots_night=%s\n' "${2:-2}" "${2:-4}" >>"$CONF"
-}
+# slots N — the queue runs N agents at once.
+slots() { echo "slots=$1" >"$CONF"; }
 drain() { run "$VIBE" queue run --claude --drain; }
 
 @test "run: jobs in id order, commits pushed, draft PR from pr.md" {
   local r
   r="$(make_repo proj)"
-  window closed 1
+  slots 1
   mkjob 01-a "$r" task-a ok
   mkjob 02-b "$r" task-b ok
   drain
@@ -338,38 +329,23 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ ! -e "$STUBS/claude.log" ]
 }
 
-@test "window: by day a heavy job waits and a light one runs; --now skips the window" {
+@test "run: --now jobs start first; a long timeout starts at once" {
   local r
   r="$(make_repo proj)"
-  window closed
-  mkjob 01-a "$r" task-a ok timeout=3h
-  mkjob 02-b "$r" task-b ok
-  mkjob 03-c "$r" task-c ok timeout=9h now=1
+  slots 1
+  mkjob 01-a "$r" task-a ok timeout=9h
+  mkjob 02-b "$r" task-b ok now=1
   drain
   [ "$status" -eq 0 ]
-  [ ! -e "$Q/01-a/status" ]
-  [ "$(cat "$Q/02-b/status")" = "done" ]
-  [ "$(cat "$Q/03-c/status")" = "done" ]
-  window open
-  drain
-  [ "$(cat "$Q/01-a/status")" = "done" ]
-}
-
-@test "window: in the night window heavy jobs start first" {
-  local r
-  r="$(make_repo proj)"
-  window open 1
-  mkjob 01-a "$r" task-a ok
-  mkjob 02-b "$r" task-b ok timeout=4h
-  drain
   [ "$(sed -n 1p "$STUBS/claude.log" | grep -c proj-task-b)" = 1 ]
   [ "$(sed -n 2p "$STUBS/claude.log" | grep -c proj-task-a)" = 1 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
 @test "run: one job per branch at a time" {
   local r
   r="$(make_repo proj)"
-  window closed 2
+  slots 2
   mkjob 01-a "$r" task-a seq
   mkjob 02-a "$r" task-a seq
   drain
@@ -397,7 +373,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a limit
   mkjob 02-b "$r" task-b ok
-  window open 1
+  slots 1
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = queued ]
@@ -475,7 +451,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
   [ ! -e "$Q/01-a" ]
   run "$VIBE" queue status
-  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued (0 heavy"*"1 to review"* ]] || false
+  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued · 1 to review"* ]] || false
   [[ "$output" == *"proj"*"02-b"*"held"*"04-d"*"queued"* ]] || false
   run "$VIBE" queue archive nosuch
   [ "$status" -ne 0 ]

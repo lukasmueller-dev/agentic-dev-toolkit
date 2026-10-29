@@ -30,10 +30,7 @@ echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # opt
 `~/.config/vibe/queue.conf`, optional — the defaults:
 
 ```ini
-night=18:00-07:00
-slots_day=2
-slots_night=4
-heavy=2h
+slots=4
 ```
 
 ## 2. Install the runner
@@ -59,9 +56,8 @@ vibe queue run --claude --drain                     # by hand, without the servi
 ## Rules the runner keeps
 
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job.
-- Heavy job: `timeout` > `heavy`. It starts only in the night window, before light jobs; it may run into the day.
-- Slots: `slots_day`, `slots_night` agents at once. One job per branch at a time.
-- `vibe queue add --now` skips the window. `vibe queue pause`: no new start; running jobs finish.
+- Slots: `slots` agents at once. One job per branch at a time.
+- `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry is a new session.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
@@ -98,7 +94,6 @@ gpu-queue lock -- python train.py     # a manual run that waits for the queue's 
 
 ## What breaks it
 
-- A heavy job never starts → it waits for the window; `vibe queue status` shows it. Now: `vibe queue add --now`.
 - Every job `failed` at once, log mentions login → the claude.ai login expired; run `/login`.
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
