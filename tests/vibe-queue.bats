@@ -30,6 +30,12 @@ case "\$mode" in
     printf 'feat: queue work\n\n**Context:** The repo lacks work.txt.\n**Changed:** work.txt added.\n**Verify:** cat work.txt\n' >"\$VIBE_JOB_DIR/pr.md"
     echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
+  item)
+    n="\$(sed -n 's/^item=//p' "\$VIBE_JOB_DIR/job")"
+    echo "\$n" >"\$n.txt" && git add "\$n.txt" && git commit -q -m "feat: \$n"
+    printf 'feat: %s\n\n**Context:** ctx %s.\n**Changed:** %s.txt added.\n**Verify:** cat *.txt\n**Decisions/risks:** none\n\n<details>\n<summary>Details</summary>\n\nmore %s\n\n</details>\n' "\$n" "\$n" "\$n" "\$n" >"\$VIBE_JOB_DIR/pr.md"
+    echo "done: \$n.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
   nopr)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     echo "done: work.txt added, no pr.md" >"\$VIBE_JOB_DIR/result"
@@ -155,6 +161,39 @@ drain() { run "$VIBE" queue run --claude --drain; }
   grep -qF -- "api --method PATCH repos/{owner}/{repo}/pulls/9 -F body=@$Q/02-b/pr-body.md" "$STUBS/gh.log"
   run grep -c -- 'pr create --draft --base main --head task-b' "$STUBS/gh.log"
   [ "$output" = 0 ]
+}
+
+@test "lane: 2 done jobs on one branch give one PR body with both Changed lines" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x item "lane=Fix two health items" item=alpha
+  mkjob 02-b "$r" lane-x item "lane=Fix two health items" item=beta
+  drain
+  [ "$status" -eq 0 ]
+  grep -q -- 'pr create --draft --base main --head lane-x --title agent(lane-x): Fix two health items' "$STUBS/gh.log"
+  [ "$(grep -c '^\*\*Context:\*\* Fix two health items$' "$Q/02-b/pr-body.md")" = 1 ]
+  grep -q '^- alpha: alpha.txt added.$' "$Q/02-b/pr-body.md"
+  grep -q '^- beta: beta.txt added.$' "$Q/02-b/pr-body.md"
+  grep -q '^\*\*Verify:\*\* cat \*.txt$' "$Q/02-b/pr-body.md"
+  grep -q '^\*\*Decisions/risks:\*\* none$' "$Q/02-b/pr-body.md"
+  [ "$(grep -c '^<details>$' "$Q/02-b/pr-body.md")" = 2 ]
+  grep -q '^more alpha$' "$Q/02-b/pr-body.md"
+  grep -q '^_agent lane: 2/2 done_$' "$Q/02-b/pr-body.md"
+}
+
+@test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
+  local r
+  r="$(make_repo proj)"
+  window closed 1
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x blocked "lane=Fix health" item=beta
+  mkjob 03-c "$r" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  grep -q '^- alpha: alpha.txt added.$' "$Q/02-b/pr-body.md"
+  grep -q '^- beta → lane-x-beta$' "$Q/02-b/pr-body.md"
+  grep -q '^_agent lane: 1/2 done_$' "$Q/02-b/pr-body.md"
+  grep -q '^\*\*Changed:\*\* work.txt added.$' "$Q/03-c/pr-body.md"
 }
 
 @test "run: blocked without commits pushes nothing; crash and silence fail" {
