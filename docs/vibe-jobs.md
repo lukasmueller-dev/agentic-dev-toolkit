@@ -47,6 +47,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
 | `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `fresh-env` | weekly, mon | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
