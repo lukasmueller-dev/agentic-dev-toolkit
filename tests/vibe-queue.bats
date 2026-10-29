@@ -509,7 +509,7 @@ two_findings() {
   touch "$STUBS/fix-big"
   drain
   [ "$status" -eq 0 ]
-  for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = done ]; done
+  for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = "done" ]; done
   [ ! -e "$Q/01-a/pr" ]
   [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
   [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
@@ -523,6 +523,7 @@ two_findings() {
   grep -q '^review=2$' "$Q/01-a-review2/job"
   b="$(cat "$Q/01-a-review2/pr-body.md")"
   grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 rejected · R2: 0 findings$' "$Q/01-a-review2/pr-body.md"
+  # shellcheck disable=SC2016 # the backticks are literal
   [[ "$b" == *"**Review:**"*"<details>"*'1. `work.txt:1` — empty file Failure: reads nothing → fixed '*'2. `x.sh:?` — quote it Failure: word split → rejected not reachable'*"**R2** — 0 findings"*"</details>"* ]] || false
   [[ "$b" == *"**Changed:** work.txt added."* ]] || false
 }
@@ -586,7 +587,7 @@ two_findings() {
   touch "$STUBS/review-sleep"
   mkjob 01-a "$r" task-a ok after=review
   drain
-  [ "$(cat "$Q/01-a-review1/status")" = done ]
+  [ "$(cat "$Q/01-a-review1/status")" = "done" ]
   [ "$(cat "$Q/01-a-review1/note")" = "R1: timeout" ]
   [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
 }
