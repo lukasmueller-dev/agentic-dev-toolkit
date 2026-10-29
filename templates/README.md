@@ -17,6 +17,7 @@ copy.
 | `job-pr.md`          | a job's `pr.md` (PR title + body) | Short — one per unattended job run |
 | `job-report.md`      | a job's `report.md` | Short — one per unattended job run; the morning report reads it |
 | `VIBE_JOB.md`       | `<repo>/.vibe-jobs/<job>.md` | Long — one per repo × recurring job; opts the repo in |
+| `queue-page.html`   | `~/.local/state/vibe/web/index.html` | Short — rewritten each queue runner pass |
 
 `codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
@@ -54,6 +55,7 @@ render still produces a readable file.
 | `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`; the briefing's Context column) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
+| `<updated>`, `<counts>`, `<flags>`, `<jobs>`, `<briefing>`, `<config>` | Render time; the counter chips; slots and flags; the job cards; the briefing and the settings as HTML (`queue-page.html` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the

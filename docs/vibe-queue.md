@@ -59,10 +59,20 @@ systemctl --user enable --now vibe-queue.service gpu-queue.service
 Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
 There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
 
-## 3. Verify
+## 3. Phone page
+
+The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
+A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
+Serve it on the tailnet once:
 
 ```bash
-vibe queue status                                   # header, then per repo one line per job; a branch with 2+ jobs is one row: done/total, running or next item, PR
+sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a path, not a port
+```
+
+## 4. Verify
+
+```bash
+vibe queue status                                   # header, then per repo each job on two lines; a branch with 2+ jobs is one row: done/total, running or next item, PR
 vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
@@ -117,6 +127,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
+| `web/index.html` | the phone page, rewritten each runner pass (`templates/queue-page.html`) |
 | `paused` | `vibe queue pause` |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
@@ -159,5 +170,7 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
+- Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
+- `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.
