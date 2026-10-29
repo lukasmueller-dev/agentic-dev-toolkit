@@ -555,14 +555,20 @@ limited() {
   [[ "$t" =~ ^[0-9]+$ ]] && ((t > $(date +%s)))
 }
 
+# agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT under timeout(1), JOB as $VIBE_JOB_DIR.
+agent_exec() {
+  local d="$1" t="$2" s="$3"
+  shift 3
+  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
+  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@"
+}
+
 # job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
 # job's worktree, appended to JOB/log; its exit code. SESSION resumes that session.
 job_agent() {
-  local d="$1" t="$2"
-  local -a tcmd=("${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
-  if ((${#tcmd[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
-    "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$3" "$(jget "$d/job" effort)" "${4:-}" "${5:-}" >>"$d/log" 2>&1
+  agent_exec "$1" "$2" vibe-job.sh "$(jstate "$1" worktree)" "$(jstate "$1" name)" "$(jget "$1/job" model)" \
+    "$3" "$(jget "$1/job" effort)" "${4:-}" "${5:-}" >>"$1/log" 2>&1
 }
 
 # job_handoff JOB — after a timeout: resume the job's session for one turn
@@ -782,6 +788,19 @@ cmd_queue_gpu() {
   echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
+# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1 and the
+# KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
+follow_job() {
+  local from="$1" to="$2" l keys=follow
+  shift 2
+  for l in "$@"; do keys+="|${l%%=*}"; done
+  {
+    grep -Ev "^($keys)=" "$from/job" || true
+    echo "follow=1"
+    for l in "$@"; do echo "$l"; done
+  } >"$to/job"
+}
+
 # vibe queue follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
 # with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG). It sorts right
 # after JOB, so it runs before later jobs.
@@ -801,11 +820,7 @@ cmd_queue_follow() {
     echo "An earlier session prepared and queued this run; its commits are on the branch."
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
-  # The job file last: the runner skips a dir without one.
-  {
-    grep -v '^follow=' "$p/job" || true
-    echo "follow=1"
-  } >"$f/job"
+  follow_job "$p" "$f"
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
