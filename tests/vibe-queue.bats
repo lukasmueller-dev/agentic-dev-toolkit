@@ -17,10 +17,20 @@ setup() {
   cat >"$STUBS/claude" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >>"$STUBS/claude.log"
-[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 prompt="\$(cat)"
+case "\$prompt" in
+  /code-review*)
+    echo "\$prompt" >>"$STUBS/claude.log"
+    k=\$((\$(cat "$STUBS/review-count" 2>/dev/null || echo 0) + 1))
+    echo "\$k" >"$STUBS/review-count"
+    [ ! -f "$STUBS/review-sleep" ] || sleep 30
+    if [ -f "$STUBS/review-\$k.json" ]; then cat "$STUBS/review-\$k.json"; else echo '{"type":"result","result":"no schema"}'; fi
+    exit 0
+    ;;
+esac
+[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -60,6 +70,11 @@ case "\$mode" in
   silent) ;;
   sleep) sleep 30 ;;
   slow) echo half >wip.txt && sleep 30 ;;
+  fix)
+    if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
+    if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
+    sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
+    ;;
   handoff)
     printf '## State\n\nwip.txt is half done.\n' >HANDOFF.md
     git add HANDOFF.md wip.txt && git commit -q -m "wip: handoff"
@@ -84,6 +99,7 @@ EOF
   Q="$XDG_STATE_HOME/vibe/queue"
   CONF="$XDG_CONFIG_HOME/vibe/queue.conf"
   mkdir -p "$Q" "${CONF%/*}"
+  echo after= >"$CONF"
 }
 
 # mkjob ID REPO BRANCH MODE [JOB-LINE...] — one job dir in the queue.
@@ -106,7 +122,7 @@ window() {
   else
     printf 'night=%s-%s\n' "$(hm +1)" "$(hm +2)" >"$CONF"
   fi
-  printf 'slots_day=%s\nslots_night=%s\n' "${2:-2}" "${2:-4}" >>"$CONF"
+  printf 'after=\nslots_day=%s\nslots_night=%s\n' "${2:-2}" "${2:-4}" >>"$CONF"
 }
 drain() { run "$VIBE" queue run --claude --drain; }
 
@@ -476,6 +492,117 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"vibe queue status"* ]] || false
   [ ! -e "$Q/01-a/gpu-job" ]
+}
+
+# two_findings — the stub reviewer's first answer: two findings.
+two_findings() {
+  printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
+}
+
+@test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
+  local r b
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '%s' '{"type":"result","structured_output":{"findings":[]}}' >"$STUBS/review-2.json"
+  printf '1=fixed @SHA@\n2=rejected not reachable\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-big"
+  drain
+  [ "$status" -eq 0 ]
+  for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = done ]; done
+  [ ! -e "$Q/01-a/pr" ]
+  [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
+  [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
+  [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 4 ]
+  [ "$(grep -c '^/code-review high origin/main\.\.\.HEAD$' "$STUBS/claude.log")" = 2 ]
+  grep -q -- '--disallowedTools Edit,Write,NotebookEdit' "$STUBS/claude.log"
+  grep -q -- '--output-format json --json-schema' "$STUBS/claude.log"
+  [ "$(grep -c -- '--resume sess-01-a ' "$STUBS/claude.log")" = 1 ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:fix.txt)" = fixed ]
+  grep -q '^follow=1$' "$Q/01-a-review1/job"
+  grep -q '^review=2$' "$Q/01-a-review2/job"
+  b="$(cat "$Q/01-a-review2/pr-body.md")"
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 rejected · R2: 0 findings$' "$Q/01-a-review2/pr-body.md"
+  [[ "$b" == *"**Review:**"*"<details>"*'1. `work.txt:1` — empty file Failure: reads nothing → fixed '*'2. `x.sh:?` — quote it Failure: word split → rejected not reachable'*"**R2** — 0 findings"*"</details>"* ]] || false
+  [[ "$b" == *"**Changed:** work.txt added."* ]] || false
+}
+
+@test "review: a trivial fix ends the review; open findings stay; review_model and review_level reach the reviewer" {
+  local r
+  r="$(make_repo proj)"
+  echo review_level=low >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review review_model=opus
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-md"
+  drain
+  [ ! -e "$Q/01-a-review2" ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open$' "$Q/01-a-review1/pr-body.md"
+  grep -q -- '-p --model opus --name proj-task-a-review1 ' "$STUBS/claude.log"
+  grep -q '^/code-review low origin/main\.\.\.HEAD$' "$STUBS/claude.log"
+}
+
+@test "review: review_rounds caps the rounds; review_trivial sets the bar" {
+  local r
+  r="$(make_repo proj)"
+  printf 'review_rounds=1\n' >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '1=fixed @SHA@\n2=fixed @SHA@\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-big"
+  drain
+  [ ! -e "$Q/01-a-review2" ]
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 2 fixed$' "$Q/01-a-review1/pr-body.md"
+  rm -f "$STUBS/review-count" "$STUBS/fix-big"
+  printf 'after=\nreview_trivial=0\n' >"$CONF"
+  touch "$STUBS/fix-md"
+  mkjob 02-b "$r" task-b ok after=review
+  drain
+  [ -d "$Q/02-b-review2" ]
+}
+
+@test "review: on by default; no structured_output → the PR opens with 'R1: review failed'" {
+  local r b
+  r="$(make_repo proj)"
+  : >"$CONF"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: review failed" ]
+  [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 2 ]
+  [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
+  grep -q -- 'pr create --draft --base main --head task-a --title feat: queue work' "$STUBS/gh.log"
+  b="$(cat "$Q/01-a-review1/pr-body.md")"
+  [[ "$b" == *"**Review:** R1: review failed"*"<details>"*"**R1** — review failed"*"</details>"* ]] || false
+  git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+}
+
+@test "review: a reviewer past review_timeout → 'R1: timeout', the PR opens" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r
+  r="$(make_repo proj)"
+  printf 'review_timeout=1s\n' >>"$CONF"
+  touch "$STUBS/review-sleep"
+  mkjob 01-a "$r" task-a ok after=review
+  drain
+  [ "$(cat "$Q/01-a-review1/status")" = done ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: timeout" ]
+  [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
+}
+
+@test "review: none with after= empty (job over queue.conf), without commits, or for a report-only job" {
+  local r
+  r="$(make_repo proj)"
+  echo after=review >"$CONF"
+  mkjob 01-a "$r" task-a ok after=
+  mkjob 02-b "$r" task-b seq after=review
+  mkjob 03-c "$r" task-c ok after=review output=report
+  drain
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
+  [ "$(cat "$Q/01-a/pr")" = "https://example.com/pull/1" ]
+  [ "$(cat "$Q/03-c/pr")" = "https://example.com/pull/1" ]
+  [ "$(grep -c '^/code-review' "$STUBS/claude.log" || true)" = 0 ]
 }
 
 @test "run: refuses a missing or unknown agent" {
