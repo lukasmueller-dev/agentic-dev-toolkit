@@ -10,15 +10,15 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `job-review`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/job-review
-- **Last updated:** 2026-10-29 08:40 CET · turing
+- **Last updated:** 2026-10-29 · job-review
 
 ## State
 
-`SPEC.md` is written from a grilling session; no code yet. Two roadmap items from the same session are committed.
+Milestone 1 is done: `job_session` in `bin/vibe` writes `queue/<id>/session` after every run; `claude/vibe-job.sh` takes the session as its 6th argument and passes `--resume`. Nothing passes a session yet.
 
 ## Next action
 
-Milestone 1 of `SPEC.md`: keep each job's `session_id` in `queue/<id>/session` and let `claude/vibe-job.sh` resume a given session. Done when a test in `tests/vibe-queue.bats` shows the stub `claude` got `--resume <that id>`.
+Milestone 2 of `SPEC.md`: on exit 124 the runner resumes the session for one turn (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Done when a test with a stub past its timeout ends `timeout` with `HANDOFF.md` committed on the branch. `vibe-job.sh` needs a way to pass `--max-turns`; the stub `claude` in `tests/vibe-queue.bats` prints a `system/init` event (`sess-<job id>`).
 
 ## Blockers
 
@@ -27,4 +27,5 @@ None.
 ## Gotchas (unpromoted)
 
 - The main repo can hold an empty read-only `.git/config.lock` that a sandbox leaves: `git worktree add -b` and `git push -u` then fail with `could not lock config file`. Remove it outside the sandbox (no git process holds it), or skip the config write.
+- `git add -A` fails on sandbox placeholder files in the worktree root (`.bashrc`, `.claude/agents`): add files by name. `shfmt -f .` and `shellcheck` need `git ls-files` for the same reason.
 - The runner in use is the installed one from the main checkout: this branch's review loop does not review its own milestones.

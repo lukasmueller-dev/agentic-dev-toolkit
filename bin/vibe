@@ -528,6 +528,15 @@ job_chain() {
   echo "next milestone → $(basename "$(queue_add "$tmp")")"
 }
 
+# job_session JOB — keep the session id of the `system/init` event in JOB/log
+# as JOB/session; a log without one leaves the file as it is.
+job_session() {
+  local ev
+  ev="$(grep -m 1 '"subtype":"init"' "$1/log" 2>/dev/null || true)"
+  [[ "$ev" =~ \"session_id\":\"([A-Za-z0-9_-]+)\" ]] || return 0
+  echo "${BASH_REMATCH[1]}" >"$1/session"
+}
+
 # limit_reset LOG — the reset epoch when the agent stopped on a usage limit; empty else.
 limit_reset() {
   local ev
@@ -556,6 +565,7 @@ job_run() {
   if ((${#tcmd[@]})); then tcmd+=("$t"); fi
   VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/vibe-job.sh" \
     "$(jstate "$d" worktree)" "$(jstate "$d" name)" "$(jget "$d/job" model)" "$d/prompt.md" "$(jget "$d/job" effort)" >"$d/log" 2>&1 || rc=$?
+  job_session "$d"
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
   if [[ -n "$reset" && "$result" != "done:"* ]]; then

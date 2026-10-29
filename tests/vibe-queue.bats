@@ -2,7 +2,8 @@
 #
 # vibe queue — the vibe queue in throwaway repos with a bare origin. A stub
 # `claude` acts on the MODE line of its prompt; a stub `gh` records its calls
-# under $STUBS. The runner runs with --drain, so each test ends.
+# under $STUBS. The stub prints a system/init event (session id sess-<job id>)
+# unless $STUBS/no-init exists. The runner runs with --drain, so each test ends.
 
 load helper
 
@@ -16,6 +17,7 @@ setup() {
   cat >"$STUBS/claude" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >>"$STUBS/claude.log"
+[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 prompt="\$(cat)"
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
 case "\$prompt" in *"## GPU run finished"*) mode=ok ;; esac
@@ -140,6 +142,30 @@ drain() { run "$VIBE" queue run --claude --drain; }
   drain
   [ "$status" -eq 0 ]
   grep -q -- '-p --model sonnet --effort xhigh --name proj-task-a' "$STUBS/claude.log"
+}
+
+@test "session: the runner keeps the init event's session id; vibe-job.sh resumes a given one" {
+  local r wt
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$Q/01-a/session")" = sess-01-a ]
+  wt="$(cat "$Q/01-a/worktree")"
+  echo MODE=silent >"$BATS_TEST_TMPDIR/prompt.md"
+  run bash "$REPO_ROOT/claude/vibe-job.sh" "$wt" proj-task-a sonnet "$BATS_TEST_TMPDIR/prompt.md" "" "$(cat "$Q/01-a/session")"
+  [ "$status" -eq 0 ]
+  [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '-p --model sonnet --resume sess-01-a --name proj-task-a')" = 1 ]
+  [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 1 ]
+}
+
+@test "session: a log without an init event leaves no session file" {
+  local r
+  r="$(make_repo proj)"
+  touch "$STUBS/no-init"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$Q/01-a/session" ]
 }
 
 @test "run: no pr.md titles the PR from the result; an open PR gets its body replaced" {
