@@ -1059,8 +1059,9 @@ job_check() {
 # job_state REPO JOB FILE — a state file's first line (last-run epoch, fails).
 job_state() { head -n 1 "$JOBS_STATE/$(basename "$1")/$2/$3" 2>/dev/null || true; }
 
-# job_state_update JOB-DIR STATUS — done: stamp last-run, forget failures;
-# failed/timeout: one more failure. Two in a row stop the job (job_due).
+# job_state_update JOB-DIR STATUS — done: stamp last-run, forget failures,
+# keep a `done:` result as last-result; failed/timeout: one more failure.
+# Two in a row stop the job (job_due).
 job_state_update() {
   local d="$1" st="$2" dir n
   dir="$JOBS_STATE/$(basename "$(jget "$d/job" repo)")/$(jget "$d/job" recurring)"
@@ -1069,6 +1070,7 @@ job_state_update() {
     "done")
       date +%s >"$dir/last-run"
       rm -f "$dir/fails"
+      case "$(jstate "$d" result)" in "done:"*) jstate "$d" result >"$dir/last-result" ;; esac
       ;;
     failed | timeout)
       n="$(head -n 1 "$dir/fails" 2>/dev/null || echo 0)"
@@ -1173,8 +1175,8 @@ job_open_prs() {
 # Output drops to `report` when the repo already has 2 open job PRs and this
 # job's branch is not one of them.
 job_write() {
-  local d="$1" repo="$2" job="$3" branch output prs n tpl
-  branch="jobs/$job"
+  local d="$1" repo="$2" job="$3" branch output prs n tpl last
+  branch="jobs/$job" last="$(job_state "$repo" "$job" last-result)"
   output="$(job_key "$repo" "$job" output pr)"
   if [[ "$output" == pr ]]; then
     prs="$(job_open_prs "$repo")"
@@ -1190,6 +1192,8 @@ job_write() {
     '<repo>' "$repo" \
     '<branch>' "$branch" \
     '<output>' "$output" \
+    '<kind>' "$(job_key "$repo" "$job" kind code)" \
+    '<last-result>' "${last:-none}" \
     '<timeout>' "$(job_key "$repo" "$job" timeout 1h)" \
     '<catalogue-instructions>' "$(fm_body "$JOBS_CATALOGUE/$job.md")" \
     '<repo-instructions>' "$(fm_body "$repo/.vibe-jobs/$job.md")" \

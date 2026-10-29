@@ -54,9 +54,9 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
 | Where | Holds |
 | --- | --- |
-| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout`, then the task |
+| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `kind`, then the task |
 | `<repo>/.vibe-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
-| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails` | epoch of the last `done`; failures in a row |
+| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails`, `last-result` | epoch of the last `done`; failures in a row; the last `done:` result line, the prompt's **Last run** |
 | `~/.local/state/vibe/queue/<id>/` | the queued job (`docs/vibe-queue.md`) |
 | `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` |
 
@@ -68,6 +68,7 @@ Rules the dispatcher keeps:
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
 - A job's `timeout` over the queue's `heavy` (2h) makes it heavy: it starts only in the night window.
+- `kind: gpu`: the job queues its run with `vibe queue gpu`; the follow-up `<id>-gpu` finishes it (`docs/vibe-queue.md`).
 
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 
