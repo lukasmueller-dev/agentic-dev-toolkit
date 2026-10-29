@@ -18,6 +18,11 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
+- [ ] **Clear the sandbox's stale `.git/config.lock`** — `vibe` removes an
+      empty read-only `.git/config.lock` before it makes a job worktree and
+      before it pushes; a lock with content or write permission stays.
+      Done when a bats test shows an empty read-only lock no longer stops a
+      job and a non-empty lock stays.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
