@@ -7,6 +7,7 @@ and refill it whenever you like.
 | Skill | Does |
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, or a `SPEC.md` branch for big work; your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
