@@ -427,7 +427,7 @@ cmd_queue_add() {
 
 # job_prepare JOB — check the job, make or adopt its worktree. Writes
 # JOB/worktree on success, a final status otherwise. A lane job also gets
-# JOB/lane-pr.md, the lane PR so far. Run it in a subshell.
+# JOB/start (the branch tip) and JOB/lane-pr.md (the lane PR so far). Run it in a subshell.
 job_prepare() {
   local d="$1" repo branch main def wt
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
@@ -468,7 +468,11 @@ job_prepare() {
   echo "$(basename "$main")-${branch//\//-}" >"$d/name"
   echo "$WT" >"$d/worktree"
   milestones_open "$WT" >"$d/milestones"
-  if [[ -n "$(jget "$d/job" lane)" ]]; then lane_body "$d" running >"$d/lane-pr.md"; fi
+  if [[ -n "$(jget "$d/job" lane)" ]]; then
+    # A job a usage limit stopped keeps its first start commit.
+    [[ -f "$d/start" ]] || git -C "$WT" rev-parse HEAD >"$d/start"
+    lane_body "$d" running >"$d/lane-pr.md"
+  fi
 }
 
 # milestones_open WT — open milestones of WT/SPEC.md; empty without one.
@@ -537,6 +541,24 @@ lane_body() {
   fi
   printf '%s\n\n**Context:** %s\n**Changed:** %s\n%s**Verify:** %s\n**Decisions/risks:** %s\n%s\n---\n_agent lane: %s/%s done_\n' \
     "${title:-$(pr_title_fallback "$d")}" "$(jget "$d/job" lane)" "${t:-none}" "$out" "${verify:-none}" "${risks:-none}" "$det" "$ok" "$n"
+}
+
+# lane_leave JOB STATUS — a lane job that did not finish leaves the lane: a WIP commit
+# of its changes, its work on <branch>-<item> (pushed, no PR), the lane worktree back at
+# JOB/start. Only a lane job has JOB/start. Runs under `|| true`, so each step guards itself.
+lane_leave() {
+  local d="$1" wt branch item start side
+  start="$(jstate "$d" start)"
+  [[ -n "$start" ]] || return 0
+  wt="$(jstate "$d" worktree)" branch="$(jget "$d/job" branch)"
+  item="$(jget "$d/job" item)" item="${item:-${d##*/}}" side="$branch-$item"
+  if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
+    git -C "$wt" add -A && git -C "$wt" commit -q --no-verify -m "wip: $item ($2)" || return 0
+  fi
+  git -C "$wt" branch -f "$side" HEAD || return 0
+  git -C "$wt" reset -q --hard "$start" || return 0
+  echo "$side" >"$d/side"
+  git -C "$wt" push -q --force origin "$side" || echo "push of $side failed" >&2
 }
 
 # job_publish JOB [STATUS] — push the job's commits; open a draft PR from JOB/pr.md,
@@ -644,6 +666,7 @@ job_run() {
       *) st=failed note="no result line" ;;
     esac
   fi
+  case "$st" in failed | blocked | timeout) lane_leave "$d" "$st" || true ;; esac
   job_publish "$d" "$st" || true
   job_end "$d" "$st" "${result:-$note}"
   if [[ "$st" == "done" ]]; then job_chain "$d"; fi

@@ -37,6 +37,12 @@ case "\$mode" in
     printf 'feat: %s\n\n**Context:** ctx %s.\n**Changed:** %s.txt added.\n**Verify:** cat *.txt\n**Decisions/risks:** none\n\n<details>\n<summary>Details</summary>\n\nmore %s\n\n</details>\n' "\$n" "\$n" "\$n" "\$n" >"\$VIBE_JOB_DIR/pr.md"
     echo "done: \$n.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
+  itemwip)
+    n="\$(sed -n 's/^item=//p' "\$VIBE_JOB_DIR/job")"
+    echo "\$n" >"\$n.txt" && git add "\$n.txt" && git commit -q -m "feat: \$n"
+    echo half >"\$n.wip"
+    echo "blocked: \$n needs a decision" >"\$VIBE_JOB_DIR/result"
+    ;;
   nopr)
     echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
     echo "done: work.txt added, no pr.md" >"\$VIBE_JOB_DIR/result"
@@ -204,6 +210,35 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(awk '/^<details>$/ { exit } { n++ } END { print n }' "$Q/03-c/pr-body.md")" -le 12 ]
   grep -q '^_agent lane: 2/3 done_$' "$Q/03-c/pr-body.md"
   grep -qF -- "-F body=@$Q/03-c/pr-body.md -f title=feat: gamma" "$STUBS/gh.log"
+}
+
+@test "lane: a blocked item with work leaves the lane on <branch>-<item>; the lane branch stays at its start and the next item runs" {
+  local r o="$BATS_TEST_TMPDIR/proj.git" start
+  r="$(make_repo proj)"
+  window closed 1
+  touch "$STUBS/pr-exists"
+  mkjob 01-a "$r" lane-x item "lane=Fix health" item=alpha
+  mkjob 02-b "$r" lane-x itemwip "lane=Fix health" item=beta
+  mkjob 03-c "$r" lane-x item "lane=Fix health" item=gamma
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-b/status")" = blocked ]
+  [ "$(cat "$Q/03-c/status")" = "done" ]
+  start="$(git -C "$o" rev-parse lane-x~1)"
+  [ "$(cat "$Q/02-b/start")" = "$start" ]
+  [ "$(cat "$Q/02-b/side")" = lane-x-beta ]
+  # the lane branch holds alpha and gamma, in a straight line
+  [ "$(git -C "$o" log --format=%s lane-x | head -n 2 | tr '\n' ' ')" = "feat: gamma feat: alpha " ]
+  run git -C "$o" cat-file -e lane-x:beta.txt
+  [ "$status" -ne 0 ]
+  # beta's work, with the WIP commit, sits on the side branch at the lane tip it started from
+  [ "$(git -C "$o" rev-parse lane-x-beta~2)" = "$start" ]
+  [ "$(git -C "$o" log -n 1 --format=%s lane-x-beta)" = "wip: beta (blocked)" ]
+  git -C "$o" cat-file -e lane-x-beta:beta.txt
+  git -C "$o" cat-file -e lane-x-beta:beta.wip
+  run grep -c -- '--head lane-x-beta' "$STUBS/gh.log"
+  [ "$output" = 0 ]
+  grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
 }
 
 @test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
