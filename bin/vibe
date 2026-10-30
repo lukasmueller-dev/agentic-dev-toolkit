@@ -1379,12 +1379,12 @@ job_steps() {
 
 # status_card repo|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane.
 status_card() {
-  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" n s note list=""
+  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" n s note list="" cls=""
   case "$1" in
     repo) printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")" ;;
     end) echo '</div>' ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
-    lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" ;;
+    lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" cls=" lane" ;;
   esac
   if [[ "$1" != job && "$1" != lane ]]; then return 0; fi
   case "$pr" in
@@ -1408,8 +1408,8 @@ status_card() {
     done <<<"$all"
     details+="<details><summary>${pill#*/} jobs</summary><ul>$list</ul></details>"
   fi
-  printf '<div class="job s-%s"><div class="top"><b>%s</b><span class="pill">%s</span></div><p>%s%s</p>%s%s</div>\n' \
-    "$(esc "$3")" "$(esc "$2")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
+  printf '<div class="job%s s-%s"><div class="top"><b>%s</b><span class="pill">%s</span></div><p>%s%s</p>%s%s</div>\n' \
+    "$cls" "$(esc "$3")" "$(esc "$2")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.

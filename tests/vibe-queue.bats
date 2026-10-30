@@ -780,7 +780,7 @@ pandoc_stub() {
   "$VIBE" queue pause >/dev/null
   drain
   [ "$status" -eq 0 ]
-  grep -qF '<div class="job s-blocked"><div class="top"><b>lane-x</b><span class="pill">1/3</span></div><p>Fix health' "$f"
+  grep -qF '<div class="job lane s-blocked"><div class="top"><b>lane-x</b><span class="pill">1/3</span></div><p>Fix health' "$f"
   grep -qF '<p>next: gamma</p><p>02-b  blocked  blocked: beta needs a decision → lane-x-beta</p>' "$f"
   run grep -c '<b>01-a</b>\|<b>03-c</b>' "$f"
   [ "$output" = 0 ]
