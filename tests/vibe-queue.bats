@@ -474,7 +474,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ ! -e "$STUBS/systemd-run.log" ]
 }
 
-@test "run: skips a dirty worktree, fails a bad branch, a missing repo and a dead job" {
+@test "run: skips a dirty worktree, fails a bad branch and a missing repo" {
   local r
   r="$(make_repo proj)"
   "$VIBE" start -C "$r" busy >/dev/null 2>&1
@@ -482,17 +482,46 @@ drain() { run "$VIBE" queue run --claude --drain; }
   mkjob 01-a "$r" busy ok
   mkjob 02-b "$r" main ok
   mkjob 03-c "$BATS_TEST_TMPDIR/nowhere" task-c ok
-  mkjob 04-d "$r" task-d ok
-  echo running >"$Q/04-d/status"
-  echo 999999 >"$Q/04-d/pid"
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = skipped ]
   [[ "$(cat "$Q/01-a/note")" == *"uncommitted changes"* ]] || false
   [ "$(cat "$Q/02-b/status")" = failed ]
   [ "$(cat "$Q/03-c/status")" = failed ]
-  [ "$(cat "$Q/04-d/status")" = failed ]
-  [ "$(cat "$Q/04-d/note")" = "job process died" ]
+  [ ! -e "$STUBS/claude.log" ]
+}
+
+# died_job ID REPO BRANCH — a job whose process died mid-run: running, a dead pid, a dirty worktree.
+died_job() {
+  mkjob "$1" "$2" "$3" ok
+  "$VIBE" start -C "$2" "$3" >/dev/null 2>&1
+  echo half >"$2/.claude/worktrees/$3/wip.txt"
+  echo "$2/.claude/worktrees/$3" >"$Q/$1/worktree"
+  echo running >"$Q/$1/status"
+  echo 999999 >"$Q/$1/pid"
+}
+
+@test "died: a job whose process died is queued again and runs in its own dirty worktree" {
+  local r
+  r="$(make_repo proj)"
+  died_job 01-a "$r" task-a
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ -s "$Q/01-a/requeued" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 1 ]
+  [ "$(cat "$r/.claude/worktrees/task-a/wip.txt")" = half ]
+}
+
+@test "died: a job that dies a second time ends as failed and does not run" {
+  local r
+  r="$(make_repo proj)"
+  died_job 01-a "$r" task-a
+  date '+%F %T' >"$Q/01-a/requeued"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = "job process died twice" ]
   [ ! -e "$STUBS/claude.log" ]
 }
 
@@ -754,6 +783,7 @@ pandoc_stub() {
   pid=$!
   echo running >"$Q/01-a/status"
   echo "$pid" >"$Q/01-a/pid"
+  touch "$Q/01-a/requeued" # the kill below ends the job, so the runner drains
   "$VIBE" queue run --claude --drain >/dev/null 2>&1 &
   runner=$!
   for i in $(seq 100); do
