@@ -1121,8 +1121,15 @@ cmd_queue_run() {
           pid="$(jstate "$d" pid)"
           if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             running=$((running + 1)) busy+=" $(branch_key "$d")"
+          elif [[ ! -e "$d/requeued" ]]; then
+            # Died once (oomd, reboot): run again in its own worktree, one time.
+            date '+%F %T' >"$d/requeued"
+            echo queued >"$d/status"
+            echo "job process died — re-queued once" >"$d/note"
+            rm -f "$d/pid"
+            queued+=("$d")
           else
-            job_end "$d" failed "job process died"
+            job_end "$d" failed "job process died twice"
           fi
           ;;
         gpu) waiting=$((waiting + 1)) ;;

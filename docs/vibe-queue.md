@@ -126,6 +126,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 | `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `queue/<id>/session` | the agent's `session_id`; a timeout, a usage-limit retry and a review fix resume it |
+| `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
@@ -172,6 +173,7 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `failed`, note `agent killed (SIGKILL)` → past its memory cap, or oomd under memory pressure; raise `memory_max=` or lower `slots=`, then restart the runner.
 - `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
+- A job `failed`, note `job process died twice` → the process died on both runs (reboot, oomd); read `runner.log` and `log`, then queue it again.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
