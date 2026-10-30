@@ -38,9 +38,4 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
-- [ ] **Re-queue a job whose process died** — the runner sets such a job back
-      to `queued` one time, in place of `failed "job process died"`
-      (`bin/vibe:1125`), and the job continues in its own worktree. Done when
-      a killed job runs again on the next poll, and a second death ends it
-      as `failed`.
 
