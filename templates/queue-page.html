@@ -69,6 +69,11 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .top::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 2px; border: 1.5px solid var(--muted); }
 .top b { flex: 1; min-width: 0; font: 600 16px/1.25 var(--sans); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .pill { color: var(--muted); font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+/* A lane is a stack: a bordered card with two sheets peeking out below it. */
+.job.lane { position: relative; margin: 12px 0 26px; padding: 16px 14px 17px; background: var(--bg); border: 1px solid var(--border); }
+.job.lane::before, .job.lane::after { content: ""; position: absolute; z-index: -1; background: var(--bg-alt); border: 1px solid var(--border); }
+.job.lane::before { inset: 5px 7px -5px; }
+.job.lane::after { inset: 10px 14px -10px; }
 .job p { margin: 6px 0 0 19px; color: var(--body-2); font: 400 14px/1.5 var(--sans); overflow-wrap: anywhere; }
 .job p:empty { display: none; }
 .job p.stats { color: var(--muted); font: 500 12px var(--mono); }
