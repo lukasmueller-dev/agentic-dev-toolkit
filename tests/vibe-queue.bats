@@ -797,7 +797,7 @@ pandoc_stub() {
   [ "$(grep -o '<li>' "$f" | wc -l)" -eq 10 ]
 }
 
-@test "page: a lane is one card with its progress, next item and the item out of the lane; a done job shows its cost" {
+@test "page: a lane is one card with its progress, next item and the item out of the lane; it unpacks into a job card per job; a done job shows its cost" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
   pandoc_stub OK
@@ -814,7 +814,9 @@ pandoc_stub() {
   grep -qF '<p>next: gamma</p><p>02-b  blocked  blocked: beta needs a decision → lane-x-beta</p>' "$f"
   run grep -c '<b>01-a</b>\|<b>03-c</b>' "$f"
   [ "$output" = 0 ]
-  grep -qF '<details><summary>3 jobs</summary><ul><li><b>alpha</b> done · done: alpha.txt added</li><li><b>beta</b> blocked · blocked: beta needs a decision → lane-x-beta</li><li><b>gamma</b> queued</li></ul></details>' "$f"
+  grep -qF '<details class="stack"><summary>3 jobs</summary><div class="job s-done"><div class="top"><b>alpha</b><span class="pill">done</span></div><p>done: alpha.txt added' "$f"
+  grep -qF '<div class="job s-blocked"><div class="top"><b>beta</b><span class="pill">blocked</span></div><p>blocked: beta needs a decision → lane-x-beta' "$f"
+  grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p></div></details></div>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
 }
