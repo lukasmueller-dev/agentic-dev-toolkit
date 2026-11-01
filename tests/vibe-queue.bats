@@ -797,7 +797,7 @@ pandoc_stub() {
   [ "$(grep -o '<li>' "$f" | wc -l)" -eq 10 ]
 }
 
-@test "page: a lane is one card with its progress, next item and the item out of the lane; it unpacks into a job card per job; a done job shows its cost" {
+@test "page: a lane is one card with its progress, next item and the item out of the lane; one click anywhere on it unpacks it into a job card per job; a done job shows its cost" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
   pandoc_stub OK
@@ -819,6 +819,10 @@ pandoc_stub() {
   grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p></div></details></div>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
+  # The summary covers the whole lane card and has no arrow; link, steps and job cards sit above it.
+  grep -qE '^\.job\.lane > \.stack > summary \{[^}]*position: absolute; inset: 0;[^}]*list-style: none;' "$f"
+  grep -qE '^\.job\.lane > \.stack > summary::-webkit-details-marker \{ display: none; \}' "$f"
+  grep -qE '^\.job\.lane > p a, [^{]*\.stack > \.job[^{]*\{ position: relative; z-index: 2; \}' "$f"
 }
 
 @test "page: a failed write warns and the runner goes on" {
