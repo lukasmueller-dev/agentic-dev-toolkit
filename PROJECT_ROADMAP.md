@@ -19,6 +19,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
+- [ ] **One step per reply for user actions** — add a "Steps the user does"
+      section to `claude/CLAUDE.md`, between the response style and
+      `# Language — ASD-STE100`. Done when
+      `grep -q '^# Steps the user does' claude/CLAUDE.md` passes and
+      `bats tests/` stays green.
+
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
 - [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
