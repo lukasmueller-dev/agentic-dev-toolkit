@@ -54,7 +54,6 @@ The app's new-session picker offers the repo on this machine.
 | Start in VS Code | `vibe start <task>` → worktree `<repo>/.claude/worktrees/<task>`, branch `<task>`, opened in VS Code; prints the open PR; sessions there show as `<repo>-<task>-<two words>` |
 | Change machine | `vibe sync` before you leave (`--wip` commits dirty task branches), `vibe start <task>` on the other |
 | Brief for a later session | `/handoff-brief <task>` → `vibe start <task>`, or in a new app session: `git switch <task>, then begin per HANDOFF.md.` |
-| Review round | `/codebase-review` → same start message, branch `fresh-review-<n>` |
 | Finish | `/commit-push-pr`, merge; a clean worktree is removed when its session ends |
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 | Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed; on a server restarts `vibe-queue.service` if `bin/vibe` or `skills/_lib/lib.sh` changed (running jobs keep going). `vibe sync` never pulls the toolkit |
