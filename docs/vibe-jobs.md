@@ -42,16 +42,16 @@ systemctl --user list-timers vibe-jobs.timer
 
 | Job | Schedule | Output | Does |
 | --- | --- | --- | --- |
-| `codebase-health` | weekly, sun | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
-| `stale-state` | weekly, sun | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
+| `codebase-health` | weekly, sat | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
+| `stale-state` | weekly, sat | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
-| `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
-| `flaky-tests` | weekly, fri | report, 1h | runs the suite 5 times; tests that pass in some runs and fail in others, with pass/fail counts |
-| `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
-| `config-drift` | weekly, mon | pr, 1h | config keys no code reads, code flags no config sets: roadmap items only, one per key, each with a `grep` done-when |
-| `fresh-env` | weekly, mon | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
-| `codebase-map` | weekly, wed | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
-| `dependency-update` | weekly, mon | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
+| `experiment-hygiene` | weekly, sat | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
+| `flaky-tests` | weekly, sat | report, 1h | runs the suite 5 times; tests that pass in some runs and fail in others, with pass/fail counts |
+| `sota-digest` | weekly, sat | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `config-drift` | weekly, sat | pr, 1h | config keys no code reads, code flags no config sets: roadmap items only, one per key, each with a `grep` done-when |
+| `fresh-env` | weekly, sat | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
+| `codebase-map` | weekly, sat | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
+| `dependency-update` | weekly, sat | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
 | `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
@@ -69,7 +69,7 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 Rules the dispatcher keeps:
 
 - Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
-- At most `--max` 4 jobs a run, oldest `last-run` first.
+- At most `--max` 8 jobs a run, oldest `last-run` first.
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
