@@ -182,6 +182,25 @@ drain() { run "$VIBE" queue run --claude --drain; }
   grep -q -- "--settings $REPO_ROOT/claude/vibe-job-settings.json" "$STUBS/claude.log"
 }
 
+@test "run: both runners pass --add-dir \"\$VIBE_JOB_DIR\"; the job settings fence the file tools" {
+  local r wt
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  grep -q -- "--add-dir $Q/01-a " "$STUBS/claude.log"
+  wt="$(cat "$Q/01-a/worktree")"
+  : >"$STUBS/claude.log"
+  VIBE_JOB_DIR="$Q/01-a-review1" run bash "$REPO_ROOT/claude/vibe-review.sh" "$wt" proj-task-a-review1 sonnet high main
+  [ "$status" -eq 0 ]
+  grep -q -- "--add-dir $Q/01-a-review1 " "$STUBS/claude.log"
+  echo MODE=silent >"$BATS_TEST_TMPDIR/prompt.md"
+  run env -u VIBE_JOB_DIR bash "$REPO_ROOT/claude/vibe-job.sh" "$wt" proj-task-a sonnet "$BATS_TEST_TMPDIR/prompt.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"VIBE_JOB_DIR"* ]] || false
+  jq -e '.permissions.blockWritesOutsideWorkingDirectories == true' "$REPO_ROOT/claude/vibe-job-settings.json"
+}
+
 @test "run: effort= in the job file reaches the agent as --effort" {
   local r
   r="$(make_repo proj)"
@@ -199,7 +218,7 @@ drain() { run "$VIBE" queue run --claude --drain; }
   [ "$(cat "$Q/01-a/session")" = sess-01-a ]
   wt="$(cat "$Q/01-a/worktree")"
   echo MODE=silent >"$BATS_TEST_TMPDIR/prompt.md"
-  run bash "$REPO_ROOT/claude/vibe-job.sh" "$wt" proj-task-a sonnet "$BATS_TEST_TMPDIR/prompt.md" "" "$(cat "$Q/01-a/session")"
+  VIBE_JOB_DIR="$Q/01-a" run bash "$REPO_ROOT/claude/vibe-job.sh" "$wt" proj-task-a sonnet "$BATS_TEST_TMPDIR/prompt.md" "" "$(cat "$Q/01-a/session")"
   [ "$status" -eq 0 ]
   [ "$(tail -n 1 "$STUBS/claude.log" | grep -c -- '-p --model sonnet --resume sess-01-a --name proj-task-a')" = 1 ]
   [ "$(grep -c -- '--resume' "$STUBS/claude.log")" = 1 ]

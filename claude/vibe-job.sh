@@ -16,4 +16,5 @@ if [[ -n "$turns" ]]; then extra+=(--max-turns "$turns"); fi
 exec claude -p --model "$model" "${extra[@]+"${extra[@]}"}" --name "$name" \
   --permission-mode auto --permission-prompts none \
   --settings "$here/vibe-job-settings.json" \
+  --add-dir "${VIBE_JOB_DIR:?}" \
   --output-format stream-json --verbose <"$prompt"

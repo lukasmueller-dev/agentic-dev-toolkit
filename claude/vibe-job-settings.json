@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "blockWritesOutsideWorkingDirectories": true,
     "deny": [
       "Bash(git push * main)",
       "Bash(git push * main *)",
