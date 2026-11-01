@@ -64,7 +64,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
-A lane card is a stack of three sheets. It unpacks into a job card per job.
+A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
 Serve it on the tailnet once:
 
 ```bash

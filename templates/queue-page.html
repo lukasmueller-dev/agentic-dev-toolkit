@@ -76,6 +76,11 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .job.lane::after { inset: 10px 14px -10px; }
 /* Unpacked: the sheets go; each job of the lane shows as a job card. */
 .job.lane:has(> .stack[open])::before, .job.lane:has(> .stack[open])::after { display: none; }
+/* The stack's summary covers the whole card: one click anywhere packs or unpacks it. No arrow. */
+.job.lane > .stack > summary { position: absolute; inset: 0; font-size: 0; list-style: none; }
+.job.lane > .stack > summary::-webkit-details-marker { display: none; }
+/* Above the summary: the PR link, the steps and the job cards. A click there does not pack. Below .bar (z-index 2). */
+.job.lane > p a, .job.lane > details:not(.stack), .stack > .job { position: relative; z-index: 1; }
 .stack > .job:first-of-type { margin-top: 8px; }
 .stack > .job:last-child { padding-bottom: 0; }
 .job p { margin: 6px 0 0 19px; color: var(--body-2); font: 400 14px/1.5 var(--sans); overflow-wrap: anywhere; }
