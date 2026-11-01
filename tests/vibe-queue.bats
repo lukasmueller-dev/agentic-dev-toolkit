@@ -822,7 +822,11 @@ pandoc_stub() {
   # The summary covers the whole lane card and has no arrow; link, steps and job cards sit above it.
   grep -qE '^\.job\.lane > \.stack > summary \{[^}]*position: absolute; inset: 0;[^}]*list-style: none;' "$f"
   grep -qE '^\.job\.lane > \.stack > summary::-webkit-details-marker \{ display: none; \}' "$f"
-  grep -qE '^\.job\.lane > p a, [^{]*\.stack > \.job[^{]*\{ position: relative; z-index: 2; \}' "$f"
+  grep -qE '^\.job\.lane > p a, [^{]*\.stack > \.job[^{]*\{ position: relative; z-index: 1; \}' "$f"
+  # Nothing in a lane may reach the sticky bar's z-index, or it scrolls over the bar.
+  grep -qE '^\.bar \{[^}]*position: sticky;[^}]*z-index: 2;' "$f"
+  run grep -E '^\.(job|stack)[^{]*\{[^}]*z-index: ([2-9]|[1-9][0-9])' "$f"
+  [ "$status" -eq 1 ]
 }
 
 @test "page: a failed write warns and the runner goes on" {
