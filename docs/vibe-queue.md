@@ -137,7 +137,9 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 
 The job finds its dir in `$VIBE_JOB_DIR`. Job settings:
 [`claude/vibe-job-settings.json`](../claude/vibe-job-settings.json) — no
-unsandboxed retry, no push to `main`/`master`, no `gh pr merge`.
+unsandboxed retry, no push to `main`/`master`, no `gh pr merge`. File tools
+(Write, Edit, NotebookEdit) are fenced to the worktree and the job dir by
+`blockWritesOutsideWorkingDirectories`; the runners pass `--add-dir "$VIBE_JOB_DIR"`.
 
 GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
 [`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, job

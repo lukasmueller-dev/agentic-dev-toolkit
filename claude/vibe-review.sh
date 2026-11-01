@@ -16,5 +16,6 @@ exec claude -p --model "$model" --name "$name" \
   --disallowedTools Edit,Write,NotebookEdit \
   --permission-mode auto --permission-prompts none \
   --settings "$here/vibe-job-settings.json" \
+  --add-dir "${VIBE_JOB_DIR:?}" \
   --append-system-prompt "$rules" \
   --output-format json --json-schema "$schema" <<<"Run /code-review $level origin/$base...HEAD. Then return its findings through the structured output."
