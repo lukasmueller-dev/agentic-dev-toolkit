@@ -1,6 +1,6 @@
 ---
 schedule: weekly
-day: wed
+day: sat
 output: pr
 model: sonnet
 timeout: 1h

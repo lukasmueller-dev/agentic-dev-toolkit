@@ -1,6 +1,6 @@
 ---
 schedule: weekly
-day: sun
+day: sat
 output: report
 model: sonnet
 timeout: 30m
