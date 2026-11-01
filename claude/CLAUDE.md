@@ -29,6 +29,8 @@ When the user must do two or more actions (merge, approve, deploy, run on hardwa
 
 Do not list the later steps unless the user asks for the full plan.
 
+Exception: a skill, PR body or job report that requires a full step list keeps it (the `review-jobs` merge order).
+
 # Language — ASD-STE100
 
 Write every chat reply in ASD-STE100 Simplified Technical English. Rules condensed from github.com/menonpg/ste-prompt (MIT).
