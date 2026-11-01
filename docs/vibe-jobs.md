@@ -52,6 +52,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `fresh-env` | weekly, sat | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
 | `codebase-map` | weekly, sat | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
 | `dependency-update` | weekly, sat | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
+| `repo-review` | monthly | report, 1h | `/code-review high .` on the whole repo: ranked findings with failure scenarios; report only |
 | `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
