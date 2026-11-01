@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-10-29 · turing_
+_Last updated: 2026-11-01 · repo-review-job_
 
 ## Items
 
@@ -25,11 +25,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       the job queues the canonical eval through `gpu-queue`; the follow-up
       compares the headline metric with the last run. Done when a drop opens
       a roadmap item and the briefing shows both numbers.
-- [ ] **Catalogue job `repo-review`; delete `codebase-review`** — monthly,
-      `output=report`, Sonnet, 1h: `/code-review high .` on the whole repo;
-      toolkit focus lines in `.vibe-jobs/repo-review.md`. Done when one run
-      writes a `report.md` with ranked findings and `skills/codebase-review/`
-      is gone.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
