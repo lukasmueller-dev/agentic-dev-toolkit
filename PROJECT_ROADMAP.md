@@ -33,12 +33,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
-- [ ] **Unpack a lane stack with one click** — a packed lane opens only
-      through the small "N jobs" arrow. Stretch the `summary` over the card
-      with CSS and hide the arrow; the PR link stays clickable. Done when
-      `bats tests/vibe-queue.bats` passes and a page test shows the whole
-      packed lane card is the click target with no disclosure arrow.
-
 - [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
       review or a `/fix` comment starts a fix job; a red CI check later.
       Done when a `/fix` comment from your login yields one fix job and one
