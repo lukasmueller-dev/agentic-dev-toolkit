@@ -33,13 +33,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
-- [ ] **Fence job file tools to the worktree and the job dir** — add
-      `permissions.blockWritesOutsideWorkingDirectories` to
-      `claude/vibe-job-settings.json`; both runners pass
-      `--add-dir "$VIBE_JOB_DIR"` (`docs/sota/2026-W44.md`, item 1).
-      Done when `jq -e '.permissions.blockWritesOutsideWorkingDirectories'
-      claude/vibe-job-settings.json` prints `true` and the repo checks pass.
-
 - [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
       review or a `/fix` comment starts a fix job; a red CI check later.
       Done when a `/fix` comment from your login yields one fix job and one
