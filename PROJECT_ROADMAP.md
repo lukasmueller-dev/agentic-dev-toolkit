@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-01 · repo-review-job_
+_Last updated: 2026-11-02 · docker-gate-sessions_
 
 ## Items
 

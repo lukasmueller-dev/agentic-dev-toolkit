@@ -63,3 +63,4 @@ Each looks like a real failure and is not. Symptom → fix.
 - `git merge`/`rebase` fails with `Read-only file system` on `.claude/` and leaves new files behind → remove them (compare first), then run unsandboxed.
 - `git stash push` writes the commit but not `refs/stash` → compare against `git show HEAD:<path>` instead of stashing.
 - `git worktree prune` fails on placeholder files → run it unsandboxed.
+- Docker `permission denied` on `/var/run/docker.sock` in an interactive session → run the repo's Docker gate alone (no `cd`, redirect or `$(...)`); no gate entry in the repo → ask for the unsandboxed retry. In a vibe job both fail → skip Docker; the runner runs `.vibe-jobs/gate` after you.
