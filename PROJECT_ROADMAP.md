@@ -19,13 +19,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
-### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
-
-- [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
-      the job queues the canonical eval through `gpu-queue`; the follow-up
-      compares the headline metric with the last run. Done when a drop opens
-      a roadmap item and the briefing shows both numbers.
-
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
 - [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"

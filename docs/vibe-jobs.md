@@ -54,6 +54,7 @@ systemctl --user list-timers vibe-jobs.timer
 | `dependency-update` | weekly, sat | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
 | `repo-review` | monthly | report, 1h | `/code-review high .` on the whole repo: ranked findings with failure scenarios; report only |
 | `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
+| `eval-regression` | weekly, sat | pr, 30m, gpu | research repo: the canonical eval through `gpu-queue`; the follow-up compares the headline metric with the last run; a drop → roadmap item |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
@@ -61,9 +62,9 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
 | Where | Holds |
 | --- | --- |
-| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `after`, then the task |
+| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `after` `kind`, then the task |
 | `<repo>/.vibe-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
-| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails` | epoch of the last `done`; failures in a row |
+| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails`, `last-result` | epoch of the last `done`; failures in a row; the last `done:` result line, the prompt's **Last run** |
 | `~/.local/state/vibe/queue/<id>/` | the queued job (`docs/vibe-queue.md`) |
 | `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` `after=` (only when set) |
 
@@ -75,6 +76,7 @@ Rules the dispatcher keeps:
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
 - `after`: `review` (the default) queues a review before the PR opens (`docs/vibe-queue.md`). `after:` empty skips it; `sota-digest` does, a digest has no correctness to review.
+- `kind: gpu`: the job queues its run with `vibe queue gpu`; the follow-up `<id>-gpu` finishes it (`docs/vibe-queue.md`). `last-run` and `fails` change when the follow-up ends, not when the queuing session does.
 
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 

@@ -114,7 +114,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 - `/review-jobs` retries an item out of the lane from the current tip: the lane branch while its PR is open, else `<branch>-<item>-retry` from the default branch. Its prompt names `git diff <start>..<side-branch>`.
 - After each item the runner writes the lane PR again: title and TL;DR from the latest done item's `pr.md`, a `<item> → <side-branch>` line per item out of the lane, one `<details>` per item.
 - The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
-- `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you.
+- `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you. A finished branch shows its newest job's TL;DR in the briefing (a GPU run's metric).
 
 ## Features
 

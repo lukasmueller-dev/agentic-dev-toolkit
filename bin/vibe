@@ -1583,7 +1583,7 @@ report_row() {
 # `done` is then done without one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done`
 # table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links
+  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links nx
   shift 2
   for d in "$QDIR"/*/; do
     d="${d%/}"
@@ -1602,7 +1602,9 @@ report_rows() {
       seen+="$b"$'\n'
       links=""
       case "$G_PR" in http*) links="[PR]($G_PR)" ;; esac
-      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | $G_NEXT | $links |"$'\n'
+      nx="$G_NEXT"
+      if [[ "$nx" == - && "${G_PROGRESS%/*}" == "${G_PROGRESS#*/}" ]]; then nx="$(report_tldr "$(printf '%s\n' "${GROUP[@]}" | LC_ALL=C sort | tail -n 1)")"; fi
+      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | ${nx//|//} | $links |"$'\n'
       continue
     fi
     case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
@@ -2109,16 +2111,20 @@ job_check() {
 # job_state REPO JOB FILE — a state file's first line (last-run epoch, fails).
 job_state() { head -n 1 "$JOBS_STATE/$(basename "$1")/$2/$3" 2>/dev/null || true; }
 
-# job_state_update JOB-DIR STATUS — done: stamp last-run, forget failures;
-# failed/timeout: one more failure. Two in a row stop the job (job_due).
+# job_state_update JOB-DIR STATUS — done: stamp last-run, forget failures,
+# keep a `done:` result as last-result; failed/timeout: one more failure.
+# Two in a row stop the job (job_due). A job that queued a GPU run (`gpu-job`)
+# is not done until its follow-up is: its own done changes nothing.
 job_state_update() {
   local d="$1" st="$2" dir n
   dir="$JOBS_STATE/$(basename "$(jget "$d/job" repo)")/$(jget "$d/job" recurring)"
   mkdir -p "$dir"
   case "$st" in
     "done")
+      if [[ -f "$d/gpu-job" ]]; then return 0; fi
       date +%s >"$dir/last-run"
       rm -f "$dir/fails"
+      case "$(jstate "$d" result)" in "done:"*) jstate "$d" result >"$dir/last-result" ;; esac
       ;;
     failed | timeout)
       n="$(head -n 1 "$dir/fails" 2>/dev/null || echo 0)"
@@ -2224,8 +2230,8 @@ job_open_prs() {
 # Output drops to `report` when the repo already has 2 open job PRs and this
 # job's branch is not one of them.
 job_write() {
-  local d="$1" repo="$2" job="$3" branch output prs n tpl f
-  branch="jobs/$job"
+  local d="$1" repo="$2" job="$3" branch output prs n tpl f last
+  branch="jobs/$job" last="$(job_state "$repo" "$job" last-result)"
   output="$(job_key "$repo" "$job" output pr)"
   if [[ "$output" == pr ]]; then
     prs="$(job_open_prs "$repo")"
@@ -2247,6 +2253,8 @@ job_write() {
     '<repo>' "$repo" \
     '<branch>' "$branch" \
     '<output>' "$output" \
+    '<kind>' "$(job_key "$repo" "$job" kind code)" \
+    '<last-result>' "${last:-none}" \
     '<timeout>' "$(job_key "$repo" "$job" timeout 1h)" \
     '<catalogue-instructions>' "$(fm_body "$JOBS_CATALOGUE/$job.md")" \
     '<repo-instructions>' "$(fm_body "$repo/.vibe-jobs/$job.md")" \

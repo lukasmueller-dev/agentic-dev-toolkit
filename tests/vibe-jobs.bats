@@ -25,6 +25,27 @@ case "\$mode" in
     ;;
   crash) exit 3 ;;
   sleep) sleep 30 ;;
+  eval)
+    case "\$prompt" in
+      *"## GPU run finished"*)
+        new="\$(cat "\$(printf '%s\n' "\$prompt" | sed -n 's/^- Log: //p')")"
+        if [ "\$new" = crash ]; then
+          echo "failed: eval crashed" >"\$VIBE_JOB_DIR/result"
+          exit 0
+        fi
+        last="\$(printf '%s\n' "\$prompt" | sed -n 's/^- \*\*Last run:\*\* done: success \([0-9.]*\).*/\1/p')"
+        if [ -n "\$last" ] && [ "\$new" \< "\$last" ]; then
+          echo "- [ ] find the success drop from \$last to \$new" >ROADMAP.md && git add ROADMAP.md && git commit -q -m "docs: drop"
+          printf 'job(evalreg): drop\n\n**Changed:** success %s (last %s), roadmap item.\n' "\$new" "\$last" >"\$VIBE_JOB_DIR/pr.md"
+        fi
+        echo "done: success \$new (last \${last:-none})" >"\$VIBE_JOB_DIR/result"
+        ;;
+      *)
+        "$VIBE" queue gpu -- cat "$STUBS/metric"
+        echo "queued: eval" >"\$VIBE_JOB_DIR/result"
+        ;;
+    esac
+    ;;
 esac
 EOF
   cat >"$STUBS/gh" <<EOF
@@ -53,6 +74,7 @@ EOF
   printf -- '---\nschedule: weekly\noutput: pr\ntimeout: 2h\n---\n\nCheck the code.\nMODE=ok\n' >"$VIBE_JOBS_CATALOGUE/health.md"
   printf -- '---\nschedule: daily\n---\n\nMODE=crash\n' >"$VIBE_JOBS_CATALOGUE/crashy.md"
   printf -- '---\nschedule: daily\ntimeout: 2s\n---\n\nMODE=sleep\n' >"$VIBE_JOBS_CATALOGUE/slow.md"
+  printf -- '---\nschedule: weekly\noutput: pr\nkind: gpu\n---\n\nMODE=eval\n' >"$VIBE_JOBS_CATALOGUE/evalreg.md"
   TODAY="$(LC_ALL=C date +%a | tr '[:upper:]' '[:lower:]')"
   Q="$XDG_STATE_HOME/vibe/queue"
 }
@@ -212,6 +234,60 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   "$VIBE" job run "$r" digest >/dev/null
   grep -qx 'after=review' "$(qjobs jobs-digest | tail -n 1)/job"
   grep -qx 'after:' "$REPO_ROOT/skills/recurring-jobs/references/jobs/sota-digest.md"
+}
+
+# eval_run REPO METRIC — one evalreg run: the job queues the eval, the GPU
+# queue runs it, the follow-up compares.
+eval_run() {
+  local pid
+  echo "$2" >"$STUBS/metric"
+  "$VIBE" job run "$1" evalreg >/dev/null
+  "$VIBE" queue run --claude --drain >/dev/null 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$(qjobs jobs-evalreg | tail -n 1)/status" 2>/dev/null)" != gpu ] || break
+    sleep 0.1
+  done
+  "$REPO_ROOT/bin/gpu-queue" run --once 2>/dev/null
+  wait "$pid"
+}
+
+@test "job kind gpu: the follow-up gets the last run; a drop opens a roadmap item, the briefing shows both numbers" {
+  local r d
+  r="$(make_repo proj)"
+  optin "$r" evalreg
+  eval_run "$r" 0.86
+  d="$(qjobs jobs-evalreg-gpu)"
+  grep -q -- '- \*\*Kind:\*\* gpu' "$d/prompt.md"
+  grep -q -- '- \*\*Last run:\*\* none' "$d/prompt.md"
+  [ "$(cat "$d/status")" = "done" ]
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/last-result")" = "done: success 0.86 (last none)" ]
+  [ ! -f "$d/pr" ]
+  "$VIBE" queue archive "$Q"/*/ >/dev/null
+  eval_run "$r" 0.79
+  d="$(qjobs jobs-evalreg-gpu)"
+  grep -q -- '- \*\*Last run:\*\* done: success 0.86 (last none)' "$d/prompt.md"
+  [ "$(cat "$d/status")" = "done" ]
+  git -C "$r/.claude/worktrees/jobs/evalreg" log -1 --format=%s | grep -qx 'docs: drop'
+  grep -qx -- '- \[ \] find the success drop from 0.86 to 0.79' "$r/.claude/worktrees/jobs/evalreg/ROADMAP.md"
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/last-result")" = "done: success 0.79 (last 0.86)" ]
+  "$VIBE" queue report >/dev/null
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### PR ready"*"| jobs/evalreg | 2/2 |"*"success 0.79 (last 0.86), roadmap item."*"[PR]("* ]] || false
+}
+
+@test "job kind gpu: two failed follow-ups in a row stop the job; the queuing session's done does not clear the count" {
+  local r
+  r="$(make_repo proj)"
+  optin "$r" evalreg
+  eval_run "$r" crash
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/fails")" = 1 ]
+  [ ! -f "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/last-run" ]
+  "$VIBE" queue archive "$Q"/*/ >/dev/null
+  eval_run "$r" crash
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/fails")" = 2 ]
+  run "$VIBE" job list "$r"
+  [[ "$output" == *"evalreg"*"stopped: 2 failures"* ]] || false
 }
 
 @test "job run: the job's own timeout stops it" {

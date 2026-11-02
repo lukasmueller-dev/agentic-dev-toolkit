@@ -6,6 +6,7 @@
 # model: sonnet
 # timeout: 1h
 # after: review | (empty = no review)
+# kind: code | gpu
 ---
 
 _One line per instruction for this repo: paths to skip, what "healthy" means here, a command to run._
