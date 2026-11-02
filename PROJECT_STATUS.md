@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-02: **features across repos**: a job stays in one repo; a feature
+  file links member branches in several repos into one row, one review
+  decision and one merge batch after the human test. Design: PR body.
 - 2026-10-29: **review before the PR**: a `done` job with commits gets up to 2
   fresh read-only review rounds (`<id>-review<n>`); the job's own session
   fixes or rejects; the last round opens the PR with `R<n>` lines. A timeout

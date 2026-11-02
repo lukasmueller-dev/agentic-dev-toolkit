@@ -191,6 +191,7 @@ putfeature() {
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = "done" ]
   grep -qx '## Feature' "$Q/01-a/prompt.md"
+  # shellcheck disable=SC2016  # literal backticks in the expected text
   grep -qF 'member of the feature `teleop`: The gamepad drives the robot.' "$Q/01-a/prompt.md"
   grep -qF "Read the feature file first: $XDG_STATE_HOME/vibe/features/teleop.md." "$Q/01-a/prompt.md"
   grep -qF 'blocked: contract <interface>: <the change you propose>' "$Q/01-a/prompt.md"
