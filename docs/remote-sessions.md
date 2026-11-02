@@ -122,7 +122,8 @@ exits 0.
   seccomp filter blocks `socket(AF_UNIX)`). `allowAllUnixSockets` opens D-Bus
   (`systemd-run --user` → unsandboxed command). Use neither.
 - Accepted risk: an agent can edit the excluded script or the Dockerfile;
-  Docker then runs that code as the user, outside the sandbox.
+  Docker then runs that code outside the sandbox with root-equivalent access
+  to the host (`docker` group).
 - A vibe job ignores this setting (`--settings` with `allowUnsandboxedCommands`
   false makes the sandbox admin-required) and has no unsandboxed retry → commit
   `.vibe-jobs/gate`; the runner runs it unsandboxed after the agent
