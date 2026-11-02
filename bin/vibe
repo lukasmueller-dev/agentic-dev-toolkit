@@ -2113,13 +2113,15 @@ job_state() { head -n 1 "$JOBS_STATE/$(basename "$1")/$2/$3" 2>/dev/null || true
 
 # job_state_update JOB-DIR STATUS — done: stamp last-run, forget failures,
 # keep a `done:` result as last-result; failed/timeout: one more failure.
-# Two in a row stop the job (job_due).
+# Two in a row stop the job (job_due). A job that queued a GPU run (`gpu-job`)
+# is not done until its follow-up is: its own done changes nothing.
 job_state_update() {
   local d="$1" st="$2" dir n
   dir="$JOBS_STATE/$(basename "$(jget "$d/job" repo)")/$(jget "$d/job" recurring)"
   mkdir -p "$dir"
   case "$st" in
     "done")
+      if [[ -f "$d/gpu-job" ]]; then return 0; fi
       date +%s >"$dir/last-run"
       rm -f "$dir/fails"
       case "$(jstate "$d" result)" in "done:"*) jstate "$d" result >"$dir/last-result" ;; esac

@@ -76,7 +76,7 @@ Rules the dispatcher keeps:
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
 - `after`: `review` (the default) queues a review before the PR opens (`docs/vibe-queue.md`). `after:` empty skips it; `sota-digest` does, a digest has no correctness to review.
-- `kind: gpu`: the job queues its run with `vibe queue gpu`; the follow-up `<id>-gpu` finishes it (`docs/vibe-queue.md`).
+- `kind: gpu`: the job queues its run with `vibe queue gpu`; the follow-up `<id>-gpu` finishes it (`docs/vibe-queue.md`). `last-run` and `fails` change when the follow-up ends, not when the queuing session does.
 
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 

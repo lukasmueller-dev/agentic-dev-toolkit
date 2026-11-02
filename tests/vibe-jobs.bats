@@ -29,6 +29,10 @@ case "\$mode" in
     case "\$prompt" in
       *"## GPU run finished"*)
         new="\$(cat "\$(printf '%s\n' "\$prompt" | sed -n 's/^- Log: //p')")"
+        if [ "\$new" = crash ]; then
+          echo "failed: eval crashed" >"\$VIBE_JOB_DIR/result"
+          exit 0
+        fi
         last="\$(printf '%s\n' "\$prompt" | sed -n 's/^- \*\*Last run:\*\* done: success \([0-9.]*\).*/\1/p')"
         if [ -n "\$last" ] && [ "\$new" \< "\$last" ]; then
           echo "- [ ] find the success drop from \$last to \$new" >ROADMAP.md && git add ROADMAP.md && git commit -q -m "docs: drop"
@@ -270,6 +274,20 @@ eval_run() {
   "$VIBE" queue report >/dev/null
   run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### PR ready"*"| jobs/evalreg | 2/2 |"*"success 0.79 (last 0.86), roadmap item."*"[PR]("* ]] || false
+}
+
+@test "job kind gpu: two failed follow-ups in a row stop the job; the queuing session's done does not clear the count" {
+  local r
+  r="$(make_repo proj)"
+  optin "$r" evalreg
+  eval_run "$r" crash
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/fails")" = 1 ]
+  [ ! -f "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/last-run" ]
+  "$VIBE" queue archive "$Q"/*/ >/dev/null
+  eval_run "$r" crash
+  [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/fails")" = 2 ]
+  run "$VIBE" job list "$r"
+  [[ "$output" == *"evalreg"*"stopped: 2 failures"* ]] || false
 }
 
 @test "job run: the job's own timeout stops it" {
