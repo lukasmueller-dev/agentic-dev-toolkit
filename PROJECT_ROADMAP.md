@@ -33,9 +33,3 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
-- [ ] **Queue page updates itself** — an inline script fetches `index.html`
-      every 10 s and swaps the changed parts; the filter, open lanes and
-      open steps stay; no change for 2 minutes marks the time stamp stale.
-      Done when a headless-chrome check shows an update within 15 s, the old
-      content with the stale mark after a stopped server, and the surviving
-      user state; the 390×844 screenshot is identical (`cmp`).
