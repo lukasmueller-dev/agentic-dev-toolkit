@@ -112,6 +112,14 @@ worktree_of() {
     $0 == "branch " b { print p; exit }'
 }
 
+# same_dir A B — A and B are one directory. git prints physical paths; the
+# runner's records may hold the logical one (/var/… vs /private/var/… on macOS).
+same_dir() {
+  local a b
+  a="$(cd -P "$1" 2>/dev/null && pwd)" b="$(cd -P "$2" 2>/dev/null && pwd)"
+  [[ -n "$a" && "$a" == "$b" ]]
+}
+
 # open_prs DIR — "branch<TAB>url" for each open PR; empty without gh.
 open_prs() {
   command -v gh >/dev/null 2>&1 || return 0
@@ -432,8 +440,8 @@ job_prepare() {
   fi
   wt="$(worktree_of "$main" "$branch")"
   # A GPU follow-up or a job a usage limit stopped resumes in its own dirty worktree.
-  if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 && "$(jstate "$d" worktree)" != "$wt" &&
-  -n "$(git -C "$wt" status --porcelain)" ]]; then
+  if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 ]] && ! same_dir "$(jstate "$d" worktree)" "$wt" &&
+    [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
     job_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
