@@ -16,9 +16,12 @@ add_wt() {
   printf '%s' "$1/.claude/worktrees/$2"
 }
 
-# state_of PATH — the state the scan reports for PATH.
+# state_of PATH — the state the scan reports for PATH. git prints physical
+# paths (/private/var/… on macOS), so resolve the parent; PATH may be gone.
 state_of() {
-  bash "$CLEANUP" scan | awk -F'\t' -v p="$1" '$2 == p { print $1 }'
+  local p
+  p="$(cd -P "$(dirname "$1")" && pwd)/$(basename "$1")"
+  bash "$CLEANUP" scan | awk -F'\t' -v p="$p" '$2 == p { print $1 }'
 }
 
 @test "scan: skips the main checkout and rates a clean branch on main as merged" {

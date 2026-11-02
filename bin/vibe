@@ -174,7 +174,8 @@ cmd_start() {
 
 # sync_repo MAIN — sync each worktree of MAIN; one output line per worktree.
 sync_repo() {
-  local main="$1" def prs failed=0 line dir="" branch="" locked=""
+  local main def prs failed=0 line dir="" branch="" locked=""
+  main="$(cd -P "$1" && pwd)" # git prints physical paths; sync_wt compares them
   def="$(default_branch "$main")"
   ensure_exclude "$main"
   git -C "$main" fetch -q --prune origin 2>/dev/null || warn "$(basename "$main"): fetch failed"
