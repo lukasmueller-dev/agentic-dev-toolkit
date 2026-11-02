@@ -1,6 +1,6 @@
 ---
 name: fill-queue
-description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
+description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md, or into a feature when it spans several repos), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
 disable-model-invocation: true
 argument-hint: "[<repo>...]"
 ---
@@ -14,7 +14,7 @@ unattended, get approval, add the jobs. Runner and layout:
 ## Hard boundaries — never do these
 
 - **Never add a job without explicit approval of the list.**
-- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a new branch's `SPEC.md` and `HANDOFF.md`; the jobs do the work.
+- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a branch's `SPEC.md` and `HANDOFF.md` and a feature file; the jobs do the work.
 - **Never write a `SPEC.md` without a grilling the user took part in.**
 - **Never list an item that fails the gate.** Show it under "Rejected" with the reason.
 - **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`. The jobs of one new lane share their new branch.
@@ -31,9 +31,11 @@ The user says skip → go to Phase 2.
 
 1. Ask for the user's big work items: a feature, a migration, a GPU run.
 2. Propose up to 3 more from the repos' goals, roadmaps and gaps, one line each.
-3. For each item the user picks, run the `grilling` skill with the user until every
+3. An item on 2 or more branches that merge together, most often in several repos, is a feature:
+   do `references/feature.md` steps 1–3 for it instead of steps 4 and 5.
+4. For each other item the user picks, run the `grilling` skill with the user until every
    section of `templates/SPEC.md` (toolkit) has an answer.
-4. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
+5. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
    Write `SPEC.md` from the template and `HANDOFF.md` from `templates/HANDOFF.md`;
    its next action is the first milestone with its done-when.
    Commit `docs(spec): <slug>`, push. The sweep then finds it as a handoff.
@@ -75,8 +77,9 @@ An item or handoff next action passes only when all are true:
 
 ## Phase 5 — Approve
 
-Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · done-when`.
+Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · feature · done-when`.
 The `lane` column holds the lane context, or `-` for a job alone; rows with the same value share one branch.
+The `feature` column holds the feature whose file (`~/.local/state/vibe/features/*.md`) lists the row's repo and branch, or `-`.
 The user moves an item in or out of a lane by changing that column.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the tables again.
@@ -97,4 +100,4 @@ before the rest: `vibe queue add --now <dir>`.
 ## Done
 
 Done when `vibe queue add` printed one `queued` line per approved job. Report
-in 2 lines: jobs added and lanes among them, `vibe queue status`.
+in 2 lines: jobs added, lanes and features among them, `vibe queue status`.
