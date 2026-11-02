@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-01 · repo-review-job_
+_Last updated: 2026-11-02 · docker-gate-sessions_
 
 ## Items
 
@@ -18,13 +18,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
-
-- [ ] **Docker gate in sandboxed sessions** — document how a session runs a
-      repo's Docker gate (`tools/test.sh --docker`) without approval: a
-      `docs/remote-sessions.md` recipe and one sandbox-trap line in
-      `claude/CLAUDE.md`. Done when `grep -n excludedCommands
-      docs/remote-sessions.md` and `grep -n docker.sock claude/CLAUDE.md`
-      both match and lint and `bats tests/` pass.
 
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
