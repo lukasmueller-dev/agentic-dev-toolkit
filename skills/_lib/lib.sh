@@ -1,9 +1,8 @@
 # shellcheck shell=bash
 #
 # lib.sh — helpers shared by the skill scripts: template rendering for every
-# seed script, and brief staging for handoff-brief/handoff.sh and
-# codebase-review/review.sh. One renderer for the placeholder contract in
-# templates/README.md.
+# seed script, and brief staging for handoff-brief/handoff.sh. One renderer
+# for the placeholder contract in templates/README.md.
 #
 # Sourced, never executed. The caller runs under `set -euo pipefail` and has
 # resolved its own real location first (script_dir cannot live here).
@@ -183,8 +182,7 @@ stage_worktree() {
 # print the STATE line telling the caller what it found: created (rendered
 # fresh from the template), existing-scaffold (already there but holding only
 # the template's scaffolding — fill it in like a fresh one), existing-handoff
-# (real content — refine it in place, never overwrite). Shared by
-# handoff-brief and codebase-review, which stage the same document.
+# (real content — refine it in place, never overwrite).
 handoff_stage_state() {
   local dir="$1" repo="$2" branch="$3" f="$1/HANDOFF.md"
   if [[ ! -f "$f" ]]; then

@@ -79,8 +79,8 @@ tokens in.
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 - `skills/add-roadmap-item` — renders `PROJECT_ROADMAP.md` from the template
   (via `scaffold.sh`) when the repo lacks one, before adding an item to it
-- `skills/handoff-brief/handoff.sh`, `skills/codebase-review/review.sh` — seed
-  `HANDOFF.md` onto a task branch before a new session picks it up
+- `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` onto a task branch
+  before a new session picks it up
 - `skills/codebase-map/map.sh` — renders `codebase/CODEBASE_MAP.md` into the
   target repo's `docs/`, and never overwrites an existing one
 - `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`
