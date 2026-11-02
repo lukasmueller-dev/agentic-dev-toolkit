@@ -51,7 +51,7 @@ came about. If a tool needs to emit a document, it reads `templates/`.
 
 Templates must not name a specific CLI, machine, or agent. CI fails the build
 if `templates/HANDOFF.md`, `templates/PROJECT_STATUS.md`,
-`templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/job-*.md`,
+`templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/FEATURE.md`, `templates/job-*.md`,
 or anything under `templates/codebase/` or `templates/research/` mentions one.
 
 ## Global memory lives in `memory/`
@@ -350,6 +350,11 @@ success — green, having linted none of the skills you shipped.
 
 **3 `install.bats` tests fail inside a sandboxed agent job** (`.claude/` placeholder
 files in the worktree root). Run that suite again in a `git clone` under `$TMPDIR`.
+
+**An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
+It is the sandbox's mount point for its write-deny on `.git/config`; no setting
+removes it. `worktree add --track` and `push -u` fail on it. `vibe` clears it
+(`clear_config_lock`), and so does the `clear-config-lock.sh` hook before an unsandboxed Bash call; by hand, `rm -f` it only if it is empty and read-only.
 
 **Stage a new file under `skills/` before running `bats`.** The suite's
 `the suite creates and deletes nothing under skills/` guard greps

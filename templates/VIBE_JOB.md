@@ -5,6 +5,7 @@
 # output: pr | report
 # model: sonnet
 # timeout: 1h
+# after: review | (empty = no review)
 # kind: code | gpu
 ---
 

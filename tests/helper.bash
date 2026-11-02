@@ -70,3 +70,23 @@ clone_repo() {
   git clone -q "$BATS_TEST_TMPDIR/$name.git" "$BATS_TEST_TMPDIR/$as"
   printf '%s' "$BATS_TEST_TMPDIR/$as"
 }
+
+# stub_systemd_run DIR — a systemd-run in DIR that logs its arguments to
+# DIR/systemd-run.log and runs the command in no scope at all, so no test makes
+# a real unit. With DIR/no-systemd it fails, as without a user manager.
+stub_systemd_run() {
+  cat >"$1/systemd-run" <<EOF2
+#!/bin/sh
+[ ! -f "$1/no-systemd" ] || { echo "Failed to connect to bus" >&2; exit 1; }
+echo "\$*" >>"$1/systemd-run.log"
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    -p) shift 2 ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+exec "\$@"
+EOF2
+  chmod +x "$1/systemd-run"
+}

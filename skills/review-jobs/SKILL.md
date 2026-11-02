@@ -1,6 +1,6 @@
 ---
 name: review-jobs
-description: "Reviews the finished agent jobs in the queue: writes a fresh briefing, proposes one action per job that needs a human or has a PR ready — mark ready, answer and requeue, hold for the user, close, archive — shows the table grouped by repo, then walks the repos one at a time, carries out only the actions the user approves and gives the merge order; the user merges. Use when the user says 'review the jobs', 'what did the agents do', 'go through the briefing', 'merge the agent PRs', or wants the queue's results triaged."
+description: "Reviews the finished agent jobs in the queue: writes a fresh briefing, proposes one action per job that needs a human or has a PR ready — mark ready, answer and requeue, hold for the user, close, archive — one decision for a lane of jobs on one branch or a feature across repos, shows the features first and then the table grouped by repo, then walks the repos one at a time, carries out only the actions the user approves and gives the merge order; the user merges. Use when the user says 'review the jobs', 'what did the agents do', 'go through the briefing', 'merge the agent PRs', or wants the queue's results triaged."
 disable-model-invocation: true
 ---
 
@@ -15,6 +15,7 @@ briefing: `docs/vibe-queue.md` in the toolkit.
 - **Never mark ready, close, comment, push or archive without approval of that repo's rows.**
 - **Never mark ready a PR whose checks fail**, or one the user has not seen the TL;DR of.
 - **Never mark ready a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
+- **Never mark ready one PR of a feature alone.** All its PRs go ready together, after the user says the human test passed.
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
 - **Never archive a row you did not carry out.** A skipped row stays for the next review.
 
@@ -25,6 +26,8 @@ briefing: `docs/vibe-queue.md` in the toolkit.
    the job's `report.md`, the `## <job>` block (next action, blockers),
    and for a PR `gh pr view <url> --json title,body,isDraft,statusCheckRollup`.
    If `gh` fails, run it again outside the sandbox.
+   A lane row (`<branch> · 3/5`) links the lane PR. A job out of the lane has `side` (its side branch) in its job dir.
+   A `## Features` row links the feature file: read it, and `gh pr view <url> --json state,isDraft,statusCheckRollup` per member PR.
 
 ## Phase 2 — Propose
 
@@ -43,18 +46,56 @@ Show the whole action table first, grouped by repo like the briefing: one
 `### <repo>` heading per repo, "Yours" rows first, then its rows as
 `# · job · status · context · TL;DR · action · why`. Do not ask for approval yet.
 
-## Phase 3 — Walk each repo
+### Lanes
 
-Take the repos one at a time, in table order. For each repo:
+A row `<branch> · <done>/<total>` is a lane: one PR, one decision.
+
+- A job of the lane is queued or running → no action. The row shows its progress (`3/5`) for the next review.
+- Every job is `done` or out of the lane → one decision: `ready`, `requeue`, `hold` or `close`.
+- `ready`, `close`: act on the lane PR. A job out of the lane stays for the next review.
+- `hold`: `vibe queue hold <id> <note>` for each done job of the lane.
+- `requeue`: each job out of the lane, with the user's answer. The lane PR stays a draft.
+
+### Features
+
+A `## Features` row is one feature: PRs in several repos that merge together. A
+member job that needs you keeps its own row in its repo table; a done one is only in the feature row.
+
+| State | Action on the feature row |
+| --- | --- |
+| `needs you` | none; one action per member job in its repo. A `blocked: contract …` job gets `contract`. A `no PR` member: a job for its first milestone, or `close` |
+| `running`, `queued` | none |
+| `your test` | ask "Did your human test pass?" (the file's `Human test:` line): yes → `ready`, no → `hold` |
+| `merge` | `archive` when each member PR is `MERGED`; else none |
+| any | `close` when the user drops the feature |
+
+- `contract`: show the proposal. Put the user's answer into the file's contract table, outside the sandbox.
+  Then queue one job per member whose repo holds a copy (`fill-queue` Phase 6): make the copies match the new row.
+- `ready`: `gh pr ready` per member PR, `vibe feature ready <feature>`, archive the done member jobs.
+- `hold`: `vibe queue hold <id> <the user's note>` per done member job.
+- `close`: `gh pr close` per member PR with a one-line reason, `vibe feature archive <feature>`, archive the member jobs.
+- `archive`: `vibe feature archive <feature>`.
+
+## Phase 3 — Walk the features, then each repo
+
+Take the features first. For each feature:
+
+1. Show its members with state, PR and checks, each contract proposal and the `Human test:` line.
+2. **Stop and wait for the user's answer and approval.** Then carry out the approved action.
+3. After `ready`, give one merge order across repos, one line each:
+   `<n>. <repo>#<pr> — <who merges> — <why here>`. A repo that owns a contract row merges before the repos with its copies.
+   Who merges: the user, or the repo's owner when `gh repo view --json owner` names another account than `gh api user`.
+
+Then take the repos one at a time, in table order. For each repo:
 
 1. Show its rows again with the full context of each: the `Context` line,
    the TL;DR, the Verify line of a PR, and the blocker of a blocked job.
-2. For a `requeue` row, ask the question the job is blocked on.
+2. For a `requeue` row, ask the question the job is blocked on. For a lane, ask once per job out of the lane.
 3. **Stop and wait for approval of this repo's rows.** Apply every change the
    user asks for, then show the rows again.
 4. Carry out the approved rows top to bottom. Report each one as one line. A
    failed command stops that row only: report the error and go on.
-5. `vibe queue archive <id>...` for every row carried out, except `hold`.
+5. `vibe queue archive <id>...` for every row carried out, except `hold`. For a lane `ready` or `close`: each done job. For a lane `requeue`: each job out of the lane.
 6. Give the merge order of the repo's `ready` PRs, one line each:
    `<n>. #<pr> — <why here>`. Put a PR before the ones whose files it shares,
    smallest first, and name the PRs that can conflict after it. Give the
@@ -62,11 +103,21 @@ Take the repos one at a time, in table order. For each repo:
 
 Then go to the next repo.
 
-For `requeue`: under `## Next action` and `## Blockers` of the job's
+For `requeue` of a job without `side`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
 `docs(handoff): <job> unblocked` and push the job's branch. Then copy the
 job's `job` and `prompt.md` into a fresh dir (`mktemp -d`) and run
 `vibe queue add <dir>` outside the sandbox.
+
+For `requeue` of a job out of the lane: the side branch holds a WIP commit, so edit no `HANDOFF.md`.
+
+1. Copy the job's `job` and `prompt.md` into a fresh dir (`mktemp -d`).
+2. Lane PR open (`gh pr view <pr> --json state` prints `OPEN`): keep `branch=`, `lane=` and `item=` — the item joins the lane again.
+3. Else: set `branch=<branch>-<item>-retry`, delete `lane=` and `item=` — a new branch from the default branch.
+4. End the `## Task` list of `prompt.md` with two lines, `<start>` being the job's `start` file:
+   `Earlier try: git diff <start>..<side-branch>. Do not merge it.`
+   `Answer: <the user's words>`
+5. `vibe queue add <dir>` outside the sandbox.
 
 ## Phase 4 — Clean up
 
@@ -75,7 +126,7 @@ walked. It keeps its own approval gate. The user declines → stop.
 
 ## Done
 
-Done when every repo is walked, its approved rows are carried out and
+Done when every feature and repo is walked, its approved rows are carried out and
 archived, and the cleanup is done or declined. Report in at most 6 lines:
 marked ready, requeued, held, closed, archived, worktrees removed, and
 `Decisions/risks:`.

@@ -1,9 +1,10 @@
 ---
 schedule: weekly
-day: sun
+day: sat
 output: pr
 model: sonnet
 timeout: 2h
+after:
 ---
 
 Toolkit repo only. Run the repo-local `sota-digest` skill

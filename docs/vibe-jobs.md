@@ -42,11 +42,18 @@ systemctl --user list-timers vibe-jobs.timer
 
 | Job | Schedule | Output | Does |
 | --- | --- | --- | --- |
-| `codebase-health` | weekly, sun | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
-| `stale-state` | weekly, sun | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
+| `codebase-health` | weekly, sat | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
+| `stale-state` | weekly, sat | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
-| `experiment-hygiene` | weekly, sun | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
-| `sota-digest` | weekly, sun | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `experiment-hygiene` | weekly, sat | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
+| `flaky-tests` | weekly, sat | report, 1h | runs the suite 5 times; tests that pass in some runs and fail in others, with pass/fail counts |
+| `sota-digest` | weekly, sat | pr, 2h | toolkit repo: the week's `docs/sota/<week>.md` by the repo-local `sota-digest` skill |
+| `config-drift` | weekly, sat | pr, 1h | config keys no code reads, code flags no config sets: roadmap items only, one per key, each with a `grep` done-when |
+| `fresh-env` | weekly, sat | report, 30m | Python repo: `uv sync` in a clean env, then import each package; one line per failing import |
+| `codebase-map` | weekly, sat | pr, 1h | repo with a `docs/CODEBASE_MAP.md`: one docs-only commit when a file the map cites changed since its `commit` |
+| `dependency-update` | weekly, sat | pr, 2h | `uv` repo: `uv.lock` to the newest minor and patch versions when the suite is green; majors and red packages in the report |
+| `repo-review` | monthly | report, 1h | `/code-review high .` on the whole repo: ranked findings with failure scenarios; report only |
+| `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 | `eval-regression` | weekly, sat | pr, 30m, gpu | research repo: the canonical eval through `gpu-queue`; the follow-up compares the headline metric with the last run; a drop → roadmap item |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
@@ -55,20 +62,20 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
 | Where | Holds |
 | --- | --- |
-| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `kind`, then the task |
+| `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `after` `kind`, then the task |
 | `<repo>/.vibe-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
 | `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails`, `last-result` | epoch of the last `done`; failures in a row; the last `done:` result line, the prompt's **Last run** |
 | `~/.local/state/vibe/queue/<id>/` | the queued job (`docs/vibe-queue.md`) |
-| `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` |
+| `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` `after=` (only when set) |
 
 Rules the dispatcher keeps:
 
 - Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
-- At most `--max` 4 jobs a run, oldest `last-run` first.
+- At most `--max` 8 jobs a run, oldest `last-run` first.
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
-- A job's `timeout` over the queue's `heavy` (2h) makes it heavy: it starts only in the night window.
+- `after`: `review` (the default) queues a review before the PR opens (`docs/vibe-queue.md`). `after:` empty skips it; `sota-digest` does, a digest has no correctness to review.
 - `kind: gpu`: the job queues its run with `vibe queue gpu`; the follow-up `<id>-gpu` finishes it (`docs/vibe-queue.md`).
 
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
@@ -85,4 +92,5 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
+- `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.

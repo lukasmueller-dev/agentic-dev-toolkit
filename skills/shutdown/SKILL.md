@@ -65,5 +65,5 @@ holds: show its table and wait. If the user declines, stop there.
 ## Done
 
 Done when every row is handed off or `leave`, and the queue is filled or the
-user declined it. Report in at most 6 lines: handed off, left, jobs added
-(heavy, light), and `Decisions/risks:`.
+user declined it. Report in at most 6 lines: handed off, left, jobs added,
+and `Decisions/risks:`.

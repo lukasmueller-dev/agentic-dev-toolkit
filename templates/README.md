@@ -8,6 +8,7 @@ copy.
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
 | `SPEC.md`            | worktree root   | Short — one per big work item; its last milestone deletes or rewrites it |
+| `FEATURE.md`         | the queue's `features/<feature>.md` | Short — one per feature across repos; archived once its PRs merge |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
@@ -17,6 +18,7 @@ copy.
 | `job-pr.md`          | a job's `pr.md` (PR title + body) | Short — one per unattended job run |
 | `job-report.md`      | a job's `report.md` | Short — one per unattended job run; the morning report reads it |
 | `VIBE_JOB.md`       | `<repo>/.vibe-jobs/<job>.md` | Long — one per repo × recurring job; opts the repo in |
+| `queue-page.html`   | `~/.local/state/vibe/web/index.html` | Short — rewritten each queue runner pass |
 
 `codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
@@ -51,9 +53,11 @@ render still produces a readable file.
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
 | `<job>`       | Recurring job name (`VIBE_JOB.md`, `job-report.md`) |
-| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`; the briefing's Context column) |
+| `<feature>`   | Feature slug (`FEATURE.md` only) |
+| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`, `FEATURE.md`; the briefing's Context column) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
+| `<updated>`, `<counts>`, `<flags>`, `<jobs>`, `<briefing>`, `<config>` | Render time; the counter chips; slots and flags; the job cards; the briefing and the settings as HTML (`queue-page.html` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
@@ -77,8 +81,8 @@ tokens in.
 - `skills/project-status-scaffold/SKILL.md` — points the model at these files
 - `skills/add-roadmap-item` — renders `PROJECT_ROADMAP.md` from the template
   (via `scaffold.sh`) when the repo lacks one, before adding an item to it
-- `skills/handoff-brief/handoff.sh`, `skills/codebase-review/review.sh` — seed
-  `HANDOFF.md` onto a task branch before a new session picks it up
+- `skills/handoff-brief/handoff.sh` — seeds `HANDOFF.md` onto a task branch
+  before a new session picks it up
 - `skills/codebase-map/map.sh` — renders `codebase/CODEBASE_MAP.md` into the
   target repo's `docs/`, and never overwrites an existing one
 - `skills/research-experiment-setup/seed.sh`, `skills/research-hardware-trial/seed.sh`

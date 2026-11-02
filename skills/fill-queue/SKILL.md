@@ -1,6 +1,6 @@
 ---
 name: fill-queue
-description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, and after approval adds one headless agent job per item, each ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
+description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md, or into a feature when it spans several repos), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
 disable-model-invocation: true
 argument-hint: "[<repo>...]"
 ---
@@ -8,21 +8,22 @@ argument-hint: "[<repo>...]"
 # Fill queue
 
 Show the queue, sweep the active repos, gate and rank what can run
-unattended, get approval, add the jobs. Runner, window and layout:
+unattended, get approval, add the jobs. Runner and layout:
 `docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
 - **Never add a job without explicit approval of the list.**
-- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a new branch's `SPEC.md` and `HANDOFF.md`; the jobs do the work.
+- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a branch's `SPEC.md` and `HANDOFF.md` and a feature file; the jobs do the work.
 - **Never write a `SPEC.md` without a grilling the user took part in.**
 - **Never list an item that fails the gate.** Show it under "Rejected" with the reason.
-- **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`.
+- **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`. The jobs of one new lane share their new branch.
+- **Never add an item to a lane branch that is queued or has an open PR.** A lane closes when its last item finishes.
 
 ## Phase 0 — Queue
 
 Run `vibe queue status`. Show its header, and per repo the jobs that are
-queued or running: id, heavy or light, context.
+queued or running: id, context.
 
 ## Phase 1 — Big work
 
@@ -30,9 +31,11 @@ The user says skip → go to Phase 2.
 
 1. Ask for the user's big work items: a feature, a migration, a GPU run.
 2. Propose up to 3 more from the repos' goals, roadmaps and gaps, one line each.
-3. For each item the user picks, run the `grilling` skill with the user until every
+3. An item on 2 or more branches that merge together, most often in several repos, is a feature:
+   do `references/feature.md` steps 1–3 for it instead of steps 4 and 5.
+4. For each other item the user picks, run the `grilling` skill with the user until every
    section of `templates/SPEC.md` (toolkit) has an answer.
-4. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
+5. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
    Write `SPEC.md` from the template and `HANDOFF.md` from `templates/HANDOFF.md`;
    its next action is the first milestone with its done-when.
    Commit `docs(spec): <slug>`, push. The sweep then finds it as a handoff.
@@ -59,20 +62,25 @@ An item or handoff next action passes only when all are true:
 ## Phase 4 — Rank and plan
 
 1. Order by the repo's rank, then by order in the repo: handoffs first, then roadmap items top to bottom.
-   After 17:00, heavy jobs first: the night window opens at 18:00.
 2. Propose up to 3 new next steps from a repo's goal and roadmap gaps; mark them `new`. Each one must pass the gate.
 3. Per job: branch slug (a handoff keeps its branch), model, kind, one-line done-when, timeout,
    and the context: what the work is about in plain words — the problem, the idea — at most 25 words, no detail.
    Kind `gpu`: the job prepares the code and queues the run; a follow-up job finishes after it.
-4. Timeout: 2h, a light job. More only for a `SPEC.md` milestone, GPU prep, or work the user calls big —
-   a heavy job, which starts only in the night window.
+4. Timeout: 2h. More only for a `SPEC.md` milestone, GPU prep, or work the user calls big.
 5. Propose Opus only for a job that needs design judgment; say why.
 6. A worktree with `SPEC.md`: one job. Its task is "the first open milestone of `SPEC.md`"; the runner
    queues the next milestone when one is done.
+7. Lanes: group 2 or more related items into one lane — one branch, one PR, one review.
+   Take the items of one tag (`[health]`) or one roadmap heading. Only kind `code` with a 2h timeout; no `SPEC.md`, no GPU.
+   Give the lane a new branch slug, a one-line lane context (same rules as the context) and an item slug per item.
+   The other items stay one job each.
 
 ## Phase 5 — Approve
 
-Show one table per repo, in rank order: `# · task · context · source · kind · heavy/light · timeout · model · branch · done-when`.
+Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · feature · done-when`.
+The `lane` column holds the lane context, or `-` for a job alone; rows with the same value share one branch.
+The `feature` column holds the feature whose file (`~/.local/state/vibe/features/*.md`) lists the row's repo and branch, or `-`.
+The user moves an item in or out of a lane by changing that column.
 Below it, fold "Rejected" (item → failed rule). **Stop and wait for
 approval.** Apply every change the user asks for, then show the tables again.
 
@@ -81,14 +89,15 @@ approval.** Apply every change the user asks for, then show the tables again.
 For each approved job, in rank order, write a fresh dir (`mktemp -d`):
 
 - `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`; `effort=<level>` only when the user names one.
+  A lane item adds `lane=<lane context>` and `item=<item slug>`; every item of the lane has the lane's `branch`.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.
+  For a lane item, `<context>` is the lane context and the task is that item only.
 
-Then, outside the sandbox: `vibe queue add <dir>...` in rank order. A job the user wants now,
-whatever the window: `vibe queue add --now <dir>`.
+Then, outside the sandbox: `vibe queue add <dir>...` in rank order. A job the user wants
+before the rest: `vibe queue add --now <dir>`.
 
 ## Done
 
 Done when `vibe queue add` printed one `queued` line per approved job. Report
-in 3 lines: jobs added (heavy, light), the heavy ones waiting for the window,
-`vibe queue status`.
+in 2 lines: jobs added, lanes and features among them, `vibe queue status`.

@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-10-28 · turing_
+_Last updated: 2026-11-01 · repo-review-job_
 
 ## Goal
 
@@ -20,14 +20,24 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-02: **features across repos**: a job stays in one repo; a feature
+  file links member branches in several repos into one row, one review
+  decision and one merge batch after the human test. Design: PR body.
+- 2026-10-29: **review before the PR**: a `done` job with commits gets up to 2
+  fresh read-only review rounds (`<id>-review<n>`); the job's own session
+  fixes or rejects; the last round opens the PR with `R<n>` lines. A timeout
+  and a usage-limit retry resume the saved session. Design: PR body.
 - 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
   review comments as briefing lines; then `vibe job due`. Design: PR body.
+- 2026-10-29: **the queue has a read-only phone page**: the runner writes
+  `web/index.html` each pass, `tailscale serve` delivers it, no server process.
+  Design: PR body.
 - 2026-10-28: **the queue runs only on the server**: a client's `role` is
   `client <host>`; `vibe queue status|report` and `vibe job list` run there
   over ssh, every other `queue`/`job` command stops. Design: PR body.
 - 2026-10-28: **vibe queue replaces the shifts**: one always-on queue
-  (`vibe-queue.service`); heavy jobs (timeout > 2h) start only 18:00–07:00;
+  (`vibe-queue.service`), 4 slots, no day/night window (2026-10-29);
   `/fill-queue` and `/review-jobs` run any time, `check-in` and `shutdown`
   call them; a fresh briefing per review, no report timers. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
@@ -78,8 +88,8 @@ contract and the installer's auto-discovery rules.
   `docs/plugin.md`.
 - 2026-07-26: MCP servers are never installed; `~/.claude.json` is untouched.
   See `CLAUDE.md`.
-- 2026-07-23: `codebase-review` stages and launches one review round per
-  invocation, behind the human merge gate. PR for `align-health-skills`.
+- 2026-11-01: The repo review is the monthly report job `repo-review`
+  (`/code-review high .`); the `codebase-review` skill is gone. PR for `repo-review-job`.
 - 2026-07-22: Planned work lives in `PROJECT_ROADMAP.md`. PR for `feat-roadmap`.
 - 2026-07-21: Global memory is one portable file, `memory/GLOBAL.md`, reached
   from `claude/CLAUDE.md` by an `@` import. See `memory/README.md`.
