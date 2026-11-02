@@ -449,6 +449,7 @@ job_prepare() {
   echo "$(basename "$main")-${branch//\//-}" >"$d/name"
   echo "$WT" >"$d/worktree"
   milestones_open "$WT" >"$d/milestones"
+  feature_prompt "$d"
   if [[ -n "$(jget "$d/job" lane)" ]]; then
     # A job a usage limit stopped keeps its first start commit.
     [[ -f "$d/start" ]] || git -C "$WT" rev-parse HEAD >"$d/start"
@@ -693,7 +694,7 @@ gate_md() {
 # STATUS is the job's own status, not final yet.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title="" url lane stats
+  local d="$1" wt base branch ahead title="" url lane stats feat
   local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
@@ -716,6 +717,8 @@ job_publish() {
     stats="$(job_stats "$d")"
     printf '\n---\n_agent job %s: %s%s_\n' "$(basename "$d")" "$(jstate "$d" result)" "${stats:+ · $stats}" >>"$d/pr-body.md"
   fi
+  feat="$(feature_of "$(jget "$d/job" repo)" "$branch")"
+  if [[ -n "$feat" ]]; then feature_body "$d" "$feat"; fi
   url="$( (cd "$wt" && gh pr list --head "$branch" --state open --json url -q '.[0].url') 2>/dev/null || true)"
   if [[ -n "$url" ]]; then
     (cd "$wt" && gh api --method PATCH "repos/{owner}/{repo}/pulls/${url##*/}" -F "body=@$d/pr-body.md" "${tflag[@]+"${tflag[@]}"}") >/dev/null 2>&1 || true
@@ -730,6 +733,7 @@ job_publish() {
     (cd "$wt" && gh api --method POST "repos/{owner}/{repo}/issues/${url##*/}/labels" -f 'labels[]=agent') >/dev/null 2>&1 || true
   fi
   echo "${url:-PR not created}" >"$d/pr"
+  if [[ -n "$feat" && "$url" == http* ]]; then feature_set_pr "$feat" "$(jget "$d/job" repo)" "$branch" "$url"; fi
 }
 
 # job_chain JOB — a SPEC.md job that ticked a milestone and left one open
@@ -1770,6 +1774,46 @@ feature_set_pr() {
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
     { print }' "$1" >"$1.tmp" && mv -f "$1.tmp" "$1"
+}
+
+# feature_prompt JOB — a member job's prompt.md ends with the feature block, once.
+feature_prompt() {
+  local d="$1" f
+  f="$(feature_of "$(jget "$d/job" repo)" "$(jget "$d/job" branch)")"
+  [[ -n "$f" ]] || return 0
+  if grep -q '^## Feature$' "$d/prompt.md"; then return 0; fi
+  {
+    printf '\n## Feature\n\n'
+    echo "This branch is one member of the feature \`$(basename "$f" .md)\`: $(md_line "$f" Context)"
+    echo "Read the feature file first: $f. It holds the goal, the decisions and the contract."
+    echo "- Never change a contract row, in the code or in the file. A change needs the user."
+    echo "- The task needs a contract change: write the result \`blocked: contract <interface>: <the change you propose>\` and stop."
+  } >>"$d/prompt.md"
+}
+
+# feature_body JOB FILE — JOB/pr-body.md gets the `**Feature:**` line below its TL;DR (siblings as
+# repo#pr, else repo:branch) and the feature's decisions and contract in a <details> above its footer.
+feature_body() {
+  local d="$1" f="$2" b="$1/pr-body.md" r m p repo branch name sib="" det
+  repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)" name="$(basename "$f" .md)"
+  while IFS=$'\t' read -r r m p; do
+    if [[ "$r" == "${repo%/}" && "$m" == "$branch" ]]; then continue; fi
+    if [[ "$p" == http* ]]; then sib+="${sib:+, }[${r##*/}#${p##*/}]($p)"; else sib+="${sib:+, }${r##*/}:$m"; fi
+  done < <(feature_members "$f")
+  det="$(
+    printf '<details>\n<summary>Feature %s: decisions and contract</summary>\n\n' "$name"
+    md_section "$f" Decisions
+    echo
+    md_section "$f" Contract
+    printf '\n</details>\n'
+  )"
+  FLINE="**Feature:** $name — merges together with $sib" FDET="$det" awk '
+    FNR == NR { if ($0 == "---") n = FNR; if (/^\*\*Decisions\/risks:\*\*/) r = 1; next }
+    !r && !t && NF { print ENVIRON["FLINE"]; print ""; t = 1 }
+    FNR == n { print ENVIRON["FDET"]; print "" }
+    { print }
+    r && !t && /^\*\*Decisions\/risks:\*\*/ { print ENVIRON["FLINE"]; t = 1 }
+    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$b.tmp" && mv -f "$b.tmp" "$b"
 }
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.

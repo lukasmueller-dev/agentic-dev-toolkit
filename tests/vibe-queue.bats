@@ -170,6 +170,68 @@ mkfeature() {
 }
 # addfeature NAME MEMBER... — mkfeature, then `vibe feature add`.
 addfeature() { "$VIBE" feature add "$(mkfeature "$@")" >/dev/null; }
+# putfeature NAME MEMBER... — mkfeature, straight into the features dir: no branch checks.
+putfeature() {
+  mkdir -p "$XDG_STATE_HOME/vibe/features"
+  cp "$(mkfeature "$@")" "$XDG_STATE_HOME/vibe/features/$1.md"
+}
+
+@test "feature: a member job's prompt ends with the feature block, once along a SPEC chain; another branch gets none" {
+  local r w
+  r="$(make_repo bridge)"
+  "$VIBE" start -C "$r" sticks >/dev/null 2>&1
+  w="$r/.claude/worktrees/sticks"
+  printf '# Spec\n\n- [ ] one\n- [ ] two\n' >"$w/SPEC.md"
+  git -C "$w" add SPEC.md
+  git -C "$w" commit -q -m "docs(spec): x"
+  putfeature teleop "$r sticks" "$BATS_TEST_TMPDIR/cmdr gamepad"
+  mkjob 01-a "$r" sticks milestone
+  mkjob 02-b "$r" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  grep -qx '## Feature' "$Q/01-a/prompt.md"
+  grep -qF 'member of the feature `teleop`: The gamepad drives the robot.' "$Q/01-a/prompt.md"
+  grep -qF "Read the feature file first: $XDG_STATE_HOME/vibe/features/teleop.md." "$Q/01-a/prompt.md"
+  grep -qF 'blocked: contract <interface>: <the change you propose>' "$Q/01-a/prompt.md"
+  local next
+  next="$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-bridge-sticks')"
+  [ -n "$next" ]
+  [ "$(grep -c '^## Feature$' "$next/prompt.md")" = 1 ]
+  run grep -c '^## Feature$' "$Q/02-b/prompt.md"
+  [ "$output" = 0 ]
+}
+
+@test "feature: a member PR body has the Feature line below its TL;DR and the decisions and contract above its footer; the file gets the PR" {
+  local r F="$XDG_STATE_HOME/vibe/features"
+  r="$(make_repo bridge)"
+  putfeature teleop "$r sticks" "$BATS_TEST_TMPDIR/cmdr gamepad https://example.com/pull/24" "$BATS_TEST_TMPDIR/vla node"
+  mkjob 01-a "$r" sticks item "lane=Sticks in the sim" item=alpha
+  mkjob 02-b "$r" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  run cat "$Q/01-a/pr-body.md"
+  [[ "$output" == *$'**Decisions/risks:** none\n**Feature:** teleop — merges together with [cmdr#24](https://example.com/pull/24), vla:node\n'* ]] || false
+  [[ "$output" == *$'<summary>Feature teleop: decisions and contract</summary>\n\n- Sticks as [lx, ly, rx, ry]: one order in every repo.\n\n| Interface | Owner | Copies |'* ]] || false
+  [[ "$output" == *$'| /robot_sim/sticks | bridge | bridge:node.py, cmdr:ros.py |\n\n</details>\n\n---\n_agent lane: 1/1 done_'* ]] || false
+  [ "$(awk '/^<details>$/ { exit } { n++ } END { print n }' "$Q/01-a/pr-body.md")" -le 12 ]
+  grep -qx -- "- $r sticks https://example.com/pull/1" "$F/teleop.md"
+  grep -qx -- "- $BATS_TEST_TMPDIR/vla node" "$F/teleop.md"
+  run grep -c 'Feature' "$Q/02-b/pr-body.md"
+  [ "$output" = 0 ]
+}
+
+@test "feature: a body without a Decisions/risks line gets the Feature line on top" {
+  local r
+  r="$(make_repo bridge)"
+  putfeature teleop "$r sticks" "$BATS_TEST_TMPDIR/cmdr gamepad"
+  mkjob 01-a "$r" sticks ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(grep -m 1 . "$Q/01-a/pr-body.md")" = "**Feature:** teleop — merges together with cmdr:gamepad" ]
+  [ "$(grep -A 2 '^\*\*Feature:\*\*' "$Q/01-a/pr-body.md" | sed -n 3p)" = "**Context:** The repo lacks work.txt." ]
+  grep -qx '</details>' "$Q/01-a/pr-body.md"
+}
 
 @test "feature add: copies the file, fills in the open PRs, refuses a second add" {
   local r1 r2 f F="$XDG_STATE_HOME/vibe/features"
