@@ -130,6 +130,16 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
   .chip:nth-child(3) { border-left: 0; }
   .chip:nth-child(n+3) { border-top: 1px solid var(--border); }
 }
+/* Desk screen: 15% larger, Queue and Briefing side by side; Config stays a tab. 1390px × 1.15 ≈ 1600px. */
+@media (min-width: 1024px) {
+  body { zoom: 1.15; max-width: 1390px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bar, #config { grid-column: 1 / -1; }
+  nav .b { display: none; }
+  #briefing, body:has(#briefing:target) #queue { display: block; }
+  #briefing { border-left: 1px solid var(--border); }
+  body:has(#config:target) #briefing { display: none; }
+  body:has(#briefing:target) nav .q { color: var(--ink); border-bottom-color: var(--red); }
+}
 </style>
 </head>
 <body>
