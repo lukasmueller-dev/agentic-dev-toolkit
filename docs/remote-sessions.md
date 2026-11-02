@@ -86,3 +86,39 @@ Fix: `vibe update-toolkit`.
   set `Environment=PATH=…` in `systemctl --user edit claude-rc@<repo>`.
 - `git switch`, `git worktree add` or `git push` refused in a session → the
   sandbox; approve the unsandboxed retry in the app.
+
+## Docker gate in sessions
+
+A session runs a repo's Docker test gate (example: humanoid_bridge
+`tools/test.sh --docker`) without approval. Only the gate command leaves the
+sandbox; the rootful daemon stays.
+
+### Requirements
+
+- `docker` on `PATH`, and your user in the `docker` group.
+- The gate passes on the host.
+
+### 1. Commit the repo setting
+
+The sandbox denies agent writes to `<repo>/.claude/settings.json`, so you write
+it. Swap in the repo's gate command.
+
+```json
+{"permissions": {"allow": ["Bash(tools/test.sh --docker)", "Bash(tools/test.sh --docker --rebuild)"]},
+ "sandbox": {"excludedCommands": ["tools/test.sh --docker", "tools/test.sh --docker --rebuild"]}}
+```
+
+### 2. Verify
+
+In a new session, the agent runs `tools/test.sh --docker` with no prompt; it
+exits 0.
+
+### What breaks it
+
+- `cd`, a redirect, `$(...)` or a `./` prefix changes the call text → the call
+  stays sandboxed → `permission denied` on `/var/run/docker.sock`.
+- `sandbox.network.allowUnixSockets` is macOS-only; Linux ignores it (the
+  seccomp filter blocks `socket(AF_UNIX)`). `allowAllUnixSockets` opens D-Bus
+  (`systemd-run --user` → unsandboxed command). Use neither.
+- Accepted risk: an agent can edit the excluded script or the Dockerfile;
+  Docker then runs that code as the user, outside the sandbox.
