@@ -8,6 +8,7 @@ copy.
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
 | `SPEC.md`            | worktree root   | Short — one per big work item; its last milestone deletes or rewrites it |
+| `FEATURE.md`         | the queue's `features/<feature>.md` | Short — one per feature across repos; archived once its PRs merge |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |
 | `skill-lint.conf.example` | `<repo>/.skill-lint.conf` | Config, not a document; copied per repo |
@@ -52,7 +53,8 @@ render still produces a readable file.
 | `<commit>`    | The revision the document describes, short SHA, suffixed `-dirty` when the tree had uncommitted changes (`codebase/`, `research/` only) |
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
 | `<job>`       | Recurring job name (`VIBE_JOB.md`, `job-report.md`) |
-| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`; the briefing's Context column) |
+| `<feature>`   | Feature slug (`FEATURE.md` only) |
+| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`, `FEATURE.md`; the briefing's Context column) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
 | `<updated>`, `<counts>`, `<flags>`, `<jobs>`, `<briefing>`, `<config>` | Render time; the counter chips; slots and flags; the job cards; the briefing and the settings as HTML (`queue-page.html` only) |

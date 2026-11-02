@@ -6,9 +6,9 @@ and refill it whenever you like.
 
 | Skill | Does |
 | --- | --- |
-| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md`; sweep, gate, lanes, your approval; `vibe queue add` |
-| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, or a `SPEC.md` branch for big work; your approval; `vibe queue add` |
-| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
+| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, or a feature; your approval; `vibe queue add` |
+| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
 | 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |
@@ -65,6 +65,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
+A feature card is a stack too: it unpacks into a lane, job or `no job` card per member.
 Serve it on the tailnet once:
 
 ```bash
@@ -113,6 +114,26 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 - The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
 - `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you.
 
+## Features
+
+Branches in several repos that merge together run as one feature: one file, one row, one review decision, one merge batch.
+A job still changes only its own repo. `/fill-queue` and `/enqueue` make features: [`references/feature.md`](../skills/fill-queue/references/feature.md).
+
+```bash
+vibe feature add <dir>/<slug>.md   # checks each member branch, fills in the open PRs
+vibe feature ready <slug>          # the human test passed: the pill shows merge
+vibe feature archive <slug>        # all member PRs merged
+```
+
+- A member is a `- <repo> <branch>` line under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
+- A member is one job, a lane, a `SPEC.md` chain, or a PR with no job. Its `SPEC.md` holds only its milestones and a pointer to the feature file.
+- At job start the runner adds a `## Feature` block to a member's prompt, once: the file path and the contract rule. A contract change ends the job `blocked: contract …`.
+- At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
+- Status, the briefing and the page show a `Features` group first. Member jobs leave their repo groups; in the briefing a member job keeps its row only when it needs you.
+- Count: done members / members. Done: a PR, and no job queued, running or in need of you.
+- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
+- No cross-repo gate: the human test in the file is the integration check.
+
 ## Layout
 
 `~/.local/state/vibe/`
@@ -129,7 +150,8 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
-| `archive/<YYYY-MM>/<id>/` | reviewed jobs (`vibe queue archive`) |
+| `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
+| `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
 | `web/index.html` | the phone page, rewritten each runner pass (`templates/queue-page.html`) |
 | `paused` | `vibe queue pause` |
