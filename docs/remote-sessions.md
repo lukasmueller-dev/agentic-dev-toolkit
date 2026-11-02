@@ -89,9 +89,10 @@ Fix: `vibe update-toolkit`.
 
 ## Docker gate in sessions
 
-A session runs a repo's Docker test gate (example: humanoid_bridge
-`tools/test.sh --docker`) without approval. Only the gate command leaves the
-sandbox; the rootful daemon stays.
+An interactive session (app or VS Code) runs a repo's Docker test gate
+(example: humanoid_bridge `tools/test.sh --docker`) without approval. Only the
+gate command leaves the sandbox; the rootful daemon stays. Vibe jobs: last
+bullet of "What breaks it".
 
 ### Requirements
 
@@ -122,3 +123,7 @@ exits 0.
   (`systemd-run --user` → unsandboxed command). Use neither.
 - Accepted risk: an agent can edit the excluded script or the Dockerfile;
   Docker then runs that code as the user, outside the sandbox.
+- A vibe job ignores this setting (`--settings` with `allowUnsandboxedCommands`
+  false makes the sandbox admin-required) and has no unsandboxed retry → commit
+  `.vibe-jobs/gate`; the runner runs it unsandboxed after the agent
+  ([`docs/vibe-queue.md`](vibe-queue.md)).
