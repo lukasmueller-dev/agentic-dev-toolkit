@@ -166,25 +166,32 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 <config>
 </section>
 <script>
-/* Every 10 s: fetch this page and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale. */
+/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
-  let last = '', seen = Date.now();
+  const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
+  const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
+  let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false;
+  setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
   setInterval(async () => {
+    if (busy) return;
+    busy = true;
     try {
-      const r = await fetch(location.href, { cache: 'no-store' }), t = await r.text();
+      const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
       if (r.ok && t !== last) {
-        const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = $('.filter', n);
-        const open = [...document.querySelectorAll('#queue details[open]')].map(key);
+        const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = tail($('.filter', n)), h = html(g);
         for (const s of ['.updated', '.chips', '.flags', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
-        while (f.nextSibling) f.nextSibling.remove();
-        while (g.nextSibling) f.parentNode.append(g.nextSibling);
-        document.querySelectorAll('#queue details').forEach(d => { d.open = open.includes(key(d)); });
+        if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
+          const open = [...document.querySelectorAll('#queue details[open]')].map(key);
+          tail(f).forEach(x => x.remove());
+          f.after(...g);
+          document.querySelectorAll('#queue details').forEach(d => { d.open = open.includes(key(d)); });
+          jobs = h;
+        }
         last = t; seen = Date.now();
       }
-    } catch (e) { /* keep the old content; the next poll tries again */ }
-    $('.updated').classList.toggle('stale', Date.now() - seen > 120000);
+    } catch (e) { /* keep the old content; the next poll tries again */ } finally { busy = false; }
   }, 10000);
 })();
 </script>
