@@ -33,7 +33,4 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
-- [ ] **Queue page fits a MacBook screen** — at 1024 px and wider, Queue
-      and Briefing side by side, 15% larger, max width about 1600 px.
-      Done when the 390×844 screenshots before and after are identical
-      (`cmp`) and the 1512×900 ones show both columns.
+
