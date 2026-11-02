@@ -448,6 +448,8 @@ complete_vibe() {
   [ "$(complete_vibe queue add --n)" = --now ]
   [ "$(complete_vibe queue run --c)" = --claude ]
   [ "$(complete_vibe job l)" = list ]
+  [ "$(complete_vibe f)" = feature ]
+  [ "$(complete_vibe feature r)" = ready ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task

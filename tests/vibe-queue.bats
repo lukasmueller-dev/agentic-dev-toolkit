@@ -119,7 +119,12 @@ EOF
 echo "\$*" >>"$STUBS/gh.log"
 case "\$1 \$2" in
   "pr create") echo "https://example.com/pull/1" ;;
-  "pr list") [ ! -f "$STUBS/pr-exists" ] || echo "https://example.com/pull/9" ;;
+  "pr list")
+    case "\$*" in
+      *headRefName*) cat "$STUBS/prs" 2>/dev/null ;;
+      *) [ ! -f "$STUBS/pr-exists" ] || echo "https://example.com/pull/9" ;;
+    esac
+    ;;
 esac
 EOF
   printf '#!/bin/sh\n' >"$STUBS/code"
@@ -150,6 +155,90 @@ mkjob() {
 # slots N — the queue runs N agents at once; the review step stays off.
 slots() { printf 'after=\nslots=%s\n' "$1" >"$CONF"; }
 drain() { run "$VIBE" queue run --claude --drain; }
+
+# mkfeature NAME MEMBER... — the feature file $BATS_TEST_TMPDIR/NAME.md; MEMBER: "<repo> <branch> [<pr>]".
+mkfeature() {
+  local name="$1" m
+  shift
+  {
+    printf '# Feature — %s\n\n**Context:** The gamepad drives the robot.\n**Human test:** drive it on the gantry\n\n## Members\n\n_One line per member._\n\n' "$name"
+    for m in "$@"; do echo "- $m"; done
+    printf '\n## Decisions\n\n- Sticks as [lx, ly, rx, ry]: one order in every repo.\n\n'
+    printf '## Contract\n\n| Interface | Owner | Copies |\n| --- | --- | --- |\n| /robot_sim/sticks | bridge | bridge:node.py, cmdr:ros.py |\n'
+  } >"$BATS_TEST_TMPDIR/$name.md"
+  echo "$BATS_TEST_TMPDIR/$name.md"
+}
+# addfeature NAME MEMBER... — mkfeature, then `vibe feature add`.
+addfeature() { "$VIBE" feature add "$(mkfeature "$@")" >/dev/null; }
+
+@test "feature add: copies the file, fills in the open PRs, refuses a second add" {
+  local r1 r2 f F="$XDG_STATE_HOME/vibe/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" push -q origin main:gamepad
+  git -C "$r2" fetch -q origin
+  printf 'gamepad\thttps://example.com/pull/24\n' >"$STUBS/prs"
+  f="$(mkfeature teleop "$r1 sticks" "$r2 gamepad")"
+  run "$VIBE" feature add "$f"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cmdr · gamepad · https://example.com/pull/24"* ]] || false
+  [[ "$output" == *"feature teleop: 2 members → $F/teleop.md" ]] || false
+  grep -qx -- "- $r1 sticks" "$F/teleop.md"
+  grep -qx -- "- $r2 gamepad https://example.com/pull/24" "$F/teleop.md"
+  grep -qx '| /robot_sim/sticks | bridge | bridge:node.py, cmdr:ros.py |' "$F/teleop.md"
+  [ -f "$f" ]
+  run "$VIBE" feature add "$f"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"feature 'teleop' exists"* ]] || false
+}
+
+@test "feature add: refuses a missing branch, one member, a member of another feature, a twice-listed member, a name that is no slug" {
+  local r1 r2 F="$XDG_STATE_HOME/vibe/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  run "$VIBE" feature add "$(mkfeature nope "$r1 sticks" "$r2 missing")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no branch 'missing' in $r2"* ]] || false
+  run "$VIBE" feature add "$(mkfeature solo "$r1 sticks")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"2 or more"* ]] || false
+  run "$VIBE" feature add "$(mkfeature twice "$r1 sticks" "$r1/ sticks")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"listed twice"* ]] || false
+  addfeature teleop "$r1 sticks" "$r2 gamepad"
+  run "$VIBE" feature add "$(mkfeature other "$r1 main" "$r2/ gamepad")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cmdr gamepad is a member of feature 'teleop'"* ]] || false
+  cp "$(mkfeature x "$r1 main" "$r2 main")" "$BATS_TEST_TMPDIR/Tele Op.md"
+  run "$VIBE" feature add "$BATS_TEST_TMPDIR/Tele Op.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"is not a slug"* ]] || false
+  [ "$(find "$F" -type f | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {
+  local r1 r2 F="$XDG_STATE_HOME/vibe/features" A
+  A="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  addfeature teleop "$r1 sticks" "$r2 gamepad"
+  run "$VIBE" feature ready nope
+  [ "$status" -ne 0 ]
+  run "$VIBE" feature ready teleop
+  [ "$status" -eq 0 ]
+  [ -s "$F/teleop.ready" ]
+  run "$VIBE" feature archive teleop
+  [ "$status" -eq 0 ]
+  [ -f "$A/teleop.md" ]
+  [ -f "$A/teleop.ready" ]
+  [ ! -e "$F/teleop.md" ]
+  echo 'client nohost' >"$HOME/.config/vibe/role"
+  run "$VIBE" feature ready teleop
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"the queue runs on the server"* ]] || false
+}
 
 @test "run: jobs in id order, commits pushed, draft PR from pr.md" {
   local r

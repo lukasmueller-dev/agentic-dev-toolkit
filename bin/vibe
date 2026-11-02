@@ -15,6 +15,9 @@
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
+#   vibe feature add <file>         register a feature: branches in several repos that merge together
+#   vibe feature ready <slug>       the human test passed: the batch waits for the merges
+#   vibe feature archive <slug>...  move merged features out of the queue
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -43,7 +46,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,24s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,27s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -1730,6 +1733,107 @@ cmd_queue() {
   esac
 }
 
+# --- feature: branches in several repos that merge together (docs/vibe-queue.md) ---
+
+FROOT="$QROOT/features"
+
+# feature_members FILE — `repo<TAB>branch<TAB>pr` per `- <repo> <branch> [<pr>]` line under `## Members`.
+feature_members() {
+  awk '/^## / { m = ($0 == "## Members"); next }
+    m && /^- / { sub(/\/$/, "", $2); print $2 "\t" $3 "\t" $4 }' "$1" 2>/dev/null || true
+}
+
+# feature_files — the registered feature files, one per line.
+feature_files() {
+  local f
+  for f in "$FROOT"/*.md; do
+    if [[ -f "$f" ]]; then echo "$f"; fi
+  done
+}
+
+# feature_of REPO BRANCH — the file of the feature with REPO's BRANCH as a member; empty when none.
+feature_of() {
+  local f r b
+  while IFS= read -r f; do
+    while IFS=$'\t' read -r r b _; do
+      if [[ "$r" == "${1%/}" && "$b" == "$2" ]]; then
+        echo "$f"
+        return 0
+      fi
+    done < <(feature_members "$f")
+  done < <(feature_files)
+}
+
+# feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
+feature_set_pr() {
+  awk -v r="${2%/}" -v b="$3" -v u="$4" '
+    /^## / { m = ($0 == "## Members") }
+    m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
+    { print }' "$1" >"$1.tmp" && mv -f "$1.tmp" "$1"
+}
+
+# vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
+cmd_feature_add() {
+  local src="${1:-}" name dst r b p f n=0 seen=$'\n'
+  [[ $# -eq 1 && -f "$src" ]] || die "usage: vibe feature add <file>"
+  name="$(basename "$src" .md)"
+  [[ -n "$name" && "$(slug "$name")" == "$name" ]] || die "'$name' is not a slug — name the file <slug>.md"
+  dst="$FROOT/$name.md"
+  [[ ! -e "$dst" ]] || die "feature '$name' exists: $dst"
+  while IFS=$'\t' read -r r b _; do
+    n=$((n + 1))
+    [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
+    seen+="$r#$b"$'\n'
+    git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
+    git -C "$r" rev-parse -q --verify "refs/heads/$b" >/dev/null ||
+      git -C "$r" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null || die "no branch '$b' in $r"
+    f="$(feature_of "$r" "$b")"
+    [[ -z "$f" ]] || die "${r##*/} $b is a member of feature '$(basename "$f" .md)'"
+  done < <(feature_members "$src")
+  ((n >= 2)) || die "a feature needs 2 or more '- <repo> <branch>' lines under ## Members"
+  mkdir -p "$FROOT"
+  cp "$src" "$dst.tmp"
+  while IFS=$'\t' read -r r b p; do
+    if [[ -z "$p" ]]; then p="$(pr_of "$(open_prs "$r")" "$b")"; fi
+    if [[ -n "$p" ]]; then feature_set_pr "$dst.tmp" "$r" "$b" "$p"; fi
+    echo "  ${r##*/} · $b${p:+ · $p}"
+  done < <(feature_members "$src")
+  mv "$dst.tmp" "$dst"
+  echo "feature $name: $n members → $dst"
+}
+
+# vibe feature ready SLUG — the human test passed: the card shows `merge`.
+cmd_feature_ready() {
+  [[ $# -eq 1 ]] || die "usage: vibe feature ready <slug>"
+  [[ -f "$FROOT/$1.md" ]] || die "no feature '$1' in $FROOT"
+  date '+%F %T' >"$FROOT/$1.ready"
+  echo "ready $1: the batch waits for the merges"
+}
+
+# vibe feature archive SLUG... — move features to archive/<YYYY-MM>/features/.
+cmd_feature_archive() {
+  local a f
+  (($#)) || die "usage: vibe feature archive <slug>..."
+  a="$QROOT/archive/$(date +%Y-%m)/features"
+  for f in "$@"; do
+    [[ -f "$FROOT/$f.md" ]] || die "no feature '$f' in $FROOT"
+    mkdir -p "$a"
+    mv "$FROOT/$f.md" "$a/"
+    if [[ -f "$FROOT/$f.ready" ]]; then mv "$FROOT/$f.ready" "$a/"; fi
+    echo "archived feature $f"
+  done
+}
+
+cmd_feature() {
+  role_gate feature "$@"
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    add | ready | archive) "cmd_feature_$sub" "$@" ;;
+    *) die "usage: vibe feature add|ready|archive — see vibe --help" ;;
+  esac
+}
+
 # --- job: recurring jobs, added to the queue by the 01:00 timer (docs/vibe-jobs.md)
 
 JOBS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/vibe/jobs"
@@ -2169,6 +2273,10 @@ case "${1:-}" in
   job)
     shift
     cmd_job "$@"
+    ;;
+  feature)
+    shift
+    cmd_feature "$@"
     ;;
   update-toolkit)
     shift
