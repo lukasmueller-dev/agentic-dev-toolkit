@@ -19,6 +19,13 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
+- [ ] **Docker gate in sandboxed sessions** — document how a session runs a
+      repo's Docker gate (`tools/test.sh --docker`) without approval: a
+      `docs/remote-sessions.md` recipe and one sandbox-trap line in
+      `claude/CLAUDE.md`. Done when `grep -n excludedCommands
+      docs/remote-sessions.md` and `grep -n docker.sock claude/CLAUDE.md`
+      both match and lint and `bats tests/` pass.
+
 ### Recurring jobs (design: PRs #99–#102, `docs/vibe-jobs.md`)
 
 - [ ] **Kind `gpu` for recurring jobs + catalogue job `eval-regression`** —
