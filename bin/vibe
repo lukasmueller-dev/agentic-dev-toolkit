@@ -1311,48 +1311,69 @@ short_id() {
   echo "$id"
 }
 
-# queue_jobs PRINTER — `PRINTER repo NAME` per repo, then per job
-# `PRINTER job NAME STATUS TEXT PR DIR`, or per branch with 2+ jobs (group_of)
-# `PRINTER lane BRANCH STATUS PROGRESS NEXT PR CONTEXT DIR ITEMS ALL`, then `PRINTER end`.
-# ITEMS: a `NAME STATUS NOTE` line per lane job that needs you; DIR: its running job.
-# ALL: the lane's job directories, one per line.
+# queue_jobs PRINTER — the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
+# PROGRESS CONTEXT ITEMS MEMBERS` per feature, `PRINTER end`), then per repo with a job outside every
+# feature `PRINTER repo NAME`, a card per job or branch (branch_card), `PRINTER end`.
+# ITEMS, MEMBERS: feature_row's F_ITEMS and F_MEMBERS.
 queue_jobs() {
-  local repo d j st b seen run you wait items dir all
+  local repo d b f seen head
+  feature_keys
+  if [[ -n "$(feature_files)" ]]; then
+    "$1" repo Features
+    while IFS= read -r f; do
+      feature_row "$f"
+      "$1" feature "$(basename "$f" .md)" "$F_PILL" "$F_PROGRESS" "$(md_line "$f" Context)" "${F_ITEMS%$'\n'}" "${F_MEMBERS%$'\n'}"
+    done < <(feature_files)
+    "$1" end
+  fi
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
-    "$1" repo "${repo##*/}"
-    seen=$'\n'
+    seen=$'\n' head=0
     for d in "$QDIR"/*/; do
       d="${d%/}"
       [[ -f "$d/job" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
       b="$(jget "$d/job" branch)"
       [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
-      group_of "$d"
-      if ((${#GROUP[@]} > 1)); then
-        seen+="$b"$'\n'
-        run=0 you=0 wait=0 items="" dir="" all=""
-        for j in "${GROUP[@]}"; do
-          st="$(jstate "$j" status)"
-          [[ ! -f "$j/held" ]] || st="held"
-          all+="$j"$'\n'
-          case "$st" in
-            running | gpu) run=1 dir="$j" ;;
-            "" | queued) wait=1 ;;
-            held | blocked | failed | timeout | skipped)
-              you=1
-              items+="$(printf '%s  %-8s %s%s' "$(short_id "$j" "$repo")" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")")"$'\n'
-              ;;
-          esac
-        done
-        st="done"
-        if ((run)); then st=running; elif ((you)); then st=blocked; elif ((wait)); then st=queued; fi
-        "$1" lane "$b" "$st" "$G_PROGRESS" "$G_NEXT" "$G_PR" "$G_CTX" "$dir" "${items%$'\n'}" "${all%$'\n'}"
-        continue
+      if is_member "$d"; then continue; fi
+      if ((!head)); then
+        "$1" repo "${repo##*/}"
+        head=1
       fi
-      job_card "$1" "$d" "$(short_id "$d" "$repo")"
+      branch_card "$1" "$d" "$(short_id "$d" "$repo")" "$b"
+      if ((${#GROUP[@]} > 1)); then seen+="$b"$'\n'; fi
     done
-    "$1" end
+    if ((head)); then "$1" end; fi
   done < <(queue_repos)
+}
+
+# branch_card PRINTER JOB JOBNAME LANENAME — JOB alone on its branch: job_card as JOBNAME. A branch
+# with 2+ jobs (group_of): `PRINTER lane LANENAME STATUS PROGRESS NEXT PR CONTEXT DIR ITEMS ALL`.
+# ITEMS: a `NAME STATUS NOTE` line per lane job that needs you; DIR: its running job.
+# ALL: the lane's job directories, one per line.
+branch_card() {
+  local j st run=0 you=0 wait=0 items="" dir="" all="" repo
+  group_of "$2"
+  if ((${#GROUP[@]} < 2)); then
+    job_card "$1" "$2" "$3"
+    return 0
+  fi
+  repo="$(jget "$2/job" repo)"
+  for j in "${GROUP[@]}"; do
+    st="$(jstate "$j" status)"
+    [[ ! -f "$j/held" ]] || st="held"
+    all+="$j"$'\n'
+    case "$st" in
+      running | gpu) run=1 dir="$j" ;;
+      "" | queued) wait=1 ;;
+      held | blocked | failed | timeout | skipped)
+        you=1
+        items+="$(printf '%s  %-8s %s%s' "$(short_id "$j" "$repo")" "$st" "$(jstate "$j" note)" "$(side_suffix "$j")")"$'\n'
+        ;;
+    esac
+  done
+  st="done"
+  if ((run)); then st=running; elif ((you)); then st=blocked; elif ((wait)); then st=queued; fi
+  "$1" lane "$4" "$st" "$G_PROGRESS" "$G_NEXT" "$G_PR" "$G_CTX" "$dir" "${items%$'\n'}" "${all%$'\n'}"
 }
 
 # job_card PRINTER JOB NAME — `PRINTER job NAME STATUS TEXT PR JOB`; TEXT: the context, the note once final.
@@ -1364,8 +1385,9 @@ job_card() {
   "$1" job "$3" "${st:-queued}" "$txt$(side_suffix "$2")" "$(jstate "$2" pr)" "$2"
 }
 
-# status_line repo|job|lane|end … — queue_jobs for a narrow terminal: name and status, text below.
+# status_line repo|feature|job|lane|end … — queue_jobs for a narrow terminal: name and status, text below.
 status_line() {
+  local r b p ms note
   case "$1" in
     repo) printf '\n%s\n' "$2" ;;
     job)
@@ -1375,6 +1397,13 @@ status_line() {
     lane)
       printf '  %s · %s · %s%s\n    %s\n' "$2" "$4" "$5" "${6:+ · $6}" "$7"
       if [[ -n "$9" ]]; then printf '%s\n' "$9" | sed 's/^/    /'; fi
+      ;;
+    feature)
+      printf '  %s · %s · %s\n' "$2" "$4" "$3"
+      if [[ -n "$5" ]]; then printf '    %s\n' "$5"; fi
+      while IFS='|' read -r r b p ms note; do
+        if [[ -n "$r" ]]; then printf '    %s · %s  %s%s\n' "${r##*/}" "$b" "$ms" "${note:+  $note}"; fi
+      done <<<"$7"
       ;;
   esac
 }
@@ -1397,17 +1426,25 @@ job_steps() {
     | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
 }
 
-# status_card repo|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
-# a lane unpacks into a job card per job.
+# status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
+# a lane unpacks into a job card per job, a feature into a card per member.
 status_card() {
-  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls=""
+  local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
+  local r b p ms
   case "$1" in
     repo) printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")" ;;
     end) echo '</div>' ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
     lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" cls=" lane" ;;
+    feature) pill="$3" txt="$5" pr="" dir="" items="$6" cls=" lane feature" name="$2 · $4" ;;
   esac
-  if [[ "$1" != job && "$1" != lane ]]; then return 0; fi
+  if [[ "$1" != job && "$1" != lane && "$1" != feature ]]; then return 0; fi
+  # A feature or member state takes the look of a job status.
+  case "$st" in
+    "needs you" | "no PR") st=blocked ;;
+    "your test") st=held ;;
+    merge | "no job") st="done" ;;
+  esac
   case "$pr" in
     http*) link=" <a href=\"$(esc "$pr")\">PR</a>" ;;
     ?*) txt="$txt $pr" ;;
@@ -1427,8 +1464,20 @@ status_card() {
     while IFS= read -r j; do list+="$(job_card status_card "$j" "$(job_item "$j")")"; done <<<"$all"
     details+="<details class=\"stack\"><summary>${pill#*/} jobs</summary>$list</details>"
   fi
+  if [[ "$1" == feature ]]; then
+    while IFS='|' read -r r b p ms _; do
+      [[ -n "$r" ]] || continue
+      j="$(branch_jobs "$r" "$b" | awk 'NR == 1')"
+      if [[ -n "$j" ]]; then
+        list+="$(branch_card status_card "$j" "${r##*/} · $b" "${r##*/} · $b")"
+      else
+        list+="$(status_card job "${r##*/} · $b" "$ms" "" "$p" "")"
+      fi
+    done <<<"$7"
+    details+="<details class=\"stack\"><summary>${4#*/} branches</summary>$list</details>"
+  fi
   printf '<div class="job%s s-%s"><div class="top"><b>%s</b><span class="pill">%s</span></div><p>%s%s</p>%s%s</div>\n' \
-    "$cls" "$(esc "$3")" "$(esc "$2")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
+    "$cls" "$(esc "$st")" "$(esc "$name")" "$(esc "$pill")" "$(esc "$txt")" "$link" "$extra" "$details"
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.
@@ -1542,6 +1591,8 @@ report_rows() {
     job_final "$d" || continue
     cls="$(jstate "$d" status)"
     if [[ "$cls" == "done" && "$(jstate "$d" gate)" =~ ^[1-9] ]]; then cls=gate; fi
+    # A done member job is in its feature's row.
+    if [[ "$cls" == "done" ]] && is_member "$d"; then continue; fi
     group_of "$d"
     if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then
       case "$G_PR" in http*) cls="pr" ;; esac
@@ -1567,8 +1618,26 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", then per
-# repo ranked tables (needs a human, PRs to read, the rest), then the next
+# feature_md — the briefing's Features table: per feature its pill, done/members, context,
+# each member as its PR link (else repo:branch) and its state, the file. No feature, no table.
+feature_md() {
+  local f r b p ms rows="" mem ctx
+  while IFS= read -r f; do
+    feature_row "$f"
+    mem=""
+    while IFS='|' read -r r b p ms _; do
+      [[ -n "$r" ]] || continue
+      if [[ "$p" == http* ]]; then mem+="${mem:+ · }[${r##*/}#${p##*/}]($p) $ms"; else mem+="${mem:+ · }${r##*/}:$b $ms"; fi
+    done <<<"$F_MEMBERS"
+    ctx="$(md_line "$f" Context)"
+    rows+="| $(basename "$f" .md) | $F_PILL | $F_PROGRESS | ${ctx//|//} | $mem | [file](file://$f) |"$'\n'
+  done < <(feature_files)
+  [[ -n "$rows" ]] || return 0
+  printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
+}
+
+# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", the
+# Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
 # action of every unheld job that did not finish or failed its gate.
 queue_report_md() {
   local d st g wt repo rows="" lim
@@ -1588,6 +1657,8 @@ queue_report_md() {
     echo
     cat "$QROOT/triage.md"
   fi
+  feature_keys
+  feature_md
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
@@ -1766,6 +1837,81 @@ feature_of() {
       fi
     done < <(feature_members "$f")
   done < <(feature_files)
+}
+
+# feature_keys — FKEYS: `<repo>#<branch>` of every member, one per line, framed by newlines.
+feature_keys() {
+  local f r b
+  FKEYS=$'\n'
+  while IFS= read -r f; do
+    while IFS=$'\t' read -r r b _; do FKEYS+="$r#$b"$'\n'; done < <(feature_members "$f")
+  done < <(feature_files)
+}
+
+# is_member JOB — true when JOB's repo and branch are a feature member (FKEYS of feature_keys).
+is_member() {
+  local r
+  r="$(jget "$1/job" repo)"
+  [[ "$FKEYS" == *$'\n'"${r%/}#$(jget "$1/job" branch)"$'\n'* ]]
+}
+
+# feature_row FILE — F_PILL, F_PROGRESS (done/members), F_ITEMS (a `<repo> · <branch>  <status>  <note>`
+# line per member that needs you) and F_MEMBERS (`repo|branch|pr|state|note` per member).
+# A member is done with a PR and no job queued, running or in need of you; without
+# either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
+feature_row() {
+  local f="$1" r b p j st ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
+  F_ITEMS="" F_MEMBERS=""
+  while IFS=$'\t' read -r r b p; do
+    n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0
+    while IFS= read -r j; do
+      [[ -n "$j" ]] || continue
+      any=1 st="$(jstate "$j" status)"
+      [[ ! -f "$j/held" ]] || st=held
+      case "$st" in
+        running | gpu) mrun=1 ;;
+        "" | queued) mwait=1 ;;
+        held | blocked | failed | timeout | skipped)
+          if [[ -z "$ms" ]]; then ms="$st" note="$(jstate "$j" note)$(side_suffix "$j")"; fi
+          if [[ "$st" == held ]]; then ms=held note="$(jstate "$j" held)"; fi
+          F_ITEMS+="${r##*/} · $b  $st  $(jstate "$j" note)$(side_suffix "$j")"$'\n'
+          ;;
+      esac
+      if [[ -z "$p" && "$(jstate "$j" pr)" == http* ]]; then p="$(jstate "$j" pr)"; fi
+    done < <(branch_jobs "$r" "$b")
+    if [[ -z "$ms" ]]; then
+      if ((mrun)); then
+        ms=running
+      elif ((mwait)); then
+        ms=queued
+      elif [[ "$p" != http* ]]; then
+        ms="no PR"
+        F_ITEMS+="${r##*/} · $b  no PR  no job runs and no PR is open"$'\n'
+      elif ((any)); then
+        ms="done"
+      else
+        ms="no job"
+      fi
+    fi
+    case "$ms" in
+      running) run=1 ;;
+      queued) wait=1 ;;
+      "done" | "no job") ok=$((ok + 1)) ;;
+      *) you=1 ;;
+    esac
+    F_MEMBERS+="$r|$b|$p|$ms|${note:-$p}"$'\n'
+  done < <(feature_members "$f")
+  F_PILL="your test"
+  if ((you)); then
+    F_PILL="needs you"
+  elif ((run)); then
+    F_PILL=running
+  elif ((wait)); then
+    F_PILL=queued
+  elif [[ -f "${f%.md}.ready" ]]; then
+    F_PILL=merge
+  fi
+  F_PROGRESS="$ok/$n"
 }
 
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.

@@ -233,6 +233,84 @@ putfeature() {
   grep -qx '</details>' "$Q/01-a/pr-body.md"
 }
 
+@test "feature: status shows the Features group first, a line per member; member jobs leave their repo groups" {
+  local r1 r2
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  putfeature teleop "$r1 sticks" "$r2 gamepad https://example.com/pull/24" "$BATS_TEST_TMPDIR/vla node"
+  mkjob 01-a "$r1" sticks ok
+  mkjob 02-b "$r2" gamepad blocked
+  mkjob 03-c "$r1" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\nFeatures\n  teleop · 1/3 · needs you\n    The gamepad drives the robot.\n    bridge · sticks  done  https://example.com/pull/1\n    cmdr · gamepad  blocked  blocked: needs a decision\n    vla · node  no PR\n\nbridge\n  03-c  done\n'* ]] || false
+  [ "$(grep -c '01-a\|02-b\|^cmdr$' <<<"$output")" = 0 ]
+}
+
+@test "feature: the pill is needs you, then running, queued, your test, merge" {
+  local F="$XDG_STATE_HOME/vibe/features"
+  putfeature teleop "$BATS_TEST_TMPDIR/bridge sticks" "$BATS_TEST_TMPDIR/cmdr gamepad"
+  mkjob 01-a "$BATS_TEST_TMPDIR/bridge" sticks ok
+  mkjob 02-b "$BATS_TEST_TMPDIR/cmdr" gamepad ok
+  echo running >"$Q/01-a/status"
+  echo failed >"$Q/02-b/status"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 0/2 · needs you$')" = 1 ]
+  echo "done" >"$Q/02-b/status"
+  echo https://example.com/pull/2 >"$Q/02-b/pr"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 1/2 · running$')" = 1 ]
+  echo queued >"$Q/01-a/status"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 1/2 · queued$')" = 1 ]
+  echo "done" >"$Q/01-a/status"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 1/2 · needs you$')" = 1 ]
+  echo https://example.com/pull/1 >"$Q/01-a/pr"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 2/2 · your test$')" = 1 ]
+  "$VIBE" feature ready teleop >/dev/null
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 2/2 · merge$')" = 1 ]
+  "$VIBE" queue hold 01-a test it on the gantry >/dev/null
+  [ "$("$VIBE" queue status | grep -c '^    bridge · sticks  held  test it on the gantry$')" = 1 ]
+  [ -f "$F/teleop.ready" ]
+}
+
+@test "page: a feature is one card on top; one click unpacks a lane card, a job card and a card with no job" {
+  local r1 r2 f="$XDG_STATE_HOME/vibe/web/index.html"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  pandoc_stub OK
+  putfeature teleop "$r1 lane-x" "$r2 gamepad" "$BATS_TEST_TMPDIR/vla node https://example.com/pull/7"
+  mkjob 01-a "$r1" lane-x item "lane=Sticks" item=alpha
+  mkjob 02-b "$r1" lane-x item "lane=Sticks" item=beta
+  mkjob 03-c "$r2" gamepad ok
+  drain
+  "$VIBE" queue pause >/dev/null
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<div class="repo"><h2>Features</h2>' "$f"
+  grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3/3</b><span class="pill">your test</span></div><p>The gamepad drives the robot.</p><details class="stack"><summary>3 branches</summary>' "$f"
+  grep -qF '<div class="job lane s-done"><div class="top"><b>bridge · lane-x</b><span class="pill">2/2</span></div><p>Sticks <a href="https://example.com/pull/1">PR</a></p>' "$f"
+  grep -qF '<div class="job s-done"><div class="top"><b>cmdr · gamepad</b><span class="pill">done</span></div><p>done: work.txt added <a href="https://example.com/pull/1">PR</a></p>' "$f"
+  grep -qF '<div class="job s-done"><div class="top"><b>vla · node</b><span class="pill">no job</span></div><p> <a href="https://example.com/pull/7">PR</a></p></div></details></div>' "$f"
+  run grep -c '<h2>bridge</h2>\|<h2>cmdr</h2>' "$f"
+  [ "$output" = 0 ]
+}
+
+@test "report: a Features table before the repos; a done member job leaves the repo tables, a blocked one stays" {
+  local r1 r2 F="$XDG_STATE_HOME/vibe/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  putfeature teleop "$r1 sticks" "$r2 gamepad https://example.com/pull/24" "$BATS_TEST_TMPDIR/vla node"
+  mkjob 01-a "$r1" sticks ok
+  mkjob 02-b "$r2" gamepad blocked
+  mkjob 03-c "$r1" solo ok
+  drain
+  [ "$status" -eq 0 ]
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"## Features"*"| teleop | needs you | 1/3 | The gamepad drives the robot. | [bridge#1](https://example.com/pull/1) done · [cmdr#24](https://example.com/pull/24) blocked · vla:node no PR | [file](file://$F/teleop.md) |"*"## bridge"* ]] || false
+  [[ "$output" == *"## cmdr"*"### Needs you"*"| 02-b | blocked |"* ]] || false
+  [ "$(grep -c '| 01-a ' <<<"$output")" = 0 ]
+  [ "$(grep -c '| 03-c ' <<<"$output")" = 1 ]
+}
+
 @test "feature add: copies the file, fills in the open PRs, refuses a second add" {
   local r1 r2 f F="$XDG_STATE_HOME/vibe/features"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"

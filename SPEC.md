@@ -43,7 +43,7 @@ A feature that spans several repos (teleop: bridge, commander, VLA) is one unit:
 
 - [x] `templates/FEATURE.md`, `vibe feature add|ready|archive` and bats tests — code — done when `bats tests/vibe-queue.bats` passes with the new feature tests
 - [x] The runner: the prompt block, the PR body, the PR URL write-back — code — done when the bats tests for prompt, body and URL pass
-- [ ] The `Features` group in status, briefing and page — code — done when the bats tests for status, report and page pass
+- [x] The `Features` group in status, briefing and page — code — done when the bats tests for status, report and page pass
 - [ ] The shared reference, `/fill-queue` (with a `feature` column), `/enqueue`, `/review-jobs` — code — done when `./bin/skill-lint --strict skills` passes
 - [ ] `docs/vibe-queue.md` `## Features`; delete `SPEC.md` and `HANDOFF.md` — code — done when the four gate commands of `CLAUDE.md` pass and neither file is on the branch
 
