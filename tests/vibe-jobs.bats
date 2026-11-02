@@ -215,7 +215,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
 }
 
 @test "job run: the job's own timeout stops it" {
-  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  { command -v timeout || command -v gtimeout; } >/dev/null 2>&1 || skip "no timeout(1)"
   local r d
   r="$(make_repo proj)"
   optin "$r" slow
