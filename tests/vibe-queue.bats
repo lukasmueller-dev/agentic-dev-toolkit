@@ -942,7 +942,7 @@ died_job() {
   [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
   [ ! -e "$Q/01-a" ]
   run "$VIBE" queue status
-  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued · 1 to review"* ]] || false
+  [[ "$output" == "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 1 no PR"* ]] || false
   [[ "$output" == *"proj"*"02-b"*"held"*"04-d"*"queued"* ]] || false
   run "$VIBE" queue archive nosuch
   [ "$status" -ne 0 ]
@@ -955,11 +955,117 @@ died_job() {
   mkjob 02-b "$r" task-b ok
   run "$VIBE" queue status
   [ "$status" -eq 0 ]
-  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 2 queued · 0 to review · 4 slots" ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 2 queued · 0 to review · 0 no PR · 4 slots" ]
   grep -qx '  task-a  queued' <<<"$output"
   grep -qx '    Do task a.' <<<"$output"
   grep -qx '  02-b  queued' <<<"$output"
   [ "$(wc -l <<<"$output")" -eq 6 ]
+}
+
+# endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
+endjob() {
+  local id="$1" repo="$2" branch="$3" pr="${4:-}"
+  shift $(($# < 4 ? $# : 4))
+  mkjob "$id" "$repo" "$branch" ok "$@"
+  echo "done" >"$Q/$id/status"
+  if [ -n "$pr" ]; then echo "$pr" >"$Q/$id/pr"; fi
+}
+
+@test "counts: one PR with 3 jobs counts 1, and its jobs without a pr file do not count as no PR" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a
+  endjob 01-a-review1 "$r" task-a
+  endjob 01-a-review2 "$r" task-a https://example.com/pull/7
+  endjob 02-b "$r" task-b https://example.com/pull/8
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 2 to review · 0 no PR · 4 slots" ]
+}
+
+@test "counts: review jobs that each write the PR URL count the PR once" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a https://example.com/pull/7
+  endjob 01-a-review1 "$r" task-a https://example.com/pull/7
+  endjob 01-a-review2 "$r" task-a https://example.com/pull/7
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR · 4 slots" ]
+}
+
+@test "counts: an ended job with no PR counts in no PR" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a "PR not created"
+  endjob 02-b "$r" task-b "push failed"
+  endjob 03-c "$r" task-c
+  endjob 04-d "$r" task-d https://example.com/pull/4
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 3 no PR · 4 slots" ]
+}
+
+@test "counts: a done job whose review round is queued or running is not no PR; its PR counts when it opens" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a
+  mkjob 01-a-review1 "$r" task-a ok review=1
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 0 no PR · 4 slots" ]
+  echo running >"$Q/01-a-review1/status"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 1 running · 0 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  echo "done" >"$Q/01-a-review1/status"
+  echo https://example.com/pull/7 >"$Q/01-a-review1/pr"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR · 4 slots" ]
+}
+
+@test "counts: a live job on another branch does not hide a no PR job" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a
+  mkjob 02-b "$r" task-b ok
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 1 no PR · 4 slots" ]
+}
+
+@test "counts: a failed or blocked job counts in no PR although a job on its branch has a PR; a live job does not hide it" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" lane-x https://example.com/pull/3 lane=x
+  endjob 02-b "$r" lane-x "" lane=x
+  echo failed >"$Q/02-b/status"
+  endjob 03-c "$r" lane-x "" lane=x
+  echo blocked >"$Q/03-c/status"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 2 no PR · 4 slots" ]
+  mkjob 04-d "$r" lane-x ok lane=x
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 1 to review · 2 no PR · 4 slots" ]
+}
+
+@test "counts: a lane counts 1; running and queued jobs are not in the PR numbers" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" lane-x https://example.com/pull/3 lane=x
+  endjob 02-b "$r" lane-x https://example.com/pull/3 lane=x
+  endjob 03-c "$r" lane-x https://example.com/pull/3 lane=x
+  mkjob 04-d "$r" task-d ok
+  mkjob 05-e "$r" task-e ok
+  echo running >"$Q/05-e/status"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 1 running · 0 on the GPU · 1 queued · 1 to review · 0 no PR · 4 slots" ]
+}
+
+@test "page: two chips, to review (PRs) with a GitHub link and no PR" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a https://example.com/pull/7
+  endjob 01-a-review1 "$r" task-a https://example.com/pull/7
+  endjob 02-b "$r" task-b "push failed"
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<span class="chip"><b>1</b> to review<a href="https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me">agent PRs on GitHub</a></span><span class="chip"><b>1</b> no PR</span>' "$f"
 }
 
 # pandoc_stub OK|FAIL — a pandoc that prints a marker, or one that fails.
@@ -1110,7 +1216,7 @@ pandoc_stub() {
   [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}"* ]] || false
   [ "$(head -n 2 "$BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}")" = "$(printf -- '---\ncreated: %s' "$(date +%F)")" ]
   run cat "$f"
-  [[ "$output" == *"queue: 0 running"*"4 to review"* ]] || false
+  [[ "$output" == *"queue: 0 running"*"1 to review · 3 no PR"* ]] || false
   [[ "$output" == *"## Yours"*"| 04-d | blocked |  | test it on the robot |  |"*"## proj"* ]] || false
   [[ "$output" == *"## proj"*"### Needs you"*"| 02-b | blocked |  | blocked: needs a decision |  |"*"| 03-c | failed | Task c needs a / fix. |"*"| [report](file://$Q/03-c/report.md) |"*"### PR ready"* ]] || false
   [[ "$output" == *"### PR ready"*"| 01-a | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"* ]] || false
@@ -1308,6 +1414,8 @@ two_findings() {
   [ ! -e "$Q/01-a/pr" ]
   [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
   [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
+  run "$VIBE" queue status
+  [[ "$output" == "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR"* ]] || false
   [ "$(grep -c '^-p ' "$STUBS/claude.log")" = 4 ]
   [ "$(grep -c '^Run /code-review high origin/main\.\.\.HEAD\. ' "$STUBS/claude.log")" = 2 ]
   grep -q -- '--disallowedTools Edit,Write,NotebookEdit' "$STUBS/claude.log"
