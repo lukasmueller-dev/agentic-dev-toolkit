@@ -7,7 +7,7 @@
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
-#   vibe queue status               the queue: running, queued, to review; two lines per job by repo
+#   vibe queue status               the queue: running, queued, PRs to review, jobs with no PR; two lines per job by repo
 #   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now starts them first
 #   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
@@ -1264,9 +1264,11 @@ cmd_queue_follow() {
   job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
 }
 
-# queue_counts — four numbers: running, on the GPU, queued, to review.
+# queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
+# A PR counts once by the URL in a job's `pr` file; a job with no URL is covered by a URL on its
+# repo and branch (a review round or a lane item). Reads files only: no gh, every 30 s.
 queue_counts() {
-  local d r=0 q=0 g=0 v=0
+  local d r=0 q=0 g=0 u ended=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
@@ -1274,10 +1276,16 @@ queue_counts() {
       running) r=$((r + 1)) ;;
       gpu) g=$((g + 1)) ;;
       "" | queued) q=$((q + 1)) ;;
-      *) v=$((v + 1)) ;;
+      *)
+        u="$(jstate "$d" pr)"
+        case "$u" in http*) ;; *) u="" ;; esac
+        ended+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\n'
+        ;;
     esac
   done
-  echo "$r $g $q $v"
+  echo "$r $g $q $(printf '%s' "$ended" | awk -F'\t' '
+    { k = $1 "\t" $2; n[k]++; if ($3 != "") { has[k] = 1; u[$3] = 1 } }
+    END { for (x in u) p++; for (k in n) if (!(k in has)) o += n[k]; print p + 0, o + 0 }')"
 }
 
 # queue_flags — the slots, PAUSED, the usage limit.
@@ -1290,9 +1298,9 @@ queue_flags() {
 
 # queue_header — one line: the counts, then the flags.
 queue_header() {
-  local r g q v
-  read -r r g q v <<<"$(queue_counts)"
-  echo "queue: $r running · $g on the GPU · $q queued · $v to review · $(queue_flags)"
+  local r g q p o
+  read -r r g q p o <<<"$(queue_counts)"
+  echo "queue: $r running · $g on the GPU · $q queued · $p to review · $o no PR · $(queue_flags)"
 }
 
 # queue_repos — the repos of the queued jobs, sorted.
@@ -1513,14 +1521,15 @@ config_md() {
 
 # queue_web — QROOT/web/index.html from templates/queue-page.html; the runner writes it each pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q v jobs lim
-  read -r r g q v <<<"$(queue_counts)"
+  local f="$QROOT/web/index.html" r g q p o jobs lim
+  local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
+  read -r r g q p o <<<"$(queue_counts)"
   lim="$(limit_line)"
   jobs="$(queue_jobs status_card)"
   mkdir -p "${f%/*}" || return 1
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<updated>' "$(date '+%F %H:%M:%S')" \
-    '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued "$v" "to review")" \
+    '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
     '<jobs>' "${jobs:-<p>No jobs.</p>}" \
     '<briefing>' "$(queue_report_md | md_html)" \

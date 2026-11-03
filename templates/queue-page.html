@@ -42,11 +42,12 @@ body:has(#briefing:target, #config:target) nav .q { color: var(--body); border-b
 section { display: none; padding: 0 20px; scroll-margin-top: 100px; }
 #queue, .md:target { display: block; }
 body:has(.md:target) #queue { display: none; }
-.chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 22px 0 0; border: 1px solid var(--border); }
+.chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 22px 0 0; border: 1px solid var(--border); }
 .chip { padding: 14px 12px 13px; color: var(--muted); font: 500 13px/1.3 var(--sans); }
 .chip + .chip { border-left: 1px solid var(--border); }
 .chip b { display: block; margin: 0 0 8px; color: var(--ink); font: 600 26px/1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.chip:last-child b { color: var(--red); }
+.chip:nth-child(n+4) b { color: var(--red); }
+.chip a { display: block; margin: 6px 0 0; }
 .flags { margin: 12px 0 0; color: var(--muted); font: 400 13px/1.4 var(--sans); }
 .filter { display: flex; gap: 8px; margin: 24px -20px 0; padding: 0 20px 2px; overflow-x: auto; scrollbar-width: none; }
 .filter::-webkit-scrollbar { display: none; }
@@ -126,11 +127,9 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
   .md td:empty { display: none; }
   #config td:not(:first-child) { display: inline; }
   #config td:not(:first-child):not(:last-child)::after { content: " · "; }
-}
-@media (max-width: 359px) {
-  .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .chip:nth-child(3) { border-left: 0; }
-  .chip:nth-child(n+3) { border-top: 1px solid var(--border); }
+  .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chip:nth-child(4) { grid-column: span 2; border-left: 0; }
+  .chip:nth-child(n+4) { border-top: 1px solid var(--border); }
 }
 /* Desk screen: 15% larger, Queue and Briefing side by side; Config stays a tab. 1390px × 1.15 ≈ 1600px. */
 @media (min-width: 1024px) {
