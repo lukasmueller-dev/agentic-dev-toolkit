@@ -55,8 +55,12 @@ default_ref() {
   die "cannot resolve the default branch — no origin/HEAD, origin/main, or origin/master ref."
 }
 
-# physical DIR — DIR with symlinks resolved, or DIR itself when it is gone.
-physical() { (cd -P "$1" 2>/dev/null && pwd) || printf '%s\n' "$1"; }
+# physical DIR — DIR with symlinks resolved; when DIR is gone, its parent is.
+physical() {
+  (cd -P "$1" 2>/dev/null && pwd) ||
+    (cd -P "$(dirname "$1")" 2>/dev/null && printf '%s/%s\n' "$(pwd)" "$(basename "$1")") ||
+    printf '%s\n' "$1"
+}
 
 # The worktree the caller runs in, resolved before any cd: never removable.
 CUR_WT="$(physical "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
