@@ -1266,26 +1266,30 @@ cmd_queue_follow() {
 
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
 # A PR counts once by the URL in a job's `pr` file; a job with no URL is covered by a URL on its
-# repo and branch (a review round or a lane item). Reads files only: no gh, every 30 s.
+# repo and branch (a review round or a lane item), and waits while a job there is still live
+# (its review round is queued). Reads files only: no gh, every 30 s.
 queue_counts() {
-  local d r=0 q=0 g=0 u ended=""
+  local d r=0 q=0 g=0 u live rows=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
+    live=1 u=""
     case "$(jstate "$d" status)" in
       running) r=$((r + 1)) ;;
       gpu) g=$((g + 1)) ;;
       "" | queued) q=$((q + 1)) ;;
       *)
-        u="$(jstate "$d" pr)"
+        live=0 u="$(jstate "$d" pr)"
         case "$u" in http*) ;; *) u="" ;; esac
-        ended+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\n'
         ;;
     esac
+    rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$live"$'\n'
   done
-  echo "$r $g $q $(printf '%s' "$ended" | awk -F'\t' '
-    { k = $1 "\t" $2; n[k]++; if ($3 != "") { has[k] = 1; u[$3] = 1 } }
-    END { for (x in u) p++; for (k in n) if (!(k in has)) o += n[k]; print p + 0, o + 0 }')"
+  echo "$r $g $q $(printf '%s' "$rows" | awk -F'\t' '
+    { k = $1 "\t" $2 }
+    $4 == 1 { live[k] = 1; next }
+    { n[k]++; if ($3 != "") { has[k] = 1; u[$3] = 1 } }
+    END { for (x in u) p++; for (k in n) if (!(k in has) && !(k in live)) o += n[k]; print p + 0, o + 0 }')"
 }
 
 # queue_flags — the slots, PAUSED, the usage limit.

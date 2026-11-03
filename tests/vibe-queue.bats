@@ -1004,6 +1004,31 @@ endjob() {
   [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 3 no PR · 4 slots" ]
 }
 
+@test "counts: a done job whose review round is queued or running is not no PR; its PR counts when it opens" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a
+  mkjob 01-a-review1 "$r" task-a ok review=1
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 0 no PR · 4 slots" ]
+  echo running >"$Q/01-a-review1/status"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 1 running · 0 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  echo "done" >"$Q/01-a-review1/status"
+  echo https://example.com/pull/7 >"$Q/01-a-review1/pr"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR · 4 slots" ]
+}
+
+@test "counts: a live job on another branch does not hide a no PR job" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a
+  mkjob 02-b "$r" task-b ok
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 1 no PR · 4 slots" ]
+}
+
 @test "counts: a lane counts 1; running and queued jobs are not in the PR numbers" {
   local r
   r="$(make_repo proj)"
