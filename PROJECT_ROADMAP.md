@@ -19,12 +19,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
-- [ ] **Count PRs in "to review"** — `queue_counts` in `bin/vibe` counts
-      each distinct URL in the `pr` files once and puts ended jobs with no
-      URL in `no PR`; the page chip links the open `agent` PRs on GitHub.
-      Done when `bats tests/vibe-queue.bats` passes with the new tests and
-      the chip row shows the PR count with the GitHub link below it.
-
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
 - [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
