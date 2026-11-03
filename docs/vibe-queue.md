@@ -68,7 +68,7 @@ At 1024 px and wider, the page is 15% larger and shows Queue and Briefing side b
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
 A feature card is a stack too: it unpacks into a lane, job or `no job` card per member.
-The header and the chips count `to review` as PRs (one per URL in a `pr` file; a lane or a review chain is one) and `no PR` as ended jobs (a report-only job too) whose branch has no PR URL and no queued or running job. The `to review` chip links your open `agent` PRs on GitHub.
+The header and the chips count `to review` as PRs (one per URL in a `pr` file; a lane or a review chain is one) and `no PR` as ended jobs without a URL (a report-only job too). A `done` job is covered by a URL on its branch, and waits while a job there is queued or running; a failed or blocked job always counts. The `to review` chip links your open `agent` PRs on GitHub.
 Serve it on the tailnet once:
 
 ```bash

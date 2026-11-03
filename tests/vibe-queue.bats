@@ -1029,6 +1029,21 @@ endjob() {
   [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 1 no PR · 4 slots" ]
 }
 
+@test "counts: a failed or blocked job counts in no PR although a job on its branch has a PR; a live job does not hide it" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" lane-x https://example.com/pull/3 lane=x
+  endjob 02-b "$r" lane-x "" lane=x
+  echo failed >"$Q/02-b/status"
+  endjob 03-c "$r" lane-x "" lane=x
+  echo blocked >"$Q/03-c/status"
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 2 no PR · 4 slots" ]
+  mkjob 04-d "$r" lane-x ok lane=x
+  run "$VIBE" queue status
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 1 to review · 2 no PR · 4 slots" ]
+}
+
 @test "counts: a lane counts 1; running and queued jobs are not in the PR numbers" {
   local r
   r="$(make_repo proj)"

@@ -1265,30 +1265,33 @@ cmd_queue_follow() {
 }
 
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
-# A PR counts once by the URL in a job's `pr` file; a job with no URL is covered by a URL on its
-# repo and branch (a review round or a lane item), and waits while a job there is still live
-# (its review round is queued). Reads files only: no gh, every 30 s.
+# A PR counts once by the URL in a job's `pr` file. A `done` job with no URL is covered by a URL on
+# its repo and branch (a review round, a lane item) and waits while a job there is live (its review
+# round is queued). A failed or blocked job with no URL always counts. Files only: no gh, every 30 s.
 queue_counts() {
-  local d r=0 q=0 g=0 u live rows=""
+  local d r=0 q=0 g=0 s u kind rows=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" ]] || continue
-    live=1 u=""
-    case "$(jstate "$d" status)" in
-      running) r=$((r + 1)) ;;
-      gpu) g=$((g + 1)) ;;
-      "" | queued) q=$((q + 1)) ;;
+    s="$(jstate "$d" status)" kind=end u=""
+    case "$s" in
+      running) r=$((r + 1)) kind=live ;;
+      gpu) g=$((g + 1)) kind=live ;;
+      "" | queued) q=$((q + 1)) kind=live ;;
       *)
-        live=0 u="$(jstate "$d" pr)"
+        if [[ "$s" == "done" ]]; then kind="done"; fi
+        u="$(jstate "$d" pr)"
         case "$u" in http*) ;; *) u="" ;; esac
         ;;
     esac
-    rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$live"$'\n'
+    rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
   done
   echo "$r $g $q $(printf '%s' "$rows" | awk -F'\t' '
     { k = $1 "\t" $2 }
-    $4 == 1 { live[k] = 1; next }
-    { n[k]++; if ($3 != "") { has[k] = 1; u[$3] = 1 } }
+    $4 == "live" { live[k] = 1; next }
+    $3 != "" { has[k] = 1; u[$3] = 1 }
+    $4 == "end" { if ($3 == "") o++; next }
+    { n[k]++ }
     END { for (x in u) p++; for (k in n) if (!(k in has) && !(k in live)) o += n[k]; print p + 0, o + 0 }')"
 }
 
