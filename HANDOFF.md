@@ -14,12 +14,13 @@
 
 ## State
 
-M1–M4 of `SPEC.md` are done. Routes in `bin/vibe-web`: `pause`, `resume`, `unlimit`, `conf`, `restart`, `triage`; per job `now`, `noreview`, `cancel`, `stop`, `retry`, `hold`, `archive`, `answer`, `fix`; `merge-order`, `feature-ready`, `feature-archive`; per repo `new`, `roadmap`, `roadmap-new`, `opt-in`; per recurring job `run`, `reset`. Table: `docs/vibe-queue.md` step 3.
+M1–M5 of `SPEC.md` are done. Routes in `bin/vibe-web`: `pause`, `resume`, `unlimit`, `conf`, `restart`, `triage`, `sync`, `servers`, `server-restart`, `update-toolkit`; per job `now`, `noreview`, `cancel`, `stop`, `retry`, `hold`, `archive`, `answer`, `fix`, `gpu-cancel`; `merge-order`, `feature-ready`, `feature-archive`; per repo `new`, `roadmap`, `roadmap-new`, `opt-in`, `worktrees`, `worktree-remove`; per recurring job `run`, `reset`; `GET job/<id>/<file>`. Table: `docs/vibe-queue.md` step 3.
 
 ## Next action
 
-M5 of `SPEC.md`: GPU, machine and job files (rows 33–37, 39).
-Done when bats tests pass for `gpu-queue cancel <id>` (queued and running; the vibe job ends `failed`, no follow-up), the servers route (stub `systemctl` restarts `claude-rc@<name>`), worktree remove (refuses `dirty`, `unpushed`, `locked`), the sync and update-toolkit routes, the job-file route (only `report.md`, `gate.log`, `pr.md`, `result`, `note`, log tail; `../` → 404).
+M6 of `SPEC.md`: the end action.
+Done when `test ! -f SPEC.md`, `docs/vibe-queue.md` has a `## Page actions` table (row → route → command), the `PROJECT_STATUS.md` line "the queue has a read-only phone page" names the write endpoint, and shellcheck, shfmt and `bats tests/` pass.
+Move each `SPEC.md` decision to `pr.md`; delete `HANDOFF.md`.
 
 ## Blockers
 
@@ -27,7 +28,9 @@ None.
 
 ## Gotchas (unpromoted)
 
-- A new route: one line in `ROUTES` (`bin/vibe-web`); a body arg is a `"{name}"` slot plus a pattern in `ARGS`. Absent or bad → 400.
+- A new route: one line in `ROUTES` (`bin/vibe-web`); a body arg is a `"{name}"` slot at an arg's end (`claude-rc@{server}`) plus a pattern in `ARGS`. Absent or bad → 400. `TOOLS` maps argv[0] to an argv prefix (`cleanup.sh` runs with `bash`: no exec bit).
+- vibe-web gives its commands `VIBE_WEB=1`: `vibe update-toolkit` then skips the vibe-web restart; vibe-web re-execs itself after the reply.
+- `tests/vibe-web.bats`: `web_start` restarts the server with the current env (pid in `web.pid`); `get PATH` is a read by the right login.
 - A button: `<button data-act="<route>" [data-confirm] [data-ask="<arg> …" title="<question>|…"]>` inside a `<div class="jacts" data-<arg>="…">`. page.js sends every `data-*` of the nearest `.jacts` (`id`, `pr`, `repo`, `feature`, `job`) plus one prompt per asked arg.
 - Job buttons: `job_buttons` in `bin/vibe`; repo header (`merge-order`) and feature card buttons: `status_card`; queue-wide: `page_buttons`; per repo: `new_work` (repos from `page_repos`).
 - A `<details>` inside `#queue` needs a `.repo h2` and a `.job b` above it: page.js keys open state on them.
