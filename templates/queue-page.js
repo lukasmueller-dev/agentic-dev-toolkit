@@ -1,5 +1,6 @@
 /* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
-   Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s. After a write: poll now. */
+   Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
+   Args: id from the nearest data-id; data-ask=<arg> prompts for it (title as the question). After a write: poll now. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
@@ -39,10 +40,17 @@
       setTimeout(() => { b.classList.remove('armed'); b.textContent = t; }, 4000);
       return;
     }
+    const args = {}, card = b.closest('[data-id]');
+    if (card) args.id = card.dataset.id;
+    if (b.dataset.ask) {
+      const v = prompt(b.title || b.textContent);
+      if (!v) return;
+      args[b.dataset.ask] = v;
+    }
     const out = $('.act-out');
     b.disabled = true; out.textContent = '…';
     try {
-      const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: b.dataset.args || '{}' }), j = await r.json();
+      const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
       out.textContent = r.ok ? `exit ${j.code}\n${j.out}` : `refused: ${j.error}`;
     } catch (err) { out.textContent = 'no answer from /queue/api'; }
     b.disabled = false;

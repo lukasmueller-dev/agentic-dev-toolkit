@@ -51,12 +51,13 @@ body:has(.md:target) #queue { display: none; }
 .chip a { display: block; margin: 6px 0 0; }
 .flags { margin: 12px 0 0; color: var(--muted); font: 400 13px/1.4 var(--sans); }
 /* Write buttons: shown only after GET whoami returns your login (body.can). */
-.acts, .act-out { display: none; margin: 12px 0 0; }
-body.can .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.acts, .jacts, .act-out { display: none; margin: 12px 0 0; }
+.jacts { margin: 8px 0 0 19px; }
+body.can .acts, body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; }
 body.can .act-out:not(:empty) { display: block; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.acts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
-.acts button.armed { border-color: var(--red); color: var(--red); }
-.acts button:disabled { opacity: .5; }
+.acts button, .jacts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
+:is(.acts, .jacts) button.armed { border-color: var(--red); color: var(--red); }
+:is(.acts, .jacts) button:disabled { opacity: .5; }
 .filter { display: flex; gap: 8px; margin: 24px -20px 0; padding: 0 20px 2px; overflow-x: auto; scrollbar-width: none; }
 .filter::-webkit-scrollbar { display: none; }
 .filter input { position: absolute; opacity: 0; }

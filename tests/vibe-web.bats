@@ -11,6 +11,11 @@ setup() {
   Q="$XDG_STATE_HOME/vibe"
   PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
   printf 'web_port=%s\nweb_login=me@example.com\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
+  STUBS="$BATS_TEST_TMPDIR/stubs"
+  mkdir -p "$STUBS"
+  printf '#!/bin/sh\necho "$*" >>"%s/systemctl.log"\n' "$STUBS" >"$STUBS/systemctl"
+  chmod +x "$STUBS/systemctl"
+  PATH="$STUBS:$PATH"
   "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
   WEB_PID=$!
   curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
@@ -150,4 +155,116 @@ time.sleep(5)' "$PORT" &
   grep -q '</html>' "$Q/web/index.html"
   [ "$(find "$Q/web" -name '*.tmp*' -o -name '*.js.*' | wc -l | tr -d ' ')" = 0 ]
   cmp -s "$REPO_ROOT/templates/queue-page.js" "$Q/web/page.js"
+}
+
+# act ROUTE BODY — a write by the right login with a JSON BODY.
+act() {
+  req POST "/queue/api/$1" -H 'Tailscale-User-Login: me@example.com' -H "Origin: https://127.0.0.1:$PORT" \
+    -H 'Content-Type: application/json' -d "$2"
+}
+
+# qjob ID STATUS — a job dir in the queue; STATUS empty: queued.
+qjob() {
+  mkdir -p "$Q/queue/$1"
+  printf 'repo=%s/proj\nbranch=task\n' "$BATS_TEST_TMPDIR" >"$Q/queue/$1/job"
+  echo task >"$Q/queue/$1/prompt.md"
+  if [ -n "$2" ]; then echo "$2" >"$Q/queue/$1/status"; fi
+}
+
+ID=20261104-080000-proj-task
+
+@test "route conf: sets a key; vibe refuses an unknown key; a newline in the value is 400" {
+  run act conf '{"set": "slots=2"}'
+  [ "${lines[1]}" = 200 ]
+  grep -qx slots=2 "$XDG_CONFIG_HOME/vibe/queue.conf"
+  grep -q $'\tvibe queue conf slots=2\t0$' "$Q/actions.log"
+  run act conf '{"set": "web_port=1"}'
+  [[ "${lines[0]}" == *'"code": 1'* ]] || false
+  grep -q $'\tvibe queue conf web_port=1\t1$' "$Q/actions.log"
+  grep -qx "web_port=$PORT" "$XDG_CONFIG_HOME/vibe/queue.conf"
+  run act conf '{"set": "slots=2\nweb_login=evil@example.com"}'
+  [ "${lines[1]}" = 400 ]
+  grep -qx web_login=me@example.com "$XDG_CONFIG_HOME/vibe/queue.conf"
+  run grep -c evil "$XDG_CONFIG_HOME/vibe/queue.conf"
+  [ "$output" = 0 ]
+}
+
+@test "route restart: systemctl restarts vibe-queue" {
+  run act restart '{}'
+  [ "${lines[1]}" = 200 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user restart vibe-queue" ]
+  grep -q $'\tsystemctl --user restart vibe-queue\t0$' "$Q/actions.log"
+}
+
+@test "route unlimit: the usage limit goes" {
+  mkdir -p "$Q"
+  echo $(($(date +%s) + 3600)) >"$Q/limit"
+  run act unlimit '{}'
+  [ "${lines[1]}" = 200 ]
+  [ ! -e "$Q/limit" ]
+}
+
+@test "route now and noreview: the queued job gets now=1 and after=; the card shows the buttons" {
+  qjob "$ID"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q "data-id=\"$ID\"><button data-act=\"now\">" "$Q/web/index.html"
+  grep -q 'data-act="noreview"' "$Q/web/index.html"
+  run act now "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 200 ]
+  grep -qx now=1 "$Q/queue/$ID/job"
+  run act noreview "{\"id\": \"$ID\"}"
+  grep -qx after= "$Q/queue/$ID/job"
+  run grep -c 'data-act="now"\|data-act="noreview"' "$Q/web/index.html"
+  [ "$output" = 0 ]
+}
+
+@test "route retry: a failed job is queued again, the old one archived" {
+  qjob "$ID" failed
+  run act retry "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ -d "$Q/archive/$(date +%Y-%m)/$ID" ]
+  [ "$(find "$Q/queue" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "route cancel: a queued job ends skipped; the card asks for a second tap" {
+  qjob "$ID"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q 'data-act="cancel" data-confirm' "$Q/web/index.html"
+  run act cancel "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 200 ]
+  [ "$(cat "$Q/queue/$ID/status")" = skipped ]
+}
+
+@test "route stop: a running job gets the stop file" {
+  qjob "$ID" running
+  run act stop "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 200 ]
+  [ -s "$Q/queue/$ID/stop" ]
+}
+
+@test "route hold: the note lands in held" {
+  qjob "$ID" blocked
+  run act hold "{\"id\": \"$ID\", \"note\": \"test it on the robot\"}"
+  [ "${lines[1]}" = 200 ]
+  [ "$(cat "$Q/queue/$ID/held")" = "test it on the robot" ]
+}
+
+@test "route archive: an ended job moves to the archive" {
+  qjob "$ID" "done"
+  run act archive "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 200 ]
+  [ -d "$Q/archive/$(date +%Y-%m)/$ID" ]
+}
+
+@test "routes: an absent, non-string or bad id is 400 and runs nothing" {
+  qjob "$ID"
+  for body in '{}' '{"id": 1}' '{"id": "../x"}' '{"id": "20261104-080000-a/../b"}' '{"id": "--help"}'; do
+    run act cancel "$body"
+    [ "${lines[1]}" = 400 ]
+  done
+  run act hold "{\"id\": \"$ID\", \"note\": \"a\tb\"}"
+  [ "${lines[1]}" = 400 ]
+  [ ! -e "$Q/actions.log" ]
+  [ ! -e "$Q/queue/$ID/status" ]
 }

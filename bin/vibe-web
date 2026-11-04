@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""vibe-web — the queue page's write endpoint: one route runs one vibe argv.
+"""vibe-web — the queue page's write endpoint: one route runs one fixed argv.
 
 Listens on 127.0.0.1:<web_port> (queue.conf, default 7341); tailscale serve
 mounts it at /queue/api. Setup and routes: docs/vibe-queue.md, step 3.
@@ -7,6 +7,7 @@ mounts it at /queue/api. Setup and routes: docs/vibe-queue.md, step 3.
 import datetime
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -18,11 +19,39 @@ VIBE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "vibe")
 QROOT = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "vibe")
 QCONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "vibe", "queue.conf")
 PREFIX = "/queue/api"
-# route -> vibe argv; never a shell string.
+# route -> argv; never a shell string. "{x}": body arg x, checked against ARGS[x].
 ROUTES = {
-    "pause": ["queue", "pause"],
-    "resume": ["queue", "resume"],
+    "pause": ["vibe", "queue", "pause"],
+    "resume": ["vibe", "queue", "resume"],
+    "conf": ["vibe", "queue", "conf", "{set}"],
+    "unlimit": ["vibe", "queue", "unlimit"],
+    "restart": ["systemctl", "--user", "restart", "vibe-queue"],
+    "now": ["vibe", "queue", "set", "{id}", "now=1"],
+    "noreview": ["vibe", "queue", "set", "{id}", "after="],
+    "retry": ["vibe", "queue", "retry", "{id}"],
+    "cancel": ["vibe", "queue", "cancel", "{id}"],
+    "stop": ["vibe", "queue", "stop", "{id}"],
+    "hold": ["vibe", "queue", "hold", "{id}", "{note}"],
+    "archive": ["vibe", "queue", "archive", "{id}"],
 }
+ARGS = {
+    "id": re.compile(r"[0-9]{8}-[0-9]{6}-[A-Za-z0-9._-]{1,200}"),
+    "set": re.compile(r"[a-z_]{1,40}=[A-Za-z0-9.%_-]{0,40}"),
+    "note": re.compile(r"[^\x00-\x1f\x7f]{1,300}"),
+}
+
+
+def argv_of(route, body):
+    """The argv of ROUTE with BODY's args filled in; None when an arg is absent or bad."""
+    argv = []
+    for a in ROUTES[route]:
+        if a.startswith("{"):
+            v = body.get(a[1:-1])
+            if not isinstance(v, str) or not ARGS[a[1:-1]].fullmatch(v):
+                return None
+            a = v
+        argv.append(a)
+    return argv
 
 
 def qconf(key, default=""):
@@ -93,17 +122,23 @@ class Handler(BaseHTTPRequestHandler):
             body = None
         if not isinstance(body, dict):
             return self.reply(403, {"error": "body is not a JSON object"})
-        argv = ROUTES.get(self.route())
-        if argv is None:
+        if self.route() not in ROUTES:
             return self.reply(404, {"error": "no route"})
+        argv = argv_of(self.route(), body)
+        if argv is None:
+            return self.reply(400, {"error": "bad args"})
         with WRITE:
             return self.write(who, argv)
 
     def write(self, who, argv):
-        r = subprocess.run([VIBE] + argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        run = [VIBE] + argv[1:] if argv[0] == "vibe" else argv
+        try:
+            r = subprocess.run(run, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+        except OSError as e:
+            r = subprocess.CompletedProcess(run, 127, "", str(e))
         os.makedirs(QROOT, exist_ok=True)
         with open(os.path.join(QROOT, "actions.log"), "a", encoding="utf-8") as f:
-            f.write("%s\t%s\t%s\t%d\n" % (datetime.datetime.now().strftime("%F %T"), who, shlex.join(["vibe"] + argv), r.returncode))
+            f.write("%s\t%s\t%s\t%d\n" % (datetime.datetime.now().strftime("%F %T"), who, shlex.join(argv), r.returncode))
         subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False)
         return self.reply(200, {"code": r.returncode, "out": (r.stdout + r.stderr)[-4000:]})
 
