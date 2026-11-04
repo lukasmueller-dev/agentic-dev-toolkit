@@ -57,10 +57,21 @@ body:has(.md:target) #queue { display: none; }
 .repo.new { display: none; counter-increment: none; }
 body.can .repo.new { display: block; }
 .repo.new h2::before { content: none; }
-body.can .acts, body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A group is a grid of equal cells: 3 columns, 4 on a desk screen. A nested .jacts (one recurring job) shares its parent's grid. */
+body.can .acts, body.can .jacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+body.can .jacts .jacts { display: contents; }
+/* Merge order: right of the repo heading. */
+.rh { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+.rh h2 { margin: 0; }
+body.can .rh .jacts { display: block; margin: 0; }
 body.can .act-out:not(:empty) { display: block; scroll-margin-top: 100px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.acts button, .jacts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
-.jacts a { align-self: center; color: var(--muted); font: 500 12px var(--sans); }
+.acts button, .jacts button { width: 100%; padding: 7px 6px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); overflow-wrap: anywhere; cursor: pointer; }
+.rh button { width: auto; padding: 7px 13px; }
+/* The rule before the data-confirm buttons, the "Recurring" label and the file links take a row of their own. */
+.acts hr, .jacts hr { grid-column: 1 / -1; width: 100%; margin: 2px 0; border: 0; border-top: 1px solid var(--border); }
+.jacts .lbl { grid-column: 1 / -1; margin: 4px 0 -2px; color: var(--muted); font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
+.jacts .files { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.jacts a { color: var(--muted); font: 500 12px var(--sans); }
 :is(.acts, .jacts) button.armed { border-color: var(--red); color: var(--red); }
 :is(.acts, .jacts) button:disabled { opacity: .5; }
 .filter { display: flex; gap: 8px; margin: 24px -20px 0; padding: 0 20px 2px; overflow-x: auto; scrollbar-width: none; }
@@ -146,6 +157,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 /* Desk screen: 15% larger, Queue and Briefing side by side; Config stays a tab. 1390px × 1.15 ≈ 1600px. */
 @media (min-width: 1024px) {
   body { zoom: 1.15; max-width: 1390px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.can .acts, body.can .jacts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .bar, #config { grid-column: 1 / -1; }
   nav .b { display: none; }
   #briefing, body:has(#briefing:target) #queue { display: block; }

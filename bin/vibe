@@ -1886,36 +1886,39 @@ job_steps() {
     | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
 }
 
-# job_buttons JOB — the card's write buttons by status; routes in bin/vibe-web, shown after whoami.
+# btn_rows WRITE CONFIRM — the two button lists with a thin rule between them, when both are filled.
+btn_rows() { printf '%s%s%s' "$1" "${1:+${2:+<hr>}}" "$2"; }
+
+# job_buttons JOB — the card's write buttons by status, data-confirm ones last, then the file links; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
-  local b="" pr gpu="" f
+  local b="" c="" pr gpu="" f links=""
   pr="$(jstate "$1" pr)"
   case "$(jstate "$1" status)" in
     "" | queued)
       if [[ "$(jget "$1/job" now)" != 1 ]]; then b+='<button data-act="now">Start next</button>'; fi
       if [[ "$(job_after "$1")" == review ]]; then b+='<button data-act="noreview">No review</button>'; fi
-      b+='<button data-act="cancel" data-confirm>Cancel</button>'
+      c+='<button data-act="cancel" data-confirm>Cancel</button>'
       ;;
-    running) b='<button data-act="stop" data-confirm>Stop</button>' ;;
+    running) c+='<button data-act="stop" data-confirm>Stop</button>' ;;
     gpu)
       gpu="$(jstate "$1" gpu-job)"
-      if [[ -n "$gpu" ]]; then b='<button data-act="gpu-cancel" data-confirm>Cancel GPU run</button>'; fi
+      if [[ -n "$gpu" ]]; then c+='<button data-act="gpu-cancel" data-confirm>Cancel GPU run</button>'; fi
       ;;
-    failed | timeout | skipped) b='<button data-act="retry">Retry</button>' ;;
+    failed | timeout | skipped) b+='<button data-act="retry">Retry</button>' ;;
   esac
   case "$(jstate "$1" status)" in
-    blocked | failed | timeout) b+='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
+    blocked | failed | timeout) c+='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
     "done") if [[ "$pr" == http* ]]; then b+='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>'; fi ;;
   esac
   if job_final "$1"; then
     if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
-    b+='<button data-act="archive" data-confirm>Archive</button>'
+    c+='<button data-act="archive" data-confirm>Archive</button>'
   fi
   # GET job/<id>/<file> in bin/vibe-web; the log as its tail.
   for f in report.md pr.md gate.log result note log; do
-    if [[ -s "$1/$f" ]]; then b+="<a href=\"/queue/api/job/$(esc "${1##*/}")/$f\">$f</a>"; fi
+    if [[ -s "$1/$f" ]]; then links+="<a href=\"/queue/api/job/$(esc "${1##*/}")/$f\">$f</a>"; fi
   done
-  printf '<div class="jacts" data-id="%s"%s%s>%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$b"
+  printf '<div class="jacts" data-id="%s"%s%s>%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$(btn_rows "$b" "$c")" "${links:+<div class=\"files\">$links</div>}"
 }
 
 # status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
@@ -1925,8 +1928,11 @@ status_card() {
   local r b p ms
   case "$1" in
     repo)
-      printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")"
-      if [[ -n "${3:-}" ]]; then printf '<div class="jacts" data-repo="%s"><button data-act="merge-order">Merge order</button></div>\n' "$(esc "$3")"; fi
+      if [[ -n "${3:-}" ]]; then
+        printf '<div class="repo"><div class="rh"><h2>%s</h2><div class="jacts" data-repo="%s"><button data-act="merge-order">Merge order</button></div></div>\n' "$(esc "$2")" "$(esc "$3")"
+      else
+        printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")"
+      fi
       ;;
     end) echo '</div>' ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
@@ -2018,17 +2024,18 @@ config_md() {
   fi
 }
 
-# page_buttons — the queue-wide write buttons; routes in bin/vibe-web.
+# page_buttons — the queue-wide write buttons, data-confirm ones last; routes in bin/vibe-web.
 page_buttons() {
-  if [[ -e "$QROOT/paused" ]]; then echo '<button data-act="resume">Resume</button>'; else echo '<button data-act="pause">Pause</button>'; fi
-  if limited; then echo '<button data-act="unlimit">Clear usage limit</button>'; fi
-  echo '<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
-  echo '<button data-act="restart" data-confirm>Restart runner</button>'
-  echo '<button data-act="triage">Triage PRs</button>'
-  echo '<button data-act="sync">Sync worktrees</button>'
-  echo '<button data-act="servers">Servers</button>'
-  echo '<button data-act="server-restart" data-ask="server" data-confirm title="Server to restart (Servers lists them)">Restart server</button>'
-  echo '<button data-act="update-toolkit" data-confirm>Update toolkit</button>'
+  local b='<button data-act="servers">Servers</button>' c
+  if [[ -e "$QROOT/paused" ]]; then b+='<button data-act="resume">Resume</button>'; else b+='<button data-act="pause">Pause</button>'; fi
+  if limited; then b+='<button data-act="unlimit">Clear usage limit</button>'; fi
+  b+='<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
+  b+='<button data-act="triage">Triage PRs</button>'
+  b+='<button data-act="sync">Sync worktrees</button>'
+  c='<button data-act="restart" data-confirm>Restart runner</button>'
+  c+='<button data-act="server-restart" data-ask="server" data-confirm title="Server to restart (Servers lists them)">Restart server</button>'
+  c+='<button data-act="update-toolkit" data-confirm>Update toolkit</button>'
+  btn_rows "$b" "$c"
 }
 
 # page_repos — the sweep repos (~/.config/vibe/repos), then the opted-in ones; each once, as a path.
@@ -2047,30 +2054,31 @@ page_repos() {
   } | awk '!seen[$0]++'
 }
 
-# new_work — the `New work` group: per repo a new job, its roadmap, an opt-in; run or reset per recurring job.
+# new_work — the `New work` group: per repo a card of buttons, read-only first, data-confirm last; Run or Reset per recurring job in between.
 new_work() {
-  local r j b e avail out=""
+  local r j b c e avail out="" rec
   while IFS= read -r r; do
     [[ -e "$r/.git" ]] || continue
-    e="$(esc "$r")" avail=""
+    e="$(esc "$r")" avail="" rec=""
     for j in "$JOBS_CATALOGUE"/*.md; do
       j="${j##*/}" && j="${j%.md}"
       if [[ "$j" != _* && ! -f "$r/.vibe-jobs/$j.md" ]]; then avail+="${avail:+, }$j"; fi
     done
-    b='<button data-act="new" data-ask="task done branch" title="Task|Done when: a command that checks it|Branch slug">New job</button>'
-    b+='<button data-act="roadmap">Roadmap</button>'
-    b+='<button data-act="roadmap-new" data-ask="line branch" title="Roadmap line (Roadmap lists them)|Branch slug">From roadmap</button>'
+    b='<button data-act="roadmap">Roadmap</button>'
     b+='<button data-act="worktrees">Worktrees</button>'
-    b+='<button data-act="worktree-remove" data-ask="path" data-confirm title="Worktree path to remove (Worktrees lists them; merged or prunable only)">Remove worktree</button>'
+    b+='<button data-act="new" data-ask="task done branch" title="Task|Done when: a command that checks it|Branch slug">New job</button>'
+    b+='<button data-act="roadmap-new" data-ask="line branch" title="Roadmap line (Roadmap lists them)|Branch slug">From roadmap</button>'
     if [[ -n "$avail" ]]; then b+="<button data-act=\"opt-in\" data-ask=\"job\" title=\"Recurring job to opt in: $(esc "$avail")\">Opt in</button>"; fi
-    out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$b</div>"
+    # A nested .jacts with display: contents: its buttons sit in the repo's grid, its data-job reaches page.js.
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
-      b="<button data-act=\"run\">Run $(esc "$j")</button>"
-      if [[ "$(job_due "$r" "$j")" == stopped ]]; then b+="<button data-act=\"reset\">Reset $(esc "$j")</button>"; fi
-      out+="<div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\">$b</div>"
+      rec+="<div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\"><button data-act=\"run\">Run $(esc "$j")</button>"
+      if [[ "$(job_due "$r" "$j")" == stopped ]]; then rec+="<button data-act=\"reset\">Reset $(esc "$j")</button>"; fi
+      rec+='</div>'
     done < <(job_names "$r")
-    out+='</div>'
+    b+="${rec:+<span class=\"lbl\">Recurring</span>$rec}"
+    c='<button data-act="worktree-remove" data-ask="path" data-confirm title="Worktree path to remove (Worktrees lists them; merged or prunable only)">Remove worktree</button>'
+    out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$(btn_rows "$b" "$c")</div></div>"
   done < <(page_repos)
   if [[ -n "$out" ]]; then printf '<div class="repo new"><h2>New work</h2>\n%s\n</div>\n' "$out"; fi
 }
