@@ -12,7 +12,7 @@
 #   vibe queue new [--now] [--model M] [--timeout T] [--kind code|gpu] <repo> <branch> <done-when> <task>...
 #                                   queue a job rendered from fill-queue's job-prompt.md
 #   vibe queue new --line <n> <repo> <branch>
-#                                   the same for the roadmap item at line <n> on origin
+#                                   the same for item <n> of the last roadmap listing, still open on origin
 #   vibe queue new --opt-in <job> <repo>
 #                                   a job that opts <repo> into a recurring job and commits it
 #   vibe queue roadmap <repo>       open PROJECT_ROADMAP.md items on origin: <line>: <title>
@@ -1528,13 +1528,17 @@ cmd_queue_merge_order() {
     }'
 }
 
-# roadmap_items REPO — `<line><TAB><text>` per open top-level item of PROJECT_ROADMAP.md on origin's
-# default branch, fetched now; continuation lines join the text.
-roadmap_items() {
-  local def md
+# roadmap_head REPO — origin's default branch tip, fetched now.
+roadmap_head() {
   git -C "$1" fetch -q origin 2>/dev/null || warn "${1##*/}: fetch failed"
-  def="$(default_branch "$1")"
-  md="$(git -C "$1" show "origin/$def:PROJECT_ROADMAP.md" 2>/dev/null)" || die "no PROJECT_ROADMAP.md on origin/$def in ${1##*/}"
+  git -C "$1" rev-parse -q --verify "origin/$(default_branch "$1")^{commit}" || die "no origin/$(default_branch "$1") in ${1##*/}"
+}
+
+# roadmap_items REPO REV — `<line><TAB><text>` per open top-level item of PROJECT_ROADMAP.md at REV;
+# continuation lines join the text.
+roadmap_items() {
+  local md
+  md="$(git -C "$1" show "$2:PROJECT_ROADMAP.md" 2>/dev/null)" || die "no PROJECT_ROADMAP.md at ${2:0:7} in ${1##*/}"
   awk '
     function flush() { if (n) print n "\t" t; n = 0 }
     /^- \[ \] / { flush(); n = NR; t = substr($0, 7); next }
@@ -1543,11 +1547,18 @@ roadmap_items() {
     END { flush() }' <<<"$md"
 }
 
-# vibe queue roadmap REPO — REPO's open roadmap items on origin: `<line>: <title>`.
+# roadmap_pin REPO — the file that holds the origin commit `vibe queue roadmap` listed last for REPO.
+roadmap_pin() { echo "$QROOT/roadmap/$(printf '%s' "$1" | tr / %)"; }
+
+# vibe queue roadmap REPO — REPO's open roadmap items on origin: `<line>: <title>`; `new --line` reads this listing.
 cmd_queue_roadmap() {
-  local items
+  local items head pin
   [[ $# == 1 && -d "$1" ]] || die "usage: vibe queue roadmap <repo>"
-  items="$(roadmap_items "$1")" || exit 1
+  head="$(roadmap_head "$1")" || exit 1
+  items="$(roadmap_items "$1" "$head")" || exit 1
+  pin="$(roadmap_pin "$(cd "$1" && pwd)")"
+  mkdir -p "${pin%/*}"
+  echo "$head" >"$pin"
   [[ -n "$items" ]] || {
     echo "no open roadmap item in ${1##*/}"
     return 0
@@ -1560,7 +1571,7 @@ cmd_queue_roadmap() {
 # a task, the roadmap item at line N on origin, or a job that opts REPO into recurring JOB.
 # Refuses no done-when and a branch with a queued or running job.
 cmd_queue_new() {
-  local first=0 model=sonnet timeout=2h kind=code line="" optin="" repo branch dw task source=new title tmp n
+  local first=0 model=sonnet timeout=2h kind=code line="" optin="" repo branch dw task source=new title tmp n head pin
   local use="usage: vibe queue new [--now] [--model M] [--timeout T] [--kind code|gpu] <repo> <branch> <done-when> <task>... | --line <n> <repo> <branch> | --opt-in <job> <repo>"
   while [[ "${1:-}" == --* ]]; do
     case "$1" in
@@ -1585,8 +1596,13 @@ cmd_queue_new() {
     if (($# != 2)) || [[ ! "$line" =~ ^[1-9][0-9]*$ ]]; then die "$use"; fi
     repo="$1" branch="$2"
     [[ -d "$repo" ]] || die "no directory $repo"
-    task="$(roadmap_items "$repo" | awk -F'\t' -v n="$line" '$1 == n { print $2 }')" || exit 1
+    head="$(roadmap_head "$repo")" || exit 1
+    # Line N of the listing you read, not of origin now: a merge that deletes an item above shifts the lines.
+    pin="$(head -n 1 "$(roadmap_pin "$(cd "$repo" && pwd)")" 2>/dev/null || true)"
+    task="$(roadmap_items "$repo" "${pin:-$head}" | awk -F'\t' -v n="$line" '$1 == n { print $2 }')" || exit 1
     [[ -n "$task" ]] || die "no open roadmap item at line $line of ${repo##*/}"
+    line="$(roadmap_items "$repo" "$head" | T="$task" awk -F'\t' '!f && $2 == ENVIRON["T"] { print $1; f = 1 }')" || exit 1
+    [[ -n "$line" ]] || die "the item changed or left origin since the listing: run vibe queue roadmap again"
     dw="$(sed -nE 's/.*[Dd]one when:? *//p' <<<"$task")"
     source="\`PROJECT_ROADMAP.md:$line\`"
   else

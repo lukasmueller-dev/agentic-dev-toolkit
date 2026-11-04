@@ -116,7 +116,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
 - `vibe queue unlimit` removes `limit`: jobs start again.
 - `vibe queue new <repo> <branch> <done-when> <task>`: a job from [`job-prompt.md`](../skills/fill-queue/references/job-prompt.md), source `new`. No done-when, or a job on the branch queued or running: refused.
-- `--line <n> <repo> <branch>`: the open item at line `n` of `PROJECT_ROADMAP.md` on `origin/<default>`; its done-when is the text after `Done when`. `vibe queue roadmap <repo>` lists the lines.
+- `--line <n> <repo> <branch>`: the item at line `n` of the last `vibe queue roadmap <repo>` listing (its origin commit in `roadmap/`); refused when that item changed or left `origin/<default>` since. Its done-when is the text after `Done when`.
 - `--opt-in <job> <repo>`: branch `opt-in-<job>`; the agent runs `vibe job add` in its worktree and commits. The main checkout stays on the default branch.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - Gate: after the agent (after the last review round when one is due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
@@ -189,6 +189,7 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
 | `web/index.html`, `page.js` | the phone page, rewritten each runner pass (`templates/queue-page.*`); its CSP runs only `page.js` |
 | `paused` | `vibe queue pause` |
+| `roadmap/<repo path, / as %>` | the origin commit `vibe queue roadmap` listed; `new --line` reads it |
 | `actions.log` | page writes: time, login, command, exit code (`bin/vibe-web`) |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 

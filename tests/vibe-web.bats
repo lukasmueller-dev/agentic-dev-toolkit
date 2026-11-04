@@ -672,3 +672,36 @@ optin() {
 @test "queue page: a link opens claude.ai/code" {
   grep -q 'claude.ai/code' "$REPO_ROOT/templates/queue-page.html"
 }
+
+# shellcheck disable=SC2016  # Markdown backticks, not expansions
+@test "roadmap-new: takes the item you listed, at its line on origin now; refuses one changed since" {
+  local r n
+  r="$(make_repo proj)"
+  printf -- '- [ ] **A** — a. Done when `a` passes.\n- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
+  run act roadmap "{\"repo\": \"$r\"}"
+  [[ "${lines[0]}" == *'1: A\n2: B'* ]] || false
+  # A merged PR deletes the finished item A: B moves up to line 1.
+  printf -- '- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" commit -q -am "drop A" && git -C "$r" push -q origin main
+  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"2\", \"branch\": \"item-b\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  n="$(qnew)"
+  grep -qx 'context=B' "$n/job"
+  grep -qxF -- '- **Source:** `PROJECT_ROADMAP.md:1`' "$n/prompt.md"
+  printf -- '- [ ] **B** — b, changed. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" commit -q -am "change B" && git -C "$r" push -q origin main
+  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"2\", \"branch\": \"item-b2\"}"
+  [[ "${lines[0]}" == *'"code": 1'*'changed or left origin'* ]] || false
+  [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "routes: a long output keeps its first and its last lines" {
+  local r i
+  r="$(make_repo proj)"
+  for i in $(seq 1 400); do printf -- '- [ ] Item %03d %s\n' "$i" "$(printf '%070d' 0)"; done >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
+  run act roadmap "{\"repo\": \"$r\"}"
+  [[ "${lines[0]}" == *'"out": "1: Item 001 '* ]] || false
+  [[ "${lines[0]}" == *'400: Item 400 '* ]] || false
+}
