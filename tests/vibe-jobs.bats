@@ -184,7 +184,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [ "$(qjobs jobs-crashy | wc -l)" -eq 1 ]
   d="$(qjobs jobs-crashy)"
   [ "$(cat "$d/status")" = skipped ]
-  [[ "$(cat "$d/note")" == "stopped after 2 failures — rm "*"/vibe/jobs/proj/crashy/fails" ]] || false
+  [ "$(cat "$d/note")" = "stopped after 2 failures — vibe job reset proj crashy" ]
   "$VIBE" queue report >/dev/null
   run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### Needs you"*"| ${d##*/} | skipped |  | stopped after 2 failures"* ]] || false
@@ -214,7 +214,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   drain
   [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/crashy/fails")" = 2 ]
   run "$VIBE" job list "$r"
-  [[ "$output" == *"crashy"*"stopped: 2 failures — rm "* ]] || false
+  [[ "$output" == *"crashy"*"stopped: 2 failures — vibe job reset proj crashy"* ]] || false
   run "$VIBE" job run "$r" nosuch
   [ "$status" -ne 0 ]
   [[ "$output" == *"no schedule"* ]] || false

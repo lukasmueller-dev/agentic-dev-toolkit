@@ -458,7 +458,7 @@ complete_vibe() {
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
   [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
-  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run retry ready " ]
+  [ "$(complete_vibe queue r | tr '\n' ' ')" = "roadmap report resume run retry ready " ]
   [ "$(complete_vibe queue m)" = merge-order ]
   [ "$(complete_vibe queue a | tr '\n' ' ')" = "add archive answer " ]
   [ "$(complete_vibe queue add --n)" = --now ]

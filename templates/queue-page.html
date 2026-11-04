@@ -53,6 +53,10 @@ body:has(.md:target) #queue { display: none; }
 /* Write buttons: shown only after GET whoami returns your login (body.can). */
 .acts, .jacts, .act-out { display: none; margin: 12px 0 0; }
 .jacts { margin: 8px 0 0 19px; }
+/* New work: per repo a card of buttons; shown only with buttons, not numbered. */
+.repo.new { display: none; counter-increment: none; }
+body.can .repo.new { display: block; }
+.repo.new h2::before { content: none; }
 body.can .acts, body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; }
 body.can .act-out:not(:empty) { display: block; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .acts button, .jacts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
@@ -154,7 +158,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 </head>
 <body>
 <header class="bar"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><strong>vibe queue</strong><span class="updated"><updated></span>
-<nav><a class="q" href="#queue">Queue</a><a class="b" href="#briefing">Briefing</a><a class="c" href="#config">Config</a></nav></header>
+<nav><a class="q" href="#queue">Queue</a><a class="b" href="#briefing">Briefing</a><a class="c" href="#config">Config</a><a class="s" href="https://claude.ai/code" target="_blank" rel="noopener">Sessions ↗</a></nav></header>
 <section id="queue">
 <div class="chips"><counts></div>
 <p class="flags"><flags></p>

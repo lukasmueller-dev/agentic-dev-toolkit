@@ -30,7 +30,7 @@ EOF
   chmod +x "$STUBS/systemctl" "$STUBS/gh"
   PATH="$STUBS:$PATH"
   git_env
-  export VIBE_WEB_TIMEOUT=3
+  export VIBE_WEB_TIMEOUT=3 VIBE_ROOT="$BATS_TEST_TMPDIR"
   "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
   WEB_PID=$!
   curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
@@ -514,4 +514,161 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   grep -qx timeout=3h "$n/job"
   run grep -cE '^(review|follow|timeout=1h)' "$n/job"
   [ "$output" = 0 ]
+}
+
+# --- M4: new work and recurring jobs -------------------------------------------
+
+# qnew — the one queue dir there is.
+qnew() { find "$Q/queue" -mindepth 1 -maxdepth 1; }
+
+# no_slot PROMPT — true when no slot of job-prompt.md (title, `## Task`, the two templates) is left in PROMPT.
+no_slot() {
+  local s
+  while IFS= read -r s; do
+    if sed '/^## Output templates/q' "$1" | grep -qF -- "$s"; then
+      echo "slot left: $s"
+      return 1
+    fi
+  done < <(awk 'NR == 1 || /^## Task/ { on = 1 } /^## Rules/ { on = 0 } on' "$REPO_ROOT/skills/fill-queue/references/job-prompt.md" | grep -o '<[^>]*>')
+  ! grep -q '<the .* template, verbatim>' "$1"
+}
+
+@test "vibe queue new: every slot filled; refuses no done-when and a queued branch" {
+  local r n
+  r="$(make_repo proj)"
+  run "$REPO_ROOT/bin/vibe" queue new "$r" feat-x "" Add x.
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no done-when"* ]] || false
+  [ ! -d "$Q/queue" ] || [ -z "$(qnew)" ]
+  run "$REPO_ROOT/bin/vibe" queue new "$r" feat-x 'bats tests/x.bats passes' Add the x feature.
+  [ "$status" -eq 0 ]
+  n="$(qnew)"
+  no_slot "$n/prompt.md"
+  grep -qx "repo=$r" "$n/job"
+  grep -qx branch=feat-x "$n/job"
+  grep -qx 'context=Add the x feature.' "$n/job"
+  grep -qx 'Add the x feature.' "$n/prompt.md"
+  grep -qxF -- '- **Done when:** bats tests/x.bats passes' "$n/prompt.md"
+  grep -qxF -- '- **Source:** new' "$n/prompt.md"
+  grep -qxF '**Decisions/risks:** <risks>' "$n/prompt.md"
+  run "$REPO_ROOT/bin/vibe" queue new "$r" feat-x 'it works' Again.
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"feat-x is queued"* ]] || false
+  [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "route new: queues the job; an absent done-when or a bad branch is 400" {
+  local r
+  r="$(make_repo proj)"
+  run act new "{\"repo\": \"$r\", \"branch\": \"feat-y\", \"done\": \"grep -q y y.txt\", \"task\": \"Write y.\"}"
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -qx branch=feat-y "$(qnew)/job"
+  run act new "{\"repo\": \"$r\", \"branch\": \"feat-z\", \"done\": \"\", \"task\": \"Write z.\"}"
+  [ "${lines[1]}" = 400 ]
+  run act new "{\"repo\": \"$r\", \"branch\": \"-x\", \"done\": \"d\", \"task\": \"t\"}"
+  [ "${lines[1]}" = 400 ]
+  [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
+}
+
+# shellcheck disable=SC2016  # Markdown backticks, not expansions
+@test "route roadmap: the open items of origin's PROJECT_ROADMAP.md with their line; roadmap-new queues one" {
+  local r n
+  r="$(make_repo proj)"
+  printf '# Roadmap\n\n## Items\n\n- [ ] **Item one** — do it.\n      Done when `make check` passes.\n- [x] **Old** — gone.\n- [ ] Item two has no done-when.\n' >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
+  printf '# Roadmap\n\n- [ ] **Local only** — not pushed.\n' >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" commit -q -am local
+  run act roadmap "{\"repo\": \"$r\"}"
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'5: Item one\n8: Item two has no done-when.'* ]] || false
+  [[ "${lines[0]}" != *'Local only'* ]] || false
+  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"8\", \"branch\": \"item-two\"}"
+  [[ "${lines[0]}" == *'"code": 1'*'no done-when'* ]] || false
+  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"5\", \"branch\": \"item-one\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  n="$(qnew)"
+  no_slot "$n/prompt.md"
+  grep -qxF -- '- **Source:** `PROJECT_ROADMAP.md:5`' "$n/prompt.md"
+  grep -qxF -- '- **Done when:** `make check` passes.' "$n/prompt.md"
+  grep -qx 'context=Item one' "$n/job"
+  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"0\", \"branch\": \"x\"}"
+  [ "${lines[1]}" = 400 ]
+}
+
+# optin REPO JOB — REPO opts into the catalogue JOB, committed.
+optin() {
+  mkdir -p "$1/.vibe-jobs"
+  printf -- '---\n---\n\nCheck it.\n' >"$1/.vibe-jobs/$2.md"
+  git -C "$1" add .vibe-jobs && git -C "$1" commit -q -m "opt in $2"
+}
+
+@test "vibe job reset and route reset: the fails file goes; the page shows Reset only for a stopped job" {
+  local r f="$Q/jobs/proj/codebase-health/fails"
+  r="$(make_repo proj)"
+  optin "$r" codebase-health
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">Run codebase-health</button></div>" "$Q/web/index.html"
+  mkdir -p "${f%/*}" && echo 2 >"$f"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<button data-act="reset">Reset codebase-health</button>' "$Q/web/index.html"
+  run "$REPO_ROOT/bin/vibe" job list "$r"
+  [[ "$output" == *"vibe job reset proj codebase-health"* ]] || false
+  run "$REPO_ROOT/bin/vibe" job reset proj codebase-health
+  [ "$status" -eq 0 ]
+  [ ! -e "$f" ]
+  echo 2 >"$f"
+  run act reset "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ ! -e "$f" ]
+  run act reset "{\"repo\": \"$r\", \"job\": \"../x\"}"
+  [ "${lines[1]}" = 400 ]
+}
+
+@test "route run: one recurring job queued now" {
+  local r
+  r="$(make_repo proj)"
+  optin "$r" codebase-health
+  run act run "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -qx branch=jobs/codebase-health "$(qnew)/job"
+  grep -qx recurring=codebase-health "$(qnew)/job"
+}
+
+@test "route triage: vibe job triage writes its lines" {
+  local r
+  r="$(make_repo proj)"
+  printf '7\037%s\037task\037main\037MERGEABLE\037lint\0370\n' "$URL" >"$STUBS/prs"
+  run act triage '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -q 'CI red: lint' "$Q/triage.md"
+  grep -q '^pr list --label agent' "$STUBS/gh.log"
+  grep -q '<button data-act="triage">' "$Q/web/index.html"
+}
+
+# shellcheck disable=SC2016  # a literal $PWD in the prompt
+@test "route opt-in: a new job on opt-in-<job> that runs vibe job add; refuses an unknown or opted-in job" {
+  local r n
+  r="$(make_repo proj)"
+  run act opt-in "{\"repo\": \"$r\", \"job\": \"stale-state\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  n="$(qnew)"
+  grep -qx branch=opt-in-stale-state "$n/job"
+  grep -qF 'vibe job add "$PWD" stale-state' "$n/prompt.md"
+  no_slot "$n/prompt.md"
+  run act opt-in "{\"repo\": \"$r\", \"job\": \"nosuch\"}"
+  [[ "${lines[0]}" == *'"code": 1'*"no recurring job 'nosuch'"* ]] || false
+  optin "$r" repo-review
+  run act opt-in "{\"repo\": \"$r\", \"job\": \"repo-review\"}"
+  [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
+  grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
+  run grep -q 'opt in: [^"]*repo-review' "$Q/web/index.html"
+  [ "$status" -eq 1 ]
+}
+
+@test "queue page: a link opens claude.ai/code" {
+  grep -q 'claude.ai/code' "$REPO_ROOT/templates/queue-page.html"
 }

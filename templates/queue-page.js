@@ -1,6 +1,6 @@
 /* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts; data-ask=<arg> prompts for it (title as the question). After a write: poll now. */
+   Args: the data-* of the nearest .jacts; data-ask="<arg> …" prompts for each (title: the questions, split by |). After a write: poll now. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
@@ -44,11 +44,14 @@
     }
     b.classList.remove('armed'); /* the poll after the write may swap again */
     const args = {}, card = b.closest('.jacts');
-    if (card) Object.assign(args, card.dataset); /* data-id, data-pr, data-repo, data-feature */
-    if (b.dataset.ask) {
-      const v = prompt(b.title || b.textContent);
-      if (!v) return;
-      args[b.dataset.ask] = v;
+    if (card) Object.assign(args, card.dataset); /* data-id, data-pr, data-repo, data-feature, data-job */
+    if (b.dataset.ask) { /* data-ask="a b": one prompt per arg; title "question a|question b" */
+      const qs = (b.title || b.textContent).split('|');
+      for (const [i, a] of b.dataset.ask.split(' ').entries()) {
+        const v = prompt(qs[i] || a);
+        if (!v) return;
+        args[a] = v;
+      }
     }
     const out = $('.act-out');
     b.disabled = true; out.textContent = '…';

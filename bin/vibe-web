@@ -38,6 +38,13 @@ ROUTES = {
     "merge-order": ["vibe", "queue", "merge-order", "{repo}"],
     "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
     "feature-archive": ["vibe", "feature", "archive", "{feature}"],
+    "new": ["vibe", "queue", "new", "{repo}", "{branch}", "{done}", "{task}"],
+    "roadmap": ["vibe", "queue", "roadmap", "{repo}"],
+    "roadmap-new": ["vibe", "queue", "new", "--line", "{line}", "{repo}", "{branch}"],
+    "opt-in": ["vibe", "queue", "new", "--opt-in", "{job}", "{repo}"],
+    "run": ["vibe", "job", "run", "{repo}", "{job}"],
+    "reset": ["vibe", "job", "reset", "{repo}", "{job}"],
+    "triage": ["vibe", "job", "triage"],
 }
 ARGS = {
     "id": re.compile(r"[0-9]{8}-[0-9]{6}-[A-Za-z0-9._-]{1,200}"),
@@ -47,6 +54,11 @@ ARGS = {
     "pr": re.compile(r"https://github\.com/[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}/pull/[0-9]{1,9}"),
     "repo": re.compile(r"(/[A-Za-z0-9_][A-Za-z0-9._-]{0,100}){1,20}"),  # absolute, no .. or option
     "feature": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
+    "branch": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
+    "job": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
+    "line": re.compile(r"[1-9][0-9]{0,5}"),
+    "done": re.compile(r"[^\x00-\x1f\x7f]{1,500}"),
+    "task": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
 }
 
 
