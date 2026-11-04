@@ -30,7 +30,8 @@ None.
 - A new route: one line in `ROUTES` (`bin/vibe-web`); a body arg is a `"{name}"` slot plus a pattern in `ARGS`. Absent or bad → 400.
 - A button: `<button data-act="<route>" [data-confirm] [data-ask="<arg>" title="<question>"]>`. Job buttons sit in `<div class="jacts" data-id="<id>">` (`job_buttons` in `bin/vibe`); page.js sends the nearest `data-id` as `id`.
 - The row list (2026-11-04) is not in the repo. M2 rows were mapped by the done-when; check M3 rows against the done-when only.
-- `.acts` is swapped by innerHTML compare against the live DOM: an armed confirm button there un-arms on the next poll. Job buttons sit in the jobs part, which compares against the last fetch.
+- The poll skips its swap while a `#queue` button is armed, and asks `whoami` again until it gets a login.
+- `bin/vibe-web` kills a command after 120 s (`VIBE_WEB_TIMEOUT`; the tests use 3 s).
 - The page CSP allows only `/queue/page.js` (`templates/queue-page.js`): no inline `<script>` or `onclick`. It acts only on buttons inside `#queue`.
 - `tests/vibe-web.bats`: `act ROUTE BODY` posts a JSON body; `qjob ID STATUS` makes a job dir; a stub `systemctl` logs to `$STUBS/systemctl.log`. Do not pass `-d` twice: curl joins them with `&`.
 - `agent_exec` runs the agent in the background and keeps its pid in `<job>/agent-pid`: the runner TERMs it on a `stop` file.
