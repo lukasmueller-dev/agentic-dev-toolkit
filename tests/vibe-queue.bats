@@ -1004,6 +1004,17 @@ died_job() {
   cmp -s "$a/prompt.md" "$n/prompt.md"
   run grep -q '^now=' "$n/job"
   [ "$status" -ne 0 ]
+  mkjob 03-c "$r" task-c ok
+  echo failed >"$Q/03-c/status"
+  rm "$Q/03-c/prompt.md"
+  mkdir -p "$BATS_TEST_TMPDIR/tmp"
+  TMPDIR="$BATS_TEST_TMPDIR/tmp" run "$VIBE" queue retry 03-c
+  [ "$status" -ne 0 ]
+  printf 'repo=%s\nbranch=Bad Branch\n' "$r" >"$Q/03-c/job"
+  echo task >"$Q/03-c/prompt.md"
+  TMPDIR="$BATS_TEST_TMPDIR/tmp" run "$VIBE" queue retry 03-c
+  [ "$status" -ne 0 ]
+  [ -z "$(ls -A "$BATS_TEST_TMPDIR/tmp")" ]
 }
 
 @test "cancel: a queued job ends skipped, note cancelled, and never runs; an ended job refuses" {

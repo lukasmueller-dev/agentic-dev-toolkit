@@ -321,8 +321,11 @@ cmd_update_toolkit() {
     echo "runner restarted: vibe-queue.service"
   fi
   if [[ "$wbefore" != "$wafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
-    systemctl --user try-restart vibe-web.service || warn "vibe-web.service not restarted"
-    echo "page endpoint restarted: vibe-web.service"
+    if systemctl --user try-restart vibe-web.service; then
+      echo "page endpoint restarted if it was running: vibe-web.service"
+    else
+      warn "vibe-web.service not restarted"
+    fi
   fi
 }
 
@@ -1313,9 +1316,11 @@ cmd_queue_retry() {
   [[ $# == 1 ]] || die "usage: vibe queue retry <id>"
   d="$(queue_job "$1")"
   case "$(jstate "$d" status)" in failed | timeout | skipped) ;; *) die "${d##*/} is $(jstate "$d" status) — retry takes failed, timeout or skipped" ;; esac
+  [[ -f "$d/prompt.md" ]] || die "no prompt.md in ${d##*/}"
+  if [[ -z "$(jget "$d/job" repo)" ]] || ! branch_ok "$(jget "$d/job" branch)"; then die "bad repo or branch in ${d##*/}"; fi
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
   grep -v '^now=' "$d/job" >"$tmp/job" || true
-  cp "$d/prompt.md" "$tmp/prompt.md" || die "no prompt.md in ${d##*/}"
+  cp "$d/prompt.md" "$tmp/prompt.md"
   # Its own worktree: job_prepare then takes the job's own uncommitted work.
   if [[ -f "$d/worktree" ]]; then cp "$d/worktree" "$tmp/worktree"; fi
   n="$(queue_add "$tmp")"
