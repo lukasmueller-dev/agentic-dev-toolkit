@@ -122,3 +122,20 @@ post() {
   run grep -q "script-src[^;]*unsafe" "$Q/web/index.html"
   [ "$status" -eq 1 ]
 }
+
+@test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
+  run post /queue/api/pause -H 'Content-Length: -1' --max-time 5
+  [ "${lines[1]}" = 403 ]
+  run post /queue/api/pause -H 'Content-Length: 70000' --max-time 5
+  [ "${lines[1]}" = 403 ]
+  python3 -c '
+import socket, sys, time
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])))
+s.sendall(b"POST /pause HTTP/1.1\r\n")
+time.sleep(5)' "$PORT" &
+  sleep 0.5
+  run req GET /queue/api/whoami -H 'Tailscale-User-Login: me@example.com' --max-time 2
+  [ "${lines[1]}" = 200 ]
+  [ ! -e "$Q/paused" ]
+  kill $! 2>/dev/null || true
+}

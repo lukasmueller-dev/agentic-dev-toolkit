@@ -10,7 +10,8 @@ import os
 import shlex
 import subprocess
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 VIBE = os.path.join(os.path.dirname(os.path.realpath(__file__)), "vibe")
@@ -36,7 +37,11 @@ def qconf(key, default=""):
     return default
 
 
+WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
+
+
 class Handler(BaseHTTPRequestHandler):
+    timeout = 10  # a stalled client drops after 10 s
     def reply(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code)
@@ -83,14 +88,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "content type"})
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(n) or b"null")
-        except (ValueError, UnicodeDecodeError):
+            body = json.loads(self.rfile.read(n) or b"null") if 0 <= n <= 65536 else None
+        except (ValueError, UnicodeDecodeError, OSError):
             body = None
         if not isinstance(body, dict):
             return self.reply(403, {"error": "body is not a JSON object"})
         argv = ROUTES.get(self.route())
         if argv is None:
             return self.reply(404, {"error": "no route"})
+        with WRITE:
+            return self.write(who, argv)
+
+    def write(self, who, argv):
         r = subprocess.run([VIBE] + argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
         os.makedirs(QROOT, exist_ok=True)
         with open(os.path.join(QROOT, "actions.log"), "a", encoding="utf-8") as f:
@@ -104,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     port = int(qconf("web_port", "7341"))
-    HTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 
 if __name__ == "__main__":
