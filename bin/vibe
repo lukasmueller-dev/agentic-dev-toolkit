@@ -13,6 +13,7 @@
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
+#   vibe queue page                 write the phone page now (the runner writes it each pass)
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
 #   vibe feature add <file>         register a feature: branches in several repos that merge together
@@ -286,7 +287,7 @@ cmd_status() {
 }
 
 cmd_update_toolkit() {
-  local t="$TOOLKIT" def unit before after rbefore rafter
+  local t="$TOOLKIT" def unit before after rbefore rafter wbefore wafter
   [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
   def="$(default_branch "$t")"
@@ -295,9 +296,11 @@ cmd_update_toolkit() {
   unit="claude/systemd/claude-rc@.service"
   before="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
   rbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
+  wbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
   after="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
   rafter="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
+  wafter="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
   "$t/install.sh" || die "install.sh failed"
   "$t/install.sh" doctor || die "doctor reports problems"
@@ -309,6 +312,10 @@ cmd_update_toolkit() {
   if [[ "$rbefore" != "$rafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     systemctl --user restart vibe-queue.service
     echo "runner restarted: vibe-queue.service"
+  fi
+  if [[ "$wbefore" != "$wafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
+    systemctl --user try-restart vibe-web.service || warn "vibe-web.service not restarted"
+    echo "page endpoint restarted: vibe-web.service"
   fi
 }
 
@@ -1219,6 +1226,10 @@ cmd_queue_resume() {
   rm -f "$QROOT/paused"
   echo "resumed"
 }
+cmd_queue_page() {
+  queue_web || die "queue page not written: $QROOT/web/index.html"
+  echo "wrote $QROOT/web/index.html"
+}
 
 # vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
@@ -1533,6 +1544,10 @@ config_md() {
     NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
     /^$/ || /^fill-queue sweep/ { print; next }
     { s = $0; for (i = 1; i <= 5; i++) sub(/^[^ ]+ +/, "", s); printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, s }'
+  if [[ -s "$QROOT/actions.log" ]]; then
+    printf '\n## Page actions\n\n| Time | Login | Command | Exit |\n| --- | --- | --- | --- |\n'
+    tail -n 20 "$QROOT/actions.log" | awk -F'\t' '{ gsub(/\|/, "\\|", $3); l[NR] = sprintf("| %s | %s | `%s` | %s |", $1, $2, $3, $4) } END { for (i = NR; i > 0; i--) print l[i] }'
+  fi
 }
 
 # queue_web — QROOT/web/index.html from templates/queue-page.html; the runner writes it each pass.
@@ -1547,6 +1562,7 @@ queue_web() {
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
+    '<actions>' "$(if [[ -e "$QROOT/paused" ]]; then echo '<button data-act="resume">Resume</button>'; else echo '<button data-act="pause">Pause</button>'; fi)" \
     '<jobs>' "${jobs:-<p>No jobs.</p>}" \
     '<briefing>' "$(queue_report_md | md_html)" \
     '<config>' "$(config_md | md_html)" >"$f.tmp"; then
@@ -1830,8 +1846,8 @@ cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    add | run | status | report | hold | archive | pause | resume | gpu | follow) "cmd_queue_$sub" "$@" ;;
-    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume — see vibe --help" ;;
+    add | run | status | report | hold | archive | pause | resume | page | gpu | follow) "cmd_queue_$sub" "$@" ;;
+    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume|page — see vibe --help" ;;
   esac
 }
 

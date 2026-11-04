@@ -344,7 +344,7 @@ make_kit() {
   [[ "$output" == *"restart 'claude-rc@*'"* ]] || false
 }
 
-@test "update-toolkit: a changed runner restarts vibe-queue on a server only" {
+@test "update-toolkit: a changed runner or endpoint restarts its unit on a server only" {
   local t o
   t="$(make_kit)"
   o="$(clone_repo kit kit-other)"
@@ -380,6 +380,13 @@ make_kit() {
   VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
   [ "$status" -eq 0 ]
   [ ! -e "$STUBS/systemctl.log" ]
+  echo two >"$o/bin/vibe-web"
+  git -C "$o" add bin
+  git -C "$o" commit -q -m "endpoint changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
 }
 
 @test "sync: leaves a behind toolkit checkout to update-toolkit" {
