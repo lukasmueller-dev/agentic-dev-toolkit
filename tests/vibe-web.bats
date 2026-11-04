@@ -322,7 +322,7 @@ URL=https://github.com/o/proj/pull/7
 # newjob — the one queue dir that is neither $ID nor $ID2.
 newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2"; }
 
-@test "route answer: the answer replaces the blockers in HANDOFF.md; commit, push, follow-up queued, original archived" {
+@test "route answer: the answer replaces next action and blockers in HANDOFF.md; commit, push, follow-up queued, original archived" {
   local r wt n
   r="$(make_repo proj)" wt="$BATS_TEST_TMPDIR/wt"
   git -C "$r" worktree add -q -b task "$wt"
@@ -335,7 +335,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   run act answer "{\"id\": \"$ID\", \"text\": \"Plan B.\"}"
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
-  [ "$(sed -n '/^## Blockers/,/^## Gotchas/p' "$wt/HANDOFF.md")" = "$(printf '## Blockers\n\nAnswer: Plan B.\n\n## Gotchas')" ]
+  [ "$(sed -n '/^## Next action/,/^## Gotchas/p' "$wt/HANDOFF.md")" = "$(printf '## Next action\n\nAnswer: Plan B.\n\n## Blockers\n\nAnswer: Plan B.\n\n## Gotchas')" ]
   grep -qx -- '- keep me' "$wt/HANDOFF.md"
   [ "$(git -C "$wt" log -1 --format=%s)" = "docs(handoff): $ID unblocked" ]
   [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse task)" = "$(git -C "$wt" rev-parse HEAD)" ]

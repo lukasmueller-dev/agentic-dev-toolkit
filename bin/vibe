@@ -1407,7 +1407,7 @@ task_append() {
     END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp" && mv -f "$f.tmp" "$f"
 }
 
-# vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in the job's HANDOFF.md (commit,
+# vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in place of Next action and Blockers of the job's HANDOFF.md (commit,
 # push) or, for a lane side job, in a retry prompt; a follow-up job is queued, the original archived.
 cmd_queue_answer() {
   local d tmp side item n st text wt branch
@@ -1422,7 +1422,7 @@ cmd_queue_answer() {
     wt="$(jstate "$d" worktree)"
     [[ -f "$wt/HANDOFF.md" ]] || die "no HANDOFF.md in the worktree ${wt:-of the job} — retry takes a job without one"
     ANS="Answer: $text" awk '
-      /^## / { s = ($0 == "## Blockers"); if (s) { print; print ""; print ENVIRON["ANS"]; print ""; f = 1; next } }
+      /^## / { s = ($0 == "## Next action" || $0 == "## Blockers"); if (s) { print; print ""; print ENVIRON["ANS"]; print ""; f = 1; next } }
       !s { print }
       END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$wt/HANDOFF.md.tmp"
     mv -f "$wt/HANDOFF.md.tmp" "$wt/HANDOFF.md"
