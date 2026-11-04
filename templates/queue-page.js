@@ -8,8 +8,11 @@
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
   let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false;
   setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
+  const api = '/queue/api/';
+  const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
   const poll = async () => {
-    if (busy) return;
+    if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
+    if (busy || $('#queue .armed')) return; /* a swap would un-arm a confirm button */
     busy = true;
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
@@ -28,8 +31,7 @@
     } catch (e) { /* keep the old content; the next poll tries again */ } finally { busy = false; }
   };
   setInterval(poll, 10000);
-  const api = '/queue/api/';
-  fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
+  who();
   document.addEventListener('click', async e => {
     /* #queue only: its cards are escaped; #briefing and #config carry agent-written Markdown. */
     const b = e.target.closest('#queue button[data-act]');
@@ -40,6 +42,7 @@
       setTimeout(() => { b.classList.remove('armed'); b.textContent = t; }, 4000);
       return;
     }
+    b.classList.remove('armed'); /* the poll after the write may swap again */
     const args = {}, card = b.closest('[data-id]');
     if (card) args.id = card.dataset.id;
     if (b.dataset.ask) {
