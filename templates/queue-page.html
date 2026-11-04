@@ -118,7 +118,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .s-failed > .top .pill, .s-blocked > .top .pill, .s-timeout > .top .pill, .s-skipped > .top .pill { color: var(--red); }
 @keyframes beat { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .top::before { animation: none !important; } }
-#queue > p:not(.flags) { margin: 34px 0; padding: 40px 16px; border: 1px solid var(--border); color: var(--muted); font: 400 14px var(--sans); text-align: center; }
+#queue > p:not(.flags, .act-out) { margin: 34px 0; padding: 40px 16px; border: 1px solid var(--border); color: var(--muted); font: 400 14px var(--sans); text-align: center; }
 .md { padding-top: 8px; }
 .md h1 { margin: 22px 0 8px; font: 600 22px/1.2 var(--sans); letter-spacing: -.02em; }
 .md h2 { margin: 36px 0 12px; color: var(--muted); font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
