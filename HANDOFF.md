@@ -29,4 +29,5 @@ None.
 
 - A new route: add one line to `ROUTES` in `bin/vibe-web`; a button is `<button data-act="<route>" [data-confirm] [data-args='{…}']>`. The route gets no body args yet: M2 adds them (`<id>`), check each against a fixed pattern.
 - `.acts` is swapped by innerHTML compare against the live DOM: an armed confirm button there un-arms on the next poll. Job-card buttons (M2) sit in the jobs part, which compares against the last fetch.
+- The page CSP allows only `/queue/page.js` (`templates/queue-page.js`): no inline `<script>` or `onclick`; use `data-*` attributes and the delegated click handler.
 - `tests/vibe-web.bats` starts the server per test on a free port; curl sends both headers when a test repeats `-H Origin`, and the server treats a repeated header as absent.
