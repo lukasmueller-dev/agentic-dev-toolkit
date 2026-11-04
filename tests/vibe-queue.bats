@@ -1050,6 +1050,23 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
+@test "stop: a stop asked during the gate ends the job failed and pushes nothing" {
+  local r
+  r="$(make_repo proj)"
+  mkdir -p "$r/.vibe-jobs"
+  echo "touch '$Q/01-a/stop'" >"$r/.vibe-jobs/gate"
+  git -C "$r" add .vibe-jobs && git -C "$r" commit -q -m "chore: gate" && git -C "$r" push -q origin main
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ "$(cat "$Q/01-a/gate")" = 0 ]
+  run git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+  [ "$status" -ne 0 ]
+  run grep -c 'pr create' "$STUBS/gh.log"
+  [ "$output" = 0 ] || [ "$status" -eq 2 ]
+}
+
 @test "stop: a stopped job whose process died is not queued again" {
   local r
   r="$(make_repo proj)"

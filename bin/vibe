@@ -1009,11 +1009,13 @@ job_review() {
   } >>"$d/round-details.md"
   prev="$(cat "$d/rounds" 2>/dev/null || true)"
   echo "${prev:+$prev · }$line" >"$d/rounds"
+  if stopped "$d"; then return 0; fi
   if ((next)); then
     review_follow "$d" $((n + 1))
   else
     review_pr_md "$d"
     job_gate "$d" || true
+    if stopped "$d"; then return 0; fi
     job_publish "$d" || true
   fi
   job_end "$d" "done" "$line"
@@ -1067,11 +1069,14 @@ job_run() {
       *) st=failed note="no result line" ;;
     esac
   fi
+  if stopped "$d"; then return 0; fi
   case "$st" in failed | blocked | timeout) lane_leave "$d" "$st" || true ;; esac
   if [[ "$st" == "done" ]] && review_due "$d" && review_follow "$d" 1; then
     :
   else
     job_gate "$d" || true
+    # A stop during the gate: the gate runs out, then nothing is pushed.
+    if stopped "$d"; then return 0; fi
     job_publish "$d" "$st" || true
   fi
   job_end "$d" "$st" "${result:-$note}"
