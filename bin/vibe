@@ -866,14 +866,13 @@ job_handoff() {
 # job_after JOB — what runs after the job's commits: `after=` in the job file,
 # else in queue.conf, else `review`. Present but empty means nothing.
 job_after() {
-  local f
-  for f in "$1/job" "$QCONF/queue.conf"; do
-    if grep -q '^after=' "$f" 2>/dev/null; then
-      jget "$f" after
-      return 0
-    fi
-  done
-  echo review
+  if grep -q '^after=' "$1/job" 2>/dev/null; then
+    jget "$1/job" after
+  elif grep -q '^after=' "$QCONF/queue.conf" 2>/dev/null; then
+    qconf after "" # qconf drops a trailing # comment
+  else
+    echo review
+  fi
 }
 
 # review_due JOB — true when the job wants a review and has commits ahead of its base.

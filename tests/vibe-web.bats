@@ -717,3 +717,14 @@ optin() {
   run "$REPO_ROOT/bin/vibe" queue status
   [[ "${lines[0]}" == *"· 2 slots" ]] || false
 }
+
+@test "queue.conf: after=review with a trailing # comment still reviews; the card shows No review" {
+  printf 'web_port=%s\nweb_login=me@example.com\nafter=review   # review every job\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
+  qjob "$ID"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -q 'data-act="noreview"' "$Q/web/index.html"
+  printf 'web_port=%s\nweb_login=me@example.com\nafter=   # off\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
+  "$REPO_ROOT/bin/vibe" queue page
+  run grep -c 'data-act="noreview"' "$Q/web/index.html"
+  [ "$output" = 0 ]
+}
