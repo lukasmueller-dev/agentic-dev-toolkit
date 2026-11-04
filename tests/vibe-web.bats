@@ -875,3 +875,11 @@ get() {
   grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
   grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
 }
+
+@test "routes: output that is not UTF-8 still gets a reply and a log line" {
+  printf '#!/bin/sh\nprintf "bad \\377 byte\\n"\n' >"$STUBS/systemctl"
+  run act restart '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'*'bad '?'ufffd byte'* ]] || false
+  grep -q $'\tsystemctl --user restart vibe-queue\t0$' "$Q/actions.log"
+}

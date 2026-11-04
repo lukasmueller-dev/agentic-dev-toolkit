@@ -191,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
     def write(self, who, argv):
         run = TOOLS.get(argv[0], argv[:1]) + argv[1:]
         try:
-            r = subprocess.run(run, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False, timeout=TIMEOUT,
+            r = subprocess.run(run, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace", check=False, timeout=TIMEOUT,
                                env=dict(os.environ, VIBE_WEB="1"))
         except subprocess.TimeoutExpired:
             r = subprocess.CompletedProcess(run, 124, "", "killed after %d s" % TIMEOUT)
