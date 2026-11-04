@@ -26,3 +26,10 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
+
+- [ ] **Queue page buttons in an aligned grid** — each button group (top bar,
+      Merge order, job cards, New work) is a grid of equal cells; read-only
+      buttons first, write next, `data-confirm` last after a thin rule;
+      recurring Run/Reset under a "Recurring" label; file links on a line of
+      their own. Done when `bats tests/vibe-queue.bats` is green and a test
+      asserts the group order in the page `vibe queue page` writes.
