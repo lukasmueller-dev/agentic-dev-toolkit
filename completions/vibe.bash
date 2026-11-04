@@ -55,7 +55,7 @@ _vibe() {
     status) _vibe_reply "$(_vibe_agents)" "$cur" ;;
     queue)
       if [[ "$COMP_CWORD" -eq 2 ]]; then
-        _vibe_reply "status add report hold archive pause resume page run" "$cur"
+        _vibe_reply "status add report hold archive pause resume page run conf unlimit set retry cancel stop" "$cur"
       elif [[ "$cur" == -* ]]; then
         _vibe_reply "$(_vibe_agents) --now --drain --week" "$cur"
       else

@@ -924,6 +924,143 @@ died_job() {
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
 }
 
+@test "conf: sets one key in queue.conf; refuses an unknown key and a bad value" {
+  run "$VIBE" queue conf slots=2
+  [ "$status" -eq 0 ]
+  run "$VIBE" queue conf slots=3
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^slots=' "$CONF")" = 1 ]
+  grep -qx slots=3 "$CONF"
+  grep -qx after= "$CONF"
+  run "$VIBE" queue conf web_login=evil@example.com
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown key 'web_login'"* ]] || false
+  for v in slots=0 slots=x after=maybe review_level=huge memory_max=-1 slots; do
+    run "$VIBE" queue conf "$v"
+    [ "$status" -ne 0 ]
+  done
+  run "$VIBE" queue conf review_level=max
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CONF")" = "$(printf 'after=\nslots=3\nreview_level=max')" ]
+}
+
+@test "unlimit: the usage limit goes and a queued job starts" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo $(($(date +%s) + 3600)) >"$XDG_STATE_HOME/vibe/limit"
+  drain
+  [ ! -e "$Q/01-a/status" ]
+  run "$VIBE" queue unlimit
+  [ "$status" -eq 0 ]
+  [ ! -e "$XDG_STATE_HOME/vibe/limit" ]
+  drain
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
+@test "set: now=1 starts a queued job first, after= turns its review off; a started job refuses both" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b ok
+  run "$VIBE" queue set 02-b now=1
+  [ "$status" -eq 0 ]
+  "$VIBE" queue set 02-b now=1 >/dev/null
+  [ "$(grep -c '^now=1$' "$Q/02-b/job")" = 1 ]
+  run "$VIBE" queue set 01-a after=
+  [ "$status" -eq 0 ]
+  grep -qx after= "$Q/01-a/job"
+  grep -qx branch=task-a "$Q/01-a/job"
+  for v in slots=3 now=0 after=review; do
+    run "$VIBE" queue set 01-a "$v"
+    [ "$status" -ne 0 ]
+  done
+  slots 1
+  drain
+  [ "$(grep -o 'proj-task-[ab]' "$STUBS/claude.log" | tr '\n' ' ')" = "proj-task-b proj-task-a " ]
+  run "$VIBE" queue set 01-a now=1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"01-a is done, not queued"* ]] || false
+}
+
+@test "retry: a failed job comes back as a new job with its own worktree; the old one is archived; a done job refuses" {
+  local r n a
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a crash now=1
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  run "$VIBE" queue retry 02-b
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue retry 01-a
+  [ "$status" -eq 0 ]
+  a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a"
+  [ -d "$a" ]
+  [ ! -e "$Q/01-a" ]
+  n="$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-proj-task-a')"
+  [ -n "$n" ]
+  [ ! -e "$n/status" ]
+  [ "$(cat "$n/worktree")" = "$(cat "$a/worktree")" ]
+  cmp -s "$a/prompt.md" "$n/prompt.md"
+  run grep -q '^now=' "$n/job"
+  [ "$status" -ne 0 ]
+}
+
+@test "cancel: a queued job ends skipped, note cancelled, and never runs; an ended job refuses" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  run "$VIBE" queue cancel 01-a
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = skipped ]
+  [ "$(cat "$Q/01-a/note")" = cancelled ]
+  drain
+  [ ! -e "$STUBS/claude.log" ]
+  run "$VIBE" queue cancel 01-a
+  [ "$status" -ne 0 ]
+}
+
+@test "stop: the runner ends a running job failed, note stopped; no requeue, no push, no WIP commit" {
+  local r i runner
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a slow
+  mkjob 02-b "$r" task-b ok
+  run "$VIBE" queue stop 01-a
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not running"* ]] || false
+  slots 1
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/runner.log" 2>&1 3>&- &
+  runner=$!
+  for i in $(seq 100); do
+    if [ -s "$Q/01-a/agent-pid" ] && [ -e "$r/.claude/worktrees/task-a/wip.txt" ]; then break; fi
+    sleep 0.1
+  done
+  run "$VIBE" queue stop 01-a
+  [ "$status" -eq 0 ]
+  SECONDS=0
+  wait "$runner"
+  [ "$SECONDS" -lt 15 ] # the slow agent sleeps 30 s: the runner killed it
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ ! -e "$Q/01-a/requeued" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ "$(cat "$r/.claude/worktrees/task-a/wip.txt")" = half ]
+  [ -n "$(git -C "$r/.claude/worktrees/task-a" status --porcelain)" ]
+  run git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/task-a
+  [ "$status" -ne 0 ]
+}
+
+@test "stop: a stopped job whose process died is not queued again" {
+  local r
+  r="$(make_repo proj)"
+  died_job 01-a "$r" task-a
+  touch "$Q/01-a/stop"
+  drain
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ ! -e "$STUBS/claude.log" ]
+}
+
 @test "hold and archive: a held job stays; archive moves only ended jobs" {
   local r
   r="$(make_repo proj)"
@@ -1171,7 +1308,7 @@ pandoc_stub() {
   [ "$output" = 0 ]
   grep -qF '<details class="stack"><summary>3 jobs</summary><div class="job s-done"><div class="top"><b>alpha</b><span class="pill">done</span></div><p>done: alpha.txt added' "$f"
   grep -qF '<div class="job s-blocked"><div class="top"><b>beta</b><span class="pill">blocked</span></div><p>blocked: beta needs a decision → lane-x-beta' "$f"
-  grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p></div></details></div>' "$f"
+  grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p><div class="jacts" data-id="03-c"><button data-act="now">Start next</button><button data-act="cancel" data-confirm>Cancel</button></div></div></details></div>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
   # The summary covers the whole lane card and has no arrow; link, steps and job cards sit above it.

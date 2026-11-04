@@ -450,8 +450,8 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
-  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status " ]
-  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run " ]
+  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
+  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run retry " ]
   [ "$(complete_vibe queue add --n)" = --now ]
   [ "$(complete_vibe queue run --c)" = --claude ]
   [ "$(complete_vibe job l)" = list ]

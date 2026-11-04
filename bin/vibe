@@ -14,6 +14,13 @@
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue page                 write the phone page now (the runner writes it each pass)
+#   vibe queue conf <key>=<value>   set one queue.conf key: slots, after, review_*, memory_max
+#   vibe queue unlimit              forget the usage limit: jobs start again
+#   vibe queue set <id> now=1|after=
+#                                   a queued job: start it next, or with no review
+#   vibe queue retry <id>           a failed, timeout or skipped job again as a new job; the old one archived
+#   vibe queue cancel <id>          a queued job ends skipped, note cancelled
+#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
 #   vibe feature add <file>         register a feature: branches in several repos that merge together
@@ -47,7 +54,7 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,27s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  sed -n '5,35s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -801,13 +808,16 @@ secs() {
 }
 
 # agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
-# timeout(1), JOB as $VIBE_JOB_DIR. Exit 124: the time limit; 137: killed before it.
+# timeout(1), JOB as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
 agent_exec() {
   local d="$1" t="$2" s="$3" rc=0 start="$SECONDS"
   shift 3
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" || rc=$?
+  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
+  echo "$!" >"$d/agent-pid"
+  wait "$!" || rc=$?
+  rm -f "$d/agent-pid"
   # timeout(1) exits 137 too, when TERM left the agent running past --kill-after.
   if ((rc == 137 && ${#TIMEOUT_CMD[@]})) && ((SECONDS - start >= $(secs "$t"))); then rc=124; fi
   return "$rc"
@@ -965,6 +975,7 @@ job_review() {
   n="$(jget "$d/job" review)" t="$(job_timeout "$d")" wt="$(jstate "$d" worktree)"
   : >"$d/log"
   review_agent "$d" "$t" "$n" || rc=$?
+  if stopped "$d"; then return 0; fi
   if ((rc == 124)); then
     line="R$n: timeout"
   elif ((rc != 0)) || ! review_findings "$d"; then
@@ -976,6 +987,7 @@ job_review() {
     if ((count > 0)); then
       before="$(git -C "$wt" rev-parse HEAD)"
       review_fix "$d" "$t" || rc=$?
+      if stopped "$d"; then return 0; fi
       if ((rc == 124)); then
         line+=" → timeout"
       else
@@ -1007,6 +1019,12 @@ job_review() {
   job_end "$d" "done" "$line"
 }
 
+# stopped JOB — true when `vibe queue stop` asked for it; the job then ends failed, no publish.
+stopped() {
+  [[ -e "$1/stop" ]] || return 1
+  job_end "$1" failed stopped
+}
+
 # job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
 # review due queues the review instead, and the review gates and publishes. A retry after a usage
 # limit resumes the saved session. Runs in the background; it writes the final
@@ -1022,6 +1040,7 @@ job_run() {
   : >"$d/log"
   job_agent "$d" "$t" "$d/prompt.md" "$(jstate "$d" session)" || rc=$?
   job_session "$d"
+  if stopped "$d"; then return 0; fi
   result="$(jstate "$d" result)"
   reset="$(limit_reset "$d/log")"
   if [[ -n "$reset" && "$result" != "done:"* ]]; then
@@ -1144,6 +1163,10 @@ cmd_queue_run() {
           pid="$(jstate "$d" pid)"
           if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             running=$((running + 1)) busy+=" $(branch_key "$d")"
+            # vibe queue stop: TERM the agent; job_run then ends the job.
+            if [[ -e "$d/stop" ]]; then kill "$(jstate "$d" agent-pid)" 2>/dev/null || true; fi
+          elif [[ -e "$d/stop" ]]; then
+            job_end "$d" failed stopped
           elif [[ ! -e "$d/requeued" ]]; then
             # Died once (oomd, reboot): run again in its own worktree, one time.
             date '+%F %T' >"$d/requeued"
@@ -1226,6 +1249,96 @@ cmd_queue_resume() {
   rm -f "$QROOT/paused"
   echo "resumed"
 }
+# vibe queue unlimit — forget the usage limit: jobs start again.
+cmd_queue_unlimit() {
+  rm -f "$QROOT/limit"
+  echo "usage limit cleared"
+}
+
+# vibe queue conf KEY=VALUE — set one queue.conf key; refuses an unknown key or a bad value.
+cmd_queue_conf() {
+  local k v re f="$QCONF/queue.conf"
+  [[ $# == 1 && "$1" == *=* ]] || die "usage: vibe queue conf <key>=<value>"
+  k="${1%%=*}" v="${1#*=}"
+  case "$k" in
+    slots) re='^[1-9][0-9]?$' ;;
+    after) re='^(review)?$' ;;
+    review_rounds) re='^[0-9]$' ;;
+    review_trivial) re='^[0-9]{1,5}$' ;;
+    review_model) re='^[a-z][a-z0-9.-]*$' ;;
+    review_level) re='^(low|medium|high|xhigh|max)$' ;;
+    review_timeout) re='^[1-9][0-9]*[smhd]?$' ;;
+    memory_max) re='^([1-9][0-9]*[KMGT%]?|infinity)$' ;;
+    *) die "unknown key '$k' — slots after review_rounds review_trivial review_model review_level review_timeout memory_max" ;;
+  esac
+  [[ "$v" =~ $re ]] || die "bad value for $k: '$v'"
+  mkdir -p "$QCONF"
+  {
+    grep -v "^$k=" "$f" 2>/dev/null || true
+    echo "$k=$v"
+  } >"$f.tmp.$$"
+  mv -f "$f.tmp.$$" "$f"
+  echo "$k=$v"
+}
+
+# is_queued JOB — true while the job waits to start.
+is_queued() {
+  case "$(jstate "$1" status)" in "" | queued) return 0 ;; esac
+  return 1
+}
+
+# vibe queue set ID now=1|after= — a queued job: start it next, or with no review.
+cmd_queue_set() {
+  local d
+  [[ $# == 2 && ("$2" == now=1 || "$2" == after=) ]] || die "usage: vibe queue set <id> now=1|after="
+  d="$(queue_job "$1")"
+  is_queued "$d" || die "${d##*/} is $(jstate "$d" status), not queued"
+  {
+    grep -v "^${2%%=*}=" "$d/job" || true
+    echo "$2"
+  } >"$d/job.tmp.$$"
+  mv -f "$d/job.tmp.$$" "$d/job"
+  echo "${d##*/}: $2"
+}
+
+# vibe queue retry ID — a failed, timeout or skipped job again as a new job (job,
+# prompt.md, its own worktree); the old one is archived.
+cmd_queue_retry() {
+  local d tmp n
+  [[ $# == 1 ]] || die "usage: vibe queue retry <id>"
+  d="$(queue_job "$1")"
+  case "$(jstate "$d" status)" in failed | timeout | skipped) ;; *) die "${d##*/} is $(jstate "$d" status) — retry takes failed, timeout or skipped" ;; esac
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
+  grep -v '^now=' "$d/job" >"$tmp/job" || true
+  cp "$d/prompt.md" "$tmp/prompt.md" || die "no prompt.md in ${d##*/}"
+  # Its own worktree: job_prepare then takes the job's own uncommitted work.
+  if [[ -f "$d/worktree" ]]; then cp "$d/worktree" "$tmp/worktree"; fi
+  n="$(queue_add "$tmp")"
+  cmd_queue_archive "$d" >/dev/null
+  echo "queued ${n##*/}; archived ${d##*/}"
+}
+
+# vibe queue cancel ID — a queued job ends skipped, note cancelled.
+cmd_queue_cancel() {
+  local d
+  [[ $# == 1 ]] || die "usage: vibe queue cancel <id>"
+  d="$(queue_job "$1")"
+  is_queued "$d" || die "${d##*/} is $(jstate "$d" status), not queued — stop takes a running job"
+  job_end "$d" skipped cancelled
+  echo "cancelled ${d##*/}"
+}
+
+# vibe queue stop ID — the runner stops a running job on its next pass: failed, note
+# stopped; no requeue, no publish.
+cmd_queue_stop() {
+  local d
+  [[ $# == 1 ]] || die "usage: vibe queue stop <id>"
+  d="$(queue_job "$1")"
+  [[ "$(jstate "$d" status)" == running ]] || die "${d##*/} is $(jstate "$d" status), not running — cancel takes a queued job"
+  date '+%F %T' >"$d/stop"
+  echo "stop asked: the runner ends ${d##*/} on its next pass"
+}
+
 cmd_queue_page() {
   queue_web || die "queue page not written: $QROOT/web/index.html"
   echo "wrote $QROOT/web/index.html"
@@ -1461,6 +1574,25 @@ job_steps() {
     | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
 }
 
+# job_buttons JOB — the card's write buttons by status; routes in bin/vibe-web, shown after whoami.
+job_buttons() {
+  local b=""
+  case "$(jstate "$1" status)" in
+    "" | queued)
+      if [[ "$(jget "$1/job" now)" != 1 ]]; then b+='<button data-act="now">Start next</button>'; fi
+      if [[ "$(job_after "$1")" == review ]]; then b+='<button data-act="noreview">No review</button>'; fi
+      b+='<button data-act="cancel" data-confirm>Cancel</button>'
+      ;;
+    running) b='<button data-act="stop" data-confirm>Stop</button>' ;;
+    failed | timeout | skipped) b='<button data-act="retry">Retry</button>' ;;
+  esac
+  if job_final "$1"; then
+    if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
+    b+='<button data-act="archive" data-confirm>Archive</button>'
+  fi
+  printf '<div class="jacts" data-id="%s">%s</div>' "$(esc "${1##*/}")" "$b"
+}
+
 # status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
 # a lane unpacks into a job card per job, a feature into a card per member.
 status_card() {
@@ -1489,6 +1621,7 @@ status_card() {
   if [[ "$1" == job ]]; then
     t="$(job_stats "$dir")"
     if [[ -n "$t" ]]; then extra+="<p class=\"stats\">$(esc "$t")</p>"; fi
+    if [[ -n "$dir" ]]; then extra+="$(job_buttons "$dir")"; fi
   fi
   case "$(jstate "${dir:-/nonexistent}" status)" in running | gpu) steps="$(job_steps "$dir")" ;; esac
   if [[ -n "$steps" ]]; then
@@ -1550,6 +1683,14 @@ config_md() {
   fi
 }
 
+# page_buttons — the queue-wide write buttons; routes in bin/vibe-web.
+page_buttons() {
+  if [[ -e "$QROOT/paused" ]]; then echo '<button data-act="resume">Resume</button>'; else echo '<button data-act="pause">Pause</button>'; fi
+  if limited; then echo '<button data-act="unlimit">Clear usage limit</button>'; fi
+  echo '<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
+  echo '<button data-act="restart" data-confirm>Restart runner</button>'
+}
+
 # queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
@@ -1565,7 +1706,7 @@ queue_web() {
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
-    '<actions>' "$(if [[ -e "$QROOT/paused" ]]; then echo '<button data-act="resume">Resume</button>'; else echo '<button data-act="pause">Pause</button>'; fi)" \
+    '<actions>' "$(page_buttons)" \
     '<jobs>' "${jobs:-<p>No jobs.</p>}" \
     '<briefing>' "$(queue_report_md | md_html)" \
     '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
@@ -1849,8 +1990,8 @@ cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    add | run | status | report | hold | archive | pause | resume | page | gpu | follow) "cmd_queue_$sub" "$@" ;;
-    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume|page — see vibe --help" ;;
+    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop) "cmd_queue_$sub" "$@" ;;
+    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop — see vibe --help" ;;
   esac
 }
 

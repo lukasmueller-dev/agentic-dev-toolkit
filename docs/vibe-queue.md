@@ -77,7 +77,7 @@ Serve it on the tailnet once:
 sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a path, not a port
 ```
 
-Buttons, server only: `bin/vibe-web` runs one `vibe` command per route; `web_login` in `queue.conf` first.
+Buttons, server only: `bin/vibe-web` runs one fixed command per route; `web_login` in `queue.conf` first.
 
 ```bash
 systemctl --user link ~/.claude/systemd/vibe-web.service
@@ -89,7 +89,8 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - The page shows buttons only after `GET /queue/api/whoami` returns your login. Server down: the page reads, no buttons.
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
-- Routes: `pause`, `resume`.
+- Routes: `pause`, `resume`, `unlimit`, `conf` (`set`: `key=value`), `restart` (`systemctl --user restart vibe-queue`); per job (`id`): `now`, `noreview`, `cancel`, `stop`, `retry`, `hold` (`note`), `archive`. Each runs the `vibe queue` command of its name (`now`: `set <id> now=1`, `noreview`: `set <id> after=`).
+- Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 - A data-confirm button needs a second tap within 4 s.
 
 ## 4. Verify
@@ -106,6 +107,11 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
+- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`; other keys and bad values are refused.
+- `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
+- `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
+- `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit.
+- `vibe queue unlimit` removes `limit`: jobs start again.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - Gate: after the agent (after the last review round when one is due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
@@ -167,6 +173,7 @@ vibe feature archive <slug>        # all member PRs merged
 | `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
 | `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
 | `queue/<id>/session` | the agent's `session_id`; a timeout, a usage-limit retry and a review fix resume it |
+| `queue/<id>/agent-pid`, `stop` | the running agent's pid; `vibe queue stop` asked to stop it |
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
