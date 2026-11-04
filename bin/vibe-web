@@ -76,12 +76,12 @@ def argv_of(route, body):
 
 
 def qconf(key, default=""):
-    """KEY=value from queue.conf, else DEFAULT (same rule as vibe's qconf)."""
+    """KEY=value from queue.conf without a trailing ` # comment`, else DEFAULT (same rule as vibe's qconf)."""
     try:
         with open(QCONF, encoding="utf-8") as f:
             for line in f:
                 if line.startswith(key + "="):
-                    return line[len(key) + 1:].strip() or default
+                    return re.sub(r"\s#.*", "", line[len(key) + 1:]).strip() or default
     except OSError:
         pass
     return default

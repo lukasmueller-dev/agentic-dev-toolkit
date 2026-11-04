@@ -705,3 +705,15 @@ optin() {
   [[ "${lines[0]}" == *'"out": "1: Item 001 '* ]] || false
   [[ "${lines[0]}" == *'400: Item 400 '* ]] || false
 }
+
+@test "queue.conf: a trailing # comment, as in the docs, is no part of the value" {
+  kill "$WEB_PID"
+  wait "$WEB_PID" 2>/dev/null || true
+  printf 'slots=2   # two\nweb_port=%s      # the page endpoint\nweb_login=me@example.com   # your login\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
+  "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
+  WEB_PID=$!
+  run curl -s --retry 30 --retry-connrefused --retry-delay 1 -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/whoami"
+  [ "$output" = '{"login": "me@example.com"}' ]
+  run "$REPO_ROOT/bin/vibe" queue status
+  [[ "${lines[0]}" == *"· 2 slots" ]] || false
+}

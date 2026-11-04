@@ -368,10 +368,12 @@ QCONF="${XDG_CONFIG_HOME:-$HOME/.config}/vibe"
 jget() { awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }' "$1" 2>/dev/null || true; }
 # jstate JOB NAME — first line of a job state file; empty when absent.
 jstate() { head -n 1 "$1/$2" 2>/dev/null || true; }
-# qconf KEY DEFAULT — KEY=value from ~/.config/vibe/queue.conf, else DEFAULT.
+# qconf KEY DEFAULT — KEY=value from ~/.config/vibe/queue.conf without a trailing ` # comment`, else DEFAULT.
 qconf() {
   local v
   v="$(jget "$QCONF/queue.conf" "$1")"
+  v="${v%%[[:space:]]#*}"
+  v="${v%"${v##*[![:space:]]}"}"
   echo "${v:-$2}"
 }
 
