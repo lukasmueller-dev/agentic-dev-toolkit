@@ -1025,8 +1025,10 @@ job_review() {
 }
 
 # stopped JOB — true when `vibe queue stop` asked for it; the job then ends failed, no publish.
+# A lane job leaves the lane first, so the next item starts from a clean worktree.
 stopped() {
   [[ -e "$1/stop" ]] || return 1
+  lane_leave "$1" stopped || true
   job_end "$1" failed stopped
 }
 
@@ -1173,8 +1175,8 @@ cmd_queue_run() {
             running=$((running + 1)) busy+=" $(branch_key "$d")"
             # vibe queue stop: TERM the agent; job_run then ends the job.
             if [[ -e "$d/stop" ]]; then kill "$(jstate "$d" agent-pid)" 2>/dev/null || true; fi
-          elif [[ -e "$d/stop" ]]; then
-            job_end "$d" failed stopped
+          elif stopped "$d"; then
+            :
           elif [[ ! -e "$d/requeued" ]]; then
             # Died once (oomd, reboot): run again in its own worktree, one time.
             date '+%F %T' >"$d/requeued"
@@ -2322,6 +2324,8 @@ job_state_update() {
       case "$(jstate "$d" result)" in "done:"*) jstate "$d" result >"$dir/last-result" ;; esac
       ;;
     failed | timeout)
+      # A stop is your tap, not a failure: it must not count toward the two that disable the job.
+      if [[ -e "$d/stop" ]]; then return 0; fi
       n="$(head -n 1 "$dir/fails" 2>/dev/null || echo 0)"
       echo $((n + 1)) >"$dir/fails"
       ;;

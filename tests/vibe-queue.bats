@@ -1078,6 +1078,40 @@ died_job() {
   [ "$output" = 0 ] || [ "$status" -eq 2 ]
 }
 
+@test "stop: a stopped lane item leaves the lane on <branch>-<item>; the next item runs from a clean worktree" {
+  local r o="$BATS_TEST_TMPDIR/proj.git" i runner
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" lane-x slow "lane=Fix health" item=beta
+  mkjob 02-b "$r" lane-x item "lane=Fix health" item=gamma
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/runner.log" 2>&1 3>&- &
+  runner=$!
+  for i in $(seq 100); do
+    if [ -s "$Q/01-a/agent-pid" ] && [ -e "$r/.claude/worktrees/lane-x/wip.txt" ]; then break; fi
+    sleep 0.1
+  done
+  "$VIBE" queue stop 01-a >/dev/null
+  wait "$runner"
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ "$(cat "$Q/01-a/side")" = lane-x-beta ]
+  [ "$(git -C "$o" log -n 1 --format=%s lane-x-beta)" = "wip: beta (stopped)" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ "$(git -C "$o" log -n 1 --format=%s lane-x)" = "feat: gamma" ]
+  run git -C "$o" cat-file -e lane-x:wip.txt
+  [ "$status" -ne 0 ]
+}
+
+@test "stop: a stopped recurring job does not count as a fail" {
+  local r
+  r="$(make_repo proj)"
+  died_job 01-a "$r" task-a
+  echo recurring=health >>"$Q/01-a/job"
+  touch "$Q/01-a/stop"
+  drain
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ ! -e "$XDG_STATE_HOME/vibe/jobs/proj/health/fails" ]
+}
+
 @test "stop: a stopped job whose process died is not queued again" {
   local r
   r="$(make_repo proj)"
