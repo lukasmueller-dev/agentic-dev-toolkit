@@ -53,3 +53,31 @@ setup() {
   run "$GQ" submit --dir "$BATS_TEST_TMPDIR/nowhere" -- true
   [ "$status" -ne 0 ]
 }
+
+@test "cancel: a queued job ends at once, a running one with its whole tree; --then gets GPUQ_EXIT=cancelled" {
+  local a b pid
+  a="$("$GQ" submit --name a --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then-a.txt" -- touch ran-a.txt)"
+  run "$GQ" cancel "$a"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$a/exit")" = cancelled ]
+  [ "$(cat "$WORK/then-a.txt")" = cancelled ]
+  b="$("$GQ" submit --name b --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then-b.txt" -- sh -c 'sleep 1; echo late >late.txt')"
+  "$GQ" run --once 2>/dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    [ ! -s "$GPU_QUEUE_DIR/running/$b/pid" ] || break
+    sleep 0.1
+  done
+  run "$GQ" cancel "$b"
+  [ "$status" -eq 0 ]
+  wait "$pid"
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$b/exit")" = cancelled ]
+  [ "$(cat "$WORK/then-b.txt")" = cancelled ]
+  sleep 1.5
+  [ ! -e "$WORK/late.txt" ]
+  [ ! -e "$WORK/ran-a.txt" ]
+  run "$GQ" cancel "$b"
+  [ "$status" -ne 0 ]
+  run "$GQ" cancel ../x
+  [ "$status" -ne 0 ]
+}

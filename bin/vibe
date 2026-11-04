@@ -1679,11 +1679,15 @@ follow_job() {
 
 # vibe queue follow JOB — gpu-queue's --then: a follow-up job on JOB's branch
 # with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG). It sorts right
-# after JOB, so it runs before later jobs.
+# after JOB, so it runs before later jobs. GPUQ_EXIT=cancelled: JOB ends failed, no follow-up.
 cmd_queue_follow() {
   local p="${1:?usage: vibe queue follow <job dir>}" f n=1
   p="${p%/}"
   [[ -f "$p/job" ]] || die "no job at $p"
+  if [[ "${GPUQ_EXIT:-}" == cancelled ]]; then
+    job_end "$p" failed "GPU run cancelled"
+    return 0
+  fi
   f="$p-gpu"
   while [[ -e "$f" ]]; do
     n=$((n + 1))

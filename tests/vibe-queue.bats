@@ -34,7 +34,7 @@ case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
-    "$VIBE" queue gpu -- sh -c 'echo trained >out.txt'
+    "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt'
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   ok)
@@ -1579,6 +1579,36 @@ EOF
   grep -q '^follow=1$' "$Q/01-a-gpu/job"
   grep -q -- '- Exit: 0' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu cancel: a queued or a running run ends the job failed, with no follow-up" {
+  local r pid g
+  r="$(make_repo proj)"
+  touch "$STUBS/gpu-sleep"
+  mkjob 01-a "$r" task-a gpu
+  mkjob 02-b "$r" task-b gpu
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$Q/01-a/status" "$Q/02-b/status" 2>/dev/null)" != "$(printf 'gpu\ngpu')" ] || break
+    sleep 0.1
+  done
+  run "$REPO_ROOT/bin/gpu-queue" cancel "$(cat "$Q/01-a/gpu-job")"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = "GPU run cancelled" ]
+  g="$GPU_QUEUE_DIR/running/$(cat "$Q/02-b/gpu-job")"
+  "$REPO_ROOT/bin/gpu-queue" run --once 2>/dev/null &
+  for _ in $(seq 1 50); do
+    [ ! -s "$g/pid" ] || break
+    sleep 0.1
+  done
+  run "$REPO_ROOT/bin/gpu-queue" cancel "${g##*/}"
+  [ "$status" -eq 0 ]
+  wait "$pid"
+  [ "$(cat "$Q/02-b/status")" = failed ]
+  [ ! -e "$Q/01-a-gpu" ]
+  [ ! -e "$Q/02-b-gpu" ]
 }
 
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {
