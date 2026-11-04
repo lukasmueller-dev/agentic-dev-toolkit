@@ -1550,7 +1550,7 @@ config_md() {
   fi
 }
 
-# queue_web — QROOT/web/index.html from templates/queue-page.html; the runner writes it each pass.
+# queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
 queue_web() {
   local f="$QROOT/web/index.html" r g q p o jobs lim
   local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
@@ -1558,6 +1558,8 @@ queue_web() {
   lim="$(limit_line)"
   jobs="$(queue_jobs status_card)"
   mkdir -p "${f%/*}" || return 1
+  # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or the briefing.
+  cp "$SELF_ROOT/templates/queue-page.js" "${f%/*}/page.js" || return 1
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \

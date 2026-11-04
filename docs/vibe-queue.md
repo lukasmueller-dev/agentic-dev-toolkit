@@ -173,7 +173,7 @@ vibe feature archive <slug>        # all member PRs merged
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
 | `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
-| `web/index.html` | the phone page, rewritten each runner pass (`templates/queue-page.html`) |
+| `web/index.html`, `page.js` | the phone page, rewritten each runner pass (`templates/queue-page.*`); its CSP runs only `page.js` |
 | `paused` | `vibe queue pause` |
 | `actions.log` | page writes: time, login, command, exit code (`bin/vibe-web`) |
 | `limit` | reset epoch of the last usage limit; no starts before it |

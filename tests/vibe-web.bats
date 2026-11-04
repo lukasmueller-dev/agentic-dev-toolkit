@@ -108,6 +108,16 @@ post() {
   run "$REPO_ROOT/bin/vibe" queue page
   [ "$status" -eq 0 ]
   grep -q 'data-act="pause"' "$Q/web/index.html"
-  grep -q "fetch(api + 'whoami'" "$Q/web/index.html"
+  grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -q 'body.can .acts' "$Q/web/index.html"
+}
+
+@test "vibe queue page: CSP allows only page.js, so HTML in a note runs no script" {
+  run "$REPO_ROOT/bin/vibe" queue page
+  [ "$status" -eq 0 ]
+  grep -q "Content-Security-Policy\" content=\"default-src 'self'; script-src 'self';" "$Q/web/index.html"
+  grep -q '<script src="/queue/page.js"></script>' "$Q/web/index.html"
+  [ "$(grep -c '<script' "$Q/web/index.html")" = 1 ]
+  run grep -q "script-src[^;]*unsafe" "$Q/web/index.html"
+  [ "$status" -eq 1 ]
 }

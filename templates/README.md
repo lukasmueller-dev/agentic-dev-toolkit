@@ -19,6 +19,7 @@ copy.
 | `job-report.md`      | a job's `report.md` | Short — one per unattended job run; the morning report reads it |
 | `VIBE_JOB.md`       | `<repo>/.vibe-jobs/<job>.md` | Long — one per repo × recurring job; opts the repo in |
 | `queue-page.html`   | `~/.local/state/vibe/web/index.html` | Short — rewritten each queue runner pass |
+| `queue-page.js`     | `~/.local/state/vibe/web/page.js` | Short — copied each queue runner pass; the page's only script (CSP) |
 
 `codebase/` and `research/` go into *another* repo's `docs/`, never into this one
 (`docs/research-skills.md` §2).
