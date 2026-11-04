@@ -66,6 +66,7 @@ def qconf(key, default=""):
     return default
 
 
+TIMEOUT = int(os.environ.get("VIBE_WEB_TIMEOUT") or 120)  # s per command: a hung one must not hold WRITE for ever
 WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
 
 
@@ -133,13 +134,18 @@ class Handler(BaseHTTPRequestHandler):
     def write(self, who, argv):
         run = [VIBE] + argv[1:] if argv[0] == "vibe" else argv
         try:
-            r = subprocess.run(run, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
+            r = subprocess.run(run, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            r = subprocess.CompletedProcess(run, 124, "", "killed after %d s" % TIMEOUT)
         except OSError as e:
             r = subprocess.CompletedProcess(run, 127, "", str(e))
         os.makedirs(QROOT, exist_ok=True)
         with open(os.path.join(QROOT, "actions.log"), "a", encoding="utf-8") as f:
             f.write("%s\t%s\t%s\t%d\n" % (datetime.datetime.now().strftime("%F %T"), who, shlex.join(argv), r.returncode))
-        subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False)
+        try:
+            subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=TIMEOUT)
+        except subprocess.TimeoutExpired:
+            pass
         return self.reply(200, {"code": r.returncode, "out": (r.stdout + r.stderr)[-4000:]})
 
     def log_message(self, fmt, *args):

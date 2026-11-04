@@ -13,9 +13,10 @@ setup() {
   printf 'web_port=%s\nweb_login=me@example.com\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
   STUBS="$BATS_TEST_TMPDIR/stubs"
   mkdir -p "$STUBS"
-  printf '#!/bin/sh\necho "$*" >>"%s/systemctl.log"\n' "$STUBS" >"$STUBS/systemctl"
+  printf '#!/bin/sh\necho "$*" >>"%s/systemctl.log"\n[ ! -f "%s/hang" ] || exec sleep 30\n' "$STUBS" "$STUBS" >"$STUBS/systemctl"
   chmod +x "$STUBS/systemctl"
   PATH="$STUBS:$PATH"
+  export VIBE_WEB_TIMEOUT=3
   "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
   WEB_PID=$!
   curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
@@ -114,6 +115,8 @@ post() {
   [ "$status" -eq 0 ]
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
+  grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
+  grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
   grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
@@ -157,10 +160,12 @@ time.sleep(5)' "$PORT" &
   cmp -s "$REPO_ROOT/templates/queue-page.js" "$Q/web/page.js"
 }
 
-# act ROUTE BODY — a write by the right login with a JSON BODY.
+# act ROUTE BODY [CURL ARG...] — a write by the right login with a JSON BODY.
 act() {
-  req POST "/queue/api/$1" -H 'Tailscale-User-Login: me@example.com' -H "Origin: https://127.0.0.1:$PORT" \
-    -H 'Content-Type: application/json' -d "$2"
+  local r="$1" b="$2"
+  shift 2
+  req POST "/queue/api/$r" -H 'Tailscale-User-Login: me@example.com' -H "Origin: https://127.0.0.1:$PORT" \
+    -H 'Content-Type: application/json' -d "$b" "$@"
 }
 
 # qjob ID STATUS — a job dir in the queue; STATUS empty: queued.
@@ -194,6 +199,16 @@ ID=20261104-080000-proj-task
   [ "${lines[1]}" = 200 ]
   [ "$(cat "$STUBS/systemctl.log")" = "--user restart vibe-queue" ]
   grep -q $'\tsystemctl --user restart vibe-queue\t0$' "$Q/actions.log"
+}
+
+@test "routes: a hung command is killed after the timeout and blocks no later write" {
+  touch "$STUBS/hang"
+  run act restart '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 124'* ]] || false
+  run act pause '{}' --max-time 10
+  [ "${lines[1]}" = 200 ]
+  [ -e "$Q/paused" ]
 }
 
 @test "route unlimit: the usage limit goes" {
