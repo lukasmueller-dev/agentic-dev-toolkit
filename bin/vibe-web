@@ -167,7 +167,10 @@ class Handler(BaseHTTPRequestHandler):
             subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=TIMEOUT)
         except subprocess.TimeoutExpired:
             pass
-        return self.reply(200, {"code": r.returncode, "out": (r.stdout + r.stderr)[-4000:]})
+        out = r.stdout + r.stderr
+        if len(out) > 16000:  # a listing leads with its first item, an error ends the output: keep both ends
+            out = out[:12000] + "\n…\n" + out[-4000:]
+        return self.reply(200, {"code": r.returncode, "out": out})
 
     def log_message(self, fmt, *args):
         sys.stderr.write("vibe-web: %s\n" % (fmt % args))
