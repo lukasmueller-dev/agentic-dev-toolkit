@@ -718,6 +718,20 @@ optin() {
   [[ "${lines[0]}" == *"· 2 slots" ]] || false
 }
 
+@test "route retry: a failed review round comes back as an agent job: no review= or follow=, the base job's timeout" {
+  local n
+  qjob "$ID" "done"
+  echo timeout=3h >>"$Q/queue/$ID/job"
+  qjob "$ID-review1" failed
+  printf 'timeout=1h\nfollow=1\nreview=1\n' >>"$Q/queue/$ID-review1/job"
+  run act retry "{\"id\": \"$ID-review1\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  n="$(find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID")"
+  grep -qx timeout=3h "$n/job"
+  run grep -cE '^(review|follow|timeout=1h)' "$n/job"
+  [ "$output" = 0 ]
+}
+
 @test "queue.conf: after=review with a trailing # comment still reviews; the card shows No review" {
   printf 'web_port=%s\nweb_login=me@example.com\nafter=review   # review every job\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
   qjob "$ID"
