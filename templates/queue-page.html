@@ -74,7 +74,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .pill { color: var(--muted); font: 600 13px var(--sans); font-variant-numeric: tabular-nums; }
 /* A lane is a stack: a bordered card with two sheets peeking out below it. Box shadows: they never paint over the card, in any stacking context. */
 .job.lane { position: relative; margin: 12px 0 26px; padding: 16px 14px 17px; background: var(--bg); border: 1px solid var(--border);
-  box-shadow: 0 24px 0 -16px var(--bg-alt), 0 24px 0 -15px var(--border), 0 12px 0 -9px var(--bg-alt), 0 12px 0 -8px var(--border); }
+  box-shadow: 0 12px 0 -9px var(--bg-alt), 0 12px 0 -8px var(--border), 0 24px 0 -16px var(--bg-alt), 0 24px 0 -15px var(--border); }
 /* Unpacked: the sheets go; each job of the lane shows as a job card. */
 .job.lane:has(> .stack[open]) { box-shadow: none; }
 /* The stack's summary covers the whole card: one click anywhere packs or unpacks it. No arrow. */
