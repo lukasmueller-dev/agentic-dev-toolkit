@@ -1,7 +1,7 @@
 /* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts; data-ask="<arg> …" prompts for each (title: the questions, split by |).
-   After a write: poll now, or once more after a poll in flight. */
+   After a write: the output scrolls into view; poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
@@ -63,6 +63,7 @@
       const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
       out.textContent = r.ok ? `exit ${j.code}\n${j.out}` : `refused: ${j.error}`;
     } catch (err) { out.textContent = 'no answer from /queue/api'; }
+    out.scrollIntoView({ block: 'nearest' }); /* New work sits below the jobs: its output is at the top */
     b.disabled = false;
     if (busy) again = true; else await poll();
   });

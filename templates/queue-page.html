@@ -58,7 +58,7 @@ body:has(.md:target) #queue { display: none; }
 body.can .repo.new { display: block; }
 .repo.new h2::before { content: none; }
 body.can .acts, body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; }
-body.can .act-out:not(:empty) { display: block; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+body.can .act-out:not(:empty) { display: block; scroll-margin-top: 100px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .acts button, .jacts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
 .jacts a { align-self: center; color: var(--muted); font: 500 12px var(--sans); }
 :is(.acts, .jacts) button.armed { border-color: var(--red); color: var(--red); }

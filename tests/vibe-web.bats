@@ -138,6 +138,7 @@ post() {
   grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
   grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
+  grep -qF "out.scrollIntoView({ block: 'nearest' });" "$Q/web/page.js"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
 
