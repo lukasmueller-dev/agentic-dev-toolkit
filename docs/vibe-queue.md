@@ -91,6 +91,8 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Routes: `pause`, `resume`, `unlimit`, `conf` (`set`: `key=value`), `restart` (`systemctl --user restart vibe-queue`); per job (`id`): `now`, `noreview`, `cancel`, `stop`, `retry`, `hold` (`note`), `archive`. Each runs the `vibe queue` command of its name (`now`: `set <id> now=1`, `noreview`: `set <id> after=`).
 - Review routes: `answer` (`id`, `text`), `fix` (`pr`, `text`), `merge-order` (`repo`; a button per repo), `feature-ready` (`feature`: `vibe queue ready --feature`), `feature-archive` (`feature`). Args come from the `data-*` of the button's `.jacts`.
+- New work routes, from the `New work` card per repo (the `repos` sweep and opted-in repos; `repo`): `new` (`task`, `done`, `branch`), `roadmap`, `roadmap-new` (`line`, `branch`), `opt-in` (`job`); per recurring job (`repo`, `job`): `run`, `reset`; `triage`. Commands: `vibe queue new`, `vibe queue roadmap`, `vibe job run|reset|triage`.
+- `data-ask="a b"` prompts once per arg; the `title` holds the questions, split by `|`. The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 - A data-confirm button needs a second tap within 4 s.
 
@@ -113,6 +115,9 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
 - `vibe queue unlimit` removes `limit`: jobs start again.
+- `vibe queue new <repo> <branch> <done-when> <task>`: a job from [`job-prompt.md`](../skills/fill-queue/references/job-prompt.md), source `new`. No done-when, or a job on the branch queued or running: refused.
+- `--line <n> <repo> <branch>`: the open item at line `n` of `PROJECT_ROADMAP.md` on `origin/<default>`; its done-when is the text after `Done when`. `vibe queue roadmap <repo>` lists the lines.
+- `--opt-in <job> <repo>`: branch `opt-in-<job>`; the agent runs `vibe job add` in its worktree and commits. The main checkout stays on the default branch.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - Gate: after the agent (after the last review round when one is due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
