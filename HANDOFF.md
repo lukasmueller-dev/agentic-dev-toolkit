@@ -14,12 +14,12 @@
 
 ## State
 
-M1 and M2 of `SPEC.md` are done. Routes in `bin/vibe-web`: `pause`, `resume`, `unlimit`, `conf`, `restart`; per job `now`, `noreview`, `cancel`, `stop`, `retry`, `hold`, `archive`. Table: `docs/vibe-queue.md` step 3.
+M1–M3 of `SPEC.md` are done. Routes in `bin/vibe-web`: `pause`, `resume`, `unlimit`, `conf`, `restart`; per job `now`, `noreview`, `cancel`, `stop`, `retry`, `hold`, `archive`, `answer`, `fix`; `merge-order`, `feature-ready`, `feature-archive`. Table: `docs/vibe-queue.md` step 3.
 
 ## Next action
 
-M3 of `SPEC.md`: review and feature actions (rows 10, 18, 20, 21, 22).
-Done when bats tests with a stub `gh` pass for `vibe queue answer` (answer in `HANDOFF.md`, commit, push, follow-up queued, original archived; lane side job → `-retry` branch rules), `vibe queue fix` (refuses a queued or running branch), `vibe queue ready` (refuses a failing check, and `SPEC.md` or `HANDOFF.md` in the diff), `vibe queue merge-order <repo>`, and the feature archive route (refuses an open member PR).
+M4 of `SPEC.md`: new work and recurring jobs (rows 24–29, 31).
+Done when bats tests pass for `vibe queue new` (no `<…>` slot left in `prompt.md`; refuses no done-when and a queued branch), the roadmap route (items of a fixture repo's `origin`, with their line), `vibe job reset <repo> <job>` (removes `fails`), the run, triage and opt-in routes; and `grep -q 'claude.ai/code' templates/queue-page.html`.
 
 ## Blockers
 
@@ -28,10 +28,12 @@ None.
 ## Gotchas (unpromoted)
 
 - A new route: one line in `ROUTES` (`bin/vibe-web`); a body arg is a `"{name}"` slot plus a pattern in `ARGS`. Absent or bad → 400.
-- A button: `<button data-act="<route>" [data-confirm] [data-ask="<arg>" title="<question>"]>`. Job buttons sit in `<div class="jacts" data-id="<id>">` (`job_buttons` in `bin/vibe`); page.js sends the nearest `data-id` as `id`.
-- The row list (2026-11-04) is not in the repo. M2 rows were mapped by the done-when; check M3 rows against the done-when only.
+- A button: `<button data-act="<route>" [data-confirm] [data-ask="<arg>" title="<question>"]>` inside a `<div class="jacts" data-<arg>="…">`. page.js sends every `data-*` of the nearest `.jacts` (`id`, `pr`, `repo`, `feature`) plus the asked arg.
+- Job buttons: `job_buttons` in `bin/vibe`; repo header (`merge-order`) and feature card buttons: `status_card`.
+- `branch_idle JOB` dies while a job on the branch is queued or running; `follow_dir JOB` copies `job` and `prompt.md`; `task_append PROMPT LINE…` ends the `## Task` section. Reuse them for `vibe queue new`.
+- The row list (2026-11-04) is not in the repo. Check M4 rows against the done-when only.
 - The poll skips its swap while a `#queue` button is armed, and asks `whoami` again until it gets a login.
 - `bin/vibe-web` kills a command after 120 s (`VIBE_WEB_TIMEOUT`; the tests use 3 s).
 - The page CSP allows only `/queue/page.js` (`templates/queue-page.js`): no inline `<script>` or `onclick`. It acts only on buttons inside `#queue`.
-- `tests/vibe-web.bats`: `act ROUTE BODY` posts a JSON body; `qjob ID STATUS` makes a job dir; a stub `systemctl` logs to `$STUBS/systemctl.log`. Do not pass `-d` twice: curl joins them with `&`.
+- `tests/vibe-web.bats`: `act ROUTE BODY` posts a JSON body; `qjob ID STATUS` makes a job dir; stub `systemctl` logs to `$STUBS/systemctl.log`; stub `gh` logs to `$STUBS/gh.log` and prints `$STUBS/{state,checks,files}[-<pr number>]`, `$STUBS/prs`. Do not pass `-d` twice: curl joins them with `&`.
 - `agent_exec` runs the agent in the background and keeps its pid in `<job>/agent-pid`: the runner TERMs it on a `stop` file.
