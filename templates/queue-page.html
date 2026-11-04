@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)">
@@ -49,6 +50,19 @@ body:has(.md:target) #queue { display: none; }
 .chip:nth-child(n+4) b { color: var(--red); }
 .chip a { display: block; margin: 6px 0 0; }
 .flags { margin: 12px 0 0; color: var(--muted); font: 400 13px/1.4 var(--sans); }
+/* Write buttons: shown only after GET whoami returns your login (body.can). */
+.acts, .jacts, .act-out { display: none; margin: 12px 0 0; }
+.jacts { margin: 8px 0 0 19px; }
+/* New work: per repo a card of buttons; shown only with buttons, not numbered. */
+.repo.new { display: none; counter-increment: none; }
+body.can .repo.new { display: block; }
+.repo.new h2::before { content: none; }
+body.can .acts, body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; }
+body.can .act-out:not(:empty) { display: block; scroll-margin-top: 100px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.acts button, .jacts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
+.jacts a { align-self: center; color: var(--muted); font: 500 12px var(--sans); }
+:is(.acts, .jacts) button.armed { border-color: var(--red); color: var(--red); }
+:is(.acts, .jacts) button:disabled { opacity: .5; }
 .filter { display: flex; gap: 8px; margin: 24px -20px 0; padding: 0 20px 2px; overflow-x: auto; scrollbar-width: none; }
 .filter::-webkit-scrollbar { display: none; }
 .filter input { position: absolute; opacity: 0; }
@@ -80,8 +94,8 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 /* The stack's summary covers the whole card: one click anywhere packs or unpacks it. No arrow. */
 .job.lane > .stack > summary { position: absolute; inset: 0; font-size: 0; list-style: none; }
 .job.lane > .stack > summary::-webkit-details-marker { display: none; }
-/* Above the summary: the PR link, the steps and the job cards. A click there does not pack. Below .bar (z-index 2). */
-.job.lane > p a, .job.lane > details:not(.stack), .stack > .job { position: relative; z-index: 1; }
+/* Above the summary: the PR link, the steps, the buttons and the job cards. A click there does not pack. Below .bar (z-index 2). */
+.job.lane > p a, .job.lane > details:not(.stack), .job.lane > .jacts, .stack > .job { position: relative; z-index: 1; }
 .stack > .job:first-of-type { margin-top: 8px; }
 .stack > .job:last-child { padding-bottom: 0; }
 .job p { margin: 6px 0 0 19px; color: var(--body-2); font: 400 14px/1.5 var(--sans); overflow-wrap: anywhere; }
@@ -102,7 +116,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .s-failed > .top .pill, .s-blocked > .top .pill, .s-timeout > .top .pill, .s-skipped > .top .pill { color: var(--red); }
 @keyframes beat { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .top::before { animation: none !important; } }
-#queue > p:not(.flags) { margin: 34px 0; padding: 40px 16px; border: 1px solid var(--border); color: var(--muted); font: 400 14px var(--sans); text-align: center; }
+#queue > p:not(.flags, .act-out) { margin: 34px 0; padding: 40px 16px; border: 1px solid var(--border); color: var(--muted); font: 400 14px var(--sans); text-align: center; }
 .md { padding-top: 8px; }
 .md h1 { margin: 22px 0 8px; font: 600 22px/1.2 var(--sans); letter-spacing: -.02em; }
 .md h2 { margin: 36px 0 12px; color: var(--muted); font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
@@ -143,10 +157,12 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 </head>
 <body>
 <header class="bar"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><strong>vibe queue</strong><span class="updated"><updated></span>
-<nav><a class="q" href="#queue">Queue</a><a class="b" href="#briefing">Briefing</a><a class="c" href="#config">Config</a></nav></header>
+<nav><a class="q" href="#queue">Queue</a><a class="b" href="#briefing">Briefing</a><a class="c" href="#config">Config</a><a class="s" href="https://claude.ai/code" target="_blank" rel="noopener">Sessions ↗</a></nav></header>
 <section id="queue">
 <div class="chips"><counts></div>
 <p class="flags"><flags></p>
+<div class="acts"><actions></div>
+<p class="act-out"></p>
 <div class="filter">
 <input type="radio" name="f" id="f-all" checked><label for="f-all">All</label>
 <input type="radio" name="f" id="f-active"><label for="f-active">Active</label>
@@ -162,35 +178,6 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 <section id="config" class="md">
 <config>
 </section>
-<script>
-/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale. */
-(() => {
-  const $ = (s, r = document) => r.querySelector(s);
-  const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
-  const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
-  const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
-  let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false;
-  setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
-  setInterval(async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
-      if (r.ok && t !== last) {
-        const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = tail($('.filter', n)), h = html(g);
-        for (const s of ['.updated', '.chips', '.flags', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
-        if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
-          const open = [...document.querySelectorAll('#queue details[open]')].map(key);
-          tail(f).forEach(x => x.remove());
-          f.after(...g);
-          document.querySelectorAll('#queue details').forEach(d => { d.open = open.includes(key(d)); });
-          jobs = h;
-        }
-        last = t; seen = Date.now();
-      }
-    } catch (e) { /* keep the old content; the next poll tries again */ } finally { busy = false; }
-  }, 10000);
-})();
-</script>
+<script src="/queue/page.js"></script>
 </body>
 </html>

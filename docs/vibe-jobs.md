@@ -34,6 +34,7 @@ vibe job list                            # repo × job: schedule, last run, due 
 vibe job list --all                      # also the catalogue jobs each repo has not opted into
 vibe job due --dry                       # what the next 01:00 run queues
 vibe job run <repo> <job>                # one job now; then: vibe queue status
+vibe job reset <repo> <job>              # a stopped job: forget its failures
 vibe job triage [<repo>...]              # agent PRs now; lines also in ~/.local/state/vibe/triage.md
 systemctl --user list-timers vibe-jobs.timer
 ```
@@ -87,7 +88,7 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 ## What breaks it
 
 - `vibe job list` says `invalid: no schedule` → the job is not in the catalogue and the repo file sets no `schedule`.
-- `stopped: 2 failures` → read the last job's `log`, then `rm ~/.local/state/vibe/jobs/<repo>/<job>/fails`.
+- `stopped: 2 failures` → read the last job's `log`, then `vibe job reset <repo> <job>`.
 - Every job drops to `report` → two job PRs are open in that repo; merge or close one.
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.

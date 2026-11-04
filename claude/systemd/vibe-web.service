@@ -1,0 +1,17 @@
+# vibe-web — the queue page's write endpoint on 127.0.0.1:<web_port>.
+# Setup: docs/vibe-queue.md step 3. Skipped unless ~/.config/vibe/role holds 'server'.
+
+[Unit]
+Description=queue page write endpoint
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+ExecStart=%h/bin/vibe-web
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target
