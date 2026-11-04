@@ -34,15 +34,15 @@ EOF
   web_start
 }
 
-# web_start — the server on $PORT, with the current environment; WEB_PID its pid.
+# web_start — the server on $PORT, with the current environment; its pid in web.pid.
 web_start() {
   "$REPO_ROOT/bin/vibe-web" 2>>"$BATS_TEST_TMPDIR/web.log" &
-  WEB_PID=$!
+  echo $! >"$BATS_TEST_TMPDIR/web.pid"
   curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
 }
 
 teardown() {
-  kill "$WEB_PID" 2>/dev/null || true
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" 2>/dev/null || true
 }
 
 # req METHOD PATH [CURL ARG...] — the HTTP code, then the body.
@@ -712,12 +712,10 @@ optin() {
 }
 
 @test "queue.conf: a trailing # comment, as in the docs, is no part of the value" {
-  kill "$WEB_PID"
-  wait "$WEB_PID" 2>/dev/null || true
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
   printf 'slots=2   # two\nweb_port=%s      # the page endpoint\nweb_login=me@example.com   # your login\n' "$PORT" >"$XDG_CONFIG_HOME/vibe/queue.conf"
-  "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
-  WEB_PID=$!
-  run curl -s --retry 30 --retry-connrefused --retry-delay 1 -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/whoami"
+  web_start
+  run curl -s -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/whoami"
   [ "$output" = '{"login": "me@example.com"}' ]
   run "$REPO_ROOT/bin/vibe" queue status
   [[ "${lines[0]}" == *"· 2 slots" ]] || false
@@ -831,7 +829,7 @@ optin() {
   o="$(clone_repo kit kit-other)"
   mkdir -p "$o/bin" && echo new >"$o/bin/vibe-web"
   git -C "$o" add bin && git -C "$o" commit -q -m endpoint && git -C "$o" push -q origin main
-  kill "$WEB_PID" && wait "$WEB_PID" || true
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
   VIBE_TOOLKIT="$t" web_start
   run act update-toolkit '{}'
   [ "${lines[1]}" = 200 ]

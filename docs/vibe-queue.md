@@ -92,6 +92,8 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - Routes: `pause`, `resume`, `unlimit`, `conf` (`set`: `key=value`), `restart` (`systemctl --user restart vibe-queue`); per job (`id`): `now`, `noreview`, `cancel`, `stop`, `retry`, `hold` (`note`), `archive`. Each runs the `vibe queue` command of its name (`now`: `set <id> now=1`, `noreview`: `set <id> after=`).
 - Review routes: `answer` (`id`, `text`), `fix` (`pr`, `text`), `merge-order` (`repo`; a button per repo), `feature-ready` (`feature`: `vibe queue ready --feature`), `feature-archive` (`feature`). Args come from the `data-*` of the button's `.jacts`.
 - New work routes, from the `New work` card per repo (the `repos` sweep and opted-in repos; `repo`): `new` (`task`, `done`, `branch`), `roadmap`, `roadmap-new` (`line`, `branch`), `opt-in` (`job`); per recurring job (`repo`, `job`): `run`, `reset`; `triage`. Commands: `vibe queue new`, `vibe queue roadmap`, `vibe job run|reset|triage`.
+- Machine routes: `sync` (`vibe sync --all`), `servers` (`vibe status --claude`), `server-restart` (`server`: `systemctl --user restart claude-rc@<server>`), `update-toolkit` (vibe-web re-execs itself after its reply when `bin/vibe-web` changed); per repo: `worktrees` (`cleanup.sh scan`), `worktree-remove` (`path`: `cleanup.sh remove`, merged or prunable only); per GPU job: `gpu-cancel` (`gpu`: `gpu-queue cancel`).
+- Job files: `GET /queue/api/job/<id>/<file>`, `<file>` one of `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (its last 64 KB); as `text/plain`; any other path → 404. The card links each that exists.
 - `data-ask="a b"` prompts once per arg; the `title` holds the questions, split by `|`. The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 - A data-confirm button needs a second tap within 4 s.
@@ -206,6 +208,7 @@ GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
 ```bash
 gpu-queue status                      # queued, running, finished (exit code)
 gpu-queue lock -- python train.py     # a manual run that waits for the queue's GPU job
+gpu-queue cancel <id>                 # drop a queued run, TERM a running one; the job ends failed, no <id>-gpu
 ```
 
 ## Cost per job
