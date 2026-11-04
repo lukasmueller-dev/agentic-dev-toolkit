@@ -109,6 +109,7 @@ post() {
   [ "$status" -eq 0 ]
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
+  grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
 

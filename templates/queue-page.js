@@ -30,7 +30,8 @@
   const api = '/queue/api/';
   fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
   document.addEventListener('click', async e => {
-    const b = e.target.closest('button[data-act]');
+    /* #queue only: its cards are escaped; #briefing and #config carry agent-written Markdown. */
+    const b = e.target.closest('#queue button[data-act]');
     if (!b || b.disabled || !document.body.classList.contains('can')) return;
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;
