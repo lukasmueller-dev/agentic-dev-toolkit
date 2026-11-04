@@ -19,11 +19,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
 
-- [ ] **Fix the lane card border on the queue page** — the sheets of a
-      stacked lane card overlap the job count (`5/5`); CSS of the card only.
-      Done when a Playwright screenshot of a lane card at 390 px and 1024 px
-      shows the count with no border across it, and the repo tests pass.
-
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
 - [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
