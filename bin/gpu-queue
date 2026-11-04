@@ -93,7 +93,8 @@ run_one() {
   trap 'kill -TERM -- "-$pid" 2>/dev/null; exit 130' INT TERM HUP
   wait "$pid" || rc=$?
   trap - INT TERM HUP
-  if [[ -e "$j/cancel" ]]; then rc=cancelled; fi
+  # A run that ended 0 as the cancel came in keeps its result.
+  if [[ "$rc" != 0 && -e "$j/cancel" ]]; then rc=cancelled; fi
   job_done "$id" "$rc"
 }
 
@@ -122,7 +123,10 @@ cmd_cancel() {
     pid="$(cat "$Q/running/$id/pid" 2>/dev/null || true)"
     [[ "$pid" =~ ^[0-9]+$ ]] || die "$id has just started — try again"
     : >"$Q/running/$id/cancel"
-    kill -TERM -- "-$pid" || die "kill of $id (pid $pid) failed"
+    if ! kill -TERM -- "-$pid"; then
+      rm -f "$Q/running/$id/cancel"
+      die "kill of $id (pid $pid) failed — it has just ended"
+    fi
     info "cancelled $id"
   else
     die "no queued or running job $id"
