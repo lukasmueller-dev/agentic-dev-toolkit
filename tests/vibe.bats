@@ -427,6 +427,13 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "--help prints the whole header, through the last job line" {
+  run "$VIBE" --help
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == *"vibe start "* ]] || false
+  [[ "${lines[${#lines[@]} - 1]}" == *"vibe job triage "* ]] || false
+}
+
 @test "an unknown command names itself in one line, not the whole help" {
   run "$VIBE" jobs --all
   [ "$status" -ne 0 ]
@@ -451,7 +458,9 @@ complete_vibe() {
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
   [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
-  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run retry " ]
+  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run retry ready " ]
+  [ "$(complete_vibe queue m)" = merge-order ]
+  [ "$(complete_vibe queue a | tr '\n' ' ')" = "add archive answer " ]
   [ "$(complete_vibe queue add --n)" = --now ]
   [ "$(complete_vibe queue run --c)" = --claude ]
   [ "$(complete_vibe job l)" = list ]

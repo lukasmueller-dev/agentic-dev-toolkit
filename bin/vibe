@@ -59,7 +59,8 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
-  sed -n '5,35s/^# \{0,1\}//p' "$SELF_ROOT/bin/vibe"
+  # The header from line 5 to its first bare `#`: no line range to keep in step.
+  awk 'NR >= 5 && /^#$/ { exit } NR >= 5 { sub(/^# ?/, ""); print }' "$SELF_ROOT/bin/vibe"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }
@@ -1496,7 +1497,7 @@ cmd_queue_ready() {
 cmd_queue_merge_order() {
   local prs n files=""
   if [[ $# != 1 ]] || ! git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then die "usage: vibe queue merge-order <repo>"; fi
-  prs="$(cd "$1" && gh pr list --state open --json number,isDraft,additions,deletions \
+  prs="$(cd "$1" && gh pr list --state open --limit 1000 --json number,isDraft,additions,deletions \
     -q '.[] | select(.isDraft | not) | "\(.additions + .deletions)\t\(.number)"')" || die "gh pr list failed in $1"
   if [[ -z "$prs" ]]; then
     echo "no ready PR in ${1##*/}"

@@ -486,6 +486,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   run "$REPO_ROOT/bin/vibe" queue merge-order "$r"
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf '1. #14 — 5 lines — can conflict: #12\n2. #12 — 30 lines\n3. #15 — 100 lines')" ]
+  grep -q -- '^pr list --state open --limit 1000 ' "$STUBS/gh.log"
   qjob "$ID"
   run "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">" "$Q/web/index.html"
