@@ -90,6 +90,7 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Routes: `pause`, `resume`, `unlimit`, `conf` (`set`: `key=value`), `restart` (`systemctl --user restart vibe-queue`); per job (`id`): `now`, `noreview`, `cancel`, `stop`, `retry`, `hold` (`note`), `archive`. Each runs the `vibe queue` command of its name (`now`: `set <id> now=1`, `noreview`: `set <id> after=`).
+- Review routes: `answer` (`id`, `text`), `fix` (`pr`, `text`), `merge-order` (`repo`; a button per repo), `feature-ready` (`feature`: `vibe queue ready --feature`), `feature-archive` (`feature`). Args come from the `data-*` of the button's `.jacts`.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 - A data-confirm button needs a second tap within 4 s.
 
@@ -148,7 +149,8 @@ A job still changes only its own repo. `/fill-queue` and `/enqueue` make feature
 ```bash
 vibe feature add <dir>/<slug>.md   # checks each member branch, fills in the open PRs
 vibe feature ready <slug>          # the human test passed: the pill shows merge
-vibe feature archive <slug>        # all member PRs merged
+vibe feature archive <slug>        # all member PRs merged; refuses an open one
+vibe queue ready --feature <slug>  # each member PR checked, then ready, then feature ready
 ```
 
 - A member is a `- <repo> <branch>` line under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.

@@ -286,7 +286,7 @@ putfeature() {
   drain
   [ "$status" -eq 0 ]
   grep -qF '<div class="repo"><h2>Features</h2>' "$f"
-  grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3/3</b><span class="pill">your test</span></div><p>The gamepad drives the robot.</p><details class="stack"><summary>3 branches</summary>' "$f"
+  grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3/3</b><span class="pill">your test</span></div><p>The gamepad drives the robot.</p><div class="jacts" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed: ready</button></div><details class="stack"><summary>3 branches</summary>' "$f"
   grep -qF '<div class="job lane s-done"><div class="top"><b>bridge · lane-x</b><span class="pill">2/2</span></div><p>Sticks <a href="https://example.com/pull/1">PR</a></p>' "$f"
   grep -qF '<div class="job s-done"><div class="top"><b>cmdr · gamepad</b><span class="pill">done</span></div><p>done: work.txt added <a href="https://example.com/pull/1">PR</a></p>' "$f"
   grep -qF '<div class="job s-done"><div class="top"><b>vla · node</b><span class="pill">no job</span></div><p> <a href="https://example.com/pull/7">PR</a></p></div></details></div>' "$f"

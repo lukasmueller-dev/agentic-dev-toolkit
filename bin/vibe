@@ -21,11 +21,16 @@
 #   vibe queue retry <id>           a failed, timeout or skipped job again as a new job; the old one archived
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
 #   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue
+#   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
+#   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
+#   vibe queue ready <pr-url>...|--feature <slug>
+#                                   no failing check, no SPEC.md or HANDOFF.md: mark each PR ready
+#   vibe queue merge-order <repo>   the repo's ready PRs, smallest first, with the PRs each can conflict with
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
 #   vibe feature add <file>         register a feature: branches in several repos that merge together
 #   vibe feature ready <slug>       the human test passed: the batch waits for the merges
-#   vibe feature archive <slug>...  move merged features out of the queue
+#   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -1351,6 +1356,161 @@ cmd_queue_stop() {
   echo "stop asked: the runner ends ${d##*/} on its next pass"
 }
 
+# branch_idle JOB — dies while a job on JOB's repo and branch is queued or running.
+branch_idle() {
+  local j s
+  while IFS= read -r j; do
+    s="$(jstate "$j" status)"
+    case "$s" in "" | queued | running | gpu) die "${j##*/} on $(jget "$1/job" branch) is ${s:-queued} — wait until it ends" ;; esac
+  done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
+}
+
+# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=) and prompt.md; echoes it.
+follow_dir() {
+  local tmp
+  [[ -f "$1/prompt.md" ]] || die "no prompt.md in ${1##*/}"
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
+  grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
+  cp "$1/prompt.md" "$tmp/prompt.md"
+  echo "$tmp"
+}
+
+# task_append PROMPT LINE... — the lines end the `## Task` section of PROMPT.
+task_append() {
+  local f="$1"
+  shift
+  ADD="$(printf '%s\n' "$@")" awk '
+    function put() { if (!t) { print ENVIRON["ADD"]; print ""; t = 1 } }
+    s && /^## / { put() }
+    { print }
+    $0 == "## Task" { s = 1 }
+    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp" && mv -f "$f.tmp" "$f"
+}
+
+# vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in the job's HANDOFF.md (commit,
+# push) or, for a lane side job, in a retry prompt; a follow-up job is queued, the original archived.
+cmd_queue_answer() {
+  local d tmp side item n st text wt branch
+  (($# >= 2)) || die "usage: vibe queue answer <id> <answer>"
+  d="$(queue_job "$1")"
+  shift
+  text="$*" side="$(jstate "$d" side)" branch="$(jget "$d/job" branch)"
+  st="$(jstate "$d" status)"
+  case "$st" in blocked | failed | timeout) ;; *) die "${d##*/} is ${st:-queued} — answer takes blocked, failed or timeout" ;; esac
+  if [[ -z "$side" ]]; then
+    branch_idle "$d"
+    wt="$(jstate "$d" worktree)"
+    [[ -f "$wt/HANDOFF.md" ]] || die "no HANDOFF.md in the worktree ${wt:-of the job} — retry takes a job without one"
+    ANS="Answer: $text" awk '
+      /^## / { s = ($0 == "## Blockers"); if (s) { print; print ""; print ENVIRON["ANS"]; print ""; f = 1; next } }
+      !s { print }
+      END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$wt/HANDOFF.md.tmp"
+    mv -f "$wt/HANDOFF.md.tmp" "$wt/HANDOFF.md"
+    if ! git -C "$wt" diff --quiet -- HANDOFF.md; then
+      git -C "$wt" commit -q -m "docs(handoff): ${d##*/} unblocked" -- HANDOFF.md || die "commit in $wt failed"
+    fi
+    git -C "$wt" push -q origin "HEAD:refs/heads/$branch" || die "push of $branch failed"
+    tmp="$(follow_dir "$d")"
+    cp "$d/worktree" "$tmp/worktree"
+  else
+    tmp="$(follow_dir "$d")"
+    item="$(job_item "$d")"
+    group_of "$d"
+    st=""
+    if [[ "$G_PR" == http* ]]; then st="$(gh pr view "$G_PR" --json state -q .state)" || die "gh pr view $G_PR failed"; fi
+    # The lane PR open: the item joins the lane again; else a new branch from the default branch.
+    if [[ "$st" != OPEN ]]; then
+      grep -Ev '^(branch|lane|item)=' "$tmp/job" >"$tmp/job.new" || true
+      echo "branch=$branch-$item-retry" >>"$tmp/job.new"
+      mv -f "$tmp/job.new" "$tmp/job"
+    fi
+    task_append "$tmp/prompt.md" "Earlier try: git diff $(jstate "$d" start)..$side. Do not merge it." "Answer: $text"
+  fi
+  n="$(queue_add "$tmp")"
+  cmd_queue_archive "$d" >/dev/null
+  echo "queued ${n##*/}; archived ${d##*/}"
+}
+
+# vibe queue fix URL TEXT... — a follow-up job on the branch of the PR at URL (its newest job,
+# queued or archived) with TEXT as the task; refuses while a job on that branch is queued or running.
+cmd_queue_fix() {
+  local url="${1:-}" d tmp n
+  (($# >= 2)) || die "usage: vibe queue fix <pr-url> <what to fix>"
+  shift
+  d="$(grep -lxF -- "$url" "$QDIR"/*/pr "$QROOT"/archive/*/*/pr 2>/dev/null | awk -F/ '{ print $(NF - 1) "\t" $0 }' | sort | awk -F'\t' 'END { print $2 }' || true)"
+  [[ -n "$d" ]] || die "no job has PR $url"
+  d="${d%/pr}"
+  branch_idle "$d"
+  tmp="$(follow_dir "$d")"
+  grep -v '^item=' "$tmp/job" >"$tmp/job.new" || true
+  mv -f "$tmp/job.new" "$tmp/job"
+  task_append "$tmp/prompt.md" "Fix on $url (the task above is done; do only this): $*"
+  n="$(queue_add "$tmp")"
+  echo "queued ${n##*/}"
+}
+
+# pr_check URL — dies when the PR at URL has a failing check or SPEC.md or HANDOFF.md in its diff.
+pr_check() {
+  local c f
+  c="$(gh pr view "$1" --json statusCheckRollup -q '.statusCheckRollup[] | if (.conclusion // "") != "" then .conclusion else (.state // .status // "") end')" || die "gh pr view $1 failed"
+  if grep -qxE 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE' <<<"$c"; then die "$1 has a failing check"; fi
+  f="$(gh pr diff "$1" --name-only)" || die "gh pr diff $1 failed"
+  if grep -qxE 'SPEC\.md|HANDOFF\.md' <<<"$f"; then die "$1 still holds SPEC.md or HANDOFF.md"; fi
+}
+
+# vibe queue ready URL...|--feature SLUG — check every PR first, then mark each ready.
+# --feature: the member PRs of a feature in `your test`, then `vibe feature ready`.
+cmd_queue_ready() {
+  local u r b p urls=()
+  if [[ "${1:-}" == --feature ]]; then
+    [[ $# == 2 && -f "$FROOT/$2.md" ]] || die "usage: vibe queue ready --feature <slug> (a feature in $FROOT)"
+    feature_row "$FROOT/$2.md"
+    [[ "$F_PILL" == "your test" ]] || die "feature $2 is $F_PILL — ready takes 'your test'"
+    while IFS='|' read -r r b p _; do
+      [[ -n "$r" ]] || continue
+      [[ "$p" == http* ]] || die "${r##*/} $b has no PR"
+      urls+=("$p")
+    done <<<"$F_MEMBERS"
+  else
+    (($#)) || die "usage: vibe queue ready <pr-url>...|--feature <slug>"
+    urls=("$@")
+  fi
+  for u in "${urls[@]}"; do pr_check "$u"; done
+  for u in "${urls[@]}"; do
+    gh pr ready "$u" >/dev/null || die "gh pr ready $u failed"
+    echo "ready $u"
+  done
+  if [[ "$1" == --feature ]]; then cmd_feature_ready "$2"; fi
+}
+
+# vibe queue merge-order REPO — REPO's open non-draft PRs, smallest diff first; each names the later PRs
+# that touch one of its files (they can conflict after it merges).
+cmd_queue_merge_order() {
+  local prs n files=""
+  if [[ $# != 1 ]] || ! git -C "$1" rev-parse --git-dir >/dev/null 2>&1; then die "usage: vibe queue merge-order <repo>"; fi
+  prs="$(cd "$1" && gh pr list --state open --json number,isDraft,additions,deletions \
+    -q '.[] | select(.isDraft | not) | "\(.additions + .deletions)\t\(.number)"')" || die "gh pr list failed in $1"
+  if [[ -z "$prs" ]]; then
+    echo "no ready PR in ${1##*/}"
+    return 0
+  fi
+  prs="$(sort -n -k1,1 -k2,2 <<<"$prs")"
+  while IFS=$'\t' read -r _ n; do
+    files+="$(cd "$1" && gh pr diff "$n" --name-only | awk -v n="$n" '{ print n "\t" $0 }')"$'\n' || die "gh pr diff $n failed in $1"
+  done <<<"$prs"
+  printf '%s\n\n%s' "$prs" "$files" | awk -F'\t' '
+    !NF { f = 1; next }
+    !f { o[++k] = $2; sz[$2] = $1; next }
+    { has[$1, $2] = 1; fl[$1] = fl[$1] SUBSEP $2 }
+    END {
+      for (i = 1; i <= k; i++) {
+        c = ""; m = split(substr(fl[o[i]], 2), x, SUBSEP)
+        for (j = i + 1; j <= k; j++) for (y = 1; y <= m; y++) if (has[o[j], x[y]]) { c = c (c ? ", " : "") "#" o[j]; break }
+        printf "%d. #%s — %s lines%s\n", i, o[i], sz[o[i]], (c ? " — can conflict: " c : "")
+      }
+    }'
+}
+
 cmd_queue_page() {
   queue_web || die "queue page not written: $QROOT/web/index.html"
   echo "wrote $QROOT/web/index.html"
@@ -1496,7 +1656,7 @@ queue_jobs() {
       [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
       if is_member "$d"; then continue; fi
       if ((!head)); then
-        "$1" repo "${repo##*/}"
+        "$1" repo "${repo##*/}" "$repo"
         head=1
       fi
       branch_card "$1" "$d" "$(short_id "$d" "$repo")" "$b"
@@ -1588,7 +1748,8 @@ job_steps() {
 
 # job_buttons JOB — the card's write buttons by status; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
-  local b=""
+  local b="" pr
+  pr="$(jstate "$1" pr)"
   case "$(jstate "$1" status)" in
     "" | queued)
       if [[ "$(jget "$1/job" now)" != 1 ]]; then b+='<button data-act="now">Start next</button>'; fi
@@ -1598,11 +1759,15 @@ job_buttons() {
     running) b='<button data-act="stop" data-confirm>Stop</button>' ;;
     failed | timeout | skipped) b='<button data-act="retry">Retry</button>' ;;
   esac
+  case "$(jstate "$1" status)" in
+    blocked | failed | timeout) b+='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
+    "done") if [[ "$pr" == http* ]]; then b+='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>'; fi ;;
+  esac
   if job_final "$1"; then
     if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
     b+='<button data-act="archive" data-confirm>Archive</button>'
   fi
-  printf '<div class="jacts" data-id="%s">%s</div>' "$(esc "${1##*/}")" "$b"
+  printf '<div class="jacts" data-id="%s"%s>%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "$b"
 }
 
 # status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
@@ -1611,11 +1776,21 @@ status_card() {
   local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
   local r b p ms
   case "$1" in
-    repo) printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")" ;;
+    repo)
+      printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")"
+      if [[ -n "${3:-}" ]]; then printf '<div class="jacts" data-repo="%s"><button data-act="merge-order">Merge order</button></div>\n' "$(esc "$3")"; fi
+      ;;
     end) echo '</div>' ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ;;
     lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" cls=" lane" ;;
-    feature) pill="$3" txt="$5" pr="" dir="" items="$6" cls=" lane feature" name="$2 · $4" ;;
+    feature)
+      pill="$3" txt="$5" pr="" dir="" items="$6" cls=" lane feature" name="$2 · $4"
+      case "$3" in
+        "your test") extra='<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed: ready</button>' ;;
+        merge) extra='<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+      esac
+      if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
+      ;;
   esac
   if [[ "$1" != job && "$1" != lane && "$1" != feature ]]; then return 0; fi
   # A feature or member state takes the look of a job status.
@@ -2002,8 +2177,9 @@ cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop) "cmd_queue_$sub" "$@" ;;
-    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop — see vibe --help" ;;
+    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop | answer | fix | ready) "cmd_queue_$sub" "$@" ;;
+    merge-order) cmd_queue_merge_order "$@" ;;
+    *) die "usage: vibe queue add|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop|answer|fix|ready|merge-order — see vibe --help" ;;
   esac
 }
 
@@ -2199,13 +2375,19 @@ cmd_feature_ready() {
   echo "ready $1: the batch waits for the merges"
 }
 
-# vibe feature archive SLUG... — move features to archive/<YYYY-MM>/features/.
+# vibe feature archive SLUG... — move features to archive/<YYYY-MM>/features/; refuses an open member PR.
 cmd_feature_archive() {
-  local a f
+  local a f r b p st
   (($#)) || die "usage: vibe feature archive <slug>..."
   a="$QROOT/archive/$(date +%Y-%m)/features"
   for f in "$@"; do
     [[ -f "$FROOT/$f.md" ]] || die "no feature '$f' in $FROOT"
+    feature_row "$FROOT/$f.md"
+    while IFS='|' read -r r b p _; do
+      [[ "$p" == http* ]] || continue
+      st="$(gh pr view "$p" --json state -q .state)" || die "gh pr view $p failed"
+      [[ "$st" != OPEN ]] || die "feature $f: $p is open — merge or close it first"
+    done <<<"$F_MEMBERS"
     mkdir -p "$a"
     mv "$FROOT/$f.md" "$a/"
     if [[ -f "$FROOT/$f.ready" ]]; then mv "$FROOT/$f.ready" "$a/"; fi

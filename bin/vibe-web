@@ -33,11 +33,20 @@ ROUTES = {
     "stop": ["vibe", "queue", "stop", "{id}"],
     "hold": ["vibe", "queue", "hold", "{id}", "{note}"],
     "archive": ["vibe", "queue", "archive", "{id}"],
+    "answer": ["vibe", "queue", "answer", "{id}", "{text}"],
+    "fix": ["vibe", "queue", "fix", "{pr}", "{text}"],
+    "merge-order": ["vibe", "queue", "merge-order", "{repo}"],
+    "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
+    "feature-archive": ["vibe", "feature", "archive", "{feature}"],
 }
 ARGS = {
     "id": re.compile(r"[0-9]{8}-[0-9]{6}-[A-Za-z0-9._-]{1,200}"),
     "set": re.compile(r"[a-z_]{1,40}=[A-Za-z0-9.%_-]{0,40}"),
     "note": re.compile(r"[^\x00-\x1f\x7f]{1,300}"),
+    "text": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
+    "pr": re.compile(r"https://github\.com/[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}/pull/[0-9]{1,9}"),
+    "repo": re.compile(r"(/[A-Za-z0-9_][A-Za-z0-9._-]{0,100}){1,20}"),  # absolute, no .. or option
+    "feature": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
 }
 
 
