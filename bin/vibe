@@ -334,7 +334,10 @@ cmd_update_toolkit() {
     systemctl --user restart vibe-queue.service
     echo "runner restarted: vibe-queue.service"
   fi
-  if [[ "$wbefore" != "$wafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
+  if [[ "$wbefore" != "$wafter" && -n "${VIBE_WEB:-}" ]]; then
+    # A restart from the page kills this request: vibe-web re-execs itself after its reply.
+    echo "page endpoint restarts after this reply"
+  elif [[ "$wbefore" != "$wafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     if systemctl --user try-restart vibe-web.service; then
       echo "page endpoint restarted if it was running: vibe-web.service"
     else
@@ -1883,7 +1886,7 @@ job_steps() {
 
 # job_buttons JOB — the card's write buttons by status; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
-  local b="" pr
+  local b="" pr gpu="" f
   pr="$(jstate "$1" pr)"
   case "$(jstate "$1" status)" in
     "" | queued)
@@ -1892,6 +1895,10 @@ job_buttons() {
       b+='<button data-act="cancel" data-confirm>Cancel</button>'
       ;;
     running) b='<button data-act="stop" data-confirm>Stop</button>' ;;
+    gpu)
+      gpu="$(jstate "$1" gpu-job)"
+      if [[ -n "$gpu" ]]; then b='<button data-act="gpu-cancel" data-confirm>Cancel GPU run</button>'; fi
+      ;;
     failed | timeout | skipped) b='<button data-act="retry">Retry</button>' ;;
   esac
   case "$(jstate "$1" status)" in
@@ -1902,7 +1909,11 @@ job_buttons() {
     if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
     b+='<button data-act="archive" data-confirm>Archive</button>'
   fi
-  printf '<div class="jacts" data-id="%s"%s>%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "$b"
+  # GET job/<id>/<file> in bin/vibe-web; the log as its tail.
+  for f in report.md pr.md gate.log result note log; do
+    if [[ -s "$1/$f" ]]; then b+="<a href=\"/queue/api/job/$(esc "${1##*/}")/$f\">$f</a>"; fi
+  done
+  printf '<div class="jacts" data-id="%s"%s%s>%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$b"
 }
 
 # status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
@@ -2012,6 +2023,10 @@ page_buttons() {
   echo '<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
   echo '<button data-act="restart" data-confirm>Restart runner</button>'
   echo '<button data-act="triage">Triage PRs</button>'
+  echo '<button data-act="sync">Sync worktrees</button>'
+  echo '<button data-act="servers">Servers</button>'
+  echo '<button data-act="server-restart" data-ask="server" data-confirm title="Server to restart (Servers lists them)">Restart server</button>'
+  echo '<button data-act="update-toolkit" data-confirm>Update toolkit</button>'
 }
 
 # page_repos — the sweep repos (~/.config/vibe/repos), then the opted-in ones; each once, as a path.
@@ -2043,6 +2058,8 @@ new_work() {
     b='<button data-act="new" data-ask="task done branch" title="Task|Done when: a command that checks it|Branch slug">New job</button>'
     b+='<button data-act="roadmap">Roadmap</button>'
     b+='<button data-act="roadmap-new" data-ask="line branch" title="Roadmap line (Roadmap lists them)|Branch slug">From roadmap</button>'
+    b+='<button data-act="worktrees">Worktrees</button>'
+    b+='<button data-act="worktree-remove" data-ask="path" data-confirm title="Worktree path to remove (Worktrees lists them; merged or prunable only)">Remove worktree</button>'
     if [[ -n "$avail" ]]; then b+="<button data-act=\"opt-in\" data-ask=\"job\" title=\"Recurring job to opt in: $(esc "$avail")\">Opt in</button>"; fi
     out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$b</div>"
     while IFS= read -r j; do

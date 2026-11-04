@@ -31,7 +31,12 @@ EOF
   PATH="$STUBS:$PATH"
   git_env
   export VIBE_WEB_TIMEOUT=3 VIBE_ROOT="$BATS_TEST_TMPDIR"
-  "$REPO_ROOT/bin/vibe-web" 2>"$BATS_TEST_TMPDIR/web.log" &
+  web_start
+}
+
+# web_start — the server on $PORT, with the current environment; WEB_PID its pid.
+web_start() {
+  "$REPO_ROOT/bin/vibe-web" 2>>"$BATS_TEST_TMPDIR/web.log" &
   WEB_PID=$!
   curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
 }
@@ -741,4 +746,134 @@ optin() {
   "$REPO_ROOT/bin/vibe" queue page
   run grep -c 'data-act="noreview"' "$Q/web/index.html"
   [ "$output" = 0 ]
+}
+
+@test "route gpu-cancel: the GPU run goes; the job ends failed with no follow-up; the card asks for a second tap" {
+  local g
+  qjob "$ID" gpu
+  g="$("$REPO_ROOT/bin/gpu-queue" submit --name x --dir "$BATS_TEST_TMPDIR" --then "$REPO_ROOT/bin/vibe queue follow $Q/queue/$ID" -- true)"
+  echo "$g" >"$Q/queue/$ID/gpu-job"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q "data-gpu=\"$g\"><button data-act=\"gpu-cancel\" data-confirm>" "$Q/web/index.html"
+  run act gpu-cancel '{"gpu": "../x"}'
+  [ "${lines[1]}" = 400 ]
+  run act gpu-cancel "{\"gpu\": \"$g\"}"
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ "$(cat "$Q/queue/$ID/status")" = failed ]
+  [ "$(cat "$Q/queue/$ID/note")" = "GPU run cancelled" ]
+  [ ! -e "$Q/queue/$ID-gpu" ]
+}
+
+@test "routes servers and server-restart: systemctl restarts claude-rc@<name>; a glob or option is 400" {
+  run act servers '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'*"role: server"* ]] || false
+  run act server-restart '{"server": "agentic-dev-toolkit"}'
+  [ "${lines[1]}" = 200 ]
+  grep -qx -- '--user restart claude-rc@agentic-dev-toolkit' "$STUBS/systemctl.log"
+  for body in '{"server": "*"}' '{"server": "-x"}' '{"server": "a b"}' '{}'; do
+    run act server-restart "$body"
+    [ "${lines[1]}" = 400 ]
+  done
+  [ "$(grep -c restart "$STUBS/systemctl.log")" = 1 ]
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q 'data-act="server-restart" data-ask="server" data-confirm' "$Q/web/index.html"
+}
+
+@test "routes worktrees and worktree-remove: a merged one goes; dirty, unpushed and locked stay" {
+  local r w
+  r="$(make_repo proj)"
+  w="$r/.claude/worktrees"
+  for b in merged dirty unpushed locked; do git -C "$r" worktree add -q -b "$b" "$w/$b"; done
+  echo x >"$w/dirty/x.txt"
+  git -C "$w/unpushed" commit -q --allow-empty -m "local work"
+  git -C "$r" worktree lock "$w/locked"
+  run act worktrees "{\"repo\": \"$r\"}"
+  [ "${lines[1]}" = 200 ]
+  for b in merged dirty unpushed locked; do
+    [[ "${lines[0]}" == *"$b\\t$w/$b"* ]] || false
+  done
+  for b in dirty unpushed locked; do
+    run act worktree-remove "{\"path\": \"$w/$b\"}"
+    [ "${lines[1]}" = 200 ]
+    [[ "${lines[0]}" == *'"code": 1'*"skip $w/$b: $b"* ]] || false
+    [ -d "$w/$b" ]
+  done
+  run act worktree-remove "{\"path\": \"$w/merged\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ ! -e "$w/merged" ]
+  run act worktree-remove "{\"path\": \"$w/../../x\"}"
+  [ "${lines[1]}" = 400 ]
+  echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q 'data-act="worktree-remove" data-ask="path" data-confirm' "$Q/web/index.html"
+}
+
+@test "route sync: vibe sync --all pushes a worktree's new branch" {
+  local r
+  r="$(make_repo proj)"
+  git -C "$r" worktree add -q -b feat "$r/.claude/worktrees/feat"
+  git -C "$r/.claude/worktrees/feat" commit -q --allow-empty -m "feat work"
+  run act sync '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'*pushed*feat* ]] || false
+  git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/feat
+  grep -q $'\tvibe sync --all\t0$' "$Q/actions.log"
+}
+
+@test "route update-toolkit: pulls, installs; a changed endpoint is not restarted under the request" {
+  local t o
+  t="$(make_repo kit)"
+  printf '#!/bin/sh\necho "install $*" >>"%s/install.log"\n' "$STUBS" >"$t/install.sh"
+  chmod +x "$t/install.sh"
+  git -C "$t" add install.sh && git -C "$t" commit -q -m installer && git -C "$t" push -q origin main
+  o="$(clone_repo kit kit-other)"
+  mkdir -p "$o/bin" && echo new >"$o/bin/vibe-web"
+  git -C "$o" add bin && git -C "$o" commit -q -m endpoint && git -C "$o" push -q origin main
+  kill "$WEB_PID" && wait "$WEB_PID" || true
+  VIBE_TOOLKIT="$t" web_start
+  run act update-toolkit '{}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'*"page endpoint restarts after this reply"* ]] || false
+  [ "$(git -C "$t" rev-parse HEAD)" = "$(git -C "$o" rev-parse HEAD)" ]
+  [ "$(cat "$STUBS/install.log")" = "$(printf 'install \ninstall doctor')" ]
+  run grep vibe-web "$STUBS/systemctl.log"
+  [ "$status" -ne 0 ]
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q 'data-act="update-toolkit" data-confirm' "$Q/web/index.html"
+}
+
+# get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
+get() {
+  local p="$1"
+  shift
+  req GET "$p" -H 'Tailscale-User-Login: me@example.com' "$@"
+}
+
+@test "route job/<id>/<file>: only the listed files, as plain text; the log's tail; no ../, other file or symlink" {
+  local d="$Q/queue/$ID"
+  qjob "$ID" "done"
+  echo "# the report" >"$d/report.md"
+  echo "gate ok" >"$d/gate.log"
+  ln -s "$d/job" "$d/pr.md"
+  python3 -c 'import sys; [print("line %06d %s" % (i, "x" * 90)) for i in range(2000)]' >"$d/log"
+  run get "/queue/api/job/$ID/report.md"
+  [ "${lines[0]}" = "# the report" ]
+  [ "${lines[1]}" = 200 ]
+  run curl -s -D - -o /dev/null -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/job/$ID/gate.log"
+  [[ "$output" == *"Content-Type: text/plain; charset=utf-8"*"X-Content-Type-Options: nosniff"* ]] || false
+  run get "/job/$ID/log"
+  [ "${lines[2000 - 1]-}" = "" ] # the tail only
+  [[ "$output" == *$'\nline 001999 '*$'\n200' ]] || false
+  [ "${#output}" -le 65540 ]
+  for p in "job/$ID/job" "job/$ID/pr.md" "job/$ID/../$ID/note" "job/$ID/.." "job/../queue/$ID/note" "job/$ID/missing/note"; do
+    run get "/queue/api/$p" --path-as-is
+    [[ "$output" == *$'\n404' ]] || false
+  done
+  run req GET "/job/$ID/report.md"
+  [ "${lines[1]}" = 403 ]
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
 }
