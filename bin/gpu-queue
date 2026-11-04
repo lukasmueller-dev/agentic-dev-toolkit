@@ -9,12 +9,13 @@
 #   gpu-queue lock -- CMD...        run CMD holding the GPU lock (manual runs, other queues)
 #   gpu-queue status                queued, running and finished jobs
 #   gpu-queue cancel ID             drop a queued job or TERM a running one; --then gets GPUQ_EXIT=cancelled
+#                                   (a stop of gpu-queue run cancels its running job too)
 #
 # --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/vibe-queue.md.
 set -euo pipefail
 
 usage() {
-  sed -n '5,13s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+  sed -n '5,14s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
   exit "${1:-0}"
 }
 die() {
@@ -89,8 +90,8 @@ run_one() {
   pid=$!
   set +m
   echo "$pid" >"$j/pid"
-  # Ctrl-C, or a stop of gpu-queue run, must reach the job's own group too.
-  trap 'kill -TERM -- "-$pid" 2>/dev/null; exit 130' INT TERM HUP
+  # Ctrl-C, or a stop of gpu-queue run, must reach the job's own group too; the job ends cancelled.
+  trap 'kill -TERM -- "-$pid" 2>/dev/null; wait "$pid" || true; job_done "$id" cancelled; exit 130' INT TERM HUP
   wait "$pid" || rc=$?
   trap - INT TERM HUP
   # A run that ended 0 as the cancel came in keeps its result.

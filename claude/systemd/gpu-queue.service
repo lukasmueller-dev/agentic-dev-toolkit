@@ -9,7 +9,7 @@ Type=simple
 Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
 ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
 ExecStart=%h/bin/gpu-queue run
-# A restart stops the queue only: a running GPU job finishes.
+# A stop or restart TERMs gpu-queue run: its running GPU job ends cancelled.
 KillMode=process
 Restart=always
 RestartSec=30

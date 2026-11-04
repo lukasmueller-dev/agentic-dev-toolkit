@@ -82,9 +82,9 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-@test "run: a TERM to gpu-queue run also stops the running job (its own process group)" {
-  local pid
-  "$GQ" submit --dir "$WORK" -- sh -c 'sleep 1; echo late >late.txt' >/dev/null
+@test "run: a TERM to gpu-queue run also stops the running job (its own process group); it ends cancelled" {
+  local pid id
+  id="$("$GQ" submit --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then.txt" -- sh -c 'sleep 1; echo late >late.txt')"
   "$GQ" run --once 2>/dev/null &
   pid=$!
   for _ in $(seq 1 50); do
@@ -95,6 +95,9 @@ setup() {
   wait "$pid" || true
   sleep 1.5
   [ ! -e "$WORK/late.txt" ]
+  [ ! -e "$GPU_QUEUE_DIR/running/$id" ]
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$id/exit")" = cancelled ]
+  [ "$(cat "$WORK/then.txt")" = cancelled ]
 }
 
 @test "cancel: a run that ended 0 keeps its exit code; a failed kill leaves no marker" {
