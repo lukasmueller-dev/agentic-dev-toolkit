@@ -1123,6 +1123,25 @@ died_job() {
   [ ! -e "$STUBS/claude.log" ]
 }
 
+@test "stop: an agent-pid of 0 does not TERM the runner's own process group" {
+  local r rc=0
+  r="$(make_repo proj)"
+  died_job 01-a "$r" task-a
+  sleep 2 &
+  echo "$!" >"$Q/01-a/pid"
+  echo 0 >"$Q/01-a/agent-pid"
+  touch "$Q/01-a/stop"
+  # Its own process group (set -m): a kill 0 there must not reach bats.
+  (
+    set -m
+    "$VIBE" queue run --claude --drain >/dev/null 2>&1 &
+    wait "$!"
+  ) || rc=$?
+  [ "$rc" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+}
+
 @test "hold and archive: a held job stays; archive moves only ended jobs" {
   local r
   r="$(make_repo proj)"

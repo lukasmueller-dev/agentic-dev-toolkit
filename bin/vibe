@@ -1153,7 +1153,7 @@ mem_setup() {
 # starts jobs in free slots (config slots, 4). --drain stops
 # once nothing runs, waits on the GPU or may start.
 cmd_queue_run() {
-  local drain=0 d pid running waiting slots busy started queued=() order
+  local drain=0 d pid apid running waiting slots busy started queued=() order
   AGENT=""
   while (($#)); do
     case "$1" in
@@ -1192,7 +1192,9 @@ cmd_queue_run() {
           if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             running=$((running + 1)) busy+=" $(branch_key "$d")"
             # vibe queue stop: TERM the agent; job_run then ends the job.
-            if [[ -e "$d/stop" ]]; then kill "$(jstate "$d" agent-pid)" 2>/dev/null || true; fi
+            # agent-pid is agent-writable: only a positive pid, else `kill 0` TERMs the runner's own group.
+            apid="$(jstate "$d" agent-pid)"
+            if [[ -e "$d/stop" && "$apid" =~ ^[1-9][0-9]*$ ]]; then kill "$apid" 2>/dev/null || true; fi
           elif stopped "$d"; then
             :
           elif [[ ! -e "$d/requeued" ]]; then
