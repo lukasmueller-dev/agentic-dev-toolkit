@@ -1,12 +1,13 @@
 /* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts; data-ask="<arg> …" prompts for each (title: the questions, split by |). After a write: poll now. */
+   Args: the data-* of the nearest .jacts; data-ask="<arg> …" prompts for each (title: the questions, split by |).
+   After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
   const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
-  let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false;
+  let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false, again = false;
   setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
   const api = '/queue/api/';
   const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
@@ -28,7 +29,10 @@
         }
         last = t; seen = Date.now();
       }
-    } catch (e) { /* keep the old content; the next poll tries again */ } finally { busy = false; }
+    } catch (e) { /* keep the old content; the next poll tries again */ } finally {
+      busy = false;
+      if (again) { again = false; poll(); } /* a write came in mid-fetch: that fetch may hold the old page */
+    }
   };
   setInterval(poll, 10000);
   who();
@@ -60,6 +64,6 @@
       out.textContent = r.ok ? `exit ${j.code}\n${j.out}` : `refused: ${j.error}`;
     } catch (err) { out.textContent = 'no answer from /queue/api'; }
     b.disabled = false;
-    await poll();
+    if (busy) again = true; else await poll();
   });
 })();

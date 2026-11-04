@@ -137,6 +137,7 @@ post() {
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
   grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
+  grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
 
