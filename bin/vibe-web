@@ -2,7 +2,7 @@
 """vibe-web — the queue page's write endpoint: one route runs one fixed argv.
 
 Listens on 127.0.0.1:<web_port> (queue.conf, default 7341); tailscale serve
-mounts it at /queue/api. Setup and routes: docs/vibe-queue.md, step 3.
+mounts it at /queue/api. Setup: docs/vibe-queue.md step 3; routes: Page actions.
 """
 import datetime
 import json

@@ -89,14 +89,9 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - The page shows buttons only after `GET /queue/api/whoami` returns your login. Server down: the page reads, no buttons.
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
-- Routes: `pause`, `resume`, `unlimit`, `conf` (`set`: `key=value`), `restart` (`systemctl --user restart vibe-queue`); per job (`id`): `now`, `noreview`, `cancel`, `stop`, `retry`, `hold` (`note`), `archive`. Each runs the `vibe queue` command of its name (`now`: `set <id> now=1`, `noreview`: `set <id> after=`).
-- Review routes: `answer` (`id`, `text`), `fix` (`pr`, `text`), `merge-order` (`repo`; a button per repo), `feature-ready` (`feature`: `vibe queue ready --feature`), `feature-archive` (`feature`). Args come from the `data-*` of the button's `.jacts`.
-- New work routes, from the `New work` card per repo (the `repos` sweep and opted-in repos; `repo`): `new` (`task`, `done`, `branch`), `roadmap`, `roadmap-new` (`line`, `branch`), `opt-in` (`job`); per recurring job (`repo`, `job`): `run`, `reset`; `triage`. Commands: `vibe queue new`, `vibe queue roadmap`, `vibe job run|reset|triage`.
-- Machine routes: `sync` (`vibe sync --all`), `servers` (`vibe status --claude`), `server-restart` (`server`: `systemctl --user restart claude-rc@<server>`), `update-toolkit` (vibe-web re-execs itself after its reply when `bin/vibe-web` changed); per repo: `worktrees` (`cleanup.sh scan`), `worktree-remove` (`path`: `cleanup.sh remove`, merged or prunable only); per GPU job: `gpu-cancel` (`gpu`: `gpu-queue cancel`).
-- Job files: `GET /queue/api/job/<id>/<file>`, `<file>` one of `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (its last 64 KB); as `text/plain`; any other path → 404. The card links each that exists.
-- `data-ask="a b"` prompts once per arg; the `title` holds the questions, split by `|`. The nav links `claude.ai/code` for a new session.
+- Buttons, routes and commands: [Page actions](#page-actions).
+- The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
-- A data-confirm button needs a second tap within 4 s.
 
 ## 4. Verify
 
@@ -168,6 +163,54 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 - Count: done members / members. Done: a PR, and no job queued, running or in need of you.
 - Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
+
+## Page actions
+
+A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed argv (`ROUTES`). `<arg>` comes from the card's `data-*` or a prompt. ✓: a second tap within 4 s.
+
+| Row (card: button) | Route | Command |
+| ------------------ | ----- | ------- |
+| Queue: Pause / Resume | `pause`, `resume` | `vibe queue pause` / `resume` |
+| Queue: Clear usage limit | `unlimit` | `vibe queue unlimit` |
+| Queue: Set config | `conf` | `vibe queue conf <key=value>` |
+| Queue: Restart runner ✓ | `restart` | `systemctl --user restart vibe-queue` |
+| Queue: Triage PRs | `triage` | `vibe job triage` |
+| Queue: Sync worktrees | `sync` | `vibe sync --all` |
+| Queue: Servers | `servers` | `vibe status --claude` |
+| Queue: Restart server ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>` |
+| Queue: Update toolkit ✓ | `update-toolkit` | `vibe update-toolkit`; vibe-web re-execs itself after its reply |
+| Queued job: Start next | `now` | `vibe queue set <id> now=1` |
+| Queued job: No review | `noreview` | `vibe queue set <id> after=` |
+| Queued job: Cancel ✓ | `cancel` | `vibe queue cancel <id>` |
+| Running job: Stop ✓ | `stop` | `vibe queue stop <id>` |
+| GPU job: Cancel GPU run ✓ | `gpu-cancel` | `gpu-queue cancel <gpu>` |
+| Failed, timeout or skipped job: Retry | `retry` | `vibe queue retry <id>` |
+| Blocked, failed or timeout job: Answer ✓ | `answer` | `vibe queue answer <id> <text>` |
+| Done job with a PR: Fix | `fix` | `vibe queue fix <pr> <text>` |
+| Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
+| Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
+| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (last 64 KB) as text |
+| Repo header: Merge order | `merge-order` | `vibe queue merge-order <repo>` |
+| Feature in `your test`: Test passed: ready ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
+| Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
+| New work: New job | `new` | `vibe queue new <repo> <branch> <done> <task>` |
+| New work: Roadmap | `roadmap` | `vibe queue roadmap <repo>` |
+| New work: From roadmap | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
+| New work: Opt in | `opt-in` | `vibe queue new --opt-in <job> <repo>` |
+| New work: Worktrees | `worktrees` | `cleanup.sh scan <repo>` |
+| New work: Remove worktree ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
+| Recurring job: Run `<job>` | `run` | `vibe job run <repo> <job>` |
+| Stopped recurring job: Reset `<job>` | `reset` | `vibe job reset <repo> <job>` |
+
+Not on the page: merge, single-PR ready or close, the `run-ci` label, prompt edits.
+
+Add a route or a button:
+
+- Route: one line in `ROUTES` (`bin/vibe-web`). A body arg is a `"{name}"` slot at an arg's end (`claude-rc@{server}`) plus a pattern in `ARGS`. `TOOLS` maps argv[0] to an argv prefix (`cleanup.sh` runs with `bash`).
+- Button: `<button data-act="<route>" [data-confirm] [data-ask="<arg> …" title="<question>|…"]>` in a `<div class="jacts" data-<arg>="…">` inside `#queue`. page.js sends each `data-*` of the nearest `.jacts`, plus one prompt per asked arg.
+- The CSP runs only `page.js`: no inline `<script>` or `onclick`.
+- A `<details>` inside `#queue` needs a `.repo h2` and a `.job b` above it: page.js keys its open state on them.
+- vibe-web runs each command with `VIBE_WEB=1` and kills it after 120 s (`VIBE_WEB_TIMEOUT`).
 
 ## Layout
 
