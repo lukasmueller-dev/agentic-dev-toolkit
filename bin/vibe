@@ -1365,12 +1365,20 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=) and prompt.md; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=) and prompt.md; echoes it.
+# A review round (<base>-review<N>) gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
-  local tmp
+  local tmp r t
   [[ -f "$1/prompt.md" ]] || die "no prompt.md in ${1##*/}"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
-  grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
+  r="$(jget "$1/job" review)"
+  if [[ -z "$r" ]]; then
+    grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
+  else
+    grep -Ev '^(now|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
+    t="$(jget "${1%-review"$r"}/job" timeout)"
+    if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
+  fi
   cp "$1/prompt.md" "$tmp/prompt.md"
   echo "$tmp"
 }

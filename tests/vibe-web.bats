@@ -499,3 +499,18 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   run "$REPO_ROOT/bin/vibe" queue merge-order "$r"
   [ "$output" = "no ready PR in proj" ]
 }
+
+@test "vibe queue fix: from a review round, an agent job with the base job's timeout, no review=" {
+  local n
+  qjob "$ID" "done"
+  echo timeout=3h >>"$Q/queue/$ID/job"
+  qjob "$ID-review2" "done"
+  printf 'timeout=1h\nfollow=1\nreview=2\n' >>"$Q/queue/$ID-review2/job"
+  echo "$URL" >"$Q/queue/$ID-review2/pr"
+  run "$REPO_ROOT/bin/vibe" queue fix "$URL" Rename foo.
+  [ "$status" -eq 0 ]
+  n="$(find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID-review2")"
+  grep -qx timeout=3h "$n/job"
+  run grep -cE '^(review|follow|timeout=1h)' "$n/job"
+  [ "$output" = 0 ]
+}
