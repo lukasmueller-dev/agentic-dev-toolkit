@@ -89,7 +89,10 @@ run_one() {
   pid=$!
   set +m
   echo "$pid" >"$j/pid"
+  # Ctrl-C, or a stop of gpu-queue run, must reach the job's own group too.
+  trap 'kill -TERM -- "-$pid" 2>/dev/null; exit 130' INT TERM HUP
   wait "$pid" || rc=$?
+  trap - INT TERM HUP
   if [[ -e "$j/cancel" ]]; then rc=cancelled; fi
   job_done "$id" "$rc"
 }
