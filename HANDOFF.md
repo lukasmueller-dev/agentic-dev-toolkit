@@ -10,16 +10,16 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `queue-page-actions`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/queue-page-actions
-- **Last updated:** 2026-11-04 07:57 CET · turing
+- **Last updated:** 2026-11-04 · turing
 
 ## State
 
-Nothing is built yet. `SPEC.md` holds the plan: 6 milestones, M1 first.
+M1 of `SPEC.md` is done: `bin/vibe-web` (routes `pause`, `resume`), `vibe queue page`, `actions.log` on the Config tab, `vibe-web.service`, page buttons after `whoami`, `data-confirm` second tap.
 
 ## Next action
 
-M1 of `SPEC.md`: `bin/vibe-web` (python3 stdlib), auth, action log, `vibe queue page`, confirm step, `vibe-web.service`, and pause/resume as the first route.
-Done when `bats tests/vibe-web.bats` passes with: right login → `paused` exists, `actions.log` has one line; wrong or absent login, foreign `Origin`, non-JSON body, absent `web_login` → 403 and no `paused`; `GET whoami` returns the login; and `grep -q 'set-path /queue/api' docs/vibe-queue.md`.
+M2 of `SPEC.md`: queue control and job cards (rows 2–9, 11, 12, 14).
+Done when bats tests pass for `vibe queue conf` (refuses an unknown key and a bad value), `unlimit`, `set <id> now=1|after=` (queued jobs only), `retry`, `cancel` (queued only), `stop` (runner ends it `failed`, no requeue), and one route test per row (3: stub `systemctl` gets `restart vibe-queue`).
 
 ## Blockers
 
@@ -27,4 +27,6 @@ None.
 
 ## Gotchas (unpromoted)
 
-None.
+- A new route: add one line to `ROUTES` in `bin/vibe-web`; a button is `<button data-act="<route>" [data-confirm] [data-args='{…}']>`. The route gets no body args yet: M2 adds them (`<id>`), check each against a fixed pattern.
+- `.acts` is swapped by innerHTML compare against the live DOM: an armed confirm button there un-arms on the next poll. Job-card buttons (M2) sit in the jobs part, which compares against the last fetch.
+- `tests/vibe-web.bats` starts the server per test on a free port; curl sends both headers when a test repeats `-H Origin`, and the server treats a repeated header as absent.
