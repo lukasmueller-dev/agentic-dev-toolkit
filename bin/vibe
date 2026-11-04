@@ -1551,6 +1551,7 @@ config_md() {
 }
 
 # queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
+# Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
   local f="$QROOT/web/index.html" r g q p o jobs lim
   local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
@@ -1559,7 +1560,7 @@ queue_web() {
   jobs="$(queue_jobs status_card)"
   mkdir -p "${f%/*}" || return 1
   # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or the briefing.
-  cp "$SELF_ROOT/templates/queue-page.js" "${f%/*}/page.js" || return 1
+  cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
@@ -1567,10 +1568,10 @@ queue_web() {
     '<actions>' "$(if [[ -e "$QROOT/paused" ]]; then echo '<button data-act="resume">Resume</button>'; else echo '<button data-act="pause">Pause</button>'; fi)" \
     '<jobs>' "${jobs:-<p>No jobs.</p>}" \
     '<briefing>' "$(queue_report_md | md_html)" \
-    '<config>' "$(config_md | md_html)" >"$f.tmp"; then
-    mv -f "$f.tmp" "$f"
+    '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
+    mv -f "$f.tmp.$$" "$f"
   else
-    rm -f "$f.tmp"
+    rm -f "$f.tmp.$$"
     return 1
   fi
 }

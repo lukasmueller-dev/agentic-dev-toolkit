@@ -139,3 +139,15 @@ time.sleep(5)' "$PORT" &
   [ ! -e "$Q/paused" ]
   kill $! 2>/dev/null || true
 }
+
+@test "vibe queue page: two writers at once leave a whole page and no tmp file" {
+  local i pids=()
+  for i in 1 2 3 4 5 6; do
+    "$REPO_ROOT/bin/vibe" queue page >/dev/null &
+    pids+=($!)
+  done
+  for i in "${pids[@]}"; do wait "$i"; done # each must exit 0; a bare wait also waits on the server
+  grep -q '</html>' "$Q/web/index.html"
+  [ "$(find "$Q/web" -name '*.tmp*' -o -name '*.js.*' | wc -l | tr -d ' ')" = 0 ]
+  cmp -s "$REPO_ROOT/templates/queue-page.js" "$Q/web/page.js"
+}
