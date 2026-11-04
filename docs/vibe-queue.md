@@ -39,6 +39,8 @@ review_level=high
 review_timeout=1h
 after=review
 memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
+web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
+web_login=         # your tailnet login; empty: every page write gets 403
 ```
 
 Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
@@ -74,6 +76,21 @@ Serve it on the tailnet once:
 ```bash
 sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a path, not a port
 ```
+
+Buttons, server only: `bin/vibe-web` runs one `vibe` command per route; `web_login` in `queue.conf` first.
+
+```bash
+systemctl --user link ~/.claude/systemd/vibe-web.service
+systemctl --user enable --now vibe-web.service
+sudo tailscale serve --bg --set-path /queue/api http://127.0.0.1:7341   # web_port
+curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # {"login": "<web_login>"}
+```
+
+- The page shows buttons only after `GET /queue/api/whoami` returns your login. Server down: the page reads, no buttons.
+- A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
+- Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
+- Routes: `pause`, `resume`.
+- A data-confirm button needs a second tap within 4 s.
 
 ## 4. Verify
 
@@ -158,6 +175,7 @@ vibe feature archive <slug>        # all member PRs merged
 | `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
 | `web/index.html` | the phone page, rewritten each runner pass (`templates/queue-page.html`) |
 | `paused` | `vibe queue pause` |
+| `actions.log` | page writes: time, login, command, exit code (`bin/vibe-web`) |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
 The job finds its dir in `$VIBE_JOB_DIR`. Job settings:
@@ -206,5 +224,6 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
 - Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
 - `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
+- No buttons on the page → `vibe-web.service` down, no `/queue/api` serve path, or `web_login` is not your login: `journalctl --user -u vibe-web`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

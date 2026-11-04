@@ -49,6 +49,13 @@ body:has(.md:target) #queue { display: none; }
 .chip:nth-child(n+4) b { color: var(--red); }
 .chip a { display: block; margin: 6px 0 0; }
 .flags { margin: 12px 0 0; color: var(--muted); font: 400 13px/1.4 var(--sans); }
+/* Write buttons: shown only after GET whoami returns your login (body.can). */
+.acts, .act-out { display: none; margin: 12px 0 0; }
+body.can .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+body.can .act-out:not(:empty) { display: block; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.acts button { padding: 6px 13px; background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--ink); font: 500 12px/1.2 var(--sans); cursor: pointer; }
+.acts button.armed { border-color: var(--red); color: var(--red); }
+.acts button:disabled { opacity: .5; }
 .filter { display: flex; gap: 8px; margin: 24px -20px 0; padding: 0 20px 2px; overflow-x: auto; scrollbar-width: none; }
 .filter::-webkit-scrollbar { display: none; }
 .filter input { position: absolute; opacity: 0; }
@@ -149,6 +156,8 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 <section id="queue">
 <div class="chips"><counts></div>
 <p class="flags"><flags></p>
+<div class="acts"><actions></div>
+<p class="act-out"></p>
 <div class="filter">
 <input type="radio" name="f" id="f-all" checked><label for="f-all">All</label>
 <input type="radio" name="f" id="f-active"><label for="f-active">Active</label>
@@ -165,7 +174,8 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 <config>
 </section>
 <script>
-/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale. */
+/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
+   Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s. After a write: poll now. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
@@ -173,14 +183,14 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
   let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false;
   setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
-  setInterval(async () => {
+  const poll = async () => {
     if (busy) return;
     busy = true;
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
       if (r.ok && t !== last) {
         const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = tail($('.filter', n)), h = html(g);
-        for (const s of ['.updated', '.chips', '.flags', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
+        for (const s of ['.updated', '.chips', '.flags', '.acts', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
         if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
           const open = [...document.querySelectorAll('#queue details[open]')].map(key);
           tail(f).forEach(x => x.remove());
@@ -191,7 +201,28 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
         last = t; seen = Date.now();
       }
     } catch (e) { /* keep the old content; the next poll tries again */ } finally { busy = false; }
-  }, 10000);
+  };
+  setInterval(poll, 10000);
+  const api = '/queue/api/';
+  fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b || b.disabled || !document.body.classList.contains('can')) return;
+    if ('confirm' in b.dataset && !b.classList.contains('armed')) {
+      const t = b.textContent;
+      b.classList.add('armed'); b.textContent = 'Tap again: ' + t;
+      setTimeout(() => { b.classList.remove('armed'); b.textContent = t; }, 4000);
+      return;
+    }
+    const out = $('.act-out');
+    b.disabled = true; out.textContent = '…';
+    try {
+      const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: b.dataset.args || '{}' }), j = await r.json();
+      out.textContent = r.ok ? `exit ${j.code}\n${j.out}` : `refused: ${j.error}`;
+    } catch (err) { out.textContent = 'no answer from /queue/api'; }
+    b.disabled = false;
+    await poll();
+  });
 })();
 </script>
 </body>
