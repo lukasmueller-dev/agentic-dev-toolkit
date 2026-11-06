@@ -190,7 +190,7 @@ cmd_scan() {
 
 cmd_remove() {
   (($# > 0)) || die "usage: cleanup.sh remove <path>..."
-  local p dir main state path branch reason found rc=0
+  local p dir main state path branch reason found rc=0 want
   for p in "$@"; do
     dir="$(dirname "$p")"
     [[ -d "$p" ]] && dir="$p"
@@ -200,6 +200,7 @@ cmd_remove() {
       continue
     }
     found=0
+    want="$(physical "$p")" # before the cd below: a relative $p is the caller's
     while IFS=$'\t' read -r state path branch reason; do
       found=1
       case "$state" in
@@ -220,7 +221,7 @@ cmd_remove() {
           rc=1
           ;;
       esac
-    done < <(cd "$main" && scan_lines "$p")
+    done < <(cd "$main" && scan_lines "$want")
     if ((found == 0)); then
       info "skip $p: not a linked worktree of $main"
       rc=1

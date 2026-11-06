@@ -226,6 +226,16 @@ ignore_dirs() {
   for w in "${paths[@]}"; do [ ! -d "$w" ]; done
 }
 
+@test "remove: a relative path is resolved against the caller's directory, not the repo's" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(add_wt "$r" done-task)"
+  cd "$BATS_TEST_TMPDIR"
+  run bash "$CLEANUP" remove proj/.claude/worktrees/done-task
+  [ "$status" -eq 0 ]
+  [ ! -d "$w" ]
+}
+
 @test "remove: refuses unpushed work and leaves it intact" {
   local r w
   r="$(make_repo proj)"
