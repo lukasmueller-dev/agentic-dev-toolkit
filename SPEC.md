@@ -47,7 +47,7 @@ The 10 findings of the repo review are repaired, each with a bats test that fail
 Each milestone also passes the repo gate: `shellcheck`, `shfmt -d -i 2 -ci`, `skill-lint --strict skills`, `bats tests/`.
 
 - [x] `cleanup.sh` ignored-file allowlist and `[gone]` check (findings 1, 2) — code — done when new tests in `tests/worktree-cleanup.bats` show: a worktree with `runs/x.ckpt` is `ignored`, a `[gone]` branch without a merged PR is `unpushed`, a squash-merged branch is `merged`
-- [ ] Runner hooks wrapper (finding 3) — code — done when a bats test with a relative `pre-push` hook that writes a marker finds no marker after `job_publish` and `triage_merge`
+- [x] Runner hooks wrapper (finding 3) — code — done when a bats test with a relative `pre-push` hook that writes a marker finds no marker after `job_publish` and `triage_merge`
 - [ ] Fetch rules and installer `retired` list (finding 4) — code — done when an `install.bats` test shows `git fetch *` gone from a user settings file that held it
 - [ ] `job_limit_pct` 5 h window (finding 5) — code — done when a bats test with 300 old archived jobs shows none is read; PR body gives the measured `vibe queue report` time
 - [ ] Queue state: `job_due` copies, `job_end` guard, follow-up waits for `ended` (findings 6, 7) — code — done when one bats test per rule passes
