@@ -142,14 +142,15 @@ classify() {
   fi
 }
 
-# scan_lines — one "state<TAB>path<TAB>branch<TAB>reason" line per linked
-# worktree of the repo in $PWD; branch is "-" when detached. The first
-# porcelain record is the main checkout and is skipped.
+# scan_lines [PATH] — one "state<TAB>path<TAB>branch<TAB>reason" line per linked
+# worktree of the repo in $PWD, or only for PATH; branch is "-" when detached.
+# The first porcelain record is the main checkout and is skipped.
 scan_lines() {
-  local ref cur="${CUR_WT:-}" line path="" branch="" locked=0 prunable=0 n=0
+  local ref cur="${CUR_WT:-}" only="" line path="" branch="" locked=0 prunable=0 n=0
+  [[ $# -eq 0 ]] || only="$(physical "$1")"
   ref="$(default_ref)"
   emit() {
-    if ((n > 1)) && [[ -n "$path" ]]; then
+    if ((n > 1)) && [[ -n "$path" ]] && { [[ -z "$only" ]] || [[ "$(physical "$path")" == "$only" ]]; }; then
       local verdict
       verdict="$(classify "$path" "$branch" "$locked" "$prunable" "$ref" "$cur")"
       printf '%s\t%s\t%s\t%s\n' "${verdict%%$'\t'*}" "$path" "${branch:--}" "${verdict#*$'\t'}"
@@ -200,7 +201,6 @@ cmd_remove() {
     }
     found=0
     while IFS=$'\t' read -r state path branch reason; do
-      [[ "$(physical "$path")" == "$(physical "$p")" ]] || continue
       found=1
       case "$state" in
         merged)
@@ -220,7 +220,7 @@ cmd_remove() {
           rc=1
           ;;
       esac
-    done < <(cd "$main" && scan_lines)
+    done < <(cd "$main" && scan_lines "$p")
     if ((found == 0)); then
       info "skip $p: not a linked worktree of $main"
       rc=1

@@ -203,6 +203,29 @@ ignore_dirs() {
   [ "$status" -ne 0 ]
 }
 
+@test "remove: rates each worktree once, so N paths cost N gh calls" {
+  local r w n oids="" paths=()
+  r="$(make_repo proj)"
+  for n in a b c; do
+    w="$(add_wt "$r" "t-$n")"
+    echo "$n" >"$w/$n.txt"
+    git -C "$w" add "$n.txt" && git -C "$w" commit -q -m "work $n"
+    git -C "$w" push -q -u origin "t-$n"
+    git -C "$r" merge -q --squash "t-$n" && git -C "$r" commit -q -m "squash $n"
+    git -C "$r" push -q origin main
+    git -C "$r" push -q origin --delete "t-$n"
+    oids+="$(git -C "$w" rev-parse HEAD)"$'\n'
+    paths+=("$w")
+  done
+  GH_OIDS="$oids"
+  export GH_OIDS
+  cd "$r"
+  run bash "$CLEANUP" remove "${paths[@]}"
+  [ "$status" -eq 0 ]
+  [ "$(wc -l <"$GH_LOG" | tr -d ' ')" -eq 3 ]
+  for w in "${paths[@]}"; do [ ! -d "$w" ]; done
+}
+
 @test "remove: refuses unpushed work and leaves it intact" {
   local r w
   r="$(make_repo proj)"
