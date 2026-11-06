@@ -18,11 +18,3 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
-
-### Vibe queue follow-ups (design: PR for `job-review`)
-
-- [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
-      review or a `/fix` comment starts a fix job; a red CI check later.
-      Done when a `/fix` comment from your login yields one fix job and one
-      summary comment on the PR, and a collaborator's comment only a
-      briefing line.
