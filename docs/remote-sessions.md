@@ -58,18 +58,27 @@ The app's new-session picker offers the repo on this machine.
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 | Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed; on a server restarts `vibe-queue.service` if `bin/vibe` or `skills/_lib/lib.sh` changed (running jobs keep going). `vibe sync` never pulls the toolkit |
 
-`vibe sync [--all]` runs git with hooks off (`agent_git`): a worktree's own hooks never run with your credentials. A git-lfs branch is not pushed (`error`, note `git-lfs: push by hand`): push it yourself. Result per worktree: `pushed`, `pulled`, `ok`, `empty`
-(no commits, not pushed), `gone` (upstream deleted, never pushed again —
-`/worktree-cleanup` checks for a merged PR), `local` (app session branch `worktree-*`, never
-pushed), `behind`/`diverged`/`detached`/`missing` (left
-alone), `ahead` (main checkout, never pushed). Note `off main`: the main checkout is
-off the default branch — work belongs in a worktree. `--all`: every repo next to
-the toolkit (`VIBE_ROOT`). Every `vibe` call warns once when the toolkit
-checkout is behind `origin/main` (fetch: every `sync`, else at most every 5 min), off `main`, or dirty.
-Fix: `vibe update-toolkit`.
+`vibe sync [--all]` runs git with hooks off (`agent_git`): a worktree's own hooks never run with your credentials.
+
+Result per worktree:
+
+- `pushed`, `pulled`, `ok`: done.
+- `empty`: no commits, not pushed.
+- `gone`: upstream deleted, never pushed again. `/worktree-cleanup` checks for a merged PR.
+- `local`: app session branch `worktree-*`, never pushed.
+- `behind`, `diverged`, `detached`, `missing`: left alone.
+- `ahead`: the default branch (main checkout or not), never pushed.
+- `error`: push or fast-forward failed.
+
+Other notes:
+
+- `off main`: the main checkout is off the default branch — work belongs in a worktree.
+- `--all`: every repo next to the toolkit (`VIBE_ROOT`).
+- Every `vibe` call warns once when the toolkit checkout is behind `origin/main` (fetch: every `sync`, else at most every 5 min), off `main`, or dirty. Fix: `vibe update-toolkit`.
 
 ## What breaks it
 
+- `git-lfs: not pushed` from `vibe sync` (note `git-lfs: push by hand`), the runner or `/handoff-brief` → hooks are off, so the LFS upload hook does not run. Push that branch yourself.
 - `systemctl --user status claude-rc@<repo>` says `condition failed` → no
   `server` in `~/.config/vibe/role`; step 2.
 - A VS Code session is named `turing-<words>`, not `<repo>-<task>-<words>` →
