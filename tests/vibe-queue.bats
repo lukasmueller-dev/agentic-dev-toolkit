@@ -602,6 +602,22 @@ putfeature() {
   grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
 }
 
+@test "run: a relative core.hooksPath runs no post-checkout hook when a job resumes a branch whose worktree is gone" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" post-checkout
+  git -C "$r" push -q origin main:refs/heads/task-a
+  git -C "$r" branch task-b main
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ ! -e "$m" ]
+}
+
 @test "lane: a relative core.hooksPath runs no hook of the job's tree when a blocked item leaves the lane" {
   local r m="$BATS_TEST_TMPDIR/hooked"
   r="$(make_repo proj)"

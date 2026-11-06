@@ -105,10 +105,6 @@ clear_config_lock() {
   if [[ -f "$f" && ! -s "$f" && ! -w "$f" ]]; then rm -f "$f"; fi
 }
 
-# agent_git ARGS — git with hooks off, for each runner call on a tree an agent wrote:
-# a relative core.hooksPath would run the agent's hook with the user's credentials.
-agent_git() { git -c core.hooksPath=/dev/null "$@"; }
-
 # worktree_of MAIN BRANCH — path of the worktree that has BRANCH checked out.
 worktree_of() {
   git -C "$1" worktree list --porcelain | awk -v b="refs/heads/$2" '

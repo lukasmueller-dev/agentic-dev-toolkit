@@ -113,22 +113,27 @@ ff_main_quiet() {
     info "fast-forwarded $branch before branching"
 }
 
+# agent_git ARGS — git with hooks off, for each unsandboxed call on a tree an agent wrote:
+# a relative core.hooksPath would run the agent's hook with the user's credentials.
+agent_git() { git -c core.hooksPath=/dev/null "$@"; }
+
 # ensure_worktree MAIN BRANCH DIR [BASE] — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
 # needed, and tracked — so a brief pushed from another machine is picked up
 # instead of shadowed by a fresh branch off HEAD); new branch off BASE when it
 # resolves (untracked, so it never pushes to BASE); new branch off HEAD. Only
 # the last case calls ff_main_quiet: the others do not depend on MAIN's HEAD.
+# The first two check out a branch an agent may have written: hooks off.
 ensure_worktree() {
   local main="$1" branch="$2" dir="$3" base="${4:-}"
   mkdir -p "$(dirname "$dir")"
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-    git -C "$main" worktree add "$dir" "$branch"
+    agent_git -C "$main" worktree add "$dir" "$branch"
   else
     git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch" ||
       git -C "$main" fetch -q origin "$branch" >/dev/null 2>&1 || true
     if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-      git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
+      agent_git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
     elif [[ -n "$base" ]] && git -C "$main" rev-parse -q --verify "$base^{commit}" >/dev/null; then
       git -C "$main" worktree add --no-track -b "$branch" "$dir" "$base"
     else
