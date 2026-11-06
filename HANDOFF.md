@@ -7,12 +7,12 @@
 
 ## State
 
-Milestones 1 (findings 1, 2), 2 (finding 3) and 3 (finding 4) done. Full `bats tests/` passes in a clone (0 failures after commit `1b893e9`).
-Milestone 3: `git fetch *` left `sandbox.excludedCommands`; `CLAUDE_SETTINGS_RETIRED` (`install.sh`) deletes it from a live settings file; one `install.bats` test.
+Milestones 1 (findings 1, 2), 2 (finding 3), 3 (finding 4) and 4 (finding 5) done. Full `bats tests/` passes in a clone (359 tests, 0 failures after commit `acd34ec`).
+Milestone 4: `job_limit_pct` (`bin/vibe`) skips a job whose `ended` string is before the job's `started` string; one test in `tests/vibe-queue.bats`.
 
 ## Next action
 
-Milestone 4 of `SPEC.md`: `job_limit_pct` 5 h window (finding 5, `bin/vibe:635`). Done when a bats test with 300 old archived jobs shows none is read; PR body gives the measured `vibe queue report` time.
+Milestone 5 of `SPEC.md`: queue state (findings 6, 7) — `job_due` skips a recurring job with a queued or running copy; `job_end` keeps a status a follow-up already wrote; the runner starts a follow-up only after its parent has an `ended` file. Done when one bats test per rule passes.
 
 Carry to the final `pr.md`:
 
@@ -22,6 +22,9 @@ Carry to the final `pr.md`:
 - Finding 3 risk: no repo hook runs on the runner's push or on `vibe sync`. A git-lfs repo cannot use the runner; a test in `pre-push` moves to `.vibe-jobs/gate` (`docs/vibe-queue.md`).
 - Finding 3, review round 1: `cleanup.sh remove` classified every worktree per path (N×N `gh` calls); `scan_lines` now takes the path.
 - Finding 3, review round 2: `cleanup.sh remove` resolves a relative path before the `cd`; the shutdown survey checks a `gone` branch with `cleanup.sh scan` and skips it only when rated `merged` or `ignored`.
+- Finding 5: measured `vibe queue report` (18 queue jobs, 300 archived): 20.3 s before, 2.5 s after; 2.3 s with none archived (the rest is the 18 jobs that overlap each other).
+- Finding 5: the window is the job's own start, not "last 5 h from now" (spec wording). A now-relative window drops the `≈N% 5h est.` of last night's jobs from the morning briefing.
+- Finding 5 risk: strings compare, so one hour of a DST fall-back night can skip an overlapping job; the result is an estimate (`≈`).
 - Finding 4: allow rules `git fetch:*` and `git ls-remote:*` stay; fetch now runs sandboxed. Deny rules for `--upload-pack` rejected (mid-command wildcards unverified).
 - Finding 4 risk: a sandboxed fetch of a private repo can fail with `Authentication failed`; the trap list in `claude/CLAUDE.md` says to run it unsandboxed.
 - Finding 4 risk: the `retired` list deletes the entry on every install, so a user who wants `git fetch *` excluded again must not rely on the settings file.
