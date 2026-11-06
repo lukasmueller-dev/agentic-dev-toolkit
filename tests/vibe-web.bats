@@ -141,6 +141,10 @@ post() {
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
   [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The poll writes only to nodes held at load: a code fence alone gives <pre class="filter"> in a .md.
+  grep -qF "for (const [s, live] of parts)" "$Q/web/page.js"
+  grep -qF "filter.after(...g);" "$Q/web/page.js"
+  [ "$(grep -c "\$('.filter'" "$Q/web/page.js")" = 2 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"

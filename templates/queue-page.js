@@ -5,12 +5,13 @@
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
-  const queue = $('#queue'); /* first in the document: raw HTML comes after it */
+  /* The real nodes, held at load: #panel is empty then and comes first, so a later lookup could land in a .md. */
+  const queue = $('#queue'), filter = $('.filter', queue), updated = $('.updated'), parts = ['.updated', '.chips', '.flags', '.acts', '#briefing', '#config'].map(s => [s, $(s)]);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
   const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
-  let last = '', jobs = html(tail($('.filter'))), seen = Date.now(), busy = false, again = false;
-  setInterval(() => $('.updated').classList.toggle('stale', Date.now() - seen > 120000), 1000);
+  let last = '', jobs = html(tail(filter)), seen = Date.now(), busy = false, again = false;
+  setInterval(() => updated.classList.toggle('stale', Date.now() - seen > 120000), 1000);
   const api = '/queue/api/';
   const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
   const poll = async () => {
@@ -20,12 +21,12 @@
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
       if (r.ok && t !== last) {
-        const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = tail($('.filter', n)), h = html(g);
-        for (const s of ['.updated', '.chips', '.flags', '.acts', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
+        const n = new DOMParser().parseFromString(t, 'text/html'), g = tail($('.filter', n)), h = html(g);
+        for (const [s, live] of parts) if (live.innerHTML !== $(s, n).innerHTML) live.innerHTML = $(s, n).innerHTML;
         if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
           const open = [...queue.querySelectorAll('details[open]')].map(key);
-          tail(f).forEach(x => x.remove());
-          f.after(...g);
+          tail(filter).forEach(x => x.remove());
+          filter.after(...g);
           queue.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
           jobs = h;
         }
