@@ -20,7 +20,11 @@ for the night. The queue half is the `fill-queue` skill; this skill runs it last
 
 1. Run `vibe sync --all` outside the sandbox. It pushes committed task
    branches and prints one line per worktree: state, repo/worktree, branch, notes.
-2. For each worktree line other than the main checkout, `gone` and
+2. A `gone` line (upstream deleted, never pushed again) may hold unmerged work.
+   Run `bash ../worktree-cleanup/cleanup.sh scan <repo>` outside the sandbox, once
+   per repo with a `gone` line. Skip each `gone` worktree the scan rates `merged`
+   or `ignored`: its work landed. Survey the others.
+3. For each worktree line other than the main checkout, a skipped `gone` and
    `missing`, get its path from `git -C <repo> worktree list`, then the handoff state:
 
    ```bash
