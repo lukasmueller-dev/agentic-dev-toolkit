@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-02 · docker-gate-sessions_
+_Last updated: 2026-11-06 · roadmap-cleanup_
 
 ## Items
 
@@ -26,3 +26,8 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
+
+- [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
+      the roadmap items the repo proves done or dead, with one proof line each.
+      Done when one recurring job per repo queues and its PR changes only
+      `PROJECT_ROADMAP.md`.
