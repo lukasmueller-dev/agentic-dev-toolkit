@@ -7,8 +7,8 @@
 load helper
 
 # A gh on PATH that logs its arguments to $GH_LOG and answers `pr list` with
-# $GH_OIDS (one head sha per line); $GH_FAIL makes it exit 1. No test reaches
-# the real gh.
+# $GH_OIDS (one head sha per line) and, when the query asks for commits, $GH_COMMITS;
+# $GH_FAIL makes it exit 1. No test reaches the real gh.
 setup() {
   git_env
   mkdir -p "$BATS_TEST_TMPDIR/stubs"
@@ -17,11 +17,12 @@ setup() {
 echo "$*" >>"$GH_LOG"
 [ -z "${GH_FAIL:-}" ] || exit 1
 [ -z "${GH_OIDS:-}" ] || printf '%s\n' "$GH_OIDS"
+[ -z "${GH_COMMITS:-}" ] || case "$*" in *commits*) printf '%s\n' "$GH_COMMITS" ;; esac
 EOF2
   chmod +x "$BATS_TEST_TMPDIR/stubs/gh"
   export GH_LOG="$BATS_TEST_TMPDIR/gh.log"
   PATH="$BATS_TEST_TMPDIR/stubs:$PATH"
-  unset GH_OIDS GH_FAIL
+  unset GH_OIDS GH_COMMITS GH_FAIL
 }
 
 CLEANUP="$REPO_ROOT/skills/worktree-cleanup/cleanup.sh"
@@ -116,6 +117,21 @@ squash_merge() {
   git -C "$r" push -q origin --delete extra
   cd "$r"
   [ "$(state_of "$w")" = unpushed ]
+}
+
+@test "scan: a deleted upstream is merged when the PR head moved on to a commit this clone lacks" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(add_wt "$r" moved)"
+  git -C "$w" commit -q --allow-empty -m "pushed"
+  git -C "$w" push -q -u origin moved
+  GH_COMMITS="$(git -C "$w" rev-parse HEAD)"
+  GH_OIDS="$(printf '%040d' 7)"
+  export GH_COMMITS GH_OIDS
+  git -C "$r" push -q origin --delete moved
+  cd "$r"
+  [ "$(state_of "$w")" = merged ]
+  grep -qF -- '--limit 100' "$GH_LOG"
 }
 
 # ignore_dirs REPO — commit a .gitignore before any worktree exists.

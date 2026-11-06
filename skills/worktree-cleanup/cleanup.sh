@@ -103,15 +103,17 @@ landed_or_ignored() {
   fi
 }
 
-# pr_landed PATH BRANCH — succeed when a merged PR of BRANCH has the HEAD of
-# PATH in its history. Fails when gh is missing or errors.
+# pr_landed PATH BRANCH — succeed when a merged PR of BRANCH holds the HEAD of PATH:
+# as one of its commits, or in the history of its head. Fails when gh is missing or errors.
 pr_landed() {
-  local oids oid
+  local oids oid head
   command -v gh >/dev/null 2>&1 || return 1
-  oids="$(gh pr list --head "$2" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 1
+  head="$(git -C "$1" rev-parse HEAD 2>/dev/null)" || return 1
+  oids="$(gh pr list --head "$2" --state merged --json headRefOid,commits --limit 100 \
+    --jq '.[] | .headRefOid, (.commits[].oid)' 2>/dev/null)" || return 1
   while IFS= read -r oid; do
     [[ -n "$oid" ]] || continue
-    if git -C "$1" merge-base --is-ancestor HEAD "$oid" 2>/dev/null; then return 0; fi
+    if [[ "$oid" == "$head" ]] || git -C "$1" merge-base --is-ancestor HEAD "$oid" 2>/dev/null; then return 0; fi
   done <<<"$oids"
   return 1
 }
