@@ -86,7 +86,11 @@
         if (v !== view) return;
         if (!r.ok) return say('no such file', true);
         say('');
-        if (md) { const d = el('div'); d.className = 'md'; d.innerHTML = t; pbody.replaceChildren(d); } else pbody.replaceChildren(el('pre', t));
+        if (md) {
+          const d = el('div'); d.className = 'md'; d.innerHTML = t;
+          d.querySelectorAll('meta, style').forEach(n => n.remove()); /* off the page, so neither has acted: a refresh navigates, a style reaches the whole page */
+          pbody.replaceChildren(d);
+        } else pbody.replaceChildren(el('pre', t));
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }

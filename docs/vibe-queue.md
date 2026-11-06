@@ -91,6 +91,7 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Buttons, routes and commands: [Page actions](#page-actions).
 - Output and file links open in one panel: a bottom sheet on the phone, the Briefing column from 1024 px.
+- A `.md` in the panel keeps raw HTML: its buttons do nothing, `meta` and `style` are removed, CSP blocks scripts and frames.
 - The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 
