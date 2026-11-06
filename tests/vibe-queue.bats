@@ -1334,6 +1334,30 @@ endedjob() {
   [[ "$output" != *"API"* ]] || false
 }
 
+@test "cost: the limit share reads no job that ended before the job started" {
+  local r f n0 n1 i
+  r="$(make_repo proj)"
+  printf '#!/bin/sh\necho x >>"%s/date.calls"\nexec /bin/date "$@"\n' "$STUBS" >"$STUBS/date"
+  chmod +x "$STUBS/date"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n0="$(wc -l <"$STUBS/date.calls")"
+  for i in $(seq 300); do
+    mkdir -p "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i"
+    echo "2020-01-01 10:00:00" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/started"
+    echo "2020-01-01 10:09:59" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/ended"
+    cp "$Q/01-a/log" "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/log"
+  done
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n1="$(wc -l <"$STUBS/date.calls")"
+  [ "$n1" -eq "$n0" ]
+  f="$(ls -t "$XDG_STATE_HOME"/vibe/briefings/*.md | head -n 1)"
+  grep -F '| 01-a |' "$f" | grep -qF '≈2% 5h est.'
+}
+
 @test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
   local r f at
   r="$(make_repo proj)"

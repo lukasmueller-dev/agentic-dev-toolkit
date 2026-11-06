@@ -641,14 +641,21 @@ job_delta() {
 # job_limit_pct JOB — the job's share of its 5h-limit delta in %: its $ over the $ of every
 # job that ran at the same time (the job included), each scaled by its overlap time.
 # Empty when the delta or any overlapping job's cost is missing. Interactive use is not in the sum.
+# A job that ended before this one started is skipped by its `ended` string: no fork, no log.
 job_limit_pct() {
-  local d="$1" delta s e k ks ke ov c rows="" self=""
+  local d="$1" delta s e k ks ke ov c rows="" self="" from="" end
+  local re='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$'
   delta="$(job_delta "$d")"
   read -r s e <<<"$(job_span "$d")"
   [[ -n "$delta" && -n "${s:-}" ]] || return 0
+  [[ ! -f "$d/started" ]] || read -r from <"$d/started" || true
+  [[ "$from" =~ $re ]] || from=""
   for k in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
     k="${k%/}"
     [[ -f "$k/started" ]] || continue
+    end=""
+    [[ ! -f "$k/ended" ]] || read -r end <"$k/ended" || true
+    if [[ -n "$from" && "$end" =~ $re && "$end" < "$from" ]]; then continue; fi
     read -r ks ke <<<"$(job_span "$k")"
     [[ -n "${ks:-}" ]] || continue
     # Times have 1s resolution: a run from t to t spans one second.
