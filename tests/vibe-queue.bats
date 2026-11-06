@@ -1682,7 +1682,7 @@ two_findings() {
 @test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
   local r b
   r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a ok after=review
+  mkjob 01-a "$r" task-a ok after=review event=c1
   two_findings
   printf '%s' '{"type":"result","structured_output":{"findings":[]}}' >"$STUBS/review-2.json"
   printf '1=fixed @SHA@\n2=rejected not reachable\n' >"$STUBS/verdicts"
@@ -1692,6 +1692,7 @@ two_findings() {
   for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = "done" ]; done
   [ ! -e "$Q/01-a/pr" ]
   [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
+  [ "$(grep -c 'issues/1/comments' "$STUBS/gh.log")" = 1 ]
   [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
   run "$VIBE" queue status
   [[ "$output" == "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR"* ]] || false
