@@ -537,6 +537,12 @@ branch_off() {
   run "$VIBE" job triage "$r"
   [[ "$output" == *"no fix job: usage: vibe queue fix"* ]] || false
   [ "$(fix_jobs)" = 2 ]
+  printf '[{"user":{"login":"owner"},"path":"a.py","line":3,"body":"Not here.","created_at":"2026-10-02T00:00:00Z"}]' >"$STUBS/inline.json"
+  run "$VIBE" job triage "$r"
+  [[ "$output" == *"fix job queued"* ]] || false
+  n="$(qjobs task | tail -n 1)"
+  grep -qxF 'a.py:3 Not here.' "$n/prompt.md"
+  echo "done" >"$n/status"
   echo https://example.com/pull/1 >"$n/pr"
   "$VIBE" queue fix https://example.com/pull/1 By hand. >/dev/null
   run grep -c '^event=' "$(qjobs task | tail -n 1)/job"
