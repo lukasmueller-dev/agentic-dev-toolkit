@@ -436,6 +436,10 @@ do_unlink() {
 CLAUDE_SETTINGS_SRC="$REPO/claude/settings.json"
 CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 
+# [path, entry] pairs an earlier baseline shipped and the merge now deletes from
+# the live file at each install. The union alone would keep them for good.
+CLAUDE_SETTINGS_RETIRED='[[["sandbox", "excludedCommands"], "git fetch *"]]'
+
 # Deep-merges the baseline over the live file, but UNIONS the permission and
 # sandbox arrays: jq's `*` replaces arrays wholesale, which would silently
 # discard every rule accumulated through "don't ask again" — and, for the
@@ -455,7 +459,7 @@ CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 # PreCompact) survive untouched, and an event left with no entries is dropped
 # rather than written as an empty array, so the merge stays idempotent.
 claude_settings_merged() {
-  jq -s '
+  jq -s --argjson retired "$CLAUDE_SETTINGS_RETIRED" '
     .[0] as $live | .[1] as $repo
     | ($live * $repo)
     | .permissions.allow = ((($live.permissions.allow // []) + ($repo.permissions.allow // [])) | unique)
@@ -473,6 +477,10 @@ claude_settings_merged() {
       ) as $p (.;
         if ($repo | getpath($p)) != null
         then setpath($p; ((($live | getpath($p)) // []) + ($repo | getpath($p))) | unique)
+        else . end)
+    | reduce $retired[] as $r (.;
+        if (getpath($r[0]) | type) == "array"
+        then setpath($r[0]; getpath($r[0]) - [$r[1]])
         else . end)
     | .hooks = (
         reduce ((($live.hooks // {}) + ($repo.hooks // {})) | keys[]) as $e ({};
