@@ -15,7 +15,7 @@
 #                                   the same for item <n> of the last roadmap listing, still open on origin
 #   vibe queue new --opt-in <job> <repo>
 #                                   a job that opts <repo> into a recurring job and commits it
-#   vibe queue roadmap <repo>       open PROJECT_ROADMAP.md items on origin: <line>: <title>
+#   vibe queue roadmap [--full] <repo>  open PROJECT_ROADMAP.md items on origin: <line>: <title>, or the whole item
 #   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
 #   vibe queue hold <id> <note>     keep a job for you: first in every briefing
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
@@ -1555,10 +1555,11 @@ roadmap_items() {
 # roadmap_pin REPO — the file that holds the origin commit `vibe queue roadmap` listed last for REPO.
 roadmap_pin() { echo "$QROOT/roadmap/$(printf '%s' "$1" | tr / %)"; }
 
-# vibe queue roadmap REPO — REPO's open roadmap items on origin: `<line>: <title>`; `new --line` reads this listing.
+# vibe queue roadmap [--full] REPO — REPO's open roadmap items on origin: `<line>: <title>`, with --full `<line>: <item>`; `new --line` reads this listing.
 cmd_queue_roadmap() {
-  local items head pin
-  [[ $# == 1 && -d "$1" ]] || die "usage: vibe queue roadmap <repo>"
+  local items head pin full=0
+  if [[ "${1:-}" == --full ]]; then full=1 && shift; fi
+  [[ $# == 1 && -d "$1" ]] || die "usage: vibe queue roadmap [--full] <repo>"
   head="$(roadmap_head "$1")" || exit 1
   items="$(roadmap_items "$1" "$head")" || exit 1
   pin="$(roadmap_pin "$(cd "$1" && pwd)")"
@@ -1568,6 +1569,10 @@ cmd_queue_roadmap() {
     echo "no open roadmap item in ${1##*/}"
     return 0
   }
+  if ((full)); then
+    awk -F'\t' '{ print $1 ": " $2 }' <<<"$items"
+    return 0
+  fi
   awk -F'\t' '{ t = $2; if (match(t, /^\*\*[^*]+\*\*/)) t = substr(t, 3, RLENGTH - 4); else if (length(t) > 80) t = substr(t, 1, 80) "…"; print $1 ": " t }' <<<"$items"
 }
 
@@ -1886,7 +1891,7 @@ job_steps() {
     | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
 }
 
-# btn_rows WRITE CONFIRM — the two button lists with a thin rule between them, when both are filled.
+# btn_rows WRITE CONFIRM — the two button lists with an empty grid row between them, when both are filled.
 btn_rows() { printf '%s%s%s' "$1" "${1:+${2:+<hr>}}" "$2"; }
 
 # job_buttons JOB — the card's write buttons by status, data-confirm ones last, then the file links; routes in bin/vibe-web, shown after whoami.
@@ -2054,9 +2059,9 @@ page_repos() {
   } | awk '!seen[$0]++'
 }
 
-# new_work — the `New work` group: per repo a card of buttons, read-only first, data-confirm last; Run or Reset per recurring job in between.
+# new_work — the `New work` group: per repo a card of buttons, then Run or Reset per recurring job.
 new_work() {
-  local r j b c e avail out="" rec
+  local r j b e avail out="" rec
   while IFS= read -r r; do
     [[ -e "$r/.git" ]] || continue
     e="$(esc "$r")" avail="" rec=""
@@ -2067,18 +2072,16 @@ new_work() {
     b='<button data-act="roadmap">Roadmap</button>'
     b+='<button data-act="worktrees">Worktrees</button>'
     b+='<button data-act="new" data-ask="task done branch" title="Task|Done when: a command that checks it|Branch slug">New job</button>'
-    b+='<button data-act="roadmap-new" data-ask="line branch" title="Roadmap line (Roadmap lists them)|Branch slug">From roadmap</button>'
     if [[ -n "$avail" ]]; then b+="<button data-act=\"opt-in\" data-ask=\"job\" title=\"Recurring job to opt in: $(esc "$avail")\">Opt in</button>"; fi
     # A nested .jacts with display: contents: its buttons sit in the repo's grid, its data-job reaches page.js.
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
-      rec+="<div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\"><button data-act=\"run\">Run $(esc "$j")</button>"
+      rec+="<div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\"><button data-act=\"run\">$(esc "$j")</button>"
       if [[ "$(job_due "$r" "$j")" == stopped ]]; then rec+="<button data-act=\"reset\">Reset $(esc "$j")</button>"; fi
       rec+='</div>'
     done < <(job_names "$r")
-    b+="${rec:+<span class=\"lbl\">Recurring</span>$rec}"
-    c='<button data-act="worktree-remove" data-ask="path" data-confirm title="Worktree path to remove (Worktrees lists them; merged or prunable only)">Remove worktree</button>'
-    out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$(btn_rows "$b" "$c")</div></div>"
+    b+="${rec:+<span class=\"lbl\">Run recurring</span>$rec}"
+    out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$b</div></div>"
   done < <(page_repos)
   if [[ -n "$out" ]]; then printf '<div class="repo new"><h2>New work</h2>\n%s\n</div>\n' "$out"; fi
 }

@@ -1402,10 +1402,10 @@ pandoc_stub() {
   [ "$status" -eq 1 ]
 }
 
-# acts_of LINE — the buttons, rules, labels and file lines of one button group, in page order.
+# acts_of LINE — the buttons, empty rows, labels and file lines of one button group, in page order.
 acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|class="files"' | sed 's/data-act=//; s/"//g; s/class=//' | paste -sd' ' -; }
 
-@test "page: each button group is read-only first, write next, then a rule and the data-confirm buttons; file links last" {
+@test "page: each button group is read-only first, write next, then an empty row and the data-confirm buttons; file links last" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html" top card new
   r="$(make_repo proj)"
   mkdir -p "$r/.vibe-jobs" "$XDG_STATE_HOME/vibe/jobs/proj/codebase-health"
@@ -1428,9 +1428,9 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   [ "$(acts_of "${card#*data-id=\"02-b\"}")" = 'retry hold <hr> answer archive files' ]
   grep -qF '<div class="files"><a href="/queue/api/job/02-b/report.md">report.md</a><a href="/queue/api/job/02-b/log">log</a></div></div>' "$f"
   new="$(grep "<b>proj</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$r\">" "$f")"
-  [ "$(acts_of "${new#*"data-repo=\"$r\""}")" = 'roadmap worktrees new roadmap-new opt-in lbl run reset <hr> worktree-remove' ]
+  [ "$(acts_of "${new#*"data-repo=\"$r\""}")" = 'roadmap worktrees new opt-in lbl run reset' ]
   # The recurring job keeps its own .jacts: page.js sends data-repo and data-job from the nearest one.
-  grep -qF "<span class=\"lbl\">Recurring</span><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run codebase-health</button><button data-act=\"reset\">Reset codebase-health</button></div><hr>" "$f"
+  grep -qF "<span class=\"lbl\">Run recurring</span><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">codebase-health</button><button data-act=\"reset\">Reset codebase-health</button></div></div>" "$f"
 }
 
 @test "page: a failed write warns and the runner goes on" {
