@@ -156,9 +156,10 @@ post() {
   run "$REPO_ROOT/bin/vibe" queue page
   [ "$status" -eq 0 ]
   grep -q "Content-Security-Policy\" content=\"default-src 'self'; script-src 'self';" "$Q/web/index.html"
-  # A panel .md keeps raw HTML: no frame of the live page, no refresh, no page-wide style.
+  # A panel .md keeps raw tags: no frame of the live page; only listed attributes, so no refresh and no style.
   grep -q "frame-src 'none'; object-src 'none';" "$Q/web/index.html"
-  grep -qF "d.querySelectorAll('meta, style')" "$Q/web/page.js"
+  grep -qF "d.querySelectorAll('style')" "$Q/web/page.js"
+  grep -qF "/^(href|src|alt|title|type|checked|start)\$/" "$Q/web/page.js"
   grep -q '<script src="/queue/page.js"></script>' "$Q/web/index.html"
   [ "$(grep -c '<script' "$Q/web/index.html")" = 1 ]
   run grep -q "script-src[^;]*unsafe" "$Q/web/index.html"

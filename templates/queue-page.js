@@ -90,7 +90,9 @@
         say('');
         if (md) {
           const d = el('div'); d.className = 'md'; d.innerHTML = t;
-          d.querySelectorAll('meta, style').forEach(n => n.remove()); /* off the page, so neither has acted: a refresh navigates, a style reaches the whole page */
+          /* Off the page, so nothing has acted yet: a style element or attribute reaches the whole page, a class or id the page's CSS, a meta refresh navigates. */
+          d.querySelectorAll('style').forEach(n => n.remove());
+          d.querySelectorAll('*').forEach(n => [...n.attributes].forEach(a => { if (!/^(href|src|alt|title|type|checked|start)$/.test(a.name)) n.removeAttribute(a.name); }));
           pbody.replaceChildren(d);
         } else pbody.replaceChildren(el('pre', t));
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
