@@ -2953,8 +2953,8 @@ cmd_job_run() {
 }
 
 # TRIAGE_JQ — one line per PR: number url head base mergeable red-checks new-comments.
-# EVENT_JQ — one line per fix request: number url since id text. INLINE_JQ — ME's inline comments.
-# Split by \037: a tab IFS collapses an empty field. New: after the last non-merge commit.
+# EVENT_JQ — one line per fix request, oldest first: number url since fresh id text. INLINE_JQ — ME's inline comments.
+# Split by \037: a tab IFS collapses an empty field. New, fresh: after the last non-merge commit.
 # `def me` goes in front at run time. `asked`: starts a fix job. `told`: job_publish's summary comment.
 # shellcheck disable=SC2016  # jq variables, not shell ones
 TRIAGE_DEFS='def since: [.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "";
@@ -2967,8 +2967,8 @@ TRIAGE_JQ='.[] | since as $t
    ([.statusCheckRollup[] | select((.conclusion // .state // "") | test("^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$")) | (.name // .context)] | join(", ")),
    (.comments + .reviews | map(select((asked or told) | not) | .createdAt // .submittedAt | select(. > $t)) | length)] | map(tostring) | join("\u001f")'
 # shellcheck disable=SC2016
-EVENT_JQ='.[] | since as $t | .number as $n | .url as $u | (.comments + .reviews)[] | select(asked)
-| [$n, $u, $t, .id, (.body | sub("^/fix\\s*"; "") | gsub("\\s+"; " "))] | map(tostring) | join("\u001f")'
+EVENT_JQ='.[] | since as $t | .number as $n | .url as $u | (.comments + .reviews | sort_by(.createdAt // .submittedAt))[] | select(asked)
+| [$n, $u, $t, ((.createdAt // .submittedAt) > $t), .id, (.body | sub("^/fix\\s*"; "") | gsub("\\s+"; " "))] | map(tostring) | join("\u001f")'
 INLINE_JQ='.[] | select(.user.login == me and .created_at > since) | "\(.path):\(.line // .original_line // "?") \(.body | gsub("\\s+"; " "))"'
 
 # triage_merge REPO HEAD BASE — merge origin/BASE into origin/HEAD in a scratch
@@ -3028,7 +3028,7 @@ triage_fix() {
 # changes" of your login starts one fix job; red CI and unanswered review
 # comments become lines in QROOT/triage.md, which the briefing shows.
 cmd_job_triage() {
-  local repo n url head base mergeable red comments out lines="" r me defs since id text
+  local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
   command -v gh >/dev/null 2>&1 || {
     echo "no gh — nothing to triage"
     return 0
@@ -3058,9 +3058,15 @@ cmd_job_triage() {
     [[ -n "$me" ]] || continue
     out="$( (cd "$repo" && gh pr list --label agent --state open --json number,url,comments,reviews,commits \
       -q "$defs$EVENT_JQ") 2>/dev/null || true)"
-    while IFS=$'\037' read -r n url since id text; do
+    seen=""
+    while IFS=$'\037' read -r n url since fresh id text; do
       [[ -n "$id" ]] || continue
-      if grep -qsxF "event=$id" "$QDIR"/*/job "$QROOT"/archive/*/*/job; then continue; fi
+      if grep -qsxF "event=$id" "$QDIR"/*/job "$QROOT"/archive/*/*/job; then
+        seen="$url"
+        continue
+      fi
+      # A later commit answers an event, but a fix job's commits answer only the events of that job.
+      if [[ "$fresh" == false && "$seen" != "$url" ]]; then continue; fi
       lines+="- $(basename "$repo") [#$n]($url): $(triage_fix "$repo" "$me" "$n" "$url" "$since" "$id" "$text")"$'\n'
     done <<<"$out"
   done

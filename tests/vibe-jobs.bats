@@ -342,8 +342,8 @@ pr() {
 }
 # comment ID LOGIN BODY — a PR comment for `pr`, after the commit in `one_commit`.
 comment() { printf '{"id":"%s","author":{"login":"%s"},"body":"%s","createdAt":"2026-10-02T00:00:00Z"}' "$1" "$2" "$3"; }
-# review ID LOGIN STATE BODY — a review for `pr`, after the commit in `one_commit`.
-review() { printf '{"id":"%s","author":{"login":"%s"},"state":"%s","body":"%s","submittedAt":"2026-10-02T00:00:00Z"}' "$1" "$2" "$3" "$4"; }
+# review ID LOGIN STATE BODY [AT] — a review for `pr`, by default after the commit in `one_commit`.
+review() { printf '{"id":"%s","author":{"login":"%s"},"state":"%s","body":"%s","submittedAt":"%s"}' "$1" "$2" "$3" "$4" "${5:-2026-10-02T00:00:00Z}"; }
 one_commit='{"messageHeadline":"feat: x","committedDate":"2026-10-01T00:00:00Z"}'
 # fixable REPO — PR 1 on branch task with its ended job; gh's login is owner.
 fixable() {
@@ -549,6 +549,37 @@ branch_off() {
   "$VIBE" queue fix https://example.com/pull/1 By hand. >/dev/null
   run grep -c '^event=' "$(qjobs task | tail -n 1)/job"
   [ "$output" = 0 ]
+}
+
+@test "job triage: a later commit answers an event, but a fix job's commit answers only its own event" {
+  local r j later='{"messageHeadline":"fix: y","committedDate":"2026-10-05T00:00:00Z"}'
+  r="$(make_repo proj)"
+  fixable "$r"
+  # Fixed by hand: an old /fix, an old review and an old empty review start nothing and say nothing.
+  printf '[%s]' "$(pr 1 task MERGEABLE '' "$(comment c0 owner '/fix Old text.')" "$one_commit,$later" \
+    "$(review r0 owner CHANGES_REQUESTED 'Old review.'),$(review r1 owner CHANGES_REQUESTED '')")" >"$STUBS/prs.json"
+  run "$VIBE" job triage "$r"
+  echo "$output"
+  [ "$output" = "triage: nothing to report" ]
+  [ "$(fix_jobs)" = 1 ]
+  # Two events in one pass: the older one gets the job, the newer one waits.
+  events "$(comment c2 owner '/fix Two.')" "$(review r2 owner CHANGES_REQUESTED 'One.' 2026-10-01T12:00:00Z)"
+  run "$VIBE" job triage "$r"
+  echo "$output"
+  [[ "$output" == *"fix job queued"*"no fix job: "*"is queued — wait until it ends"* ]] || false
+  j="$(qjobs task | tail -n 1)"
+  grep -qx event=r2 "$j/job"
+  echo "done" >"$j/status"
+  # That job's commit is newer than the waiting /fix: it still gets its job.
+  printf '[%s]' "$(pr 1 task MERGEABLE '' "$(comment c2 owner '/fix Two.')" "$one_commit,$later" \
+    "$(review r2 owner CHANGES_REQUESTED 'One.' 2026-10-01T12:00:00Z)")" >"$STUBS/prs.json"
+  run "$VIBE" job triage "$r"
+  echo "$output"
+  [[ "$output" == *"fix job queued"* ]] || false
+  j="$(qjobs task | tail -n 1)"
+  grep -qx event=c2 "$j/job"
+  grep -qF 'do only this): Two.' "$j/prompt.md"
+  [ "$(fix_jobs)" = 3 ]
 }
 
 @test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent" {
