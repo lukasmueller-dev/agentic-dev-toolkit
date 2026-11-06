@@ -295,6 +295,19 @@ setup() {
   [ -z "$(git -C "$r" ls-remote origin refs/heads/big)" ]
 }
 
+@test "sync: the default branch is never pushed, also from a linked worktree (no hook guards it)" {
+  local r w="$BATS_TEST_TMPDIR/onmain"
+  r="$(make_repo proj)"
+  git -C "$r" switch -q -c feat
+  git -C "$r" worktree add -q "$w" main
+  git -C "$w" commit -q --allow-empty -m "local on main"
+  cd "$r"
+  run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ahead"*"proj/onmain"*"main"*"the default branch is never pushed"* ]] || false
+  [ "$(git -C "$r" ls-remote origin refs/heads/main | cut -f1)" != "$(git -C "$w" rev-parse HEAD)" ]
+}
+
 @test "sync: a locked worktree is pushed but not fast-forwarded" {
   local r o
   r="$(make_repo proj)"

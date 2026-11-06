@@ -216,7 +216,7 @@ sync_wt() {
       agent_git -C "$dir" add -A && agent_git -C "$dir" commit -q -m "wip: $(hostname) $(date '+%Y-%m-%d %H:%M')" && dirty="" && note="wip committed"
     fi
     if ! counts="$(agent_git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
-      if [[ "$dir" == "$main" ]]; then
+      if [[ "$dir" == "$main" || "$br" == "$def" ]]; then
         res="no-upstream"
       elif agent_git -C "$dir" config "branch.$br.merge" >/dev/null; then
         res="gone" note="upstream deleted — /worktree-cleanup checks for a merged PR"
@@ -233,8 +233,8 @@ sync_wt() {
       read -r ahead behind <<<"$counts"
       if ((ahead > 0 && behind > 0)); then
         res="diverged"
-      elif ((ahead > 0)) && [[ "$dir" == "$main" ]]; then
-        res="ahead" note="main checkout is never pushed"
+      elif ((ahead > 0)) && [[ "$dir" == "$main" || "$br" == "$def" ]]; then
+        res="ahead" note="the default branch is never pushed"
       elif ((ahead > 0)); then
         if agent_push "$dir" -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
       elif ((behind > 0)) && [[ -n "$dirty" || -n "$locked" ]]; then
