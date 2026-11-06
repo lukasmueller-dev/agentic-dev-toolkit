@@ -278,6 +278,23 @@ setup() {
   [ -n "$(git -C "$r" ls-remote origin refs/heads/big)" ]
 }
 
+@test "sync: a git-lfs pre-push hook or .git/info/attributes, with no committed .gitattributes, also stops the push" {
+  local r w lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" big
+  w="$r/.claude/worktrees/big"
+  git -C "$w" commit -q --allow-empty -m "work"
+  printf '*.bin filter=lfs diff=lfs merge=lfs -text\n' >>"$r/.git/info/attributes"
+  printf '#!/bin/sh\ncommand -v git-lfs >/dev/null || exit 2\ngit lfs pre-push "$@"\n' >"$r/.git/hooks/pre-push"
+  chmod +x "$r/.git/hooks/pre-push"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  cd "$r"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"error"*"proj/big"*"git-lfs: push by hand"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+}
+
 @test "sync: a locked worktree is pushed but not fast-forwarded" {
   local r o
   r="$(make_repo proj)"

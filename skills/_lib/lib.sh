@@ -117,10 +117,15 @@ ff_main_quiet() {
 # a relative core.hooksPath would run the agent's hook with the user's credentials.
 agent_git() { git -c core.hooksPath=/dev/null "$@"; }
 
-# uses_lfs DIR — git-lfs is installed and the tree at DIR declares it in a .gitattributes.
+# uses_lfs DIR — git-lfs is installed and DIR uses it: a committed .gitattributes with
+# filter=lfs, or a pre-push hook that runs git-lfs (also true for .git/info/attributes).
 uses_lfs() {
-  command -v git-lfs >/dev/null 2>&1 &&
-    agent_git -C "$1" grep -q 'filter=lfs' HEAD -- ':(glob)**/.gitattributes' 2>/dev/null
+  local hook
+  command -v git-lfs >/dev/null 2>&1 || return 1
+  if agent_git -C "$1" grep -q 'filter=lfs' HEAD -- ':(glob)**/.gitattributes' 2>/dev/null; then return 0; fi
+  hook="$(git -C "$1" rev-parse --git-path hooks/pre-push 2>/dev/null)" || return 1
+  [[ "$hook" == /* ]] || hook="$1/$hook"
+  grep -qE 'git[ -]lfs' "$hook" 2>/dev/null
 }
 
 # agent_push DIR ARGS — `git push` from DIR with hooks off. A git-lfs tree is refused:
@@ -242,12 +247,12 @@ publish_handoff() {
     fi
   done
 
-  git -C "$dir" add HANDOFF.md
-  if [[ -n "$(git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
-    git -C "$dir" commit -q -m "$msg"
+  agent_git -C "$dir" add HANDOFF.md
+  if [[ -n "$(agent_git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
+    agent_git -C "$dir" commit -q -m "$msg"
     info "committed the handoff"
   fi
-  git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
+  agent_push "$dir" -q -u origin "$branch" || die "$push_hint"
   info "pushed '$branch' to origin"
   if git -C "$(main_repo_root)" worktree remove "$dir" 2>/dev/null; then
     info "removed the staging worktree — '$branch' is free to check out"
