@@ -21,6 +21,7 @@ Carry to the final `pr.md` (finding 3):
 - `git status` and `git add` run `post-index-change`, so read-only calls are wrapped too.
 - Risk: no repo hook runs on the runner's push or on `vibe sync`. A git-lfs repo cannot use the runner; a test in `pre-push` moves to `.vibe-jobs/gate` (`docs/vibe-queue.md`).
 - Review round 1: `cleanup.sh remove` classified every worktree per path (N×N `gh` calls); `scan_lines` now takes the path.
+- Review round 2: `cleanup.sh remove` resolves a relative path before the `cd`; the shutdown survey checks a `gone` branch with `cleanup.sh scan` and skips it only when rated `merged` or `ignored`.
 
 ## Blockers
 
