@@ -158,7 +158,7 @@ unprompted. As a symlink, every one of those becomes a git diff in this repo
 and syncs to every other machine.
 
 So the repo holds a **baseline** — permissions, sandbox policy, hooks,
-statusLine — and the installer merges it into the live file. Two rules
+statusLine — and the installer merges it into the live file. Three rules
 follow:
 
 1. **Runtime state stays out of the baseline.** `model`, `effortLevel`, and
@@ -170,6 +170,11 @@ follow:
    replaces arrays wholesale, which would discard every rule accumulated
    through "don't ask again" and every sandbox domain or exclusion added by
    hand. `claude_settings_merged()` unions and dedupes them instead.
+3. **Removing a baseline entry needs `CLAUDE_SETTINGS_RETIRED`.** The union
+   keeps an entry a machine already holds, so a rule deleted from the baseline
+   stays live for good. List it as `[path, entry]` in `install.sh`; each
+   install deletes it. A rule that opens a hole (`git fetch *` in
+   `excludedCommands` ran `--upload-pack=<cmd>` unsandboxed) goes there.
 
 Merging must be idempotent in both directions: creating the file from scratch
 and merging into an existing one produce byte-identical output, so a second

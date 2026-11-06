@@ -142,6 +142,35 @@ finish_handoff() {
   git -C "$BATS_TEST_TMPDIR/proj.git" show ship-task:HANDOFF.md | grep -q "Write the first failing test."
 }
 
+@test "publish: a relative core.hooksPath runs no hook of the staged branch on the commit and the push" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-commit commit-msg post-commit pre-push
+  git -C "$r" config core.hooksPath .githooks
+  cd "$r"
+  run_handoff create "hook task"
+  finish_handoff "$(wt hook-task)"
+  run run_handoff publish "hook task"
+  [ "$status" -eq 0 ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/hook-task)" ]
+  [ ! -e "$m" ]
+}
+
+@test "publish: a git-lfs repo is not pushed with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  cd "$r"
+  run_handoff create "big task"
+  finish_handoff "$(wt big-task)"
+  PATH="$lfs:$PATH" run run_handoff publish "big task"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"git-lfs: not pushed"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big-task)" ]
+}
+
 @test "publish: removes the staging worktree so a new session can switch to the branch" {
   local r
   r="$(make_repo proj)"

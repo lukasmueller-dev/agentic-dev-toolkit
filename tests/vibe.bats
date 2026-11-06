@@ -153,7 +153,7 @@ setup() {
   [[ "$output" == *"proj "*"side"*"off main"* ]] || false
 }
 
-@test "sync: a branch whose upstream was deleted is merged and never pushed again" {
+@test "sync: a branch whose upstream was deleted is gone, not merged, and never pushed again" {
   local r
   r="$(make_repo proj)"
   "$VIBE" start -C "$r" done-task
@@ -163,7 +163,9 @@ setup() {
   git -C "$r" push -q origin --delete done-task
   run "$VIBE" sync
   [ "$status" -eq 0 ]
-  [[ "$output" == *"merged"*"proj/done-task"*"/worktree-cleanup"* ]] || false
+  [[ "$output" == *"gone"*"proj/done-task"*"/worktree-cleanup"* ]] || false
+  run grep -q '^merged ' <<<"$output"
+  [ "$status" -ne 0 ]
   run git -C "$r" ls-remote --heads origin done-task
   [ -z "$output" ]
 }
@@ -233,6 +235,77 @@ setup() {
   [ -f "$r/main-edit.txt" ]
   [ -n "$(git -C "$r" status --porcelain)" ]
   [ "$(git -C "$r" rev-list --count main)" -eq 1 ]
+}
+
+@test "sync: a relative core.hooksPath runs no hook of the worktrees it commits, pushes and fast-forwards" {
+  local r o m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push post-commit post-merge
+  o="$(clone_repo proj other)"
+  git -C "$o" switch -q -c clean main
+  git -C "$o" push -q -u origin clean
+  for b in clean ahead dirty; do "$VIBE" start -C "$r" "$b"; done
+  git -C "$o" commit -q --allow-empty -m "remote clean"
+  git -C "$o" push -q origin clean
+  git -C "$r/.claude/worktrees/ahead" commit -q --allow-empty -m "work"
+  echo x >"$r/.claude/worktrees/dirty/x.txt"
+  git -C "$r" config core.hooksPath .githooks
+  cd "$r"
+  run "$VIBE" sync --wip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pulled"*"proj/clean"* ]] || false
+  [[ "$output" == *"pushed"*"proj/ahead"* ]] || false
+  [[ "$output" == *"pushed"*"proj/dirty"*"wip committed"* ]] || false
+  [ ! -e "$m" ]
+}
+
+@test "sync: a git-lfs branch is not pushed with hooks off; without git-lfs installed it is" {
+  local r w="" lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" big
+  w="$r/.claude/worktrees/big"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$w/.gitattributes"
+  git -C "$w" add .gitattributes && git -C "$w" commit -q -m "feat: lfs"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  cd "$r"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"error"*"proj/big"*"git-lfs: push by hand"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+  PATH="$(path_without git-lfs)" run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pushed"*"proj/big"* ]] || false
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+}
+
+@test "sync: a git-lfs pre-push hook or .git/info/attributes, with no committed .gitattributes, also stops the push" {
+  local r w lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" big
+  w="$r/.claude/worktrees/big"
+  git -C "$w" commit -q --allow-empty -m "work"
+  printf '*.bin filter=lfs diff=lfs merge=lfs -text\n' >>"$r/.git/info/attributes"
+  printf '#!/bin/sh\ncommand -v git-lfs >/dev/null || exit 2\ngit lfs pre-push "$@"\n' >"$r/.git/hooks/pre-push"
+  chmod +x "$r/.git/hooks/pre-push"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  cd "$r"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"error"*"proj/big"*"git-lfs: push by hand"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+}
+
+@test "sync: the default branch is never pushed, also from a linked worktree (no hook guards it)" {
+  local r w="$BATS_TEST_TMPDIR/onmain"
+  r="$(make_repo proj)"
+  git -C "$r" switch -q -c feat
+  git -C "$r" worktree add -q "$w" main
+  git -C "$w" commit -q --allow-empty -m "local on main"
+  cd "$r"
+  run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ahead"*"proj/onmain"*"main"*"the default branch is never pushed"* ]] || false
+  [ "$(git -C "$r" ls-remote origin refs/heads/main | cut -f1)" != "$(git -C "$w" rev-parse HEAD)" ]
 }
 
 @test "sync: a locked worktree is pushed but not fast-forwarded" {

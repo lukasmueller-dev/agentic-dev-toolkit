@@ -65,7 +65,7 @@ claude --plugin-dir ~/github/agentic-dev-toolkit   # no $HOME: load as a plugin
 - Never deletes a real file: it moves to `~/.agentic-dev-toolkit-backups/<timestamp>/`.
 - Prunes its own dangling symlinks (a renamed skill) on every run.
 - Merges `claude/settings.json` with `jq`; your `model`, `effortLevel` and
-  permission rules stay.
+  permission rules stay. Entries on its `CLAUDE_SETTINGS_RETIRED` list are deleted.
 
 After installing:
 

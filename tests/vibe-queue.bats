@@ -488,6 +488,31 @@ putfeature() {
   [ ! -e "$r/.git/config.lock" ]
 }
 
+@test "run: a relative core.hooksPath runs no hook of the job's tree on the runner's push" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+  [ ! -e "$m" ]
+}
+
+@test "run: the runner does not push a git-lfs tree with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  mkjob 01-a "$r" task-a ok
+  PATH="$lfs:$PATH" drain
+  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+}
+
 @test "run: a config.lock with content, or a writable one, stays" {
   local r
   r="$(make_repo proj)"
@@ -587,6 +612,34 @@ putfeature() {
   run grep -c -- '--head lane-x-beta' "$STUBS/gh.log"
   [ "$output" = 0 ]
   grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
+}
+
+@test "run: a relative core.hooksPath runs no post-checkout hook when a job resumes a branch whose worktree is gone" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" post-checkout
+  git -C "$r" push -q origin main:refs/heads/task-a
+  git -C "$r" branch task-b main
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ ! -e "$m" ]
+}
+
+@test "lane: a relative core.hooksPath runs no hook of the job's tree when a blocked item leaves the lane" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" lane-x itemwip "lane=Fix health" item=beta
+  drain
+  [ "$(cat "$Q/01-a/status")" = blocked ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/lane-x-beta)" ]
+  [ ! -e "$m" ]
 }
 
 @test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
@@ -1540,6 +1593,30 @@ endedjob() {
   [ "$output" = 0 ]
   run grep -F '| 03-c |' "$f"
   [[ "$output" != *"API"* ]] || false
+}
+
+@test "cost: the limit share reads no job that ended before the job started" {
+  local r f n0 n1 i
+  r="$(make_repo proj)"
+  printf '#!/bin/sh\necho x >>"%s/date.calls"\nexec /bin/date "$@"\n' "$STUBS" >"$STUBS/date"
+  chmod +x "$STUBS/date"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n0="$(wc -l <"$STUBS/date.calls")"
+  for i in $(seq 300); do
+    mkdir -p "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i"
+    echo "2020-01-01 10:00:00" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/started"
+    echo "2020-01-01 10:09:59" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/ended"
+    cp "$Q/01-a/log" "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/log"
+  done
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n1="$(wc -l <"$STUBS/date.calls")"
+  [ "$n1" -eq "$n0" ]
+  f="$(ls -t "$XDG_STATE_HOME"/vibe/briefings/*.md | head -n 1)"
+  grep -F '| 01-a |' "$f" | grep -qF '≈2% 5h est.'
 }
 
 @test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
