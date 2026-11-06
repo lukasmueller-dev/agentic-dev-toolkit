@@ -120,7 +120,8 @@ squash_merge() {
 
 # ignore_dirs REPO — commit a .gitignore before any worktree exists.
 ignore_dirs() {
-  printf '%s\n' 'runs/' '*.ckpt' '.venv/' 'node_modules/' '__pycache__/' '.claude/settings.local.json' >"$1/.gitignore"
+  printf '%s\n' 'runs/' '*.ckpt' '.venv/' 'node_modules/' '__pycache__/' '.claude/settings.local.json' \
+    '.DS_Store' '*.swp' '.vscode/' '.tox/' '*.egg-info/' 'target/' 'dist/' 'build/' >"$1/.gitignore"
   git -C "$1" add .gitignore
   git -C "$1" commit -q -m "ignore"
   git -C "$1" push -q origin main
@@ -153,6 +154,9 @@ ignore_dirs() {
   touch "$w/.venv/bin/python" "$w/node_modules/x/i.js" "$w/src/__pycache__/a.pyc"
   mkdir -p "$w/.claude"
   echo '{}' >"$w/.claude/settings.local.json"
+  mkdir -p "$w/.vscode" "$w/target/debug" "$w/dist" "$w/build" "$w/.tox" "$w/pkg.egg-info" "$w/docs"
+  touch "$w/.DS_Store" "$w/docs/.DS_Store" "$w/a.swp" "$w/.vscode/settings.json" "$w/target/debug/a" \
+    "$w/dist/b.js" "$w/build/c" "$w/.tox/d" "$w/pkg.egg-info/PKG-INFO"
   cd "$r"
   [ "$(state_of "$w")" = merged ]
   for i in 1 2 3 4 5; do echo w >"$w/m$i.ckpt"; done
@@ -161,6 +165,19 @@ ignore_dirs() {
   [[ "$output" == *"m1.ckpt, m2.ckpt, m3.ckpt (+2 more)"* ]] || false
   [[ "$output" != *"m4.ckpt"* ]] || false
   [[ "$output" != *"venv"* ]] || false
+}
+
+@test "scan: dist/ below the top level is not a cache" {
+  local r w
+  r="$(make_repo proj)"
+  ignore_dirs "$r"
+  w="$(add_wt "$r" nested)"
+  mkdir -p "$w/exp/dist"
+  echo weights >"$w/exp/dist/w.pt"
+  cd "$r"
+  [ "$(state_of "$w")" = ignored ]
+  run bash "$CLEANUP" scan
+  [[ "$output" == *"exp/dist/w.pt"* ]] || false
 }
 
 @test "scan: locked and current worktrees are never removable" {

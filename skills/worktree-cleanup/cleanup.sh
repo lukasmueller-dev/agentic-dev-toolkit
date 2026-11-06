@@ -76,7 +76,14 @@ ignored_keep() {
     return 0
   }
   awk '
-    length($0) && $0 !~ /(^|\/)(\.venv|node_modules|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache)(\/|$)/ && $0 != ".claude/settings.local.json" {
+    function regen(p) {
+      return p ~ /(^|\/)(\.venv|node_modules|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.vscode)(\/|$)/ ||
+        p ~ /(^|\/)[^\/]+\.egg-info(\/|$)/ ||
+        p ~ /(^|\/)(\.DS_Store|[^\/]+\.sw[po])$/ ||
+        p ~ /^(target|dist|build)(\/|$)/ ||
+        p == ".claude/settings.local.json"
+    }
+    length($0) && !regen($0) {
       n++
       if (n <= 3) l = l (n > 1 ? ", " : "") $0
     }

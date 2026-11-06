@@ -41,7 +41,7 @@ PR that holds the local HEAD. Without `gh` or a login it is `unpushed`.
 | `merged` | All commits on the default branch, or upstream deleted after a merged PR | removable |
 | `prunable` | Directory gone, only git's record left | removable |
 | `dirty` | Uncommitted or untracked changes | keep |
-| `ignored` | Git-ignored files (checkpoints, data) that removal would delete; `.venv`, `node_modules` and caches do not count | keep |
+| `ignored` | Git-ignored files (checkpoints, data) that removal would delete; virtualenvs, caches, build output, editor and OS files do not count | keep |
 | `unpushed` | Commits not on the default branch | keep |
 | `locked` | Held by a running session | keep |
 | `current` | This session runs in it | keep |
