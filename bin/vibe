@@ -1532,10 +1532,11 @@ status_card() {
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.
+# Raw HTML in the text shows as code: the Lua filter turns each raw node into a code node.
 md_html() {
-  local md out
+  local md out raw='function RawBlock(e) return pandoc.CodeBlock(e.text) end function RawInline(e) return pandoc.Code(e.text) end'
   md="$(sed -E 's/\[([^]]*)\]\(file:[^)]*\)/\1/g')"
-  if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers -t html 2>/dev/null)"; then
+  if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers --lua-filter=<(printf '%s\n' "$raw") -t html 2>/dev/null)"; then
     printf '%s\n' "$out"
   else
     printf '<pre>%s</pre>\n' "$(esc "$md")"
@@ -1911,24 +1912,25 @@ is_member() {
 
 # feature_row FILE — F_PILL, F_PROGRESS (done/members), F_ITEMS (a `<repo> · <branch>  <status>  <note>`
 # line per member that needs you) and F_MEMBERS (`repo|branch|pr|state|note` per member).
-# A member is done with a PR and no job queued, running or in need of you; without
-# either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
+# A member is done with a PR and no job queued, running or in need of you (a done job with a
+# failed gate does); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
 feature_row() {
-  local f="$1" r b p j st ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
+  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
   F_ITEMS="" F_MEMBERS=""
   while IFS=$'\t' read -r r b p; do
     n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
-      any=1 st="$(jstate "$j" status)"
+      any=1 st="$(jstate "$j" status)" jn="$(jstate "$j" note)$(side_suffix "$j")"
       [[ ! -f "$j/held" ]] || st=held
+      if [[ "$st" == "done" && "$(jstate "$j" gate)" =~ ^[1-9] ]]; then st=gate jn="gate exit $(jstate "$j" gate)"; fi
       case "$st" in
         running | gpu) mrun=1 ;;
         "" | queued) mwait=1 ;;
-        held | blocked | failed | timeout | skipped)
-          if [[ -z "$ms" ]]; then ms="$st" note="$(jstate "$j" note)$(side_suffix "$j")"; fi
+        held | blocked | failed | timeout | skipped | gate)
+          if [[ -z "$ms" ]]; then ms="$st" note="$jn"; fi
           if [[ "$st" == held ]]; then ms=held note="$(jstate "$j" held)"; fi
-          F_ITEMS+="${r##*/} · $b  $st  $(jstate "$j" note)$(side_suffix "$j")"$'\n'
+          F_ITEMS+="${r##*/} · $b  $st  $jn"$'\n'
           ;;
       esac
       if [[ -z "$p" && "$(jstate "$j" pr)" == http* ]]; then p="$(jstate "$j" pr)"; fi

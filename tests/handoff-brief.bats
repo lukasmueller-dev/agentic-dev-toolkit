@@ -196,3 +196,18 @@ finish_handoff() {
   [ "$status" -eq 0 ]
   [ "$(git -C "$(wt second-task)" log -1 --format=%s)" = "teammate" ]
 }
+
+@test "create: a failed fast-forward of main stops with git's error and the reason" {
+  local r other
+  r="$(make_repo proj)"
+  other="$(clone_repo proj other)"
+  echo upstream >"$other/clash.txt"
+  git -C "$other" add clash.txt && git -C "$other" commit -q -m "add clash.txt"
+  git -C "$other" push -q origin main
+  echo local >"$r/clash.txt"
+  cd "$r"
+  run run_handoff create "clash task"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot fast-forward main"*"stale HEAD"*"clash.txt"* ]] || false
+  [ ! -d "$(wt clash-task)" ]
+}

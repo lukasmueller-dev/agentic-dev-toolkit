@@ -280,6 +280,21 @@ putfeature() {
   [ -f "$F/teleop.ready" ]
 }
 
+@test "feature: a done member job with a failed gate needs you" {
+  putfeature teleop "$BATS_TEST_TMPDIR/bridge sticks" "$BATS_TEST_TMPDIR/cmdr gamepad"
+  mkjob 01-a "$BATS_TEST_TMPDIR/bridge" sticks ok
+  mkjob 02-b "$BATS_TEST_TMPDIR/cmdr" gamepad ok
+  echo "done" >"$Q/01-a/status"
+  echo "done" >"$Q/02-b/status"
+  echo https://example.com/pull/1 >"$Q/01-a/pr"
+  echo https://example.com/pull/2 >"$Q/02-b/pr"
+  echo 3 >"$Q/01-a/gate"
+  run "$VIBE" queue status
+  [[ "$output" == *$'\n  teleop · 1/2 · needs you\n'*$'\n    bridge · sticks  gate  gate exit 3\n'* ]] || false
+  echo 0 >"$Q/01-a/gate"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 2/2 · your test$')" = 1 ]
+}
+
 @test "page: a feature is one card on top; one click unpacks a lane card, a job card and a card with no job" {
   local r1 r2 f="$XDG_STATE_HOME/vibe/web/index.html"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
@@ -1157,6 +1172,18 @@ pandoc_stub() {
   run grep -c '<b>A &' "$f"
   [ "$output" = 0 ]
   [ ! -e "$f.tmp" ]
+}
+
+@test "page: raw HTML in a job's text shows as code in the briefing" {
+  command -v pandoc >/dev/null || skip "pandoc not installed"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=<img src=x onerror=alert(1)> and <script>alert(2)</script>'
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<code>&lt;img src=x onerror=alert(1)&gt;</code>' "$f"
+  run grep -c '<img\|<script>alert' "$f"
+  [ "$output" = 0 ]
 }
 
 @test "page: with no working pandoc briefing and config are escaped Markdown in <pre>, file links as text" {

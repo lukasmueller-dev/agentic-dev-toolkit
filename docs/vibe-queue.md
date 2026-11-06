@@ -62,7 +62,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ## 3. Phone page
 
-The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
+The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
 At 1024 px and wider, the page is 15% larger and shows Queue and Briefing side by side.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
@@ -135,7 +135,7 @@ vibe feature archive <slug>        # all member PRs merged
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
 - Status, the briefing and the page show a `Features` group first. Member jobs leave their repo groups; in the briefing a member job keeps its row only when it needs you.
 - Count: done members / members. Done: a PR, and no job queued, running or in need of you.
-- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
+- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
 
 ## Layout

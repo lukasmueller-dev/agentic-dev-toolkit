@@ -96,8 +96,8 @@ worktree_dir() { echo "$(main_repo_root)/.claude/worktrees/$1"; }
 
 # ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
 # to its upstream, right before a new task branch is cut from MAIN's HEAD.
-# Never refuses: a dirty tree, no upstream, or a failed fetch/merge is
-# skipped. Untracked files are ignored — .claude/worktrees/ is one.
+# A dirty tree, no upstream or a failed fetch is skipped. A failed merge stops
+# the caller with git's error. Untracked files are ignored — .claude/worktrees/ is one.
 ff_main_quiet() {
   local main="$1"
   [[ -z "$(git -C "$main" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 0
@@ -107,10 +107,11 @@ ff_main_quiet() {
   base="$(git -C "$main" merge-base @ '@{u}' 2>/dev/null)" || return 0
   [[ "$base" == "$(git -C "$main" rev-parse @)" ]] || return 0
   [[ "$base" != "$(git -C "$main" rev-parse '@{u}')" ]] || return 0
-  local branch
+  local branch err
   branch="$(git -C "$main" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
-  git -C "$main" merge -q --ff-only '@{u}' 2>/dev/null &&
-    info "fast-forwarded $branch before branching"
+  err="$(git -C "$main" merge -q --ff-only '@{u}' 2>&1)" ||
+    die "cannot fast-forward $branch; a new branch would start from a stale HEAD: $err"
+  info "fast-forwarded $branch before branching"
 }
 
 # agent_git ARGS — git with hooks off, for each unsandboxed call on a tree an agent wrote:
