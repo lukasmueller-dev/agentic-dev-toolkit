@@ -82,7 +82,12 @@ Rules the dispatcher keeps:
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 
 - `mergeable: CONFLICTING` → merge the base in a scratch worktree, push the head. A real conflict, a running job on the branch, or unpushed local commits: no push, one line.
-- A failed check, and comments or reviews newer than the last non-merge commit: one line each.
+- Your `/fix <text>` comment or review, or your "Request changes" review → one fix job (`vibe queue fix`). Its prompt gets the text and your inline comments since the last non-merge commit.
+- `event=<id>` in the job file keeps it to one job per event. When the job ends, one `**Fix job**` comment on the PR carries its `result`.
+- Your login: `pr_login=` in `queue.conf`, else `gh api user`. No login: no fix job.
+- Another login: a briefing line. Its text reaches no prompt.
+- A job queued or running on the branch, a PR with no job, or no text: a `no fix job:` line. The next triage tries again.
+- A failed check, and other comments or reviews newer than the last non-merge commit: one line each.
 - The lines replace `triage.md`; the briefing shows them under `## Triage`. Nothing to report: no file.
 
 ## What breaks it
@@ -93,5 +98,7 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
+- `/fix` starts nothing → triage runs at 01:00 and on the page's Triage PRs; the comment must start with `/fix`.
+- "Request changes" is off → GitHub refuses it on your own PR, and the runner's `gh` login opens the PRs. Use `/fix <text>`, or run `gh` as a second account with `pr_login=<you>`.
 - `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.
