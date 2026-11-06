@@ -69,7 +69,7 @@ body.can .rh .jacts { display: block; grid-column: -2; margin: 0; }
 .jacts .lbl { grid-column: 1 / -1; margin: 4px 0 -2px; color: var(--muted); font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
 .jacts .files { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 14px; }
 .jacts a { color: var(--muted); font: 500 12px var(--sans); }
-:is(.acts, .jacts, .prow) button:hover:not(:disabled) { background: var(--fill-2); }
+@media (hover: hover) { :is(.acts, .jacts, .prow) button:hover:not(:disabled) { background: var(--fill-2); } }
 :is(.acts, .jacts, .prow) button[data-confirm] { color: var(--red); }
 :is(.acts, .jacts, .prow) button.armed, :is(.acts, .jacts, .prow) button.armed:hover { background: var(--red); color: #fff; }
 :is(.acts, .jacts, .prow) button:disabled { opacity: .5; cursor: default; }
@@ -141,16 +141,17 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .md th, .md td { padding: 10px 8px 10px 0; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }
 .md pre, .md code, .md td { overflow-wrap: anywhere; }
 /* Panel: every button's output and every file. A bottom sheet here, the Briefing column on a desk screen; outside #queue, so a poll leaves it alone. */
-#panel { inset: auto 0 0; width: 100%; max-width: 680px; height: 76dvh; max-height: none; margin: 0 auto; padding: 0; overflow-y: auto; background: var(--bg); border: 0; border-top: 2px solid var(--ink); color: var(--ink); }
+#panel { position: fixed; inset: auto 0 0; width: 100%; max-width: 680px; height: 76dvh; max-height: none; margin: 0 auto; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border: 0; border-top: 2px solid var(--ink); color: var(--ink); }
 #panel::backdrop { background: rgba(0,0,0,.3); }
-.ph { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 10px; padding: 14px 20px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
+/* .pmsg sits in the sticky header: a row's answer stays in view at the end of a long list. */
+.ph { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 14px 20px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
 .ph strong { font: 600 15px/1.2 var(--sans); letter-spacing: -.01em; }
 .ph span { flex: 1; min-width: 0; color: var(--muted); font: 400 12.5px var(--sans); overflow-wrap: anywhere; }
-#panel .x { padding: 4px 0; background: none; border: 0; color: var(--muted); font: 500 13px var(--sans); cursor: pointer; }
-.pmsg { margin: 0; padding: 10px 20px; border-bottom: 1px solid var(--border); color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+#panel .x { margin: -10px 0; padding: 10px 0 10px 16px; background: none; border: 0; color: var(--muted); font: 500 13px var(--sans); cursor: pointer; }
+.pmsg { flex-basis: 100%; max-height: 8em; margin: 6px 0 0; overflow-y: auto; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pmsg:empty { display: none; }
 .pmsg.bad { color: var(--red); }
-#panel pre { margin: 0; padding: 14px 20px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.pbody > pre { margin: 0; padding: 14px 20px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 #panel .md { padding: 0 20px 20px; }
 .prow { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 14px; align-items: start; padding: 13px 20px; }
 .prow + .prow { border-top: 1px solid var(--border); }
@@ -181,7 +182,8 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
   #briefing, body:has(#briefing:target) #queue { display: block; }
   #briefing { border-left: 1px solid var(--border); }
   body:has(#config:target) #briefing, body:has(#config:target) #panel, body:has(#panel[open]) #briefing { display: none; }
-  #panel { position: sticky; top: 89px; grid-area: 2 / 2; align-self: start; max-width: none; height: auto; max-height: calc(100vh / 1.15 - 89px); border-top: 0; border-left: 2px solid var(--ink); }
+  /* zoom scales px and vh: 90px is the bar's measured 89.7, 100vh / 1.15 the window. */
+  #panel { position: sticky; inset: 90px auto auto; grid-area: 2 / 2; align-self: start; max-width: none; height: auto; max-height: calc(100vh / 1.15 - 90px); border-top: 0; border-left: 2px solid var(--ink); }
   body:has(#briefing:target) nav .q { color: var(--ink); border-bottom-color: var(--red); }
 }
 </style>
@@ -208,7 +210,7 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 <section id="config" class="md">
 <config>
 </section>
-<dialog id="panel"><div class="ph"><strong></strong><span></span><button class="x" type="button">Close</button></div><p class="pmsg"></p><div class="pbody"></div></dialog>
+<dialog id="panel"><div class="ph"><strong></strong><span></span><button class="x" type="button">Close</button><p class="pmsg"></p></div><div class="pbody"></div></dialog>
 <script src="/queue/page.js"></script>
 </body>
 </html>
