@@ -115,6 +115,19 @@ under a minute. Shape: `~/github/agentic-dev-toolkit/templates/job-pr.md`
 - Sentences: ≤20 words, active voice, present tense, one instruction each,
   no `-ing` verb forms, the same word for the same thing.
 
+# Slide decks
+
+Every deck: LaTeX beamer in the TU Darmstadt template (`tudabeamer`).
+
+- Template: `~/github/thesis/thesis-research/reports/weekly/src/`. Copy `preamble.tex`, `texmf/`, `img/` beside the deck. Build:
+  `TEXMFHOME=./texmf TEXMFVAR=./build/texcache TEXMFCACHE=./build/texcache latexmk -pdf -pdflatex="lualatex -interaction=nonstopmode" -auxdir=build <deck>.tex`
+- Style = my own meeting notes, not a pitch. Plain titles (`Overview`, `Status: …`, `Open: …`, `Ask: …`, `Next Steps`); "My suggestion:" for proposals; no highlight boxes; bold only in table headers.
+- Plain terms: no internal ids (decision numbers, task codes) without their meaning in words.
+- 30 min ≈ 12–15 slides; one topic per slide, at most 6 bullets.
+- A frame that starts with a table: `\par\normalcolor` first; end each table with `\par`.
+- Before handing over: zero `Overfull` in the log; render the pages (`pdftoppm -r 50`) and look at them.
+- Commit the PDF and the `.tex`; the template stays in the thesis repo.
+
 # Prefer the cut
 
 The smallest change that does the job wins. Before you add, ask what you can
