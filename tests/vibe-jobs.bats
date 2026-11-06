@@ -162,8 +162,8 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"queued "*"-proj-jobs-crashy (pr)"* ]] || false
   [ -z "$(qjobs jobs-health)" ]
   run "$VIBE" job due
-  [[ "$output" == *"-proj-jobs-crashy"*"-proj-jobs-health"* ]] || false
-  [ "$(qjobs jobs-crashy | wc -l)" -eq 2 ]
+  [[ "$output" == *"-proj-jobs-health"* && "$output" != *"-proj-jobs-crashy"* ]] || false
+  [ "$(qjobs jobs-crashy | wc -l)" -eq 1 ]
   d="$(qjobs jobs-health)"
   run cat "$d/job"
   [[ "$output" == *"repo=$r"*"branch=jobs/health"*"model=sonnet"*"timeout=2h"*"recurring=health"*"output=pr"* ]] || false
@@ -171,6 +171,23 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"# Recurring job: health"*"\`\$VIBE_JOB_DIR\`"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
   [[ "$output" == *"**Context:** <context>"*"**Changed:** <changed>"*"**Context:** <context>"*"**Needs you:** <needs-you>"* ]] || false
   [[ "$output" != *"<catalogue-instructions>"* ]] || false
+}
+
+@test "job due: a job with a queued, running or gpu copy in the queue is not queued again" {
+  local r d st
+  r="$(make_repo proj)"
+  optin "$r" health
+  "$VIBE" job due "$r" >/dev/null
+  d="$(qjobs jobs-health)"
+  for st in queued running gpu; do
+    echo "$st" >"$d/status"
+    run "$VIBE" job due "$r"
+    [[ "$output" == "nothing to queue" ]] || false
+    [[ "$("$VIBE" job list "$r")" == *"health"*"queued"* ]] || false
+  done
+  echo "done" >"$d/status"
+  "$VIBE" job due "$r" >/dev/null
+  [ "$(qjobs jobs-health | wc -l)" -eq 2 ]
 }
 
 @test "job due: a stopped job lands once as skipped under Needs you" {

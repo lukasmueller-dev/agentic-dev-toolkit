@@ -30,11 +30,18 @@ case "\$prompt" in
 esac
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- sh -c 'echo trained >out.txt'
+    echo "queued: training" >"\$VIBE_JOB_DIR/result"
+    ;;
+  gpurace)
+    echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
+    "$VIBE" queue gpu -- true
+    GPUQ_EXIT=0 "$VIBE" queue follow "\$VIBE_JOB_DIR"
+    sleep 1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   ok)
@@ -1366,7 +1373,7 @@ endedjob() {
   "$VIBE" queue report >/dev/null
   n1="$(wc -l <"$STUBS/date.calls")"
   [ "$n1" -eq "$n0" ]
-  f="$(ls -t "$XDG_STATE_HOME"/vibe/briefings/*.md | head -n 1)"
+  for f in "$XDG_STATE_HOME"/vibe/briefings/*.md; do :; done
   grep -F '| 01-a |' "$f" | grep -qF '≈2% 5h est.'
 }
 
@@ -1457,6 +1464,26 @@ EOF
   grep -q '^follow=1$' "$Q/01-a-gpu/job"
   grep -q -- '- Exit: 0' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+# gpurace — a job whose GPU run ends while the job still runs: `queue follow` ends the job first.
+gpurace() {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a gpurace
+  timeout 60 "$VIBE" queue run --claude --drain >/dev/null 2>&1
+}
+
+@test "gpu: a follow-up that ended its parent first leaves the parent done" {
+  gpurace
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a/note")" = "GPU run exit 0 → 01-a-gpu" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu: the follow-up starts after its parent has an ended file" {
+  gpurace
+  [ "$(cat "$STUBS/parent-at-follow")" = ended ]
 }
 
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {

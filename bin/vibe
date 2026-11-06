@@ -353,10 +353,13 @@ job_timeout() {
 }
 
 # job_end JOB STATUS NOTE — final status of a job; a recurring job also
-# updates its last-run / fails state (docs/vibe-jobs.md).
+# updates its last-run / fails state (docs/vibe-jobs.md). `gpu` never replaces
+# a final status: a fast GPU run's `queue follow` has ended the job first.
 job_end() {
-  echo "$2" >"$1/status"
-  echo "$3" >"$1/note"
+  if [[ "$2" != gpu ]] || ! job_final "$1"; then
+    echo "$2" >"$1/status"
+    echo "$3" >"$1/note"
+  fi
   date '+%F %T' >"$1/ended"
   rm -f "$1/pid"
   [[ -z "$(jget "$1/job" recurring)" ]] || job_state_update "$1" "$2"
@@ -1157,7 +1160,9 @@ cmd_queue_run() {
           fi
           ;;
         gpu) waiting=$((waiting + 1)) ;;
-        "" | queued) queued+=("$d") ;;
+        "" | queued)
+          if follow_ready "$d"; then queued+=("$d"); else waiting=$((waiting + 1)); fi
+          ;;
       esac
     done
     order="$(queue_order "${queued[@]+"${queued[@]}"}")"
@@ -1245,15 +1250,16 @@ cmd_queue_gpu() {
   echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
-# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1 and the
+# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
 # KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
 follow_job() {
-  local from="$1" to="$2" l keys=follow
+  local from="$1" to="$2" l keys="follow|parent"
   shift 2
   for l in "$@"; do keys+="|${l%%=*}"; done
   {
     grep -Ev "^($keys)=" "$from/job" || true
     echo "follow=1"
+    echo "parent=${from##*/}"
     for l in "$@"; do echo "$l"; done
   } >"$to/job"
 }
@@ -1278,7 +1284,20 @@ cmd_queue_follow() {
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
   follow_job "$p" "$f"
-  job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
+  if [[ -e "$p/ended" ]]; then
+    job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
+  else
+    # The job still publishes: its own job_end writes `ended`, and the follow-up waits for it.
+    echo "done" >"$p/status"
+    echo "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}" >"$p/note"
+  fi
+}
+
+# follow_ready JOB — false while JOB is a follow-up whose parent job has no `ended` file.
+follow_ready() {
+  local p
+  p="$(jget "$1/job" parent)"
+  [[ -z "$p" || ! -d "$QDIR/$p" || -e "$QDIR/$p/ended" ]]
 }
 
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
@@ -2166,7 +2185,19 @@ job_state_update() {
   esac
 }
 
-# job_due REPO JOB — "due", "stopped" (two failures), "not due", "invalid".
+# job_live REPO JOB — true when the queue holds an unfinished copy of the recurring job.
+job_live() {
+  local d
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    [[ "$(jget "$d/job" recurring)" == "$2" && "$(jget "$d/job" repo)" == "$1" ]] || continue
+    if ! job_final "$d"; then return 0; fi
+  done
+  return 1
+}
+
+# job_due REPO JOB — "due", "stopped" (two failures), "queued" (a copy is in
+# the queue), "not due", "invalid".
 job_due() {
   local repo="$1" job="$2" sched day last fails now period today
   [[ "$(job_check "$repo" "$job")" == ok ]] || {
@@ -2176,6 +2207,10 @@ job_due() {
   fails="$(job_state "$repo" "$job" fails)"
   if ((${fails:-0} >= 2)); then
     echo stopped
+    return 0
+  fi
+  if job_live "$repo" "$job"; then
+    echo queued
     return 0
   fi
   sched="$(job_key "$repo" "$job" schedule "")" day="$(job_key "$repo" "$job" day "")"
