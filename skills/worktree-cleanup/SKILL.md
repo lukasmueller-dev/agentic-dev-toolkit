@@ -1,6 +1,6 @@
 ---
 name: worktree-cleanup
-description: "Finds and removes the git worktrees of a repo whose work has already landed — branch merged into the default branch, or its upstream deleted after a merged PR — together with their local branches. Use when the user says 'clean up worktrees', 'remove merged worktrees', 'prune old worktrees', or 'git worktree list' shows leftovers from finished sessions. Scans first, shows every worktree with its state, and removes only the merged ones the user approves; dirty, unpushed and in-use worktrees are reported and left alone."
+description: "Finds and removes the git worktrees of a repo whose work has already landed — branch merged into the default branch, or its upstream deleted after a merged PR — together with their local branches. Use when the user says 'clean up worktrees', 'remove merged worktrees', 'prune old worktrees', or 'git worktree list' shows leftovers from finished sessions. Scans first, shows every worktree with its state, and removes only the merged ones the user approves; dirty, unpushed, in-use and git-ignored-file worktrees are reported and left alone."
 disable-model-invocation: true
 argument-hint: "[<repo path>...]"
 ---
@@ -33,11 +33,15 @@ It fetches with `--prune` (best effort; `FETCH=failed` means the states use
 the last fetched refs — say so), then prints one tab-separated line per
 linked worktree: `state  path  branch  reason`.
 
+A branch whose upstream is deleted is `merged` only when `gh` finds a merged
+PR that holds the local HEAD. Without `gh` or a login it is `unpushed`.
+
 | State | Meaning | Action |
 | --- | --- | --- |
-| `merged` | All commits on the default branch, or upstream deleted | removable |
+| `merged` | All commits on the default branch, or upstream deleted after a merged PR | removable |
 | `prunable` | Directory gone, only git's record left | removable |
 | `dirty` | Uncommitted or untracked changes | keep |
+| `ignored` | Git-ignored files (checkpoints, data) that removal would delete; `.venv`, `node_modules` and caches do not count | keep |
 | `unpushed` | Commits not on the default branch | keep |
 | `locked` | Held by a running session | keep |
 | `current` | This session runs in it | keep |
@@ -45,9 +49,9 @@ linked worktree: `state  path  branch  reason`.
 ## Phase 2 — Confirm
 
 Show one table per repo: path, branch, state, reason. Name the removable
-ones explicitly, and for each `unpushed` or `dirty` one say what the user
-would lose. **Wait for explicit approval** of the removable set; the user may
-narrow it.
+ones explicitly, and for each `unpushed`, `dirty` or `ignored` one say what
+the user would lose. **Wait for explicit approval** of the removable set; the
+user may narrow it.
 
 ## Phase 3 — Remove
 

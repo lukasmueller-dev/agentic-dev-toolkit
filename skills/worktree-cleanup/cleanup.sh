@@ -7,9 +7,11 @@
 #       Fetch (best effort), then print one tab-separated line per linked
 #       worktree of <repo> (default: the current repo):
 #         <state>  <path>  <branch>  <reason>
-#       merged    work is on the default branch, or its upstream was deleted
+#       merged    work is on the default branch, or a merged PR has it
+#                 and its upstream was deleted
 #       prunable  directory is gone; only git's record is left
 #       dirty     uncommitted or untracked changes
+#       ignored   git-ignored files that removal would delete
 #       unpushed  commits that are not on the default branch
 #       locked    held by a running session
 #       current   the worktree this command runs in
@@ -65,6 +67,48 @@ physical() {
 # The worktree the caller runs in, resolved before any cd: never removable.
 CUR_WT="$(physical "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 
+# ignored_keep PATH — the git-ignored files of worktree PATH that removal
+# would lose, as "a, b, c (+N more)"; empty when nothing but caches is left.
+ignored_keep() {
+  local all
+  all="$(git -C "$1" -c core.quotePath=false ls-files --others --ignored --exclude-standard 2>/dev/null)" || {
+    printf 'cannot list the git-ignored files\n'
+    return 0
+  }
+  awk '
+    length($0) && $0 !~ /(^|\/)(\.venv|node_modules|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache)(\/|$)/ && $0 != ".claude/settings.local.json" {
+      n++
+      if (n <= 3) l = l (n > 1 ? ", " : "") $0
+    }
+    END { if (n > 3) l = l " (+" (n - 3) " more)"; if (n) print l }
+  ' <<<"$all"
+}
+
+# landed_or_ignored PATH REASON — "merged<TAB>REASON", or "ignored" when
+# PATH holds git-ignored files that removal would delete.
+landed_or_ignored() {
+  local keep
+  keep="$(ignored_keep "$1")"
+  if [[ -n "$keep" ]]; then
+    printf 'ignored\t%s\n' "$keep"
+  else
+    printf 'merged\t%s\n' "$2"
+  fi
+}
+
+# pr_landed PATH BRANCH — succeed when a merged PR of BRANCH has the HEAD of
+# PATH in its history. Fails when gh is missing or errors.
+pr_landed() {
+  local oids oid
+  command -v gh >/dev/null 2>&1 || return 1
+  oids="$(gh pr list --head "$2" --state merged --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 1
+  while IFS= read -r oid; do
+    [[ -n "$oid" ]] || continue
+    if git -C "$1" merge-base --is-ancestor HEAD "$oid" 2>/dev/null; then return 0; fi
+  done <<<"$oids"
+  return 1
+}
+
 # classify PATH BRANCH LOCKED PRUNABLE REF CURRENT — print "state<TAB>reason".
 classify() {
   local path="$1" branch="$2" locked="$3" prunable="$4" ref="$5" cur="$6" track
@@ -77,14 +121,14 @@ classify() {
   elif [[ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]]; then
     printf 'dirty\tuncommitted or untracked changes\n'
   elif git -C "$path" merge-base --is-ancestor HEAD "$ref" 2>/dev/null; then
-    printf 'merged\tall commits are on %s\n' "$ref"
+    landed_or_ignored "$path" "all commits are on $ref"
   else
     track=""
     if [[ -n "$branch" ]]; then
       track="$(git for-each-ref --format='%(upstream:track)' "refs/heads/$branch" 2>/dev/null || true)"
     fi
-    if [[ "$track" == "[gone]" ]]; then
-      printf 'merged\tupstream branch was deleted (merged PR)\n'
+    if [[ "$track" == "[gone]" ]] && pr_landed "$path" "$branch"; then
+      landed_or_ignored "$path" "upstream branch was deleted after a merged PR"
     else
       printf 'unpushed\tcommits that are not on %s\n' "$ref"
     fi
