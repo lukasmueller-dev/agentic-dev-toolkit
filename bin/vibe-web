@@ -5,6 +5,7 @@ Listens on 127.0.0.1:<web_port> (queue.conf, default 7341); tailscale serve
 mounts it at /queue/api. Setup: docs/vibe-queue.md step 3; routes: Page actions.
 """
 import datetime
+import html
 import json
 import os
 import re
@@ -45,7 +46,7 @@ ROUTES = {
     "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
     "feature-archive": ["vibe", "feature", "archive", "{feature}"],
     "new": ["vibe", "queue", "new", "{repo}", "{branch}", "{done}", "{task}"],
-    "roadmap": ["vibe", "queue", "roadmap", "{repo}"],
+    "roadmap": ["vibe", "queue", "roadmap", "--full", "{repo}"],
     "roadmap-new": ["vibe", "queue", "new", "--line", "{line}", "{repo}", "{branch}"],
     "opt-in": ["vibe", "queue", "new", "--opt-in", "{job}", "{repo}"],
     "run": ["vibe", "job", "run", "{repo}", "{job}"],
@@ -76,6 +77,14 @@ ARGS = {
     "done": re.compile(r"[^\x00-\x1f\x7f]{1,500}"),
     "task": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
 }
+
+
+def md_html(data):
+    """Markdown bytes as HTML: pandoc, else escaped in <pre>."""
+    try:
+        return subprocess.run(["pandoc", "-f", "gfm-gfm_auto_identifiers", "-t", "html"], input=data, capture_output=True, check=True, timeout=TIMEOUT).stdout
+    except (OSError, subprocess.SubprocessError):
+        return b"<pre>" + html.escape(data.decode("utf-8", "replace")).encode() + b"</pre>"
 
 
 def argv_of(route, body):
@@ -151,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, {"error": "no route"})
 
     def job_file(self, parts):
-        """GET job/<id>/<file>: one of FILES of a queued job as text; the log's last 64 KB."""
+        """GET job/<id>/<file>: one of FILES of a queued job as text; the log's last 64 KB; a .md with ?html as HTML."""
         if len(parts) != 3 or not ARGS["id"].fullmatch(parts[1]) or parts[2] not in FILES:
             return self.reply(404, {"error": "no file"})
         try:  # O_NOFOLLOW: an agent can write the job dir; no symlink out of it
@@ -161,6 +170,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = f.read(1 << 20)
         except OSError:
             return self.reply(404, {"error": "no file"})
+        if parts[2].endswith(".md") and urlsplit(self.path).query == "html":
+            return self.reply(200, md_html(data), "text/html; charset=utf-8")
         return self.reply(200, data, "text/plain; charset=utf-8")
 
     def do_POST(self):

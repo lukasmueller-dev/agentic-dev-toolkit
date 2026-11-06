@@ -90,6 +90,7 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Buttons, routes and commands: [Page actions](#page-actions).
+- Output and file links open in one panel: a bottom sheet on the phone, the Briefing column from 1024 px.
 - The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 
@@ -189,17 +190,17 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Done job with a PR: Fix | `fix` | `vibe queue fix <pr> <text>` |
 | Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
 | Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
-| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (last 64 KB) as text |
+| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (last 64 KB) as text, in the panel; `.md` with `?html` rendered |
 | Repo header: Merge order | `merge-order` | `vibe queue merge-order <repo>` |
 | Feature in `your test`: Test passed: ready ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
 | New work: New job | `new` | `vibe queue new <repo> <branch> <done> <task>` |
-| New work: Roadmap | `roadmap` | `vibe queue roadmap <repo>` |
-| New work: From roadmap | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
+| New work: Roadmap | `roadmap` | `vibe queue roadmap --full <repo>` |
+| Roadmap row in the panel: Queue | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
 | New work: Opt in | `opt-in` | `vibe queue new --opt-in <job> <repo>` |
 | New work: Worktrees | `worktrees` | `cleanup.sh scan <repo>` |
-| New work: Remove worktree ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
-| Recurring job: Run `<job>` | `run` | `vibe job run <repo> <job>` |
+| Merged or prunable row in the panel: Remove ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
+| Run recurring: `<job>` | `run` | `vibe job run <repo> <job>` |
 | Stopped recurring job: Reset `<job>` | `reset` | `vibe job reset <repo> <job>` |
 
 Not on the page: merge, single-PR ready or close, the `run-ci` label, prompt edits.

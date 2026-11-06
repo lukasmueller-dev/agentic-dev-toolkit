@@ -136,9 +136,9 @@ post() {
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
-  grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
+  grep -qF "closest('#queue button[data-act], #panel .prows button[data-act]')" "$Q/web/page.js"
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
-  grep -qF "out.scrollIntoView({ block: 'nearest' });" "$Q/web/page.js"
+  grep -q '<dialog id="panel">' "$Q/web/index.html"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
 
@@ -579,6 +579,21 @@ no_slot() {
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
+@test "vibe queue roadmap: without --full each item is its title, a long one cut at 80; a bad flag is refused" {
+  local r long
+  r="$(make_repo proj)"
+  long="$(printf 'x%.0s' {1..90})"
+  printf -- '- [ ] **Item one** — do it.\n      Done when `make check` passes.\n- [ ] %s\n' "$long" >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
+  run "$REPO_ROOT/bin/vibe" queue roadmap "$r"
+  [ "$status" -eq 0 ]
+  [ "$output" = "1: Item one"$'\n'"3: ${long:0:80}…" ]
+  run "$REPO_ROOT/bin/vibe" queue roadmap --all "$r"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'usage: vibe queue roadmap [--full] <repo>'* ]] || false
+}
+
+# shellcheck disable=SC2016  # Markdown backticks, not expansions
 @test "route roadmap: the open items of origin's PROJECT_ROADMAP.md with their line; roadmap-new queues one" {
   local r n
   r="$(make_repo proj)"
@@ -588,7 +603,7 @@ no_slot() {
   git -C "$r" commit -q -am local
   run act roadmap "{\"repo\": \"$r\"}"
   [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'5: Item one\n8: Item two has no done-when.'* ]] || false
+  [[ "${lines[0]}" == *'5: **Item one** '*'Done when `make check` passes.\n8: Item two has no done-when.'* ]] || false
   [[ "${lines[0]}" != *'Local only'* ]] || false
   run act roadmap-new "{\"repo\": \"$r\", \"line\": \"8\", \"branch\": \"item-two\"}"
   [[ "${lines[0]}" == *'"code": 1'*'no done-when'* ]] || false
@@ -615,7 +630,7 @@ optin() {
   r="$(make_repo proj)"
   optin "$r" codebase-health
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">Run codebase-health</button></div>" "$Q/web/index.html"
+  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">codebase-health</button></div>" "$Q/web/index.html"
   mkdir -p "${f%/*}" && echo 2 >"$f"
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF '<button data-act="reset">Reset codebase-health</button>' "$Q/web/index.html"
@@ -687,7 +702,7 @@ optin() {
   printf -- '- [ ] **A** — a. Done when `a` passes.\n- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
   run act roadmap "{\"repo\": \"$r\"}"
-  [[ "${lines[0]}" == *'1: A\n2: B'* ]] || false
+  [[ "${lines[0]}" == *'1: **A** '*'2: **B** '* ]] || false
   # A merged PR deletes the finished item A: B moves up to line 1.
   printf -- '- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" commit -q -am "drop A" && git -C "$r" push -q origin main
@@ -807,7 +822,7 @@ optin() {
   [ "${lines[1]}" = 400 ]
   echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="worktree-remove" data-ask="path" data-confirm' "$Q/web/index.html"
+  grep -qF "action('Remove', 'worktree-remove', { data: { confirm: '' } })" "$Q/web/page.js"
 }
 
 @test "route sync: vibe sync --all pushes a worktree's new branch" {
@@ -876,6 +891,28 @@ get() {
   run "$REPO_ROOT/bin/vibe" queue page
   grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
   grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
+}
+
+@test "route job/<id>/<file>?html: a .md through pandoc under the API's CSP; without pandoc escaped; other files stay text" {
+  local d="$Q/queue/$ID" bin="$BATS_TEST_TMPDIR/nopandoc"
+  qjob "$ID" "done"
+  printf '# the report\n\n<i>raw</i> **bold**\n' >"$d/report.md"
+  echo "gate ok" >"$d/gate.log"
+  run get "/queue/api/job/$ID/report.md?html"
+  [[ "$output" == *'<h1>the report</h1>'*'<strong>bold</strong>'*$'\n200' ]] || false
+  run curl -s -D - -o /dev/null -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/job/$ID/report.md?html"
+  [[ "$output" == *"Content-Type: text/html; charset=utf-8"*"nosniff"*"Content-Security-Policy: default-src 'none'"* ]] || false
+  run get "/job/$ID/gate.log?html"
+  [ "${lines[0]}" = "gate ok" ]
+  run req GET "/job/$ID/report.md?html"
+  [ "${lines[1]}" = 403 ]
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\nexit 1\n' >"$bin/pandoc"
+  chmod +x "$bin/pandoc"
+  PATH="$bin:$PATH" web_start
+  run get "/job/$ID/report.md?html"
+  [[ "$output" == '<pre># the report'*'&lt;i&gt;raw&lt;/i&gt; **bold**'*'</pre>'$'\n200' ]] || false
 }
 
 @test "routes: output that is not UTF-8 still gets a reply and a log line" {
