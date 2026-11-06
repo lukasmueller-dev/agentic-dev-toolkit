@@ -211,20 +211,20 @@ sync_wt() {
   if [[ -d "$dir" && -z "$br" ]]; then
     res="detached"
   elif [[ -d "$dir" ]]; then
-    [[ -z "$(git -C "$dir" status --porcelain)" ]] || dirty=1
+    [[ -z "$(agent_git -C "$dir" status --porcelain)" ]] || dirty=1
     if [[ -n "$dirty" && "$WIP" == 1 && "$br" != "$def" && -z "$locked" ]]; then
-      git -C "$dir" add -A && git -C "$dir" commit -q -m "wip: $(hostname) $(date '+%Y-%m-%d %H:%M')" && dirty="" && note="wip committed"
+      agent_git -C "$dir" add -A && agent_git -C "$dir" commit -q -m "wip: $(hostname) $(date '+%Y-%m-%d %H:%M')" && dirty="" && note="wip committed"
     fi
-    if ! counts="$(git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
+    if ! counts="$(agent_git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
       if [[ "$dir" == "$main" ]]; then
         res="no-upstream"
-      elif git -C "$dir" config "branch.$br.merge" >/dev/null; then
+      elif agent_git -C "$dir" config "branch.$br.merge" >/dev/null; then
         res="gone" note="upstream deleted — /worktree-cleanup checks for a merged PR"
       elif [[ "$br" == worktree-* ]]; then
         res="local" note="app session branch, not pushed"
-      elif [[ "$(git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
+      elif [[ "$(agent_git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
         res="empty" note="no commits yet"
-      elif git -C "$dir" push -q -u origin "$br" 2>/dev/null; then
+      elif agent_git -C "$dir" push -q -u origin "$br" 2>/dev/null; then
         res="pushed"
       else
         res="error" note="push failed" rc=1
@@ -236,13 +236,13 @@ sync_wt() {
       elif ((ahead > 0)) && [[ "$dir" == "$main" ]]; then
         res="ahead" note="main checkout is never pushed"
       elif ((ahead > 0)); then
-        if git -C "$dir" push -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
+        if agent_git -C "$dir" push -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
       elif ((behind > 0)) && [[ -n "$dirty" || -n "$locked" ]]; then
         res="behind"
       elif ((behind > 0)) && [[ "$dir" == "$main" && "$(cd -P "$main" && pwd)" == "$TOOLKIT" ]]; then
         res="behind" note="run: vibe update-toolkit"
       elif ((behind > 0)); then
-        if git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
+        if agent_git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
       fi
     fi
     [[ -z "$dirty" ]] || note="${note:+$note, }dirty"

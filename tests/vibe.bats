@@ -237,6 +237,28 @@ setup() {
   [ "$(git -C "$r" rev-list --count main)" -eq 1 ]
 }
 
+@test "sync: a relative core.hooksPath runs no hook of the worktrees it commits, pushes and fast-forwards" {
+  local r o m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push post-commit post-merge
+  o="$(clone_repo proj other)"
+  git -C "$o" switch -q -c clean main
+  git -C "$o" push -q -u origin clean
+  for b in clean ahead dirty; do "$VIBE" start -C "$r" "$b"; done
+  git -C "$o" commit -q --allow-empty -m "remote clean"
+  git -C "$o" push -q origin clean
+  git -C "$r/.claude/worktrees/ahead" commit -q --allow-empty -m "work"
+  echo x >"$r/.claude/worktrees/dirty/x.txt"
+  git -C "$r" config core.hooksPath .githooks
+  cd "$r"
+  run "$VIBE" sync --wip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pulled"*"proj/clean"* ]] || false
+  [[ "$output" == *"pushed"*"proj/ahead"* ]] || false
+  [[ "$output" == *"pushed"*"proj/dirty"*"wip committed"* ]] || false
+  [ ! -e "$m" ]
+}
+
 @test "sync: a locked worktree is pushed but not fast-forwarded" {
   local r o
   r="$(make_repo proj)"
