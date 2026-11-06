@@ -105,6 +105,10 @@ clear_config_lock() {
   if [[ -f "$f" && ! -s "$f" && ! -w "$f" ]]; then rm -f "$f"; fi
 }
 
+# agent_git ARGS — git with hooks off, for each runner call on a tree an agent wrote:
+# a relative core.hooksPath would run the agent's hook with the user's credentials.
+agent_git() { git -c core.hooksPath=/dev/null "$@"; }
+
 # worktree_of MAIN BRANCH — path of the worktree that has BRANCH checked out.
 worktree_of() {
   git -C "$1" worktree list --porcelain | awk -v b="refs/heads/$2" '
@@ -140,8 +144,8 @@ open_worktree() {
     WT="$(worktree_dir "$branch")"
     [[ ! -e "$WT" ]] || die "$WT exists but does not hold branch '$branch'"
     ensure_worktree "$main" "$branch" "$WT" "origin/$def"
-  elif [[ -z "$(git -C "$WT" status --porcelain)" ]]; then
-    git -C "$WT" merge -q --ff-only '@{u}' 2>/dev/null || true
+  elif [[ -z "$(agent_git -C "$WT" status --porcelain)" ]]; then
+    agent_git -C "$WT" merge -q --ff-only '@{u}' 2>/dev/null || true
   fi
   for s in "$SELF_ROOT"/*/vibe-start.sh; do
     if [[ -f "$s" ]] && ! bash "$s" "$WT" "$(basename "$main")-$branch"; then
@@ -441,7 +445,7 @@ job_prepare() {
   wt="$(worktree_of "$main" "$branch")"
   # A GPU follow-up or a job a usage limit stopped resumes in its own dirty worktree.
   if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 ]] && ! same_dir "$(jstate "$d" worktree)" "$wt" &&
-    [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
+    [[ -n "$(agent_git -C "$wt" status --porcelain)" ]]; then
     job_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
@@ -450,7 +454,7 @@ job_prepare() {
     return 0
   fi
   open_worktree "$main" "$branch" "$def"
-  if [[ "$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
+  if [[ "$(agent_git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
     job_end "$d" failed "no worktree for '$branch'"
     return 0
   fi
@@ -461,7 +465,7 @@ job_prepare() {
   feature_prompt "$d"
   if [[ -n "$(jget "$d/job" lane)" ]]; then
     # A job a usage limit stopped keeps its first start commit.
-    [[ -f "$d/start" ]] || git -C "$WT" rev-parse HEAD >"$d/start"
+    [[ -f "$d/start" ]] || agent_git -C "$WT" rev-parse HEAD >"$d/start"
     lane_body "$d" running >"$d/lane-pr.md"
   fi
 }
@@ -489,8 +493,8 @@ pr_title_fallback() {
 job_gate() {
   local d="$1" wt cmd rc=0
   wt="$(jstate "$d" worktree)"
-  git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
-  cmd="$(git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
+  agent_git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
+  cmd="$(agent_git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
   [[ -n "$cmd" ]] || return 0
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$(job_timeout "$d")"); fi
@@ -600,13 +604,13 @@ lane_leave() {
   [[ -n "$start" ]] || return 0
   wt="$(jstate "$d" worktree)" branch="$(jget "$d/job" branch)"
   item="$(job_item "$d")" side="$branch-$item"
-  if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
-    git -C "$wt" add -A && git -C "$wt" commit -q --no-verify -m "wip: $item ($2)" || return 0
+  if [[ -n "$(agent_git -C "$wt" status --porcelain)" ]]; then
+    agent_git -C "$wt" add -A && agent_git -C "$wt" commit -q -m "wip: $item ($2)" || return 0
   fi
-  git -C "$wt" branch -f "$side" HEAD || return 0
-  git -C "$wt" reset -q --hard "$start" || return 0
+  agent_git -C "$wt" branch -f "$side" HEAD || return 0
+  agent_git -C "$wt" reset -q --hard "$start" || return 0
   echo "$side" >"$d/side"
-  git -C "$wt" push -q --force origin "$side" || echo "push of $side failed" >&2
+  agent_git -C "$wt" push -q --force origin "$side" || echo "push of $side failed" >&2
 }
 
 # epoch_of 'YYYY-MM-DD HH:MM:SS' — the epoch seconds of a local time, GNU or BSD date; empty when malformed.
@@ -706,10 +710,10 @@ job_publish() {
   local d="$1" wt base branch ahead title="" url lane stats feat
   local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
-  ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
+  ahead="$(agent_git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
   clear_config_lock "$wt"
-  if ! git -C "$wt" push -q -u origin "$branch"; then
+  if ! agent_git -C "$wt" push -q -u origin "$branch"; then
     echo "push failed" >"$d/pr"
     return 0
   fi
@@ -844,7 +848,7 @@ job_after() {
 review_due() {
   local d="$1" ahead
   [[ "$(job_after "$d")" == review && "$(jget "$d/job" output)" != report ]] || return 1
-  ahead="$(git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
+  ahead="$(agent_git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0))
 }
 
@@ -905,7 +909,7 @@ review_big() {
     [[ -n "$file" ]] || continue
     case "$file" in *.md) ;; *) big=1 ;; esac
     lines=$((lines + ${add//-/0} + ${del//-/0}))
-  done < <(git -C "$1" diff --numstat "$2" HEAD)
+  done < <(agent_git -C "$1" diff --numstat "$2" HEAD)
   ((big || lines > $(qconf review_trivial 20)))
 }
 
@@ -967,7 +971,7 @@ job_review() {
     if ((count == 1)); then s=""; fi
     line="R$n: $count finding$s"
     if ((count > 0)); then
-      before="$(git -C "$wt" rev-parse HEAD)"
+      before="$(agent_git -C "$wt" rev-parse HEAD)"
       review_fix "$d" "$t" || rc=$?
       if ((rc == 124)); then
         line+=" → timeout"
@@ -2407,22 +2411,22 @@ triage_merge() {
     return 0
   fi
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-triage.XXXXXX")/wt"
-  if ! git -C "$repo" worktree add -q --detach "$tmp" "origin/$head" >/dev/null 2>&1; then
+  if ! agent_git -C "$repo" worktree add -q --detach "$tmp" "origin/$head" >/dev/null 2>&1; then
     echo "conflicts with $base; not merged: no origin/$head"
     return 0
   fi
-  if git -C "$tmp" merge -q --no-edit -m "Merge branch '$base' into $head" "origin/$base" >/dev/null 2>&1; then
-    if git -C "$tmp" push -q origin "HEAD:refs/heads/$head" 2>/dev/null; then
+  if agent_git -C "$tmp" merge -q --no-edit -m "Merge branch '$base' into $head" "origin/$base" >/dev/null 2>&1; then
+    if agent_git -C "$tmp" push -q origin "HEAD:refs/heads/$head" 2>/dev/null; then
       echo "merged $base and pushed"
     else
       echo "merged $base; push failed"
     fi
   else
-    files="$(git -C "$tmp" diff --name-only --diff-filter=U | tr '\n' ' ')"
-    git -C "$tmp" merge --abort 2>/dev/null || true
+    files="$(agent_git -C "$tmp" diff --name-only --diff-filter=U | tr '\n' ' ')"
+    agent_git -C "$tmp" merge --abort 2>/dev/null || true
     echo "conflicts with $base in ${files% }: needs a hand merge"
   fi
-  git -C "$repo" worktree remove --force "$tmp" 2>/dev/null || true
+  agent_git -C "$repo" worktree remove --force "$tmp" 2>/dev/null || true
   rm -rf "${tmp%/wt}"
 }
 

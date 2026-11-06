@@ -488,6 +488,19 @@ putfeature() {
   [ ! -e "$r/.git/config.lock" ]
 }
 
+@test "run: a relative core.hooksPath runs no hook of the job's tree on the runner's push" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+  [ ! -e "$m" ]
+}
+
 @test "run: a config.lock with content, or a writable one, stays" {
   local r
   r="$(make_repo proj)"
@@ -587,6 +600,18 @@ putfeature() {
   run grep -c -- '--head lane-x-beta' "$STUBS/gh.log"
   [ "$output" = 0 ]
   grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
+}
+
+@test "lane: a relative core.hooksPath runs no hook of the job's tree when a blocked item leaves the lane" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" lane-x itemwip "lane=Fix health" item=beta
+  drain
+  [ "$(cat "$Q/01-a/status")" = blocked ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/lane-x-beta)" ]
+  [ ! -e "$m" ]
 }
 
 @test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {

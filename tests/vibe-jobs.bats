@@ -379,6 +379,23 @@ branch_off() {
   [[ "$output" == *"## Triage — "*"merged main and pushed"*"needs a hand merge"* ]] || false
 }
 
+@test "job triage: a relative core.hooksPath runs no hook of the PR's tree while the base is merged and pushed" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push post-checkout post-merge pre-merge-commit commit-msg
+  branch_off "$r" jobs/clean a.txt a
+  echo main >"$r/f.txt" && git -C "$r" add f.txt && git -C "$r" commit -q -m "feat: main" && git -C "$r" push -q origin main
+  git -C "$r" config core.hooksPath .githooks
+  printf '[%s]' "$(pr 1 jobs/clean CONFLICTING)" >"$STUBS/prs.json"
+  run "$VIBE" job triage
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"merged main and pushed"* ]] || false
+  git -C "$r" fetch -q origin
+  git -C "$r" merge-base --is-ancestor origin/main origin/jobs/clean
+  [ ! -e "$m" ]
+}
+
 @test "job triage: red CI and review comments since the last commit become briefing lines" {
   local r checks commits
   r="$(make_repo proj)"

@@ -92,6 +92,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - Gate: after the agent (after the last review round when one is due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
+- Each runner git call on a job's tree runs with `core.hooksPath=/dev/null` (`agent_git` in `bin/vibe`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
 - Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings); the job's own session fixes or rejects each finding.
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
@@ -202,6 +203,7 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
 - A job `failed`, note `job process died twice` → the process died on both runs (reboot, oomd); read `runner.log` and `log`, then queue it again.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
+- Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A git-lfs repo cannot use the runner's push: the hook uploads the LFS objects.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
 - Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
