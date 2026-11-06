@@ -1307,7 +1307,7 @@ pandoc_stub() {
   drain
   [ "$status" -eq 0 ]
   grep -qF '<div class="job s-blocked"><div class="top"><b>task-a</b><span class="pill">blocked</span>' "$f"
-  grep -qx '<div class="repo"><h2>proj</h2>' "$f"
+  grep -qF '<div class="repo"><div class="rh"><h2>proj</h2>' "$f"
   [ "$(grep -A1 '<b>task-b</b>' "$f" | tail -n 1)" = '</div>' ]
   grep -qF '<b>task-b</b><span class="pill">queued</span></div><p>&lt;b&gt;A &amp; B&lt;/b&gt;</p>' "$f"
   grep -qF '<span class="chip"><b>1</b> queued</span>' "$f"
@@ -1389,7 +1389,7 @@ pandoc_stub() {
   [ "$output" = 0 ]
   grep -qF '<details class="stack"><summary>3 jobs</summary><div class="job s-done"><div class="top"><b>alpha</b><span class="pill">done</span></div><p>done: alpha.txt added' "$f"
   grep -qF '<div class="job s-blocked"><div class="top"><b>beta</b><span class="pill">blocked</span></div><p>blocked: beta needs a decision → lane-x-beta' "$f"
-  grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p><div class="jacts" data-id="03-c"><button data-act="now">Start next</button><button data-act="cancel" data-confirm>Cancel</button></div></div></details></div>' "$f"
+  grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p><div class="jacts" data-id="03-c"><button data-act="now">Start next</button><hr><button data-act="cancel" data-confirm>Cancel</button></div></div></details></div>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
   # The summary covers the whole lane card and has no arrow; link, steps and job cards sit above it.
@@ -1400,6 +1400,37 @@ pandoc_stub() {
   grep -qE '^\.bar \{[^}]*position: sticky;[^}]*z-index: 2;' "$f"
   run grep -E '^\.(job|stack)[^{]*\{[^}]*z-index: ([2-9]|[1-9][0-9])' "$f"
   [ "$status" -eq 1 ]
+}
+
+# acts_of LINE — the buttons, rules, labels and file lines of one button group, in page order.
+acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|class="files"' | sed 's/data-act=//; s/"//g; s/class=//' | paste -sd' ' -; }
+
+@test "page: each button group is read-only first, write next, then a rule and the data-confirm buttons; file links last" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" top card new
+  r="$(make_repo proj)"
+  mkdir -p "$r/.vibe-jobs" "$XDG_STATE_HOME/vibe/jobs/proj/codebase-health"
+  printf -- '---\n---\n\nCheck it.\n' >"$r/.vibe-jobs/codebase-health.md"
+  echo 2 >"$XDG_STATE_HOME/vibe/jobs/proj/codebase-health/fails"
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b ok
+  echo failed >"$Q/02-b/status"
+  echo report >"$Q/02-b/report.md"
+  echo log >"$Q/02-b/log"
+  VIBE_ROOT="$BATS_TEST_TMPDIR" run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  top="$(grep '^<div class="acts">' "$f")"
+  [ "$(acts_of "$top")" = 'servers pause conf triage sync <hr> restart server-restart update-toolkit' ]
+  # Merge order: in the repo heading row.
+  grep -qF "<div class=\"repo\"><div class=\"rh\"><h2>proj</h2><div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">" "$f"
+  card="$(grep 'data-id="01-a"' "$f")"
+  [ "$(acts_of "${card#*data-id=\"01-a\"}")" = 'now <hr> cancel' ]
+  card="$(grep 'data-id="02-b"' "$f")"
+  [ "$(acts_of "${card#*data-id=\"02-b\"}")" = 'retry hold <hr> answer archive files' ]
+  grep -qF '<div class="files"><a href="/queue/api/job/02-b/report.md">report.md</a><a href="/queue/api/job/02-b/log">log</a></div></div>' "$f"
+  new="$(grep "<b>proj</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$r\">" "$f")"
+  [ "$(acts_of "${new#*"data-repo=\"$r\""}")" = 'roadmap worktrees new roadmap-new opt-in lbl run reset <hr> worktree-remove' ]
+  # The recurring job keeps its own .jacts: page.js sends data-repo and data-job from the nearest one.
+  grep -qF "<span class=\"lbl\">Recurring</span><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run codebase-health</button><button data-act=\"reset\">Reset codebase-health</button></div><hr>" "$f"
 }
 
 @test "page: a failed write warns and the runner goes on" {
