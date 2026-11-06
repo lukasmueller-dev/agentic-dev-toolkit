@@ -153,7 +153,7 @@ setup() {
   [[ "$output" == *"proj "*"side"*"off main"* ]] || false
 }
 
-@test "sync: a branch whose upstream was deleted is merged and never pushed again" {
+@test "sync: a branch whose upstream was deleted is gone, not merged, and never pushed again" {
   local r
   r="$(make_repo proj)"
   "$VIBE" start -C "$r" done-task
@@ -163,7 +163,9 @@ setup() {
   git -C "$r" push -q origin --delete done-task
   run "$VIBE" sync
   [ "$status" -eq 0 ]
-  [[ "$output" == *"merged"*"proj/done-task"*"/worktree-cleanup"* ]] || false
+  [[ "$output" == *"gone"*"proj/done-task"*"/worktree-cleanup"* ]] || false
+  run grep -q '^merged ' <<<"$output"
+  [ "$status" -ne 0 ]
   run git -C "$r" ls-remote --heads origin done-task
   [ -z "$output" ]
 }

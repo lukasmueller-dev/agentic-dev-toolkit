@@ -20,7 +20,7 @@ for the night. The queue half is the `fill-queue` skill; this skill runs it last
 
 1. Run `vibe sync --all` outside the sandbox. It pushes committed task
    branches and prints one line per worktree: state, repo/worktree, branch, notes.
-2. For each worktree line other than the main checkout, `merged` and
+2. For each worktree line other than the main checkout, `gone` and
    `missing`, get its path from `git -C <repo> worktree list`, then the handoff state:
 
    ```bash

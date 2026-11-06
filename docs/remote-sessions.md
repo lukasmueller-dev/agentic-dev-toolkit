@@ -59,8 +59,8 @@ The app's new-session picker offers the repo on this machine.
 | Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed; on a server restarts `vibe-queue.service` if `bin/vibe` or `skills/_lib/lib.sh` changed (running jobs keep going). `vibe sync` never pulls the toolkit |
 
 `vibe sync [--all]` result per worktree: `pushed`, `pulled`, `ok`, `empty`
-(no commits, not pushed), `merged` (upstream gone, never pushed again —
-`/worktree-cleanup`), `local` (app session branch `worktree-*`, never
+(no commits, not pushed), `gone` (upstream deleted, never pushed again —
+`/worktree-cleanup` checks for a merged PR), `local` (app session branch `worktree-*`, never
 pushed), `behind`/`diverged`/`detached`/`missing` (left
 alone), `ahead` (main checkout, never pushed). Note `off main`: the main checkout is
 off the default branch — work belongs in a worktree. `--all`: every repo next to

@@ -219,7 +219,7 @@ sync_wt() {
       if [[ "$dir" == "$main" ]]; then
         res="no-upstream"
       elif git -C "$dir" config "branch.$br.merge" >/dev/null; then
-        res="merged" note="upstream gone — /worktree-cleanup"
+        res="gone" note="upstream deleted — /worktree-cleanup checks for a merged PR"
       elif [[ "$br" == worktree-* ]]; then
         res="local" note="app session branch, not pushed"
       elif [[ "$(git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
