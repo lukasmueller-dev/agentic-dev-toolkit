@@ -7,17 +7,24 @@
 
 ## State
 
-Milestones 1 (findings 1, 2), 2 (finding 3), 3 (finding 4), 4 (finding 5) and 5 (findings 6, 7) done.
-Full `bats tests/` passes in a clone (369 tests, 0 failures).
-Milestone 5 (commit `97ece80`): `job_due` returns `queued` while an unfinished copy is in the queue (`job_live`); `job_end` keeps a final status when asked for `gpu`; a follow-up records `parent=` and the runner starts it once the parent has an `ended` file.
+Milestones 1 (findings 1, 2), 2 (finding 3), 3 (finding 4), 4 (finding 5), 5 (findings 6, 7) and 6 (findings 8–10) done.
+Full `bats tests/` passes in a clone (372 tests, 0 failures).
+Milestone 6 (commit `1c6f822`): one test per fix, each fails without the fix; shellcheck, `shfmt -d -i 2 -ci` and `skill-lint --strict skills` clean.
 
 ## Next action
 
-Milestone 6 of `SPEC.md`: small fixes (findings 8–10) — `ff_main_quiet` (`skills/_lib/lib.sh`) prints the git error and the reason and keeps the non-zero exit; `feature_row` (`bin/vibe`) counts a member job with gate exit ≠ 0 as `needs you`; pandoc runs with `-f markdown-raw_html`. Done when one bats test per fix passes.
-Then milestone 7, the end action: delete `SPEC.md` and `HANDOFF.md`, move each decision to `pr.md`, add the 4 low items of the review to `PROJECT_ROADMAP.md` as `[health]` items.
+Milestone 7 of `SPEC.md`, the end action (`delete`):
+
+1. Add the 4 low items of the review to `PROJECT_ROADMAP.md` as `[health]` items (use the `add-roadmap-item` skill): shared `.tmp` name, member paths not absolute, `git push -fu` deny match, `blockWritesOutsideWorkingDirectories`. Each: task + done-when.
+2. Write `pr.md` in `$VIBE_JOB_DIR` with each decision below (title, 4 TL;DR lines, rest in `<details>`).
+3. `git rm SPEC.md HANDOFF.md`, commit, so `git ls-files SPEC.md` prints nothing (CI fails on a stray `HANDOFF.md`).
 
 Carry to the final `pr.md`:
 
+- Finding 8: `ff_main_quiet` calls `die` on a failed merge: git's error and "a new branch would start from a stale HEAD", exit 1 as before. Only `handoff.sh create` reaches it (`vibe start` branches from `origin/<default>`). Test in `tests/handoff-brief.bats`.
+- Finding 9: `feature_row` rates a `done` member job with gate exit ≠ 0 as `gate` (member state; feature pill `needs you`, note `gate exit N`). `report_rows` already did the same for the briefing.
+- Finding 10, deviation from the spec: `-f markdown-raw_html` is not enough. On pandoc 3.1.3 it still passes `onclick` on `<div>`/`<span>` (`native_divs`, `native_spans`) and a ```` ```{=html} ```` block, and `gfm-raw_html` / `commonmark-raw_html` are ignored. Turning off the extensions changes the rendering (ids, `colgroup`, lists, smart quotes). So `md_html` keeps `gfm` and adds a Lua filter (`--lua-filter=<(…)`) that turns each raw node into code; output for a sample with a table, list, quote and code fence is byte-identical. Raw HTML shows as code, not as plain text.
+- Finding 10 risk: the test skips without `pandoc`; CI installs none (both legs skip it). The `<pre>` fallback applies when pandoc cannot read the filter.
 - Finding 3: `agent_git` (`skills/_lib/lib.sh`) wraps every unsandboxed git call on an agent tree: `bin/vibe` runner calls (`open_worktree`, `job_start`, `job_gate`, `lane_leave`, `job_publish`, review, `triage_merge`), `sync_wt` (`vibe sync`, run by the shutdown skill), and `ensure_worktree` for the two cases that check out an existing branch.
 - Finding 3, not wrapped: `gh`'s own git calls (before auth only `git remote`, `git config`; `pr create` after auth unchecked). Main-checkout reads and fetch. New-branch `worktree add` (content is the base).
 - Finding 3: `git status` and `git add` run `post-index-change`, so read-only calls are wrapped too.
