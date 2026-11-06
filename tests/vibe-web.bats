@@ -136,8 +136,10 @@ post() {
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
-  grep -qF "closest('#queue button[data-act], #panel .prows button[data-act]')" "$Q/web/page.js"
+  grep -qF "closest('#queue button[data-act], #panel .pbody > .prows button[data-act]')" "$Q/web/page.js"
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
+  grep -qF "if (v !== view) return;" "$Q/web/page.js"
+  grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
   grep -q '<dialog id="panel">' "$Q/web/index.html"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
