@@ -117,6 +117,24 @@ ff_main_quiet() {
 # a relative core.hooksPath would run the agent's hook with the user's credentials.
 agent_git() { git -c core.hooksPath=/dev/null "$@"; }
 
+# uses_lfs DIR — git-lfs is installed and the tree at DIR declares it in a .gitattributes.
+uses_lfs() {
+  command -v git-lfs >/dev/null 2>&1 &&
+    agent_git -C "$1" grep -q 'filter=lfs' HEAD -- ':(glob)**/.gitattributes' 2>/dev/null
+}
+
+# agent_push DIR ARGS — `git push` from DIR with hooks off. A git-lfs tree is refused:
+# the pre-push hook that uploads the LFS objects is off, so only pointers would land.
+agent_push() {
+  local dir="$1"
+  shift
+  if uses_lfs "$dir"; then
+    echo "git-lfs: not pushed from $dir (hooks off) — push it by hand" >&2
+    return 1
+  fi
+  agent_git -C "$dir" push "$@"
+}
+
 # ensure_worktree MAIN BRANCH DIR [BASE] — create DIR as a worktree for BRANCH.
 # Preference order: existing local branch; branch on origin (fetched when
 # needed, and tracked — so a brief pushed from another machine is picked up

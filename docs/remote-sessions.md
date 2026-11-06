@@ -58,7 +58,7 @@ The app's new-session picker offers the repo on this machine.
 | Leftovers | `/worktree-cleanup` — removes merged worktrees and their branches after you approve |
 | Update the toolkit | `vibe update-toolkit` — pull (ff-only, clean `main` only), `install.sh`, `doctor`; reloads systemd if the unit changed; on a server restarts `vibe-queue.service` if `bin/vibe` or `skills/_lib/lib.sh` changed (running jobs keep going). `vibe sync` never pulls the toolkit |
 
-`vibe sync [--all]` runs git with hooks off (`agent_git`): a worktree's own hooks never run with your credentials. Result per worktree: `pushed`, `pulled`, `ok`, `empty`
+`vibe sync [--all]` runs git with hooks off (`agent_git`): a worktree's own hooks never run with your credentials. A git-lfs branch is not pushed (`error`, note `git-lfs: push by hand`): push it yourself. Result per worktree: `pushed`, `pulled`, `ok`, `empty`
 (no commits, not pushed), `gone` (upstream deleted, never pushed again —
 `/worktree-cleanup` checks for a merged PR), `local` (app session branch `worktree-*`, never
 pushed), `behind`/`diverged`/`detached`/`missing` (left

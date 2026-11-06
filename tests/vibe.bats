@@ -259,6 +259,25 @@ setup() {
   [ ! -e "$m" ]
 }
 
+@test "sync: a git-lfs branch is not pushed with hooks off; without git-lfs installed it is" {
+  local r w="" lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" big
+  w="$r/.claude/worktrees/big"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$w/.gitattributes"
+  git -C "$w" add .gitattributes && git -C "$w" commit -q -m "feat: lfs"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  cd "$r"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"error"*"proj/big"*"git-lfs: push by hand"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+  PATH="$(path_without git-lfs)" run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pushed"*"proj/big"* ]] || false
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+}
+
 @test "sync: a locked worktree is pushed but not fast-forwarded" {
   local r o
   r="$(make_repo proj)"
