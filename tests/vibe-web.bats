@@ -135,8 +135,12 @@ post() {
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
-  grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
-  grep -qF "closest('#queue button[data-act], #panel .pbody > .prows button[data-act]')" "$Q/web/page.js"
+  grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
+  # Raw HTML in a .md or the briefing can repeat any id or class chain: a guard compares nodes.
+  grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  run grep -F "'#queue " "$Q/web/page.js"
+  [ "$status" -eq 1 ]
+  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"

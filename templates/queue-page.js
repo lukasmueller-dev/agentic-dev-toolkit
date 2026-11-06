@@ -1,10 +1,11 @@
 /* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow; data-ask="<arg> …" prompts for each (title: the questions, split by |).
-   Output: #panel; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: only a direct .pbody > .prows has live buttons.
+   Output: #panel; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
+  const queue = $('#queue'); /* first in the document: raw HTML comes after it */
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
   const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
@@ -14,7 +15,7 @@
   const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
   const poll = async () => {
     if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
-    if (busy || $('#queue .armed')) return; /* a swap would un-arm a confirm button */
+    if (busy || $('.armed', queue)) return; /* a swap would un-arm a confirm button */
     busy = true;
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
@@ -22,10 +23,10 @@
         const n = new DOMParser().parseFromString(t, 'text/html'), f = $('.filter'), g = tail($('.filter', n)), h = html(g);
         for (const s of ['.updated', '.chips', '.flags', '.acts', '#briefing', '#config']) if ($(s).innerHTML !== $(s, n).innerHTML) $(s).innerHTML = $(s, n).innerHTML;
         if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
-          const open = [...document.querySelectorAll('#queue details[open]')].map(key);
+          const open = [...queue.querySelectorAll('details[open]')].map(key);
           tail(f).forEach(x => x.remove());
           f.after(...g);
-          document.querySelectorAll('#queue details').forEach(d => { d.open = open.includes(key(d)); });
+          queue.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
           jobs = h;
         }
         last = t; seen = Date.now();
@@ -76,8 +77,8 @@
     if (e.target === panel && (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right)) panel.close();
   });
   document.addEventListener('click', async e => {
-    const f = e.target.closest('#queue .files a');
-    if (f) {
+    const f = e.target.closest('.files a');
+    if (f && queue.contains(f)) {
       e.preventDefault();
       const md = f.href.endsWith('.md');
       const v = open(f.textContent, f.closest('.jacts').dataset.id);
@@ -94,9 +95,10 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* #queue and the panel's rows only: their text is escaped; #briefing, #config and a panel .md carry agent-written Markdown, which can hold a class="prows". */
-    const b = e.target.closest('#queue button[data-act], #panel .pbody > .prows button[data-act]');
-    if (!b || b.disabled || !document.body.classList.contains('can')) return;
+    /* #queue and the rows rows() built only: their text is escaped; #briefing, #config and a panel .md carry agent-written Markdown. */
+    const b = e.target.closest('button[data-act]');
+    if (!b || !(queue.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
+    if (b.disabled || !document.body.classList.contains('can')) return;
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;
       b.classList.add('armed'); b.textContent = 'Tap again: ' + t;
