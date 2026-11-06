@@ -26,8 +26,3 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `/fix` comment from your login yields one fix job and one
       summary comment on the PR, and a collaborator's comment only a
       briefing line.
-
-- [ ] **Queue page: square keys on one grid, output panel** — buttons become
-      square quiet keys on one grid; every output and file opens in one panel.
-      Done when `bats tests/vibe-web.bats tests/vibe-queue.bats` passes and
-      `grep -c 999px templates/queue-page.html` prints 0.
