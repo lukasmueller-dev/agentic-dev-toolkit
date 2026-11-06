@@ -3,16 +3,18 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `repo-review-fixes`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/repo-review-fixes
-- **Last updated:** 2026-11-06 · job
+- **Last updated:** 2026-11-07 · job
 
 ## State
 
-Milestones 1 (findings 1, 2), 2 (finding 3), 3 (finding 4) and 4 (finding 5) done. Full `bats tests/` passes in a clone (359 tests, 0 failures after commit `acd34ec`).
-Milestone 4: `job_limit_pct` (`bin/vibe`) skips a job whose `ended` string is before the job's `started` string; one test in `tests/vibe-queue.bats`.
+Milestones 1 (findings 1, 2), 2 (finding 3), 3 (finding 4), 4 (finding 5) and 5 (findings 6, 7) done.
+Full `bats tests/` passes in a clone (369 tests, 0 failures).
+Milestone 5 (commit `97ece80`): `job_due` returns `queued` while an unfinished copy is in the queue (`job_live`); `job_end` keeps a final status when asked for `gpu`; a follow-up records `parent=` and the runner starts it once the parent has an `ended` file.
 
 ## Next action
 
-Milestone 5 of `SPEC.md`: queue state (findings 6, 7) — `job_due` skips a recurring job with a queued or running copy; `job_end` keeps a status a follow-up already wrote; the runner starts a follow-up only after its parent has an `ended` file. Done when one bats test per rule passes.
+Milestone 6 of `SPEC.md`: small fixes (findings 8–10) — `ff_main_quiet` (`skills/_lib/lib.sh`) prints the git error and the reason and keeps the non-zero exit; `feature_row` (`bin/vibe`) counts a member job with gate exit ≠ 0 as `needs you`; pandoc runs with `-f markdown-raw_html`. Done when one bats test per fix passes.
+Then milestone 7, the end action: delete `SPEC.md` and `HANDOFF.md`, move each decision to `pr.md`, add the 4 low items of the review to `PROJECT_ROADMAP.md` as `[health]` items.
 
 Carry to the final `pr.md`:
 
@@ -29,6 +31,10 @@ Carry to the final `pr.md`:
 - Review round 4, rejected: `HANDOFF.md` and `SPEC.md` on the branch. Job rule 13 keeps them until the last milestone; the end action deletes both before the merge (CI fails on a stray `HANDOFF.md`).
 - Finding 3, review round 1: `cleanup.sh remove` classified every worktree per path (N×N `gh` calls); `scan_lines` now takes the path.
 - Finding 3, review round 2: `cleanup.sh remove` resolves a relative path before the `cd`; the shutdown survey checks a `gone` branch with `cleanup.sh scan` and skips it only when rated `merged` or `ignored`.
+- Finding 6: `job_live` (`bin/vibe`) counts any non-final copy (`queued`, `running`, `gpu`) of the same repo and `recurring=` name; `vibe job list` shows `queued`. The test "job due: adds due jobs" now expects one `crashy` copy, not two.
+- Finding 7: `queue follow` writes status and note only, no `ended`, while its parent has no `ended` file; the parent's `job_end` writes it. A runner that dies in that window leaves the follow-up waiting (counted as `waiting`, so `--drain` does not stop).
+- Finding 7: the test stub `gpurace` runs `queue follow` inside the agent; before the fix both tests fail (parent stays `gpu`, follow-up starts with the parent not ended).
+- Review of milestone 4 test: `ls -t | head` (SC2012) replaced by a glob loop; CI shellcheck covers `.bats` files.
 - Finding 5: measured `vibe queue report` (18 queue jobs, 300 archived): 20.3 s before, 2.5 s after; 2.3 s with none archived (the rest is the 18 jobs that overlap each other).
 - Finding 5: the window is the job's own start, not "last 5 h from now" (spec wording). A now-relative window drops the `≈N% 5h est.` of last night's jobs from the morning briefing.
 - Finding 5 risk: strings compare, so one hour of a DST fall-back night can skip an overlapping job; the result is an estimate (`≈`).
