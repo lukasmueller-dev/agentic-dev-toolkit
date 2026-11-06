@@ -3,15 +3,15 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `repo-review-fixes`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/repo-review-fixes
-- **Last updated:** 2026-11-03 · check-in
+- **Last updated:** 2026-11-06 · job
 
 ## State
 
-`SPEC.md` is written; no code changed yet.
+Milestone 1 done (findings 1, 2): `cleanup.sh` has the `ignored` state and the `gh` check for `[gone]` branches; full `bats tests/` passes in a clone (349 tests).
 
 ## Next action
 
-Milestone 1 of `SPEC.md`: `cleanup.sh` ignored-file allowlist and `[gone]` check (findings 1, 2). Done when new tests in `tests/worktree-cleanup.bats` show: a worktree with `runs/x.ckpt` is `ignored`, a `[gone]` branch without a merged PR is `unpushed`, a squash-merged branch is `merged`.
+Milestone 2 of `SPEC.md`: runner hooks wrapper (finding 3). Done when a bats test with a relative `pre-push` hook that writes a marker finds no marker after `job_publish` and `triage_merge`. The PR body lists each unsandboxed git call the runner makes on an agent tree.
 
 ## Blockers
 
