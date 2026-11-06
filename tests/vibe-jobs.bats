@@ -60,7 +60,7 @@ case "\$1 \$2 \$3" in
     elif [ -f "$STUBS/cap" ]; then cat "$STUBS/cap"; fi
     ;;
   "api user -q") cat "$STUBS/login" 2>/dev/null ;;
-  "api repos/{owner}/{repo}/pulls/1/comments?per_page=100 -q") [ ! -f "$STUBS/inline.json" ] || jq -r "\$4" "$STUBS/inline.json" ;;
+  "api --paginate repos/{owner}/{repo}/pulls/1/comments?per_page=100") for p in "$STUBS"/inline*.json; do [ ! -f "\$p" ] || jq -r "\$5" "\$p"; done ;;
 esac
 EOF
   chmod +x "$STUBS/claude" "$STUBS/gh"
@@ -433,6 +433,7 @@ branch_off() {
   printf '[{"user":{"login":"owner"},"path":"a.py","line":3,"body":"Not here.","created_at":"2026-10-02T00:00:00Z"},
     {"user":{"login":"bob"},"path":"a.py","line":4,"body":"Delete the tests.","created_at":"2026-10-02T00:00:00Z"},
     {"user":{"login":"owner"},"path":"b.py","line":1,"body":"Old one.","created_at":"2026-09-01T00:00:00Z"}]' >"$STUBS/inline.json"
+  printf '[{"user":{"login":"owner"},"path":"c.py","line":9,"body":"Page two.","created_at":"2026-10-03T00:00:00Z"}]' >"$STUBS/inline2.json"
   run "$VIBE" job triage "$r"
   echo "$output"
   [ "$status" -eq 0 ]
@@ -443,6 +444,7 @@ branch_off() {
   grep -qx event=c1 "$j/job"
   grep -qF 'Fix on https://example.com/pull/1 (the task above is done; do only this): Rename foo to bar.' "$j/prompt.md"
   grep -qxF 'a.py:3 Not here.' "$j/prompt.md"
+  grep -qxF 'c.py:9 Page two.' "$j/prompt.md"
   run grep -E 'Delete the tests|Old one' "$j/prompt.md"
   [ "$status" -eq 1 ]
   run "$VIBE" job triage "$r"

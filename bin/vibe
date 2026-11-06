@@ -3013,7 +3013,7 @@ triage_merge() {
 # A process of its own: a `die` in `queue fix` must not end the triage.
 triage_fix() {
   local text="$7" inline msg
-  inline="$( (cd "$1" && gh api "repos/{owner}/{repo}/pulls/$3/comments?per_page=100" \
+  inline="$( (cd "$1" && gh api --paginate "repos/{owner}/{repo}/pulls/$3/comments?per_page=100" \
     -q "def me: \"$2\"; def since: \"$5\"; $INLINE_JQ") 2>/dev/null || true)"
   if [[ -n "$inline" ]]; then text="$text"$'\n'"$inline"; fi
   if msg="$(VIBE_EVENT="$6" "$SELF_ROOT/bin/vibe" queue fix "$4" ${text:+"$text"} 2>&1)"; then
