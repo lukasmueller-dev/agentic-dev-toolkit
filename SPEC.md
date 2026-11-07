@@ -51,7 +51,7 @@ Queue jobs run more skills with no human step, and the page and `vibe queue stat
 
 ## Milestones
 
-- [ ] Vendor the 6 skills, run `/security-review` over the new tree (a finding stops the job as blocked), add `docs/pstack-adapter.md`, add a pointer line to it in `claude/CLAUDE.md` — code — done when `./bin/plug verify && bats tests/plug.bats tests/plugin.bats` passes
+- [x] Vendor the 6 skills, run `/security-review` over the new tree (a finding stops the job as blocked), add `docs/pstack-adapter.md`, add a pointer line to it in `claude/CLAUDE.md` — code — done when `./bin/plug verify && bats tests/plug.bats tests/plugin.bats` passes
 - [ ] Add `skills/lean-review/` and `skills/lean-audit/`, and run the rubric in `claude/vibe-review.sh` — code — done when `./bin/skill-lint --strict skills && bats tests/vibe-queue.bats` passes with a test that the review prompt names both passes
 - [ ] Add the `unslop` rule to `skills/fill-queue/references/job-prompt.md`, and replace "Prefer the cut" in `memory/GLOBAL.md` — code — done when `grep -q unslop skills/fill-queue/references/job-prompt.md && ! grep -q '^# Prefer the cut' memory/GLOBAL.md` passes and `bats tests/install.bats` passes in a clone under `$TMPDIR`
 - [ ] Add the `verify=` key, `claude/vibe-verify.sh`, the `<id>-verify` step, and the field in `/enqueue` and `/fill-queue` — code — done when `bats tests/vibe-queue.bats` passes with tests for: key set, no key, no skill, `V: fail`, `V: dirty`, refused lane job
