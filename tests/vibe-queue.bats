@@ -1173,7 +1173,7 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
-@test "status: short names, two lines per job, no text line without text" {
+@test "status: short names, a line per job, then its text and its phases; no text line without text" {
   local r
   r="$(make_repo proj)"
   mkjob 20261029-081414-proj-task-a "$r" task-a ok "context=Do task a."
@@ -1184,7 +1184,8 @@ died_job() {
   grep -qx '  task-a  queued' <<<"$output"
   grep -qx '    Do task a.' <<<"$output"
   grep -qx '  02-b  queued' <<<"$output"
-  [ "$(wc -l <<<"$output")" -eq 6 ]
+  [ "$(grep -cx '    ○ Agent · ○ Gate · ○ PR' <<<"$output")" = 2 ]
+  [ "$(wc -l <<<"$output")" -eq 8 ]
 }
 
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
@@ -2053,4 +2054,85 @@ verify_skill() {
   run "$SWEEP" "$a" "$BATS_TEST_TMPDIR/nowhere"
   [ "$status" -eq 0 ]
   [[ "$output" == *"# 1. alpha"*"no PROJECT_ROADMAP.md"*"# 2. nowhere"*"not a git repo"* ]] || false
+}
+
+# phase_jobs REPO — one chain per phase state: done, running, to come, failed; a report job.
+phase_jobs() {
+  local r="$1"
+  endjob 01-a "$r" task-a "" after=review verify=app
+  endjob 01-a-review1 "$r" task-a "" after=review verify=app review=1
+  echo "R1: 2 findings → 2 fixed" >"$Q/01-a-review1/note"
+  mkjob 01-a-review2 "$r" task-a ok after=review verify=app review=2
+  echo running >"$Q/01-a-review2/status"
+  mkjob 02-b "$r" task-b ok after=review
+  endjob 03-c "$r" task-c "" verify=app
+  endjob 03-c-review1 "$r" task-c "" verify=app review=1
+  echo "R1: review failed" >"$Q/03-c-review1/note"
+  endjob 03-c-verify "$r" task-c "push failed" verify=app review=verify
+  echo fail >"$Q/03-c-verify/verify"
+  echo 1 >"$Q/03-c-verify/gate"
+  mkjob 04-d "$r" task-d blocked
+  echo blocked >"$Q/04-d/status"
+  endjob 05-e "$r" task-e https://example.com/pull/5
+  echo 0 >"$Q/05-e/gate"
+  mkjob 06-f "$r" task-f ok
+  echo running >"$Q/06-f/status"
+  touch "$Q/06-f/gate.log"
+  endjob 07-g "$r" task-g "" output=report
+  echo "# report" >"$Q/07-g/report.md"
+  mkjob 08-h "$r" task-h ok output=report
+}
+
+@test "phases: the status shows each chain's phases: ✓ done, ▶ running, ○ to come, ✗ failed; R2 once queued, Verify only with the key" {
+  local r
+  r="$(make_repo proj)"
+  phase_jobs "$r"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  grep -qxF '    ✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ○ Agent · ○ R1 · ○ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ✗ R1 review failed · ✗ Verify app fail · ✗ Gate exit 1 · ✗ PR push failed' <<<"$output"
+  grep -qxF '    ✗ Agent' <<<"$output"
+  grep -qxF '    ✓ Agent · ✓ Gate · ✓ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ▶ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ✓ Report' <<<"$output"
+  grep -qxF '    ○ Agent · ○ Report' <<<"$output"
+}
+
+@test "phases: the page shows the same line, ✗ and ▶ marked for CSS; the open line names the review passes" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  phase_jobs "$r"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<details class="phases"><summary><span>✓ Agent</span> · <span>✓ R1 2 fixed</span> · <span class="r">▶ R2</span> · <span>○ Verify app</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1, R2: /code-review + lean-review</p></details>' "$f"
+  grep -qF '<details class="phases"><summary><span>○ Agent</span> · <span>○ R1</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1: /code-review + lean-review</p></details>' "$f"
+  grep -qF '<summary><span>✓ Agent</span> · <span class="x">✗ R1 review failed</span> · <span class="x">✗ Verify app fail</span> · <span class="x">✗ Gate exit 1</span> · <span class="x">✗ PR push failed</span></summary>' "$f"
+  grep -qF '<p class="phases"><span class="x">✗ Agent</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span>✓ Gate</span> · <span>✓ PR</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span class="r">▶ Gate</span> · <span>○ PR</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span>✓ Report</span></p>' "$f"
+  grep -qF '<p class="phases"><span>○ Agent</span> · <span>○ Report</span></p>' "$f"
+  grep -qE '^\.phases \.x \{ color: var\(--red\); \}' "$f"
+  grep -qE '^\.phases \.r \{ color: var\(--ink\); \}' "$f"
+}
+
+@test "phases: a lane card gets one phase line, of its running item; each feature member card keeps its own" {
+  local r1 r2 f="$XDG_STATE_HOME/vibe/web/index.html"
+  r1="$(make_repo proj)" r2="$(make_repo cmdr)"
+  endjob 01-a "$r1" lane-x https://example.com/pull/1 "lane=Fix health" item=alpha
+  mkjob 02-b "$r1" lane-x item "lane=Fix health" item=beta
+  echo running >"$Q/02-b/status"
+  mkjob 03-c "$r1" lane-x item "lane=Fix health" item=gamma
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '· ○ Gate\|· ✓ Gate' <<<"$output")" = 1 ]
+  [[ "$output" == *$'  lane-x · 1/3 · beta · https://example.com/pull/1\n    Fix health\n    ▶ Agent · ○ Gate · ○ PR'* ]] || false
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -o 'class="phases"' "$f" | wc -l)" -eq 1 ]
+  grep -qF '<p>Fix health <a href="https://example.com/pull/1">PR</a></p><p class="phases"><span class="r">▶ Agent</span> · <span>○ Gate</span> · <span>○ PR</span></p><p>next: beta</p>' "$f"
+  putfeature teleop "$r1 lane-x" "$r2 gamepad"
+  endjob 04-d "$r2" gamepad https://example.com/pull/4
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -o 'class="phases"' "$f" | wc -l)" -eq 2 ]
+  grep -qF '<b>cmdr · gamepad</b><span class="pill">done</span></div><p> <a href="https://example.com/pull/4">PR</a></p><p class="phases"><span>✓ Agent</span> · <span>✓ PR</span></p>' "$f"
 }
