@@ -433,7 +433,18 @@ queue_add() {
   echo "$d"
 }
 
-# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order.
+# verify_ok DIR — dies when DIR/job sets verify= to a bad value, on a lane job, or on a job with no review.
+# shortcut: `vibe queue set <id> after=` later drops the verify step with the review; refuse it there if that bites.
+verify_ok() {
+  local v
+  v="$(jget "$1/job" verify)"
+  [[ -n "$v" ]] || return 0
+  [[ "$v" == app || "$v" == blast-radius || "$v" == app,blast-radius ]] || die "$1: verify=$v — app, blast-radius or app,blast-radius"
+  [[ -z "$(jget "$1/job" lane)" ]] || die "$1: verify= on a lane job"
+  [[ "$(job_after "$1")" == review && "$(jget "$1/job" output)" != report ]] || die "$1: verify= on a job with no review"
+}
+
+# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad verify=.
 cmd_queue_add() {
   local now=0 dirs=() d
   for d in "$@"; do
@@ -445,6 +456,7 @@ cmd_queue_add() {
     esac
   done
   ((${#dirs[@]})) || die "usage: vibe queue add [--now] <dir>..."
+  for d in "${dirs[@]}"; do verify_ok "$d"; done
   for d in "${dirs[@]}"; do
     d="$(queue_add "$d" "$now")"
     echo "queued ${d##*/}"
@@ -886,13 +898,24 @@ review_due() {
   ((ahead > 0))
 }
 
-# review_follow JOB N — queue round N of the review: a follow-up job on the same
-# branch, <id>-review<N>. It carries the PR text, the result, the session and the rounds so far.
+# review_base JOB — the job a review round (<id>-review<N>) or the verify step (<id>-verify) follows; else JOB.
+review_base() {
+  local r
+  r="$(jget "$1/job" review)"
+  case "$r" in
+    "") echo "$1" ;;
+    verify) echo "${1%-verify}" ;;
+    *) echo "${1%-review"$r"}" ;;
+  esac
+}
+
+# review_follow JOB N — queue round N of the review: a follow-up job on the same branch,
+# <id>-review<N>; N=verify queues the verify step, <id>-verify.
+# It carries the PR text, the result, the session and the rounds so far.
 review_follow() {
-  local d="$1" n="$2" b="$1" f x r
-  r="$(jget "$d/job" review)"
-  if [[ -n "$r" ]]; then b="${d%-review"$r"}"; fi
-  f="$b-review$n"
+  local d="$1" n="$2" s="review$2" f x
+  if [[ "$n" == verify ]]; then s=verify; fi
+  f="$(review_base "$d")-$s"
   mkdir -p "$f"
   for x in prompt.md pr.md result session rounds round-details.md; do
     if [[ -f "$d/$x" ]]; then cp "$d/$x" "$f/$x"; fi
@@ -1033,13 +1056,62 @@ job_review() {
   if stopped "$d"; then return 0; fi
   if ((next)); then
     review_follow "$d" $((n + 1))
+  elif [[ -n "$(jget "$d/job" verify)" ]]; then
+    review_follow "$d" verify
   else
-    review_pr_md "$d"
-    job_gate "$d" || true
-    if stopped "$d"; then return 0; fi
-    job_publish "$d" || true
+    review_publish "$d" || return 0
   fi
   job_end "$d" "done" "$line"
+}
+
+# review_publish JOB — the rounds into pr.md, the gate, the PR. False when a stop ended the job.
+review_publish() {
+  review_pr_md "$1"
+  job_gate "$1" || true
+  if stopped "$1"; then return 1; fi
+  job_publish "$1" || true
+}
+
+# job_verify JOB — after the last review round: a fresh agent drives the app (the repo's verify skill)
+# and/or runs blast-radius, per `verify=`. Its verdict (JOB/verify) joins the Review line, its commands
+# go in <details>; a moved HEAD or a changed tracked file is `V: dirty`. Then the gate and the PR.
+job_verify() {
+  local d="$1" k wt tip model rc=0 v="" skip="" prev
+  k="$(jget "$d/job" verify)" wt="$(jstate "$d" worktree)"
+  : >"$d/log"
+  if [[ "$k" == app* ]] && ! compgen -G "$wt/.claude/skills/verify-*/SKILL.md" >/dev/null; then
+    k="${k#app}" k="${k#,}" skip="no verify skill"
+  fi
+  if [[ -n "$k" ]]; then
+    tip="$(git -C "$wt" rev-parse HEAD)" model="$(jget "$d/job" review_model)"
+    agent_exec "$d" "$(job_timeout "$d")" vibe-verify.sh "$wt" "$(jstate "$d" name)-verify" \
+      "${model:-$(qconf review_model sonnet)}" "$(jstate "$d" base)" "$k" >"$d/verify.json" 2>>"$d/log" || rc=$?
+    if stopped "$d"; then return 0; fi
+    # shortcut: untracked files do not count (sandbox placeholders); count them once a leftover skips a job.
+    if [[ "$(git -C "$wt" rev-parse HEAD)" != "$tip" || -n "$(git -C "$wt" status --porcelain -uno)" ]]; then
+      v=dirty
+    elif ((rc == 124)); then
+      v=timeout
+    elif ((rc != 0)) || ! v="$(jq -er '.structured_output.verdict | select(. == "pass" or . == "fail")' "$d/verify.json" 2>/dev/null)"; then
+      v="verify failed"
+    fi
+  fi
+  if [[ -n "$skip" ]]; then v="${v:+$v, }$skip"; fi
+  echo "$v" >"$d/verify"
+  prev="$(cat "$d/rounds" 2>/dev/null || true)"
+  echo "${prev:+$prev · }V: $v" >"$d/rounds"
+  {
+    echo "**V** — $v"
+    echo
+    if jq -e '.structured_output.checks | length > 0' "$d/verify.json" >/dev/null 2>&1; then
+      echo '```'
+      jq -r '.structured_output.checks[] | "$ \(.command)\n\(.output)"' "$d/verify.json"
+      echo '```'
+      echo
+    fi
+  } >>"$d/round-details.md"
+  review_publish "$d" || return 0
+  job_end "$d" "done" "V: $v"
 }
 
 # stopped JOB — true when `vibe queue stop` asked for it; the job then ends failed, no publish.
@@ -1055,9 +1127,13 @@ stopped() {
 # limit resumes the saved session. Runs in the background; it writes the final
 # status itself, so it outlives a runner restart.
 job_run() {
-  local d="$1" rc=0 result st note="" t reset
+  local d="$1" rc=0 result st note="" t reset r
   date '+%F %T' >"$d/started"
-  if [[ -n "$(jget "$d/job" review)" ]]; then
+  r="$(jget "$d/job" review)"
+  if [[ "$r" == verify ]]; then
+    job_verify "$d"
+    return 0
+  elif [[ -n "$r" ]]; then
     job_review "$d"
     return 0
   fi
@@ -1380,7 +1456,7 @@ branch_idle() {
 }
 
 # follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=) and prompt.md; echoes it.
-# A review round (<base>-review<N>) gets its base job's timeout back: an agent job, not a review.
+# A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
   [[ -f "$1/prompt.md" ]] || die "no prompt.md in ${1##*/}"
@@ -1390,7 +1466,7 @@ follow_dir() {
     grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
   else
     grep -Ev '^(now|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
-    t="$(jget "${1%-review"$r"}/job" timeout)"
+    t="$(jget "$(review_base "$1")/job" timeout)"
     if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
@@ -2144,13 +2220,14 @@ report_context() {
   echo "$t"
 }
 
-# report_row JOB TEXT — one table row: id, status, context, gate and TEXT and the job's cost, links.
+# report_row JOB TEXT — one table row: id, status, context, gate, verify and TEXT and the job's cost, links.
 report_row() {
-  local d="$1" pr ctx g links="" txt="${2//|//}" stats
-  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)" stats="$(job_stats "$d")"
+  local d="$1" pr ctx g v links="" txt="${2//|//}" stats
+  pr="$(jstate "$d" pr)" ctx="$(report_context "$d")" g="$(jstate "$d" gate)" v="$(jstate "$d" verify)" stats="$(job_stats "$d")"
   case "$pr" in http*) links="[PR]($pr)" ;; esac
   [[ ! -f "$d/report.md" ]] || links="${links:+$links · }[report](file://$d/report.md)"
   if [[ -n "$stats" ]]; then txt="${txt:+$txt · }$stats"; fi
+  if [[ -n "$v" ]]; then txt="V: $v · $txt"; fi
   if [[ -n "$g" ]]; then
     links="${links:+$links · }[gate](file://$d/gate.log)"
     if [[ "$g" == 0 ]]; then txt="gate exit 0 · $txt"; else txt="**gate exit $g** · $txt"; fi
@@ -2158,8 +2235,15 @@ report_row() {
   echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | $txt | $links |"
 }
 
+# checks_failed JOB — true when the gate failed, or the verify step says fail or dirty.
+checks_failed() {
+  [[ "$(jstate "$1" gate)" =~ ^[1-9] ]] && return 0
+  case "$(jstate "$1" verify)" in fail* | dirty*) return 0 ;; esac
+  return 1
+}
+
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
-# the classes: a status, `gate` (done with a failing gate), or `pr` (done with a PR URL;
+# the classes: a status, `gate` (done with a failing gate or verify step), or `pr` (done with a PR URL;
 # `done` is then done without one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done`
 # table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
@@ -2170,7 +2254,7 @@ report_rows() {
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
     job_final "$d" || continue
     cls="$(jstate "$d" status)"
-    if [[ "$cls" == "done" && "$(jstate "$d" gate)" =~ ^[1-9] ]]; then cls=gate; fi
+    if [[ "$cls" == "done" ]] && checks_failed "$d"; then cls=gate; fi
     # A done member job is in its feature's row.
     if [[ "$cls" == "done" ]] && is_member "$d"; then continue; fi
     group_of "$d"
