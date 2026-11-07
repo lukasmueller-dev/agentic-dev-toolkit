@@ -1679,6 +1679,33 @@ two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
 }
 
+@test "review: the prompt names both passes; the rubric reaches the reviewer through a symlink" {
+  local link="$BATS_TEST_TMPDIR/link"
+  mkdir -p "$link"
+  ln -s "$REPO_ROOT/claude/vibe-review.sh" "$link/vibe-review.sh"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$link/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main
+  [ "$status" -eq 0 ]
+  grep -q '^Run /code-review high origin/main\.\.\.HEAD\. Then apply the lean-review rubric .* both passes ' "$STUBS/claude.log"
+  grep -q '^# Lean review$' "$STUBS/claude.log"
+  grep -qF -- "--settings $REPO_ROOT/claude/vibe-job-settings.json " "$STUBS/claude.log"
+}
+
+@test "review: a missing rubric stops the round before the reviewer starts" {
+  local copy="$BATS_TEST_TMPDIR/copy"
+  mkdir -p "$copy/claude"
+  cp "$REPO_ROOT/claude/vibe-review.sh" "$copy/claude/"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$copy/claude/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main
+  [ "$status" -ne 0 ]
+  [ ! -e "$STUBS/claude.log" ]
+}
+
+@test "lean skills: no model invocation, the MIT notice stays" {
+  for s in lean-review lean-audit; do
+    grep -q '^disable-model-invocation: true$' "$REPO_ROOT/skills/$s/SKILL.md"
+    grep -q '^Copyright (c) 2026 DietrichGebert$' "$REPO_ROOT/skills/$s/LICENSE"
+  done
+}
+
 @test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
   local r b
   r="$(make_repo proj)"
