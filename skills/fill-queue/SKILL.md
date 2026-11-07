@@ -74,10 +74,13 @@ An item or handoff next action passes only when all are true:
    Take the items of one tag (`[health]`) or one roadmap heading. Only kind `code` with a 2h timeout; no `SPEC.md`, no GPU.
    Give the lane a new branch slug, a one-line lane context (same rules as the context) and an item slug per item.
    The other items stay one job each.
+8. Verify: `-`, unless the user asks for a check after the last review round:
+   `app` (drives the app with the repo's `.claude/skills/verify-*` skill), `blast-radius`, or `app,blast-radius`.
+   Never on a lane item or a report job: `vibe queue add` refuses it.
 
 ## Phase 5 — Approve
 
-Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · feature · done-when`.
+Show one table per repo, in rank order: `# · task · context · source · kind · timeout · model · branch · lane · feature · verify · done-when`.
 The `lane` column holds the lane context, or `-` for a job alone; rows with the same value share one branch.
 The `feature` column holds the feature whose file (`~/.local/state/vibe/features/*.md`) lists the row's repo and branch, or `-`.
 The user moves an item in or out of a lane by changing that column.
@@ -88,7 +91,8 @@ approval.** Apply every change the user asks for, then show the tables again.
 
 For each approved job, in rank order, write a fresh dir (`mktemp -d`):
 
-- `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`; `effort=<level>` only when the user names one.
+- `job` — `repo=<absolute path>`, `branch=<slug>`, `model=<sonnet|opus>`, `context=<context>`, `timeout=<timeout>`; `effort=<level>` only when the user names one;
+  `verify=<verify>` only when the row's verify is not `-`.
   A lane item adds `lane=<lane context>` and `item=<item slug>`; every item of the lane has the lane's `branch`.
 - `prompt.md` — `references/job-prompt.md` with every `<…>` filled.
   The two template slots take `templates/job-pr.md` and `templates/job-report.md` from the toolkit, verbatim.

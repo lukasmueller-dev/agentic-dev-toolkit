@@ -38,6 +38,8 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`research-experiment-setup`](skills/research-experiment-setup/) | Makes every run of a research project recorded, comparable and reported: 10 decision cards |
 | [`research-hardware-trial`](skills/research-hardware-trial/) | First hardware runs of a trained policy, through fixed safety gates |
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
+| [`lean-review`](skills/lean-review/) | Reviews one change: correct, safe, holds under load, tested, fast, lean; second pass of every queue review round |
+| [`lean-audit`](skills/lean-audit/) | The same rubric over a whole repo: ranked findings, no code changed |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
 | [`fill-queue`](skills/fill-queue/) | Sweeps the active repos for unattended work and adds it to the vibe queue after you approve |
@@ -82,7 +84,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
   · [research skills](docs/research-skills.md) · [vibe queue](docs/vibe-queue.md)
-  · [recurring jobs](docs/vibe-jobs.md)
+  · [recurring jobs](docs/vibe-jobs.md) · [pstack adapter](docs/pstack-adapter.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

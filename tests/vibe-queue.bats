@@ -27,6 +27,13 @@ case "\$prompt" in
     if [ -f "$STUBS/review-\$k.json" ]; then cat "$STUBS/review-\$k.json"; else echo '{"type":"result","result":"no schema"}'; fi
     exit 0
     ;;
+  "Verify origin/"*)
+    echo "\$prompt" >>"$STUBS/claude.log"
+    [ ! -f "$STUBS/verify-dirty" ] || echo dirty >>work.txt
+    [ ! -f "$STUBS/verify-commit" ] || { echo x >x.txt && git add x.txt && git commit -q -m "chore: verify scaffold"; }
+    if [ -f "$STUBS/verify.json" ]; then cat "$STUBS/verify.json"; else echo '{"type":"result","result":"no schema"}'; fi
+    exit 0
+    ;;
 esac
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
@@ -1166,7 +1173,7 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
-@test "status: short names, two lines per job, no text line without text" {
+@test "status: short names, a line per job, then its text and its phases; no text line without text" {
   local r
   r="$(make_repo proj)"
   mkjob 20261029-081414-proj-task-a "$r" task-a ok "context=Do task a."
@@ -1177,7 +1184,8 @@ died_job() {
   grep -qx '  task-a  queued' <<<"$output"
   grep -qx '    Do task a.' <<<"$output"
   grep -qx '  02-b  queued' <<<"$output"
-  [ "$(wc -l <<<"$output")" -eq 6 ]
+  [ "$(grep -cx '    ○ Agent · ○ Gate · ○ PR' <<<"$output")" = 2 ]
+  [ "$(wc -l <<<"$output")" -eq 8 ]
 }
 
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
@@ -1679,6 +1687,33 @@ two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
 }
 
+@test "review: the prompt names both passes; the rubric reaches the reviewer through a symlink" {
+  local link="$BATS_TEST_TMPDIR/link"
+  mkdir -p "$link"
+  ln -s "$REPO_ROOT/claude/vibe-review.sh" "$link/vibe-review.sh"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$link/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main
+  [ "$status" -eq 0 ]
+  grep -q '^Run /code-review high origin/main\.\.\.HEAD\. Then apply the lean-review rubric .* both passes ' "$STUBS/claude.log"
+  grep -q '^# Lean review$' "$STUBS/claude.log"
+  grep -qF -- "--settings $REPO_ROOT/claude/vibe-job-settings.json " "$STUBS/claude.log"
+}
+
+@test "review: a missing rubric stops the round before the reviewer starts" {
+  local copy="$BATS_TEST_TMPDIR/copy"
+  mkdir -p "$copy/claude"
+  cp "$REPO_ROOT/claude/vibe-review.sh" "$copy/claude/"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$copy/claude/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main
+  [ "$status" -ne 0 ]
+  [ ! -e "$STUBS/claude.log" ]
+}
+
+@test "lean skills: no model invocation, the MIT notice stays" {
+  for s in lean-review lean-audit; do
+    grep -q '^disable-model-invocation: true$' "$REPO_ROOT/skills/$s/SKILL.md"
+    grep -q '^Copyright (c) 2026 DietrichGebert$' "$REPO_ROOT/skills/$s/LICENSE"
+  done
+}
+
 @test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
   local r b
   r="$(make_repo proj)"
@@ -1788,6 +1823,166 @@ two_findings() {
   [ "$(grep -c '^Run /code-review' "$STUBS/claude.log" || true)" = 0 ]
 }
 
+# verify_json VERDICT — the verify agent's result: VERDICT and one check.
+verify_json() {
+  printf '{"type":"result","structured_output":{"verdict":"%s","checks":[{"command":"curl -s localhost:8080/health","output":"ok 200\\n```\\n</details>"}]}}' "$1" >"$STUBS/verify.json"
+}
+
+# verify_skill REPO — a verify-web skill on origin's main.
+verify_skill() {
+  mkdir -p "$1/.claude/skills/verify-web"
+  printf -- '---\nname: verify-web\n---\n' >"$1/.claude/skills/verify-web/SKILL.md"
+  git -C "$1" add .claude && git -C "$1" commit -q -m "chore: verify skill" && git -C "$1" push -q origin main
+}
+
+@test "verify: key set → <id>-verify after the last round, on review_model and review_timeout; V: on the Review line, commands in <details>; then the gate and one PR" {
+  local r b
+  r="$(make_repo proj)"
+  verify_skill "$r"
+  mkdir -p "$r/.vibe-jobs" && echo 'echo gate ran' >"$r/.vibe-jobs/gate"
+  git -C "$r" add .vibe-jobs && git -C "$r" commit -q -m "chore: gate" && git -C "$r" push -q origin main
+  printf 'review_model=haiku\nreview_timeout=30m\n' >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review verify=app,blast-radius
+  verify_json pass
+  drain
+  [ "$status" -eq 0 ]
+  for d in 01-a 01-a-review1 01-a-verify; do [ "$(cat "$Q/$d/status")" = "done" ]; done
+  [ ! -e "$Q/01-a-review1/pr" ]
+  [ ! -e "$Q/01-a-review1/gate" ]
+  [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
+  [ "$(cat "$Q/01-a-verify/pr")" = "https://example.com/pull/1" ]
+  [ "$(cat "$Q/01-a-verify/note")" = "V: pass" ]
+  [ "$(cat "$Q/01-a-verify/verify")" = pass ]
+  grep -q '^review=verify$' "$Q/01-a-verify/job"
+  grep -q '^timeout=30m$' "$Q/01-a-verify/job"
+  grep -q -- '-p --model haiku --name proj-task-a-verify --disallowedTools Edit,Write,NotebookEdit ' "$STUBS/claude.log"
+  grep -q '^Verify origin/main\.\.\.HEAD\. Drive the app: .* Then do the blast-radius skill ' "$STUBS/claude.log"
+  grep -q '^# Blast radius$' "$STUBS/claude.log"
+  grep -q '^# pstack adapter$' "$STUBS/claude.log"
+  grep -q 'start it, drive it and stop it in one Bash call' "$STUBS/claude.log"
+  grep -q '^\*\*Review:\*\* R1: review failed · V: pass$' "$Q/01-a-verify/pr-body.md"
+  b="$(cat "$Q/01-a-verify/pr-body.md")"
+  [[ "$b" == *"**Review:**"*"<details>"*"**R1** — review failed"*"**V** — pass"$'\n\n''    $ curl -s localhost:8080/health'$'\n''    ok 200'$'\n''    ```'$'\n''    </details>'$'\n\n'*"</details>"*"**Gate:** exit 0"* ]] || false
+  [ "$(grep -c '^</details>$' "$Q/01-a-verify/pr-body.md")" = 1 ]
+}
+
+@test "verify: the blast-radius skill and the adapter reach the agent through a symlink" {
+  local link="$BATS_TEST_TMPDIR/link"
+  mkdir -p "$link"
+  ln -s "$REPO_ROOT/claude/vibe-verify.sh" "$link/vibe-verify.sh"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$link/vibe-verify.sh" "$BATS_TEST_TMPDIR" proj-verify sonnet main blast-radius
+  [ "$status" -eq 0 ]
+  grep -q '^# Blast radius$' "$STUBS/claude.log"
+  grep -q '^# pstack adapter$' "$STUBS/claude.log"
+  grep -qF -- "--settings $REPO_ROOT/claude/vibe-job-settings.json " "$STUBS/claude.log"
+}
+
+@test "verify: no key → no verify step; the last review round opens the PR" {
+  local r
+  r="$(make_repo proj)"
+  verify_skill "$r"
+  mkjob 01-a "$r" task-a ok after=review
+  verify_json pass
+  drain
+  [ "$status" -eq 0 ]
+  [ ! -e "$Q/01-a-verify" ]
+  [ "$(cat "$Q/01-a-review1/pr")" = "https://example.com/pull/1" ]
+  run grep -q '^Verify origin/' "$STUBS/claude.log"
+  [ "$status" -ne 0 ]
+}
+
+@test "verify: no verify skill → 'V: no verify skill' and no agent; blast-radius still runs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=review verify=app
+  mkjob 02-b "$r" task-b ok after=review verify=app,blast-radius
+  verify_json pass
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-verify/note")" = "V: no verify skill" ]
+  [ "$(cat "$Q/02-b-verify/note")" = "V: pass, no verify skill" ]
+  [ "$(cat "$Q/01-a-verify/pr")" = "https://example.com/pull/1" ]
+  [ "$(grep -c '^Verify origin/' "$STUBS/claude.log")" = 1 ]
+  grep -q '^Verify origin/main\.\.\.HEAD\. Then do the blast-radius skill ' "$STUBS/claude.log"
+  grep -q '^\*\*Review:\*\* R1: review failed · V: no verify skill$' "$Q/01-a-verify/pr-body.md"
+}
+
+@test "verify: 'V: fail' and 'V: verify failed' open the PR and put the job under Needs you; 'V: no verify skill' does not" {
+  local r f
+  r="$(make_repo proj)"
+  mkjob 03-c "$r" task-c ok after=review verify=app
+  drain
+  verify_skill "$r"
+  mkjob 01-a "$r" task-a ok after=review verify=app
+  verify_json fail
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-verify/note")" = "V: fail" ]
+  [ "$(cat "$Q/01-a-verify/pr")" = "https://example.com/pull/1" ]
+  rm -f "$STUBS/verify.json"
+  mkjob 02-b "$r" task-b ok after=review verify=blast-radius
+  drain
+  [ "$(cat "$Q/02-b-verify/note")" = "V: verify failed" ]
+  [ "$(cat "$Q/03-c-verify/note")" = "V: no verify skill" ]
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" == *"### Needs you"*"| 01-a-verify | done | The repo lacks work.txt. | V: fail · work.txt added. |"* ]] || false
+  [[ "$output" == *"### Needs you"*"| 02-b-verify | done |"*"V: verify failed · "* ]] || false
+  [[ "$output" != *"| 03-c-verify |"* ]] || false
+}
+
+@test "verify: a changed tracked file or a new commit → 'V: dirty' under Needs you; the runner leaves both" {
+  local r wt f
+  r="$(make_repo proj)"
+  verify_skill "$r"
+  mkjob 01-a "$r" task-a ok after=review verify=app
+  verify_json pass
+  touch "$STUBS/verify-dirty"
+  drain
+  [ "$status" -eq 0 ]
+  wt="$(cat "$Q/01-a-verify/worktree")"
+  [ "$(cat "$Q/01-a-verify/note")" = "V: dirty" ]
+  [ "$(git -C "$wt" status --porcelain -uno)" = " M work.txt" ]
+  rm -f "$STUBS/verify-dirty"
+  touch "$STUBS/verify-commit"
+  mkjob 02-b "$r" task-b ok after=review verify=app
+  drain
+  [ "$(cat "$Q/02-b-verify/note")" = "V: dirty" ]
+  [ "$(git -C "$(cat "$Q/02-b-verify/worktree")" log -1 --format=%s)" = "chore: verify scaffold" ]
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" == *"### Needs you"*"| 01-a-verify | done |"*"V: dirty · "* ]] || false
+}
+
+@test "add: refuses verify= on a lane job, on a job with no review, and a bad value; queues none of the dirs" {
+  local r a b
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a" b="$BATS_TEST_TMPDIR/b"
+  mkdir -p "$a" "$b"
+  echo task >"$a/prompt.md"
+  echo task >"$b/prompt.md"
+  printf 'repo=%s\nbranch=x\nafter=review\nverify=app\n' "$r" >"$a/job"
+  printf 'repo=%s\nbranch=y\nafter=review\nlane=ctx\nitem=one\nverify=app\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$a" "$b"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"verify= on a lane job"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  printf 'repo=%s\nbranch=y\nverify=app\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
+  [[ "$output" == *"verify= on a job with no review"* ]] || false
+  printf 'repo=%s\nbranch=y\nafter=review\noutput=report\nverify=app\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
+  [[ "$output" == *"verify= on a job with no review"* ]] || false
+  printf 'repo=%s\nbranch=y\nafter=review\nverify=all\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
+  [[ "$output" == *"verify=all — app, blast-radius or app,blast-radius"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  run "$VIBE" queue add "$a"
+  [ "$status" -eq 0 ]
+}
+
 @test "run: refuses a missing or unknown agent" {
   run "$VIBE" queue run --drain
   [ "$status" -ne 0 ]
@@ -1859,4 +2054,85 @@ two_findings() {
   run "$SWEEP" "$a" "$BATS_TEST_TMPDIR/nowhere"
   [ "$status" -eq 0 ]
   [[ "$output" == *"# 1. alpha"*"no PROJECT_ROADMAP.md"*"# 2. nowhere"*"not a git repo"* ]] || false
+}
+
+# phase_jobs REPO — one chain per phase state: done, running, to come, failed; a report job.
+phase_jobs() {
+  local r="$1"
+  endjob 01-a "$r" task-a "" after=review verify=app
+  endjob 01-a-review1 "$r" task-a "" after=review verify=app review=1
+  echo "R1: 2 findings → 2 fixed" >"$Q/01-a-review1/note"
+  mkjob 01-a-review2 "$r" task-a ok after=review verify=app review=2
+  echo running >"$Q/01-a-review2/status"
+  mkjob 02-b "$r" task-b ok after=review
+  endjob 03-c "$r" task-c "" verify=app
+  endjob 03-c-review1 "$r" task-c "" verify=app review=1
+  echo "R1: review failed" >"$Q/03-c-review1/note"
+  endjob 03-c-verify "$r" task-c "push failed" verify=app review=verify
+  echo fail >"$Q/03-c-verify/verify"
+  echo 1 >"$Q/03-c-verify/gate"
+  mkjob 04-d "$r" task-d blocked
+  echo blocked >"$Q/04-d/status"
+  endjob 05-e "$r" task-e https://example.com/pull/5
+  echo 0 >"$Q/05-e/gate"
+  mkjob 06-f "$r" task-f ok
+  echo running >"$Q/06-f/status"
+  touch "$Q/06-f/gate.log"
+  endjob 07-g "$r" task-g "" output=report
+  echo "# report" >"$Q/07-g/report.md"
+  mkjob 08-h "$r" task-h ok output=report
+}
+
+@test "phases: the status shows each chain's phases: ✓ done, ▶ running, ○ to come, ✗ failed; R2 once queued, Verify only with the key" {
+  local r
+  r="$(make_repo proj)"
+  phase_jobs "$r"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  grep -qxF '    ✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ○ Agent · ○ R1 · ○ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ✗ R1 review failed · ✗ Verify app fail · ✗ Gate exit 1 · ✗ PR push failed' <<<"$output"
+  grep -qxF '    ✗ Agent' <<<"$output"
+  grep -qxF '    ✓ Agent · ✓ Gate · ✓ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ▶ Gate · ○ PR' <<<"$output"
+  grep -qxF '    ✓ Agent · ✓ Report' <<<"$output"
+  grep -qxF '    ○ Agent · ○ Report' <<<"$output"
+}
+
+@test "phases: the page shows the same line, ✗ and ▶ marked for CSS; the open line names the review passes" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  phase_jobs "$r"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<details class="phases"><summary><span>✓ Agent</span> · <span>✓ R1 2 fixed</span> · <span class="r">▶ R2</span> · <span>○ Verify app</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1, R2: /code-review + lean-review</p></details>' "$f"
+  grep -qF '<details class="phases"><summary><span>○ Agent</span> · <span>○ R1</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1: /code-review + lean-review</p></details>' "$f"
+  grep -qF '<summary><span>✓ Agent</span> · <span class="x">✗ R1 review failed</span> · <span class="x">✗ Verify app fail</span> · <span class="x">✗ Gate exit 1</span> · <span class="x">✗ PR push failed</span></summary>' "$f"
+  grep -qF '<p class="phases"><span class="x">✗ Agent</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span>✓ Gate</span> · <span>✓ PR</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span class="r">▶ Gate</span> · <span>○ PR</span></p>' "$f"
+  grep -qF '<p class="phases"><span>✓ Agent</span> · <span>✓ Report</span></p>' "$f"
+  grep -qF '<p class="phases"><span>○ Agent</span> · <span>○ Report</span></p>' "$f"
+  grep -qE '^\.phases \.x \{ color: var\(--red\); \}' "$f"
+  grep -qE '^\.phases \.r \{ color: var\(--ink\); \}' "$f"
+}
+
+@test "phases: a lane card gets one phase line, of its running item; each feature member card keeps its own" {
+  local r1 r2 f="$XDG_STATE_HOME/vibe/web/index.html"
+  r1="$(make_repo proj)" r2="$(make_repo cmdr)"
+  endjob 01-a "$r1" lane-x https://example.com/pull/1 "lane=Fix health" item=alpha
+  mkjob 02-b "$r1" lane-x item "lane=Fix health" item=beta
+  echo running >"$Q/02-b/status"
+  mkjob 03-c "$r1" lane-x item "lane=Fix health" item=gamma
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '· ○ Gate\|· ✓ Gate' <<<"$output")" = 1 ]
+  [[ "$output" == *$'  lane-x · 1/3 · beta · https://example.com/pull/1\n    Fix health\n    ▶ Agent · ○ Gate · ○ PR'* ]] || false
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -o 'class="phases"' "$f" | wc -l)" -eq 1 ]
+  grep -qF '<p>Fix health <a href="https://example.com/pull/1">PR</a></p><p class="phases"><span class="r">▶ Agent</span> · <span>○ Gate</span> · <span>○ PR</span></p><p>next: beta</p>' "$f"
+  putfeature teleop "$r1 lane-x" "$r2 gamepad"
+  endjob 04-d "$r2" gamepad https://example.com/pull/4
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -o 'class="phases"' "$f" | wc -l)" -eq 2 ]
+  grep -qF '<b>cmdr · gamepad</b><span class="pill">done</span></div><p> <a href="https://example.com/pull/4">PR</a></p><p class="phases"><span>✓ Agent</span> · <span>✓ PR</span></p>' "$f"
 }

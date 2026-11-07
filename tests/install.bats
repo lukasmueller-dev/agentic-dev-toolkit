@@ -514,6 +514,14 @@ fake_repo() {
   [ "$status" -eq 0 ]
 }
 
+@test "memory: the pstack adapter pointer resolves from the installed link" {
+  "$INSTALL" claude >/dev/null
+  # The pointer derives the checkout from this link, so it holds wherever the repo lives.
+  run grep -qF 'readlink ~/.claude/CLAUDE.md' "$HOME/.claude/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  [ -f "$(dirname "$(readlink "$HOME/.claude/CLAUDE.md")")/../docs/pstack-adapter.md" ]
+}
+
 @test "memory: doctor FAILs when the import is gone" {
   "$INSTALL" claude >/dev/null
   # stand a real file at the managed path, without the import line

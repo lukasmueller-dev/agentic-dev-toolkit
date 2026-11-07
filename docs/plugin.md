@@ -61,6 +61,9 @@ The known limit is that injected context is ordinary conversation context, not
 a memory file. A long enough session can compact it away, where the symlink
 install's `~/.claude/CLAUDE.md` would survive.
 
+The hook also adds the pointer to `docs/pstack-adapter.md`, with the path it resolves
+itself: `claude/CLAUDE.md` holds that pointer in the symlink install.
+
 `inject-global-memory.sh` is not wired in the symlink install. On a real machine
 it is an inert script sitting in `~/.claude/hooks`.
 
