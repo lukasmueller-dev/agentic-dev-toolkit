@@ -57,7 +57,7 @@ Queue jobs run more skills with no human step, and the page and `vibe queue stat
 - [x] Add the `verify=` key, `claude/vibe-verify.sh`, the `<id>-verify` step, and the field in `/enqueue` and `/fill-queue` — code — done when `bats tests/vibe-queue.bats` passes with tests for: key set, no key, no skill, `V: fail`, `V: dirty`, refused lane job
 - [x] Add `job_phases`, the page line with its CSS, and the status line — code — done when `bats tests/vibe-queue.bats tests/vibe-web.bats` passes with a test per phase state, in the page HTML and in the status output
 - [x] Add the 5 catalogue jobs and the `docs/vibe-jobs.md` rows, and add a roadmap item: compare `repo-review` with `lean-audit` on one repo, delete the loser, decide the `codebase-health` dedup and complexity scan — code — done when `bats tests/vibe-jobs.bats` passes and `grep -q lean-audit PROJECT_ROADMAP.md` passes
-- [ ] Update `docs/vibe-queue.md` and `docs/vendoring-external-skills.md`, add one line to `PROJECT_STATUS.md`, do the end action — code — done when `shfmt -f . | xargs shellcheck && shfmt -d -i 2 -ci . && bats tests/ && ./bin/skill-lint --strict skills && ./bin/plug verify` passes
+- [x] Update `docs/vibe-queue.md` and `docs/vendoring-external-skills.md`, add one line to `PROJECT_STATUS.md`, do the end action — code — done when `shfmt -f . | xargs shellcheck && shfmt -d -i 2 -ci . && bats tests/ && ./bin/skill-lint --strict skills && ./bin/plug verify` passes
 
 ## End action
 
