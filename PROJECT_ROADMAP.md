@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-02 · docker-gate-sessions_
+_Last updated: 2026-11-06 · roadmap-cleanup_
 
 ## Items
 
@@ -18,3 +18,10 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
+
+### Vibe queue follow-ups (design: PR for `job-review`)
+
+- [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
+      the roadmap items the repo proves done or dead, with one proof line each.
+      Done when one recurring job per repo queues and its PR changes only
+      `PROJECT_ROADMAP.md`.
