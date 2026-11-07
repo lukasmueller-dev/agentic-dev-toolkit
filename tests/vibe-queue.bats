@@ -1186,6 +1186,19 @@ pandoc_stub() {
   [ "$output" = 0 ]
 }
 
+@test "page: a link or image with a javascript: or data: target shows as text in the briefing" {
+  command -v pandoc >/dev/null || skip "pandoc not installed"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=[bad](javascript:alert(1)) ![pic](data:text/html,x) <javascript:alert(2)> [ok](https://example.com/ok)'
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF 'href="https://example.com/ok"' "$f"
+  grep -qF 'bad pic javascript:alert(2)' "$f"
+  run grep -c 'href="javascript\|src="data' "$f"
+  [ "$output" = 0 ]
+}
+
 @test "page: with no working pandoc briefing and config are escaped Markdown in <pre>, file links as text" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"

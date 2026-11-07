@@ -1538,9 +1538,18 @@ status_card() {
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.
-# Raw HTML in the text shows as code: the Lua filter turns each raw node into a code node.
+# The Lua filter turns raw HTML into code and a link or image with a scheme other than
+# http, https or mailto (`javascript:`, `data:`) into its text.
 md_html() {
-  local md out raw='function RawBlock(e) return pandoc.CodeBlock(e.text) end function RawInline(e) return pandoc.Code(e.text) end'
+  local md out raw='
+function RawBlock(e) return pandoc.CodeBlock(e.text) end
+function RawInline(e) return pandoc.Code(e.text) end
+local function ok(u)
+  local s = u:gsub("[%c%s]", ""):lower():match("^([a-z][a-z0-9+.-]*):")
+  return not s or s == "http" or s == "https" or s == "mailto"
+end
+function Link(l) if not ok(l.target) then return l.content end end
+function Image(i) if not ok(i.src) then return i.caption end end'
   md="$(sed -E 's/\[([^]]*)\]\(file:[^)]*\)/\1/g')"
   if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers --lua-filter=<(printf '%s\n' "$raw") -t html 2>/dev/null)"; then
     printf '%s\n' "$out"

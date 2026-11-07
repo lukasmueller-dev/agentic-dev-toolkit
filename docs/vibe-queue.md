@@ -62,7 +62,7 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ## 3. Phone page
 
-The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code.
+The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
 At 1024 px and wider, the page is 15% larger and shows Queue and Briefing side by side.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
