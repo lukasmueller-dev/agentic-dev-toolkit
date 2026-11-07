@@ -1824,7 +1824,7 @@ two_findings() {
 
 # verify_json VERDICT — the verify agent's result: VERDICT and one check.
 verify_json() {
-  printf '{"type":"result","structured_output":{"verdict":"%s","checks":[{"command":"curl -s localhost:8080/health","output":"ok 200"}]}}' "$1" >"$STUBS/verify.json"
+  printf '{"type":"result","structured_output":{"verdict":"%s","checks":[{"command":"curl -s localhost:8080/health","output":"ok 200\\n```\\n</details>"}]}}' "$1" >"$STUBS/verify.json"
 }
 
 # verify_skill REPO — a verify-web skill on origin's main.
@@ -1861,7 +1861,8 @@ verify_skill() {
   grep -q 'start it, drive it and stop it in one Bash call' "$STUBS/claude.log"
   grep -q '^\*\*Review:\*\* R1: review failed · V: pass$' "$Q/01-a-verify/pr-body.md"
   b="$(cat "$Q/01-a-verify/pr-body.md")"
-  [[ "$b" == *"**Review:**"*"<details>"*"**R1** — review failed"*"**V** — pass"*'$ curl -s localhost:8080/health'$'\n''ok 200'*"</details>"*"**Gate:** exit 0"* ]] || false
+  [[ "$b" == *"**Review:**"*"<details>"*"**R1** — review failed"*"**V** — pass"$'\n\n''    $ curl -s localhost:8080/health'$'\n''    ok 200'$'\n''    ```'$'\n''    </details>'$'\n\n'*"</details>"*"**Gate:** exit 0"* ]] || false
+  [ "$(grep -c '^</details>$' "$Q/01-a-verify/pr-body.md")" = 1 ]
 }
 
 @test "verify: the blast-radius skill and the adapter reach the agent through a symlink" {

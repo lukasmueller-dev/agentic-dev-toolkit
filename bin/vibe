@@ -1104,9 +1104,8 @@ job_verify() {
     echo "**V** — $v"
     echo
     if jq -e '.structured_output.checks | length > 0' "$d/verify.json" >/dev/null 2>&1; then
-      echo '```'
-      jq -r '.structured_output.checks[] | "$ \(.command)\n\(.output)"' "$d/verify.json"
-      echo '```'
+      # Indented, not fenced: a ``` or </details> line in the output stays code.
+      jq -r '.structured_output.checks[] | "$ \(.command)\n\(.output)" | "    " + gsub("\n"; "\n    ")' "$d/verify.json"
       echo
     fi
   } >>"$d/round-details.md"
