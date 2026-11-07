@@ -417,7 +417,7 @@ make_kit() {
   [[ "$output" == *"restart 'claude-rc@*'"* ]] || false
 }
 
-@test "update-toolkit: a changed runner restarts vibe-queue on a server only" {
+@test "update-toolkit: a changed runner or endpoint restarts its unit on a server only" {
   local t o
   t="$(make_kit)"
   o="$(clone_repo kit kit-other)"
@@ -453,6 +453,13 @@ make_kit() {
   VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
   [ "$status" -eq 0 ]
   [ ! -e "$STUBS/systemctl.log" ]
+  echo two >"$o/bin/vibe-web"
+  git -C "$o" add bin
+  git -C "$o" commit -q -m "endpoint changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
 }
 
 @test "sync: leaves a behind toolkit checkout to update-toolkit" {
@@ -493,6 +500,13 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+@test "--help prints the whole header, through the last job line" {
+  run "$VIBE" --help
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == *"vibe start "* ]] || false
+  [[ "${lines[${#lines[@]} - 1]}" == *"vibe job triage "* ]] || false
+}
+
 @test "an unknown command names itself in one line, not the whole help" {
   run "$VIBE" jobs --all
   [ "$status" -ne 0 ]
@@ -516,8 +530,10 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
-  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status " ]
-  [ "$(complete_vibe queue r | tr '\n' ' ')" = "report resume run " ]
+  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
+  [ "$(complete_vibe queue r | tr '\n' ' ')" = "roadmap report resume run retry ready " ]
+  [ "$(complete_vibe queue m)" = merge-order ]
+  [ "$(complete_vibe queue a | tr '\n' ' ')" = "add archive answer " ]
   [ "$(complete_vibe queue add --n)" = --now ]
   [ "$(complete_vibe queue run --c)" = --claude ]
   [ "$(complete_vibe job l)" = list ]

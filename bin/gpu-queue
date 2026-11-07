@@ -8,12 +8,14 @@
 #                                   run queued jobs in order; none started after --until
 #   gpu-queue lock -- CMD...        run CMD holding the GPU lock (manual runs, other queues)
 #   gpu-queue status                queued, running and finished jobs
+#   gpu-queue cancel ID             drop a queued job or TERM a running one; --then gets GPUQ_EXIT=cancelled
+#                                   (a stop of gpu-queue run cancels its running job too)
 #
 # --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/vibe-queue.md.
 set -euo pipefail
 
 usage() {
-  sed -n '5,12s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
+  sed -n '5,14s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"
   exit "${1:-0}"
 }
 die() {
@@ -32,6 +34,7 @@ with_lock() {
     flock "$LOCK" "$@"
   else
     until mkdir "$LOCK.d" 2>/dev/null; do sleep "${GPUQ_POLL:-5}"; done
+    trap 'rmdir "$LOCK.d"; exit 143' TERM # gpu-queue cancel
     local rc=0
     "$@" || rc=$?
     rmdir "$LOCK.d"
@@ -77,19 +80,57 @@ cmd_submit() {
 
 # run_one ID — run a queued job under the lock, then its --then command.
 run_one() {
-  local id="$1" j="$Q/running/$1" rc=0
+  local id="$1" j="$Q/running/$1" rc=0 pid
   mv "$Q/queued/$id" "$j" || return 0
   date '+%F %T' >"$j/started"
   info "start $id"
-  (cd "$(cat "$j/dir")" && with_lock bash -c "$(cat "$j/cmd")") >"$j/log" 2>&1 || rc=$?
-  echo "$rc" >"$j/exit"
-  date '+%F %T' >"$j/ended"
-  mv "$j" "$Q/finished/$id"
-  j="$Q/finished/$id"
+  # Its own process group (set -m): gpu-queue cancel TERMs the whole tree.
+  set -m
+  (cd "$(cat "$j/dir")" && with_lock bash -c "$(cat "$j/cmd")") </dev/null >"$j/log" 2>&1 &
+  pid=$!
+  set +m
+  echo "$pid" >"$j/pid"
+  # Ctrl-C, or a stop of gpu-queue run, must reach the job's own group too; the job ends cancelled.
+  trap 'kill -TERM -- "-$pid" 2>/dev/null; wait "$pid" || true; job_done "$id" cancelled; exit 130' INT TERM HUP
+  wait "$pid" || rc=$?
+  trap - INT TERM HUP
+  # A run that ended 0 as the cancel came in keeps its result.
+  if [[ "$rc" != 0 && -e "$j/cancel" ]]; then rc=cancelled; fi
+  job_done "$id" "$rc"
+}
+
+# job_done ID EXIT — move ID from running to finished, then run its --then command.
+job_done() {
+  local id="$1" rc="$2" j="$Q/finished/$1"
+  echo "$rc" >"$Q/running/$id/exit"
+  date '+%F %T' >"$Q/running/$id/ended"
+  mv "$Q/running/$id" "$j"
   info "end $id: exit $rc"
   if [[ -n "$(cat "$j/then")" ]]; then
     GPUQ_EXIT="$rc" GPUQ_LOG="$j/log" GPUQ_JOB="$id" bash -c "$(cat "$j/then")" >"$j/then.log" 2>&1 ||
       info "$id: --then failed, see $j/then.log"
+  fi
+}
+
+# gpu-queue cancel ID — a queued job ends at once; a running one gets TERM, run_one ends it.
+cmd_cancel() {
+  local id="${1:-}" pid
+  [[ $# -eq 1 && "$id" =~ ^[A-Za-z0-9._-]+$ && "$id" != .* ]] || die "usage: gpu-queue cancel <id>"
+  mkdir -p "$Q/running" "$Q/finished"
+  if mv "$Q/queued/$id" "$Q/running/$id" 2>/dev/null; then
+    : >"$Q/running/$id/log"
+    job_done "$id" cancelled
+  elif [[ -d "$Q/running/$id" ]]; then
+    pid="$(cat "$Q/running/$id/pid" 2>/dev/null || true)"
+    [[ "$pid" =~ ^[0-9]+$ ]] || die "$id has just started — try again"
+    : >"$Q/running/$id/cancel"
+    if ! kill -TERM -- "-$pid"; then
+      rm -f "$Q/running/$id/cancel"
+      die "kill of $id (pid $pid) failed — it has just ended"
+    fi
+    info "cancelled $id"
+  else
+    die "no queued or running job $id"
   fi
 }
 
@@ -142,7 +183,7 @@ cmd_status() {
 }
 
 case "${1:-}" in
-  submit | run | lock | status)
+  submit | run | lock | status | cancel)
     cmd="$1"
     shift
     "cmd_$cmd" "$@"

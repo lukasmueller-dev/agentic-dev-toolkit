@@ -53,3 +53,64 @@ setup() {
   run "$GQ" submit --dir "$BATS_TEST_TMPDIR/nowhere" -- true
   [ "$status" -ne 0 ]
 }
+
+@test "cancel: a queued job ends at once, a running one with its whole tree; --then gets GPUQ_EXIT=cancelled" {
+  local a b pid
+  a="$("$GQ" submit --name a --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then-a.txt" -- touch ran-a.txt)"
+  run "$GQ" cancel "$a"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$a/exit")" = cancelled ]
+  [ "$(cat "$WORK/then-a.txt")" = cancelled ]
+  b="$("$GQ" submit --name b --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then-b.txt" -- sh -c 'sleep 1; echo late >late.txt')"
+  "$GQ" run --once 2>/dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    [ ! -s "$GPU_QUEUE_DIR/running/$b/pid" ] || break
+    sleep 0.1
+  done
+  run "$GQ" cancel "$b"
+  [ "$status" -eq 0 ]
+  wait "$pid"
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$b/exit")" = cancelled ]
+  [ "$(cat "$WORK/then-b.txt")" = cancelled ]
+  sleep 1.5
+  [ ! -e "$WORK/late.txt" ]
+  [ ! -e "$WORK/ran-a.txt" ]
+  run "$GQ" cancel "$b"
+  [ "$status" -ne 0 ]
+  run "$GQ" cancel ../x
+  [ "$status" -ne 0 ]
+}
+
+@test "run: a TERM to gpu-queue run also stops the running job (its own process group); it ends cancelled" {
+  local pid id
+  id="$("$GQ" submit --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then.txt" -- sh -c 'sleep 1; echo late >late.txt')"
+  "$GQ" run --once 2>/dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    [ -z "$(find "$GPU_QUEUE_DIR/running" -name pid 2>/dev/null)" ] || break
+    sleep 0.1
+  done
+  kill -TERM "$pid"
+  wait "$pid" || true
+  sleep 1.5
+  [ ! -e "$WORK/late.txt" ]
+  [ ! -e "$GPU_QUEUE_DIR/running/$id" ]
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$id/exit")" = cancelled ]
+  [ "$(cat "$WORK/then.txt")" = cancelled ]
+}
+
+@test "cancel: a run that ended 0 keeps its exit code; a failed kill leaves no marker" {
+  local b
+  b="$("$GQ" submit --name b --dir "$WORK" --then "echo \"\$GPUQ_EXIT\" >$WORK/then.txt" -- sh -c 'touch cancel')"
+  # The job writes the cancel marker into its own dir: the cancel's race, made certain.
+  sed -i.bak "s#^#cd $GPU_QUEUE_DIR/running/$b \&\& #" "$GPU_QUEUE_DIR/queued/$b/cmd"
+  "$GQ" run --once 2>/dev/null
+  [ "$(cat "$GPU_QUEUE_DIR/finished/$b/exit")" = 0 ]
+  [ "$(cat "$WORK/then.txt")" = 0 ]
+  mkdir -p "$GPU_QUEUE_DIR/running/x"
+  echo 2147483646 >"$GPU_QUEUE_DIR/running/x/pid"
+  run "$GQ" cancel x
+  [ "$status" -ne 0 ]
+  [ ! -e "$GPU_QUEUE_DIR/running/x/cancel" ]
+}

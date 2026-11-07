@@ -9,6 +9,9 @@
 *.swp
 .vscode/
 
+# Python bytecode (bin/ scripts run under python leave it)
+__pycache__/
+
 # secrets — forward guard; none tracked today, keep it that way
 .env
 .env.*
