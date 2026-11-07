@@ -2234,10 +2234,10 @@ report_row() {
   echo "| ${d##*/} | $(jstate "$d" status) | ${ctx//|//} | $txt | $links |"
 }
 
-# checks_failed JOB — true when the gate failed, or the verify step says fail or dirty.
+# checks_failed JOB — true when the gate failed, or the verify step failed, changed the tree or gave no verdict.
 checks_failed() {
   [[ "$(jstate "$1" gate)" =~ ^[1-9] ]] && return 0
-  case "$(jstate "$1" verify)" in fail* | dirty*) return 0 ;; esac
+  case "$(jstate "$1" verify)" in fail* | dirty* | timeout* | "verify failed"*) return 0 ;; esac
   return 1
 }
 

@@ -1906,9 +1906,11 @@ verify_skill() {
   grep -q '^\*\*Review:\*\* R1: review failed · V: no verify skill$' "$Q/01-a-verify/pr-body.md"
 }
 
-@test "verify: 'V: fail' opens the PR and puts the job under Needs you" {
+@test "verify: 'V: fail' and 'V: verify failed' open the PR and put the job under Needs you; 'V: no verify skill' does not" {
   local r f
   r="$(make_repo proj)"
+  mkjob 03-c "$r" task-c ok after=review verify=app
+  drain
   verify_skill "$r"
   mkjob 01-a "$r" task-a ok after=review verify=app
   verify_json fail
@@ -1916,10 +1918,17 @@ verify_skill() {
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a-verify/note")" = "V: fail" ]
   [ "$(cat "$Q/01-a-verify/pr")" = "https://example.com/pull/1" ]
+  rm -f "$STUBS/verify.json"
+  mkjob 02-b "$r" task-b ok after=review verify=blast-radius
+  drain
+  [ "$(cat "$Q/02-b-verify/note")" = "V: verify failed" ]
+  [ "$(cat "$Q/03-c-verify/note")" = "V: no verify skill" ]
   run "$VIBE" queue report
   f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
   run cat "$f"
   [[ "$output" == *"### Needs you"*"| 01-a-verify | done | The repo lacks work.txt. | V: fail · work.txt added. |"* ]] || false
+  [[ "$output" == *"### Needs you"*"| 02-b-verify | done |"*"V: verify failed · "* ]] || false
+  [[ "$output" != *"| 03-c-verify |"* ]] || false
 }
 
 @test "verify: a changed tracked file or a new commit → 'V: dirty' under Needs you; the runner leaves both" {
