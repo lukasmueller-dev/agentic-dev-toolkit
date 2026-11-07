@@ -1932,10 +1932,12 @@ verify_skill() {
   [[ "$output" != *"| 03-c-verify |"* ]] || false
 }
 
-@test "verify: a changed tracked file or a new commit → 'V: dirty' under Needs you; the runner leaves both" {
+@test "verify: a changed tracked file or a new commit → 'V: dirty' under Needs you; the runner leaves both and pushes nothing" {
   local r wt f
   r="$(make_repo proj)"
   verify_skill "$r"
+  mkdir -p "$r/.vibe-jobs" && echo 'echo gate ran' >"$r/.vibe-jobs/gate"
+  git -C "$r" add .vibe-jobs && git -C "$r" commit -q -m "chore: gate" && git -C "$r" push -q origin main
   mkjob 01-a "$r" task-a ok after=review verify=app
   verify_json pass
   touch "$STUBS/verify-dirty"
@@ -1950,6 +1952,13 @@ verify_skill() {
   drain
   [ "$(cat "$Q/02-b-verify/note")" = "V: dirty" ]
   [ "$(git -C "$(cat "$Q/02-b-verify/worktree")" log -1 --format=%s)" = "chore: verify scaffold" ]
+  [ -z "$(git -C "$BATS_TEST_TMPDIR/proj.git" branch --list task-a task-b)" ]
+  [ -z "$(grep 'pr create' "$STUBS/gh.log" 2>/dev/null || true)" ]
+  for d in 01-a-verify 02-b-verify; do
+    [ ! -e "$Q/$d/gate.log" ]
+    [ ! -e "$Q/$d/pr" ]
+    grep -q '^\*\*Review:\*\* .*V: dirty' "$Q/$d/pr.md"
+  done
   run "$VIBE" queue report
   f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
   run cat "$f"

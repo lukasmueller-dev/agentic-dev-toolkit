@@ -132,7 +132,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off.
 - Verify: `verify=app`, `blast-radius` or `app,blast-radius` (`/enqueue`, `/fill-queue` on request) queues `<id>-verify` after the last review round. A fresh read-only session runs `claude/vibe-verify.sh` with `review_model` and `review_timeout`.
 - `app` follows the repo's `.claude/skills/verify-*/SKILL.md` (a human writes it: `/create-verification-skill`); none → `V: no verify skill`. `blast-radius` follows the vendored skill.
-- Verify reports only: a moved HEAD or a changed tracked file → `V: dirty`, and the runner touches nothing. `V: fail`, `dirty`, `timeout` or `verify failed` put a `done` job under "Needs you", like a non-zero gate.
+- Verify reports only: a moved HEAD or a changed tracked file → `V: dirty`: no gate, no push, no PR, and the worktree stays as it is. `V: fail`, `dirty`, `timeout` or `verify failed` put a `done` job under "Needs you", like a non-zero gate.
 - `vibe queue add` refuses `verify=` on a lane job, a job with no review, or another value.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.

@@ -1074,7 +1074,7 @@ review_publish() {
 
 # job_verify JOB — after the last review round: a fresh agent drives the app (the repo's verify skill)
 # and/or runs blast-radius, per `verify=`. Its verdict (JOB/verify) joins the Review line, its commands
-# go in <details>; a moved HEAD or a changed tracked file is `V: dirty`. Then the gate and the PR.
+# go in <details>; a moved HEAD or a changed tracked file is `V: dirty`. Then the gate and the PR, except on dirty.
 job_verify() {
   local d="$1" k wt tip model rc=0 v="" skip="" prev
   k="$(jget "$d/job" verify)" wt="$(jstate "$d" worktree)"
@@ -1109,7 +1109,12 @@ job_verify() {
       echo
     fi
   } >>"$d/round-details.md"
-  review_publish "$d" || return 0
+  if [[ "$v" == dirty* ]]; then
+    # No gate, no push: the verifier's commit or edit is unreviewed and must not reach origin.
+    review_pr_md "$d"
+  else
+    review_publish "$d" || return 0
+  fi
   job_end "$d" "done" "V: $v"
 }
 
