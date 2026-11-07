@@ -86,7 +86,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 
 ## Rules the runner keeps
 
-- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file.
+- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.

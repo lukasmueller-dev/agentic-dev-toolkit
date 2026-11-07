@@ -1513,6 +1513,22 @@ gpurace() {
   [ "$(cat "$STUBS/parent-at-follow")" = ended ]
 }
 
+@test "gpu: a parent that died after its follow-up marked it done gets an ended file, and the follow-up runs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkdir -p "$Q/01-a" && echo "queued: training" >"$Q/01-a/result"
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  echo 999999 >"$Q/01-a/pid"
+  [ ! -e "$Q/01-a/ended" ]
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ -s "$Q/01-a/ended" ]
+  [ ! -e "$Q/01-a/pid" ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {
   local r
   run env -u VIBE_JOB_DIR "$VIBE" queue gpu -- true

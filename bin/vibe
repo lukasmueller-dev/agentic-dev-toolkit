@@ -1159,6 +1159,12 @@ cmd_queue_run() {
             job_end "$d" failed "job process died twice"
           fi
           ;;
+        "done")
+          # `queue follow` marked a job that still published; its process died before `job_end`.
+          if [[ -s "$d/pid" && ! -e "$d/ended" ]] && ! kill -0 "$(jstate "$d" pid)" 2>/dev/null; then
+            job_end "$d" "done" "$(jstate "$d" note)"
+          fi
+          ;;
         gpu) waiting=$((waiting + 1)) ;;
         "" | queued)
           if follow_ready "$d"; then queued+=("$d"); else waiting=$((waiting + 1)); fi
