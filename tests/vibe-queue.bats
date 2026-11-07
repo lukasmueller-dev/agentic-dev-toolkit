@@ -1542,6 +1542,28 @@ gpurace() {
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
+@test "gpu: a parent that queue follow marked done while its process still runs is not archived or briefed" {
+  local r f
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  echo $$ >"$Q/01-a/pid"
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  run "$VIBE" queue archive 01-a
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"has not ended"* ]] || false
+  [ -d "$Q/01-a" ]
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" != *"task-a"* ]] || false
+  rm -f "$Q/01-a/pid"
+  date '+%F %T' >"$Q/01-a/ended"
+  run "$VIBE" queue archive 01-a
+  [ "$status" -eq 0 ]
+  [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
+}
+
 @test "gpu: only inside a queue job; --help prints usage and queues nothing" {
   local r
   run env -u VIBE_JOB_DIR "$VIBE" queue gpu -- true

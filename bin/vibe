@@ -371,6 +371,13 @@ job_final() {
   return 1
 }
 
+# job_settled JOB — true when the job is final and its process no longer writes: `queue follow`
+# sets `done` while the runner still gates and publishes (a pid file, no `ended` file).
+job_settled() {
+  job_final "$1" || return 1
+  [[ ! -e "$1/pid" || -e "$1/ended" ]]
+}
+
 # branch_ok BRANCH — a slug, or jobs/<slug> (a recurring job's branch).
 branch_ok() {
   local b="${1#jobs/}"
@@ -1222,7 +1229,7 @@ cmd_queue_archive() {
   a="$QROOT/archive/$(date +%Y-%m)"
   for d in "$@"; do
     d="$(queue_job "$d")"
-    job_final "$d" || die "${d##*/} has not ended ($(jstate "$d" status)) — archive it once it has"
+    job_settled "$d" || die "${d##*/} has not ended ($(jstate "$d" status)) — archive it once it has"
     mkdir -p "$a"
     mv "$d" "$a/"
     echo "archived ${d##*/}"
@@ -1656,7 +1663,7 @@ report_rows() {
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
-    job_final "$d" || continue
+    job_settled "$d" || continue
     cls="$(jstate "$d" status)"
     if [[ "$cls" == "done" && "$(jstate "$d" gate)" =~ ^[1-9] ]]; then cls=gate; fi
     # A done member job is in its feature's row.
