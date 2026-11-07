@@ -1780,6 +1780,7 @@ gpurace() {
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
   mkdir -p "$Q/01-a" && echo "queued: training" >"$Q/01-a/result"
+  echo running >"$Q/01-a/status"
   GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
   echo 999999 >"$Q/01-a/pid"
   [ ! -e "$Q/01-a/ended" ]
@@ -1791,10 +1792,24 @@ gpurace() {
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
+@test "gpu: a requeued parent (usage limit) gets an ended file from queue follow, and the follow-up runs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo queued >"$Q/01-a/status"
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  [ -s "$Q/01-a/ended" ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
 @test "gpu: a parent that queue follow marked done while its process still runs is not archived or briefed" {
   local r f
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
+  echo running >"$Q/01-a/status"
   GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
   echo $$ >"$Q/01-a/pid"
   [ "$(cat "$Q/01-a/status")" = "done" ]

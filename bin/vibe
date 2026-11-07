@@ -1738,12 +1738,13 @@ cmd_queue_follow() {
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
   follow_job "$p" "$f"
-  if [[ -e "$p/ended" ]]; then
-    job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
-  else
+  if [[ "$(jstate "$p" status)" == running && ! -e "$p/ended" ]]; then
     # The job still publishes: its own job_end writes `ended`, and the follow-up waits for it.
     echo "done" >"$p/status"
     echo "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}" >"$p/note"
+  else
+    # Any other state (gpu, a requeued job) has no process left to write `ended`.
+    job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
   fi
 }
 
