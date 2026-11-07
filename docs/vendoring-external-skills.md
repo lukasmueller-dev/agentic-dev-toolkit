@@ -99,6 +99,14 @@ Skills only. A skill may bundle scripts the agent runs on demand; nothing may ru
 Gate: run a security review (built-in `/security-review`) over the tree on first add and over the `git diff` of every `plug update`, before committing.
 Dependencies a skill's scripts need are documented, never installed.
 
+Adapt a skill without a hand edit to `vendor/`:
+
+| Upstream has | Do |
+| --- | --- |
+| A link to a file outside the vendored path | Write a local adapter in `docs/` and point to it from `claude/CLAUDE.md`; a `plug update` review compares it with upstream ([`pstack-adapter.md`](pstack-adapter.md)) |
+| A `LICENSE` above the vendored path (`plug` does not copy it) | Name the copyright line in the adapter |
+| A trigger that loads in every session (`code review`) | Copy it into `skills/` with `disable-model-invocation: true`, its `LICENSE` and an `Adapted from <repo> at <sha>` line (`skills/lean-review/`) |
+
 Rejected: plugin marketplaces (Claude-only, unreviewed updates), git
 submodules (opaque SHA bumps), `npx skills add` (Node dependency, mixed
 provenance).
@@ -110,3 +118,4 @@ provenance).
 - Committing `vendor/` without `plugins.lock` (or vice versa) → `--check` fails; run `plug sync`, commit both.
 - Deleting `vendor/skills/README.md` → plugin load fails once no skills are vendored.
 - A skill path with spaces → unsupported; the conf is whitespace-split.
+- `plug verify` fails to write its cache in a sandboxed job → `PLUG_CACHE_DIR="$TMPDIR/plug" ./bin/plug verify`.
