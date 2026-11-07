@@ -45,7 +45,7 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; briefing lines
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; briefing lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
 set -euo pipefail
@@ -736,10 +736,10 @@ gate_md() {
 # job_publish JOB [STATUS] — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # A lane job (`lane=`) writes the PR from every lane job on the branch (lane_body);
-# STATUS is the job's own status, not final yet.
+# STATUS is the job's own status, not final yet. A job with `event=` (triage_fix) also comments its result.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title="" url lane stats feat
+  local d="$1" wt base branch ahead title="" url lane stats feat r
   local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
   ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
@@ -778,6 +778,11 @@ job_publish() {
     (cd "$wt" && gh api --method POST "repos/{owner}/{repo}/issues/${url##*/}/labels" -f 'labels[]=agent') >/dev/null 2>&1 || true
   fi
   echo "${url:-PR not created}" >"$d/pr"
+  if [[ -n "$(jget "$d/job" event)" && "$url" == http* ]]; then
+    r="$(jstate "$d" result)"
+    (cd "$wt" && gh api --method POST "repos/{owner}/{repo}/issues/${url##*/}/comments" \
+      -f "body=**Fix job** \`${d##*/}\`: ${r:-failed}") >/dev/null 2>&1 || true
+  fi
   if [[ -n "$feat" && "$url" == http* ]]; then feature_set_pr "$feat" "$(jget "$d/job" repo)" "$branch" "$url"; fi
 }
 
@@ -1455,6 +1460,7 @@ cmd_queue_answer() {
 
 # vibe queue fix URL TEXT... — a follow-up job on the branch of the PR at URL (its newest job,
 # queued or archived) with TEXT as the task; refuses while a job on that branch is queued or running.
+# VIBE_EVENT (triage_fix): the PR event the job answers, as `event=` in its job file.
 cmd_queue_fix() {
   local url="${1:-}" d tmp n
   (($# >= 2)) || die "usage: vibe queue fix <pr-url> <what to fix>"
@@ -1464,7 +1470,8 @@ cmd_queue_fix() {
   d="${d%/pr}"
   branch_idle "$d"
   tmp="$(follow_dir "$d")"
-  grep -v '^item=' "$tmp/job" >"$tmp/job.new" || true
+  grep -Ev '^(item|event)=' "$tmp/job" >"$tmp/job.new" || true
+  if [[ -n "${VIBE_EVENT:-}" ]]; then echo "event=$VIBE_EVENT" >>"$tmp/job.new"; fi
   mv -f "$tmp/job.new" "$tmp/job"
   task_append "$tmp/prompt.md" "Fix on $url (the task above is done; do only this): $*"
   n="$(queue_add "$tmp")"
@@ -2946,12 +2953,23 @@ cmd_job_run() {
 }
 
 # TRIAGE_JQ — one line per PR: number url head base mergeable red-checks new-comments.
-# Split by \037: a tab IFS collapses an empty field. New: after the last non-merge commit.
+# EVENT_JQ — one line per fix request, oldest first: number url since fresh id text. INLINE_JQ — ME's inline comments.
+# Split by \037: a tab IFS collapses an empty field. New, fresh: after the last non-merge commit.
+# `def me` goes in front at run time. `asked`: starts a fix job. `told`: job_publish's summary comment.
 # shellcheck disable=SC2016  # jq variables, not shell ones
-TRIAGE_JQ='.[] | ([.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "") as $t
+TRIAGE_DEFS='def since: [.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "";
+def asked: .author.login == me and ((.body | test("^/fix(\\s|$)")) or .state == "CHANGES_REQUESTED");
+def told: .body | startswith("**Fix job**");
+'
+# shellcheck disable=SC2016
+TRIAGE_JQ='.[] | since as $t
 | [.number, .url, .headRefName, .baseRefName, .mergeable,
    ([.statusCheckRollup[] | select((.conclusion // .state // "") | test("^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$")) | (.name // .context)] | join(", ")),
-   ([.comments[].createdAt, .reviews[].submittedAt] | map(select(. > $t)) | length)] | map(tostring) | join("\u001f")'
+   (.comments + .reviews | map(select((asked or told) | not) | .createdAt // .submittedAt | select(. > $t)) | length)] | map(tostring) | join("\u001f")'
+# shellcheck disable=SC2016
+EVENT_JQ='.[] | since as $t | .number as $n | .url as $u | (.comments + .reviews | sort_by(.createdAt // .submittedAt))[] | select(asked)
+| [$n, $u, $t, ((.createdAt // .submittedAt) > $t), .id, (.body | sub("^/fix\\s*"; "") | gsub("\\s+"; " "))] | map(tostring) | join("\u001f")'
+INLINE_JQ='.[] | select(.user.login == me and .created_at > since) | "\(.path):\(.line // .original_line // "?") \(.body | gsub("\\s+"; " "))"'
 
 # triage_merge REPO HEAD BASE — merge origin/BASE into origin/HEAD in a scratch
 # worktree and push; one line on what happened. Skips a branch a job runs on
@@ -2990,11 +3008,27 @@ triage_merge() {
   rm -rf "${tmp%/wt}"
 }
 
+# triage_fix REPO ME PR URL SINCE EVENT TEXT — a fix job for EVENT: TEXT and ME's inline comments
+# since SINCE; the agent has no gh, so its prompt carries them. One line on what happened.
+# A process of its own: a `die` in `queue fix` must not end the triage.
+triage_fix() {
+  local text="$7" inline msg
+  inline="$( (cd "$1" && gh api --paginate "repos/{owner}/{repo}/pulls/$3/comments?per_page=100" \
+    -q "def me: \"$2\"; def since: \"$5\"; $INLINE_JQ") 2>/dev/null || true)"
+  if [[ -n "$inline" ]]; then text="$text"$'\n'"$inline"; fi
+  if msg="$(VIBE_EVENT="$6" "$SELF_ROOT/bin/vibe" queue fix "$4" ${text:+"$text"} 2>&1)"; then
+    echo "fix job $msg"
+  else
+    echo "no fix job: ${msg#vibe: }"
+  fi
+}
+
 # vibe job triage [REPO...] — every open agent PR of every repo under the
-# root: merge the base into a conflicted one and push; red CI and unanswered
-# review comments become lines in QROOT/triage.md, which the briefing shows.
+# root: merge the base into a conflicted one and push; a `/fix` or "Request
+# changes" of your login starts one fix job; red CI and unanswered review
+# comments become lines in QROOT/triage.md, which the briefing shows.
 cmd_job_triage() {
-  local repo n url head base mergeable red comments out lines="" r
+  local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
   command -v gh >/dev/null 2>&1 || {
     echo "no gh — nothing to triage"
     return 0
@@ -3003,11 +3037,14 @@ cmd_job_triage() {
   if ((${#repos[@]} == 0)); then
     for r in "$JOBS_ROOT"/*/; do [[ ! -d "$r/.git" ]] || repos+=("${r%/}"); done
   fi
+  me="$(qconf pr_login "")"
+  if [[ -z "$me" ]]; then me="$(gh api user -q .login 2>/dev/null || true)"; fi
+  defs="def me: \"$me\"; $TRIAGE_DEFS"
   for repo in "${repos[@]+"${repos[@]}"}"; do
     repo="$(job_repo_path "$repo")"
     out="$( (cd "$repo" && gh pr list --label agent --state open \
       --json number,url,headRefName,baseRefName,mergeable,statusCheckRollup,comments,reviews,commits \
-      -q "$TRIAGE_JQ") 2>/dev/null || true)"
+      -q "$defs$TRIAGE_JQ") 2>/dev/null || true)"
     [[ -n "$out" ]] || continue
     git -C "$repo" fetch -q origin 2>/dev/null || warn "$(basename "$repo"): fetch failed"
     while IFS=$'\037' read -r n url head base mergeable red comments; do
@@ -3016,6 +3053,21 @@ cmd_job_triage() {
       if [[ "$mergeable" == CONFLICTING ]]; then lines+="$r $(triage_merge "$repo" "$head" "$base")"$'\n'; fi
       if [[ -n "$red" ]]; then lines+="$r CI red: $red"$'\n'; fi
       if ((comments > 0)); then lines+="$r unanswered review comments: $comments"$'\n'; fi
+    done <<<"$out"
+    # No login, no event: an empty `me` must not match an author.
+    [[ -n "$me" ]] || continue
+    out="$( (cd "$repo" && gh pr list --label agent --state open --json number,url,comments,reviews,commits \
+      -q "$defs$EVENT_JQ") 2>/dev/null || true)"
+    seen=""
+    while IFS=$'\037' read -r n url since fresh id text; do
+      [[ -n "$id" ]] || continue
+      if grep -qsxF "event=$id" "$QDIR"/*/job "$QROOT"/archive/*/*/job; then
+        seen="$url"
+        continue
+      fi
+      # A later commit answers an event, but a fix job's commits answer only the events of that job.
+      if [[ "$fresh" == false && "$seen" != "$url" ]]; then continue; fi
+      lines+="- $(basename "$repo") [#$n]($url): $(triage_fix "$repo" "$me" "$n" "$url" "$since" "$id" "$text")"$'\n'
     done <<<"$out"
   done
   mkdir -p "$QROOT"

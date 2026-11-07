@@ -29,7 +29,9 @@ contract and the installer's auto-discovery rules.
   and a usage-limit retry resume the saved session. Design: PR body.
 - 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
-  review comments as briefing lines; then `vibe job due`. Design: PR body.
+  review comments as briefing lines; then `vibe job due`. 2026-11-06: your
+  `/fix` there starts one fix job and one summary comment; another login stays
+  a briefing line. Design: PR body.
 - 2026-10-29: **the queue has a read-only phone page**: the runner writes
   `web/index.html` each pass, `tailscale serve` delivers it. 2026-11-04: its
   buttons post to the write endpoint `bin/vibe-web` (`/queue/api`, your
