@@ -67,4 +67,4 @@ Each looks like a real failure and is not. Symptom → fix.
 
 # Vendored pstack skills
 
-Before you follow a skill from `cursor-plugins`, read `~/github/agentic-dev-toolkit/docs/pstack-adapter.md`.
+When a skill links `../../docs/harness/claude-code.md`, read `$(dirname "$(readlink ~/.claude/CLAUDE.md)")/../docs/pstack-adapter.md` instead. Read it for `blast-radius` too.
