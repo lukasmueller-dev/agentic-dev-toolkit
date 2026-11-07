@@ -64,3 +64,7 @@ Each looks like a real failure and is not. Symptom → fix.
 - `git stash push` writes the commit but not `refs/stash` → compare against `git show HEAD:<path>` instead of stashing.
 - `git worktree prune` fails on placeholder files → run it unsandboxed.
 - Docker `permission denied` on `/var/run/docker.sock` in an interactive session → run the repo's Docker gate alone (no `cd`, redirect or `$(...)`); no gate entry in the repo → ask for the unsandboxed retry. In a vibe job both fail → skip Docker; the runner runs `.vibe-jobs/gate` after you.
+
+# Vendored pstack skills
+
+Before you follow a skill from `cursor-plugins`, read `~/github/agentic-dev-toolkit/docs/pstack-adapter.md`.
