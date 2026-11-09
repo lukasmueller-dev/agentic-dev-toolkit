@@ -2788,6 +2788,7 @@ cmd_feature_add() {
   [[ ! -e "$dst" ]] || die "feature '$name' exists: $dst"
   while IFS=$'\t' read -r r b _; do
     n=$((n + 1))
+    [[ "$r" == /* ]] || die "$r is not an absolute path — jobs match a member by their absolute repo"
     [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
     seen+="$r#$b"$'\n'
     git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
