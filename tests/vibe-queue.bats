@@ -190,9 +190,9 @@ putfeature() {
   cp "$(mkfeature "$@")" "$XDG_STATE_HOME/vibe/features/$1.md"
 }
 
-# parallel_set_pr SCRIPT — 20 rounds of two feature_set_pr calls at once (defined by SCRIPT); echoes the dir's leftover file count.
+# parallel_set_pr SCRIPT — 20 rounds of two feature_set_pr calls at once (defined by SCRIPT); each round must hold both URLs. Echoes the directory listing.
 parallel_set_pr() {
-  local d="$BATS_TEST_TMPDIR/feat" i pa pb
+  local d="$BATS_TEST_TMPDIR/feat" i n pa pb
   mkdir -p "$d"
   eval "$1"
   for i in $(seq 1 20); do
@@ -207,13 +207,12 @@ parallel_set_pr() {
     pb=$!
     wait "$pa" || return 1
     wait "$pb" || return 1
-    [ "$(wc -l <"$d/f.md")" = "$(wc -l <"$d/orig")" ] || return 1
-    awk 'NR == FNR { o[FNR] = $0; next } !($0 == o[FNR] || index($0, o[FNR] " https://u/") == 1) { bad = 1 } END { exit bad }' "$d/orig" "$d/f.md" || return 1
+    sed -e 's#^- /x/r1 b1$#& https://u/1#' -e 's#^- /x/r2 b2$#& https://u/2#' "$d/orig" | cmp -s - "$d/f.md" || return 1
   done
   ls "$d"
 }
 
-@test "feature_set_pr: two parallel calls leave a whole file and no temp file" {
+@test "feature_set_pr: two parallel calls keep both URLs in a whole file and leave no temp file or lock" {
   run parallel_set_pr "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
   [ "$status" -eq 0 ]
   [ "$output" = $'f.md\norig' ]
