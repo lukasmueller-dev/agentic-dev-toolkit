@@ -190,6 +190,35 @@ putfeature() {
   cp "$(mkfeature "$@")" "$XDG_STATE_HOME/vibe/features/$1.md"
 }
 
+# parallel_set_pr SCRIPT — 20 rounds of two feature_set_pr calls at once (defined by SCRIPT); echoes the dir's leftover file count.
+parallel_set_pr() {
+  local d="$BATS_TEST_TMPDIR/feat" i pa pb
+  mkdir -p "$d"
+  eval "$1"
+  for i in $(seq 1 20); do
+    {
+      printf '# F\n\n## Members\n\n'
+      for n in $(seq 1 200); do echo "- /x/r$n b$n"; done
+    } >"$d/f.md"
+    cp "$d/f.md" "$d/orig"
+    feature_set_pr "$d/f.md" /x/r1 b1 https://u/1 &
+    pa=$!
+    feature_set_pr "$d/f.md" /x/r2 b2 https://u/2 &
+    pb=$!
+    wait "$pa" || return 1
+    wait "$pb" || return 1
+    [ "$(wc -l <"$d/f.md")" = "$(wc -l <"$d/orig")" ] || return 1
+    awk 'NR == FNR { o[FNR] = $0; next } !($0 == o[FNR] || index($0, o[FNR] " https://u/") == 1) { bad = 1 } END { exit bad }' "$d/orig" "$d/f.md" || return 1
+  done
+  ls "$d"
+}
+
+@test "feature_set_pr: two parallel calls leave a whole file and no temp file" {
+  run parallel_set_pr "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'f.md\norig' ]
+}
+
 @test "feature: a member job's prompt ends with the feature block, once along a SPEC chain; another branch gets none" {
   local r w
   r="$(make_repo bridge)"
