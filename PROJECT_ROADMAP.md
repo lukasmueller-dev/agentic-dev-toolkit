@@ -21,11 +21,10 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
-- [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
-      review or a `/fix` comment starts a fix job; a red CI check later.
-      Done when a `/fix` comment from your login yields one fix job and one
-      summary comment on the PR, and a collaborator's comment only a
-      briefing line.
+- [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
+      the roadmap items the repo proves done or dead, with one proof line each.
+      Done when one recurring job per repo queues and its PR changes only
+      `PROJECT_ROADMAP.md`.
 
 ### Health items (repo review of 2026-11-03)
 
