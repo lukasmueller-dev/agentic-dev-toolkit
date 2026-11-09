@@ -56,6 +56,11 @@ systemctl --user list-timers vibe-jobs.timer
 | `repo-review` | monthly | report, 1h | `/code-review high .` on the whole repo: ranked findings with failure scenarios; report only |
 | `bib-check` | monthly | pr, 1h | `.bib` entries vs arXiv and doi.org: pinned old versions and missing DOIs as one commit, dead DOIs and published preprints as findings |
 | `eval-regression` | weekly, sat | pr, 30m, gpu | research repo: the canonical eval through `gpu-queue`; the follow-up compares the headline metric with the last run; a drop → roadmap item |
+| `shortcut-debt` | weekly, sat | report, 30m | `shortcut:` comments by one `git grep`: a crossed limit or a met upgrade condition |
+| `thermo-quality` | weekly, sat | report, 1h | the week's merged diff by `thermo-nuclear-code-quality-review`: maintainability only |
+| `lean-audit` | monthly | report, 1h | `lean-audit` on the whole repo: one line per finding, the full audit in the job dir |
+| `correct` | monthly | pr, 2h | `correct` with past review findings from the queue as evidence: one check per repeated mistake |
+| `verify-maintain` | monthly | pr, 2h | repo with a `verify-*` skill: `maintain-verification-skill`; a fix in `.claude/skills/` comes as a patch |
 
 New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 
@@ -103,4 +108,5 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - `/fix` starts nothing → triage runs at 01:00 and on the page's Triage PRs; the comment must start with `/fix`; a commit after it answers it, so write it again.
 - "Request changes" is off → GitHub refuses it on your own PR, and the runner's `gh` login opens the PRs. Use `/fix <text>`, or run `gh` as a second account with `pr_login=<you>`.
 - `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
+- `verify-maintain` leaves `verify-skill.patch` under "Needs you" → the job sandbox denies `.claude/skills/`; `git apply` the patch in a worktree.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.

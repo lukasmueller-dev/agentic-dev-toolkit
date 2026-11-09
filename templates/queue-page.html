@@ -114,6 +114,11 @@ body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
 .job p a { margin-left: 6px; padding-bottom: 1px; border-bottom: 1.5px solid var(--red); color: var(--ink); font: 600 13px var(--sans); text-decoration: none; }
 .job details { margin: 8px 0 0 19px; color: var(--body-2); font-size: 13px; }
 .job summary { color: var(--muted); font: 500 13px var(--sans); overflow-wrap: anywhere; cursor: pointer; }
+/* The phase line: ✓ done, ▶ running, ○ to come, ✗ failed in red. Open, it names the review passes. */
+.job .phases { color: var(--muted); font: 500 13px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
+.job .phases p { margin-left: 0; font-size: 13px; }
+.phases .r { color: var(--ink); }
+.phases .x { color: var(--red); }
 .job ol { margin: 6px 0 0; padding-left: 22px; }
 .job li { margin: 2px 0; overflow-wrap: anywhere; }
 .s-running > .top::before, .s-gpu > .top::before { background: var(--ink); border-color: var(--ink); animation: beat 1.6s steps(2, jump-none) infinite; }

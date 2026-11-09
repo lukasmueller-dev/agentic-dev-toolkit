@@ -130,6 +130,17 @@ setup() {
   done
 }
 
+@test "plugin: the memory hook points at the pstack adapter by a real path" {
+  # claude/CLAUDE.md is not loaded on this path, so this is the only pointer.
+  local h="$REPO_ROOT/claude/hooks/inject-global-memory.sh" adapter
+  adapter="$(cd -P "$REPO_ROOT" && pwd)/docs/pstack-adapter.md"
+  [ -f "$adapter" ]
+  run bash -c "printf '%s' '{\"source\":\"startup\"}' | bash '$h' | jq -r '.hookSpecificOutput.additionalContext'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"read \`$adapter\` instead"* ]] || false
+  [[ "$output" == *'../../docs/harness/claude-code.md'* ]] || false
+}
+
 @test "plugin: the memory hook fails open on junk" {
   local h="$REPO_ROOT/claude/hooks/inject-global-memory.sh"
   run bash -c "printf 'not json' | bash '$h'"

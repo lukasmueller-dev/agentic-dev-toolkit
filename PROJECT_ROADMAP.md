@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-07 · repo-review-fixes_
+_Last updated: 2026-11-09 · queue-verify-skills_
 
 ## Items
 
@@ -18,6 +18,14 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
+- [ ] **Keep one whole-repo audit job** — run `repo-review` and `lean-audit`
+      on one repo; delete the weaker job's catalogue file and its
+      `docs/vibe-jobs.md` row; decide if `codebase-health` keeps its dedup
+      and complexity scan. PR for `queue-verify-skills`.
+      Done when
+      `ls skills/recurring-jobs/references/jobs | grep -cE '^(repo-review|lean-audit)\.md$'`
+      prints `1` and `grep -n codebase-health PROJECT_STATUS.md` prints the
+      scan decision.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 

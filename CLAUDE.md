@@ -54,6 +54,10 @@ if `templates/HANDOFF.md`, `templates/PROJECT_STATUS.md`,
 `templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/FEATURE.md`, `templates/job-*.md`,
 or anything under `templates/codebase/` or `templates/research/` mentions one.
 
+**A rule in a `job-prompt.md` must not name a slot token like `<branch>`**:
+`render_template` fills it everywhere in the file. A catalogue job body is a
+value, not the template, so its `<…>` text is safe.
+
 ## Global memory lives in `memory/`
 
 `memory/GLOBAL.md` is installed to three different paths, one per agent, so it
