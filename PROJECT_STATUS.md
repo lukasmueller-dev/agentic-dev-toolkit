@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-07 · queue-verify-skills_
+_Last updated: 2026-11-09 · queue-verify-skills_
 
 ## Goal
 
@@ -21,6 +21,9 @@ contract and the installer's auto-discovery rules.
 ## Key decisions
 
 - 2026-11-07: **queue jobs run more skills**: each review round adds the `lean-review` rubric to `/code-review`; opt-in `verify=` adds a report-only `<id>-verify` step; `job_phases` feeds the page and status. Design: PR for `queue-verify-skills`.
+- 2026-11-07: **no repo hook runs with your credentials**: every unsandboxed
+  git call on an agent-written tree goes through `agent_git`/`agent_push`
+  (`core.hooksPath=/dev/null`). Details: `docs/vibe-queue.md`; calls: PR body.
 - 2026-11-02: **features across repos**: a job stays in one repo; a feature
   file links member branches in several repos into one row, one review
   decision and one merge batch after the human test. Design: PR body.
@@ -30,7 +33,9 @@ contract and the installer's auto-discovery rules.
   and a usage-limit retry resume the saved session. Design: PR body.
 - 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
-  review comments as briefing lines; then `vibe job due`. Design: PR body.
+  review comments as briefing lines; then `vibe job due`. 2026-11-06: your
+  `/fix` there starts one fix job and one summary comment; another login stays
+  a briefing line. Design: PR body.
 - 2026-10-29: **the queue has a read-only phone page**: the runner writes
   `web/index.html` each pass, `tailscale serve` delivers it. 2026-11-04: its
   buttons post to the write endpoint `bin/vibe-web` (`/queue/api`, your

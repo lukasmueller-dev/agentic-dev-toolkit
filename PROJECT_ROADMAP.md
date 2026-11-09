@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-07 · queue-verify-skills_
+_Last updated: 2026-11-09 · queue-verify-skills_
 
 ## Items
 
@@ -29,8 +29,33 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
-- [ ] **PR event follow-ups** — on an `agent` PR, your "Request changes"
-      review or a `/fix` comment starts a fix job; a red CI check later.
-      Done when a `/fix` comment from your login yields one fix job and one
-      summary comment on the PR, and a collaborator's comment only a
-      briefing line.
+- [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
+      the roadmap items the repo proves done or dead, with one proof line each.
+      Done when one recurring job per repo queues and its PR changes only
+      `PROJECT_ROADMAP.md`.
+
+### Health items (repo review of 2026-11-03)
+
+- [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
+      `<file>.tmp` (queue page, `feature_set_pr`, `feature_prompt`,
+      `cmd_feature_add`); two runners at once share the name. Use `mktemp` in
+      the file's directory.
+      Done when `grep -nE '"\$[a-z0-9]+\.tmp"' bin/vibe` prints nothing and a
+      bats test with two parallel `feature_set_pr` calls leaves a whole file
+      and no `.tmp`.
+- [ ] **[health] Absolute member paths in `vibe feature add`** — `is_member`
+      and `feature_of` compare the member path as a string with the job's
+      absolute `repo`; a relative path never matches, so its jobs miss the
+      feature. `cmd_feature_add` accepts it.
+      Done when a bats test shows `vibe feature add` with member `./repo <branch>`
+      exits non-zero and names the path.
+- [ ] **[health] Deny `git push` with a combined force flag** — the deny rules
+      name `-f` as a whole word, so `git push -uf origin x` passes (and `-fu`,
+      if `:*` ends at a word boundary).
+      Done when a bats test finds deny rules for `-fu` and `-uf` in
+      `claude/settings.json`, and `git push -u origin x` stays allowed.
+- [ ] **[health] Prove the job write fence** — `blockWritesOutsideWorkingDirectories`
+      is in `claude/vibe-job-settings.json`, but the settings reference did not
+      list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
+      Done when a smoke job's Write outside its worktree and job dir is
+      refused, and its `result` and `report.md` still land.

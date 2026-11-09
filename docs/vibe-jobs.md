@@ -30,7 +30,7 @@ systemctl --user enable --now vibe-jobs.timer
 ## 3. Verify
 
 ```bash
-vibe job list                            # repo × job: schedule, last run, due / stopped / invalid
+vibe job list                            # repo × job: schedule, last run, due / queued / stopped / invalid
 vibe job list --all                      # also the catalogue jobs each repo has not opted into
 vibe job due --dry                       # what the next 01:00 run queues
 vibe job run <repo> <job>                # one job now; then: vibe queue status
@@ -78,6 +78,7 @@ Rules the dispatcher keeps:
 
 - Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
 - At most `--max` 8 jobs a run, oldest `last-run` first.
+- A job with an unfinished copy in the queue (`queued`, `running`, `gpu`) is not queued again; `vibe job list` shows `queued`.
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
@@ -87,7 +88,13 @@ Rules the dispatcher keeps:
 Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 
 - `mergeable: CONFLICTING` → merge the base in a scratch worktree, push the head. A real conflict, a running job on the branch, or unpushed local commits: no push, one line.
-- A failed check, and comments or reviews newer than the last non-merge commit: one line each.
+- Your `/fix <text>` comment or review, or your "Request changes" review → one fix job (`vibe queue fix`). Its prompt gets the text and your inline comments since the last non-merge commit.
+- `event=<id>` in the job file keeps it to one job per event. When the job ends, one `**Fix job**` comment on the PR carries its `result`.
+- A later non-merge commit answers an event. The commits of a fix job answer only the events of that job.
+- Your login: `pr_login=` in `queue.conf`, else `gh api user`. No login: no fix job.
+- Another login: a briefing line. Its text reaches no prompt.
+- A job queued or running on the branch, a PR with no job, or no text: a `no fix job:` line. The next triage tries again.
+- A failed check, and other comments or reviews newer than the last non-merge commit: one line each.
 - The lines replace `triage.md`; the briefing shows them under `## Triage`. Nothing to report: no file.
 
 ## What breaks it
@@ -98,6 +105,8 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
+- `/fix` starts nothing → triage runs at 01:00 and on the page's Triage PRs; the comment must start with `/fix`; a commit after it answers it, so write it again.
+- "Request changes" is off → GitHub refuses it on your own PR, and the runner's `gh` login opens the PRs. Use `/fix <text>`, or run `gh` as a second account with `pr_login=<you>`.
 - `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `verify-maintain` leaves `verify-skill.patch` under "Needs you" → the job sandbox denies `.claude/skills/`; `git apply` the patch in a worktree.
 - `gh` fails inside the dispatcher → the sandbox hides the token; the cap check then counts 0 open PRs.

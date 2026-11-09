@@ -45,7 +45,7 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; briefing lines
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; briefing lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
 set -euo pipefail
@@ -162,8 +162,8 @@ open_worktree() {
     WT="$(worktree_dir "$branch")"
     [[ ! -e "$WT" ]] || die "$WT exists but does not hold branch '$branch'"
     ensure_worktree "$main" "$branch" "$WT" "origin/$def"
-  elif [[ -z "$(git -C "$WT" status --porcelain)" ]]; then
-    git -C "$WT" merge -q --ff-only '@{u}' 2>/dev/null || true
+  elif [[ -z "$(agent_git -C "$WT" status --porcelain)" ]]; then
+    agent_git -C "$WT" merge -q --ff-only '@{u}' 2>/dev/null || true
   fi
   for s in "$SELF_ROOT"/*/vibe-start.sh; do
     if [[ -f "$s" ]] && ! bash "$s" "$WT" "$(basename "$main")-$branch"; then
@@ -233,20 +233,20 @@ sync_wt() {
   if [[ -d "$dir" && -z "$br" ]]; then
     res="detached"
   elif [[ -d "$dir" ]]; then
-    [[ -z "$(git -C "$dir" status --porcelain)" ]] || dirty=1
+    [[ -z "$(agent_git -C "$dir" status --porcelain)" ]] || dirty=1
     if [[ -n "$dirty" && "$WIP" == 1 && "$br" != "$def" && -z "$locked" ]]; then
-      git -C "$dir" add -A && git -C "$dir" commit -q -m "wip: $(hostname) $(date '+%Y-%m-%d %H:%M')" && dirty="" && note="wip committed"
+      agent_git -C "$dir" add -A && agent_git -C "$dir" commit -q -m "wip: $(hostname) $(date '+%Y-%m-%d %H:%M')" && dirty="" && note="wip committed"
     fi
-    if ! counts="$(git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
-      if [[ "$dir" == "$main" ]]; then
+    if ! counts="$(agent_git -C "$dir" rev-list --left-right --count 'HEAD...@{u}' 2>/dev/null)"; then
+      if [[ "$dir" == "$main" || "$br" == "$def" ]]; then
         res="no-upstream"
-      elif git -C "$dir" config "branch.$br.merge" >/dev/null; then
-        res="merged" note="upstream gone — /worktree-cleanup"
+      elif agent_git -C "$dir" config "branch.$br.merge" >/dev/null; then
+        res="gone" note="upstream deleted — /worktree-cleanup checks for a merged PR"
       elif [[ "$br" == worktree-* ]]; then
         res="local" note="app session branch, not pushed"
-      elif [[ "$(git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
+      elif [[ "$(agent_git -C "$dir" rev-list --count "origin/$def..HEAD" 2>/dev/null || echo 0)" == 0 ]]; then
         res="empty" note="no commits yet"
-      elif git -C "$dir" push -q -u origin "$br" 2>/dev/null; then
+      elif agent_push "$dir" -q -u origin "$br" 2>/dev/null; then
         res="pushed"
       else
         res="error" note="push failed" rc=1
@@ -255,18 +255,19 @@ sync_wt() {
       read -r ahead behind <<<"$counts"
       if ((ahead > 0 && behind > 0)); then
         res="diverged"
-      elif ((ahead > 0)) && [[ "$dir" == "$main" ]]; then
-        res="ahead" note="main checkout is never pushed"
+      elif ((ahead > 0)) && [[ "$dir" == "$main" || "$br" == "$def" ]]; then
+        res="ahead" note="the default branch is never pushed"
       elif ((ahead > 0)); then
-        if git -C "$dir" push -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
+        if agent_push "$dir" -q origin "$br" 2>/dev/null; then res="pushed"; else res="error" note="push failed" rc=1; fi
       elif ((behind > 0)) && [[ -n "$dirty" || -n "$locked" ]]; then
         res="behind"
       elif ((behind > 0)) && [[ "$dir" == "$main" && "$(cd -P "$main" && pwd)" == "$TOOLKIT" ]]; then
         res="behind" note="run: vibe update-toolkit"
       elif ((behind > 0)); then
-        if git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
+        if agent_git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
       fi
     fi
+    if [[ "$note" == "push failed" ]] && uses_lfs "$dir"; then note="push failed (git-lfs: push by hand)"; fi
     [[ -z "$dirty" ]] || note="${note:+$note, }dirty"
     [[ -z "$locked" ]] || note="${note:+$note, }locked"
     [[ "$dir" != "$main" || "$br" == "$def" ]] || note="${note:+$note, }off $def"
@@ -388,10 +389,13 @@ job_timeout() {
 }
 
 # job_end JOB STATUS NOTE — final status of a job; a recurring job also
-# updates its last-run / fails state (docs/vibe-jobs.md).
+# updates its last-run / fails state (docs/vibe-jobs.md). `gpu` never replaces
+# a final status: a fast GPU run's `queue follow` has ended the job first.
 job_end() {
-  echo "$2" >"$1/status"
-  echo "$3" >"$1/note"
+  if [[ "$2" != gpu ]] || ! job_final "$1"; then
+    echo "$2" >"$1/status"
+    echo "$3" >"$1/note"
+  fi
   date '+%F %T' >"$1/ended"
   rm -f "$1/pid"
   [[ -z "$(jget "$1/job" recurring)" ]] || job_state_update "$1" "$2"
@@ -401,6 +405,13 @@ job_end() {
 job_final() {
   case "$(jstate "$1" status)" in "done" | blocked | failed | timeout | skipped) return 0 ;; esac
   return 1
+}
+
+# job_settled JOB — true when the job is final and its process no longer writes: `queue follow`
+# sets `done` while the runner still gates and publishes (a pid file, no `ended` file).
+job_settled() {
+  job_final "$1" || return 1
+  [[ ! -e "$1/pid" || -e "$1/ended" ]]
 }
 
 # branch_ok BRANCH — a slug, or jobs/<slug> (a recurring job's branch).
@@ -489,7 +500,7 @@ job_prepare() {
   wt="$(worktree_of "$main" "$branch")"
   # A GPU follow-up or a job a usage limit stopped resumes in its own dirty worktree.
   if [[ -n "$wt" && "$(jget "$d/job" follow)" != 1 ]] && ! same_dir "$(jstate "$d" worktree)" "$wt" &&
-    [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
+    [[ -n "$(agent_git -C "$wt" status --porcelain)" ]]; then
     job_end "$d" skipped "$wt has uncommitted changes"
     return 0
   fi
@@ -498,7 +509,7 @@ job_prepare() {
     return 0
   fi
   open_worktree "$main" "$branch" "$def"
-  if [[ "$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
+  if [[ "$(agent_git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)" != "$branch" ]]; then
     job_end "$d" failed "no worktree for '$branch'"
     return 0
   fi
@@ -509,7 +520,7 @@ job_prepare() {
   feature_prompt "$d"
   if [[ -n "$(jget "$d/job" lane)" ]]; then
     # A job a usage limit stopped keeps its first start commit.
-    [[ -f "$d/start" ]] || git -C "$WT" rev-parse HEAD >"$d/start"
+    [[ -f "$d/start" ]] || agent_git -C "$WT" rev-parse HEAD >"$d/start"
     lane_body "$d" running >"$d/lane-pr.md"
   fi
 }
@@ -537,8 +548,8 @@ pr_title_fallback() {
 job_gate() {
   local d="$1" wt cmd rc=0
   wt="$(jstate "$d" worktree)"
-  git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
-  cmd="$(git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
+  agent_git -C "$wt" fetch -q origin "refs/heads/$(jstate "$d" base)" 2>/dev/null || return 0
+  cmd="$(agent_git -C "$wt" show FETCH_HEAD:.vibe-jobs/gate 2>/dev/null || true)"
   [[ -n "$cmd" ]] || return 0
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$(job_timeout "$d")"); fi
@@ -648,13 +659,13 @@ lane_leave() {
   [[ -n "$start" ]] || return 0
   wt="$(jstate "$d" worktree)" branch="$(jget "$d/job" branch)"
   item="$(job_item "$d")" side="$branch-$item"
-  if [[ -n "$(git -C "$wt" status --porcelain)" ]]; then
-    git -C "$wt" add -A && git -C "$wt" commit -q --no-verify -m "wip: $item ($2)" || return 0
+  if [[ -n "$(agent_git -C "$wt" status --porcelain)" ]]; then
+    agent_git -C "$wt" add -A && agent_git -C "$wt" commit -q -m "wip: $item ($2)" || return 0
   fi
-  git -C "$wt" branch -f "$side" HEAD || return 0
-  git -C "$wt" reset -q --hard "$start" || return 0
+  agent_git -C "$wt" branch -f "$side" HEAD || return 0
+  agent_git -C "$wt" reset -q --hard "$start" || return 0
   echo "$side" >"$d/side"
-  git -C "$wt" push -q --force origin "$side" || echo "push of $side failed" >&2
+  agent_push "$wt" -q --force origin "$side" || echo "push of $side failed" >&2
 }
 
 # epoch_of 'YYYY-MM-DD HH:MM:SS' — the epoch seconds of a local time, GNU or BSD date; empty when malformed.
@@ -689,14 +700,21 @@ job_delta() {
 # job_limit_pct JOB — the job's share of its 5h-limit delta in %: its $ over the $ of every
 # job that ran at the same time (the job included), each scaled by its overlap time.
 # Empty when the delta or any overlapping job's cost is missing. Interactive use is not in the sum.
+# A job that ended before this one started is skipped by its `ended` string: no fork, no log.
 job_limit_pct() {
-  local d="$1" delta s e k ks ke ov c rows="" self=""
+  local d="$1" delta s e k ks ke ov c rows="" self="" from="" end
+  local re='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$'
   delta="$(job_delta "$d")"
   read -r s e <<<"$(job_span "$d")"
   [[ -n "$delta" && -n "${s:-}" ]] || return 0
+  [[ ! -f "$d/started" ]] || read -r from <"$d/started" || true
+  [[ "$from" =~ $re ]] || from=""
   for k in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
     k="${k%/}"
     [[ -f "$k/started" ]] || continue
+    end=""
+    [[ ! -f "$k/ended" ]] || read -r end <"$k/ended" || true
+    if [[ -n "$from" && "$end" =~ $re && "$end" < "$from" ]]; then continue; fi
     read -r ks ke <<<"$(job_span "$k")"
     [[ -n "${ks:-}" ]] || continue
     # Times have 1s resolution: a run from t to t spans one second.
@@ -748,17 +766,17 @@ gate_md() {
 # job_publish JOB [STATUS] — push the job's commits; open a draft PR from JOB/pr.md,
 # or replace the body of the PR already open on the branch. Label: agent.
 # A lane job (`lane=`) writes the PR from every lane job on the branch (lane_body);
-# STATUS is the job's own status, not final yet.
+# STATUS is the job's own status, not final yet. A job with `event=` (triage_fix) also comments its result.
 # `gh pr edit` fails on gh 2.45 (it asks for the removed projectCards); gh api does not.
 job_publish() {
-  local d="$1" wt base branch ahead title="" url lane stats feat
+  local d="$1" wt base branch ahead title="" url lane stats feat r
   local -a tflag=()
   wt="$(jstate "$d" worktree)" base="$(jstate "$d" base)" branch="$(jget "$d/job" branch)"
-  ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
+  ahead="$(agent_git -C "$wt" rev-list --count "origin/$base..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0)) || return 0
   clear_config_lock "$wt"
-  if ! git -C "$wt" push -q -u origin "$branch"; then
-    echo "push failed" >"$d/pr"
+  if ! agent_push "$wt" -q -u origin "$branch"; then
+    if uses_lfs "$wt"; then echo "push failed (git-lfs: push by hand)" >"$d/pr"; else echo "push failed" >"$d/pr"; fi
     return 0
   fi
   command -v gh >/dev/null 2>&1 || return 0
@@ -790,6 +808,11 @@ job_publish() {
     (cd "$wt" && gh api --method POST "repos/{owner}/{repo}/issues/${url##*/}/labels" -f 'labels[]=agent') >/dev/null 2>&1 || true
   fi
   echo "${url:-PR not created}" >"$d/pr"
+  if [[ -n "$(jget "$d/job" event)" && "$url" == http* ]]; then
+    r="$(jstate "$d" result)"
+    (cd "$wt" && gh api --method POST "repos/{owner}/{repo}/issues/${url##*/}/comments" \
+      -f "body=**Fix job** \`${d##*/}\`: ${r:-failed}") >/dev/null 2>&1 || true
+  fi
   if [[ -n "$feat" && "$url" == http* ]]; then feature_set_pr "$feat" "$(jget "$d/job" repo)" "$branch" "$url"; fi
 }
 
@@ -894,7 +917,7 @@ job_after() {
 review_due() {
   local d="$1" ahead
   [[ "$(job_after "$d")" == review && "$(jget "$d/job" output)" != report ]] || return 1
-  ahead="$(git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
+  ahead="$(agent_git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0))
 }
 
@@ -966,7 +989,7 @@ review_big() {
     [[ -n "$file" ]] || continue
     case "$file" in *.md) ;; *) big=1 ;; esac
     lines=$((lines + ${add//-/0} + ${del//-/0}))
-  done < <(git -C "$1" diff --numstat "$2" HEAD)
+  done < <(agent_git -C "$1" diff --numstat "$2" HEAD)
   ((big || lines > $(qconf review_trivial 20)))
 }
 
@@ -1029,7 +1052,7 @@ job_review() {
     if ((count == 1)); then s=""; fi
     line="R$n: $count finding$s"
     if ((count > 0)); then
-      before="$(git -C "$wt" rev-parse HEAD)"
+      before="$(agent_git -C "$wt" rev-parse HEAD)"
       review_fix "$d" "$t" || rc=$?
       if stopped "$d"; then return 0; fi
       if ((rc == 124)); then
@@ -1288,8 +1311,16 @@ cmd_queue_run() {
             job_end "$d" failed "job process died twice"
           fi
           ;;
+        "done")
+          # `queue follow` marked a job that still published; its process died before `job_end`.
+          if [[ -s "$d/pid" && ! -e "$d/ended" ]] && ! kill -0 "$(jstate "$d" pid)" 2>/dev/null; then
+            job_end "$d" "done" "$(jstate "$d" note)"
+          fi
+          ;;
         gpu) waiting=$((waiting + 1)) ;;
-        "" | queued) queued+=("$d") ;;
+        "" | queued)
+          if follow_ready "$d"; then queued+=("$d"); else waiting=$((waiting + 1)); fi
+          ;;
       esac
     done
     order="$(queue_order "${queued[@]+"${queued[@]}"}")"
@@ -1343,7 +1374,7 @@ cmd_queue_archive() {
   a="$QROOT/archive/$(date +%Y-%m)"
   for d in "$@"; do
     d="$(queue_job "$d")"
-    job_final "$d" || die "${d##*/} has not ended ($(jstate "$d" status)) — archive it once it has"
+    job_settled "$d" || die "${d##*/} has not ended ($(jstate "$d" status)) — archive it once it has"
     mkdir -p "$a"
     mv "$d" "$a/"
     echo "archived ${d##*/}"
@@ -1535,6 +1566,7 @@ cmd_queue_answer() {
 
 # vibe queue fix URL TEXT... — a follow-up job on the branch of the PR at URL (its newest job,
 # queued or archived) with TEXT as the task; refuses while a job on that branch is queued or running.
+# VIBE_EVENT (triage_fix): the PR event the job answers, as `event=` in its job file.
 cmd_queue_fix() {
   local url="${1:-}" d tmp n
   (($# >= 2)) || die "usage: vibe queue fix <pr-url> <what to fix>"
@@ -1544,7 +1576,8 @@ cmd_queue_fix() {
   d="${d%/pr}"
   branch_idle "$d"
   tmp="$(follow_dir "$d")"
-  grep -v '^item=' "$tmp/job" >"$tmp/job.new" || true
+  grep -Ev '^(item|event)=' "$tmp/job" >"$tmp/job.new" || true
+  if [[ -n "${VIBE_EVENT:-}" ]]; then echo "event=$VIBE_EVENT" >>"$tmp/job.new"; fi
   mv -f "$tmp/job.new" "$tmp/job"
   task_append "$tmp/prompt.md" "Fix on $url (the task above is done; do only this): $*"
   n="$(queue_add "$tmp")"
@@ -1754,15 +1787,16 @@ cmd_queue_gpu() {
   echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
-# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1 and the
+# follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
 # KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
 follow_job() {
-  local from="$1" to="$2" l keys=follow
+  local from="$1" to="$2" l keys="follow|parent"
   shift 2
   for l in "$@"; do keys+="|${l%%=*}"; done
   {
     grep -Ev "^($keys)=" "$from/job" || true
     echo "follow=1"
+    echo "parent=${from##*/}"
     for l in "$@"; do echo "$l"; done
   } >"$to/job"
 }
@@ -1791,7 +1825,21 @@ cmd_queue_follow() {
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
   follow_job "$p" "$f"
-  job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
+  if [[ "$(jstate "$p" status)" == running && ! -e "$p/ended" ]]; then
+    # The job still publishes: its own job_end writes `ended`, and the follow-up waits for it.
+    echo "done" >"$p/status"
+    echo "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}" >"$p/note"
+  else
+    # Any other state (gpu, a requeued job) has no process left to write `ended`.
+    job_end "$p" "done" "GPU run exit ${GPUQ_EXIT:-?} → ${f##*/}"
+  fi
+}
+
+# follow_ready JOB — false while JOB is a follow-up whose parent job has no `ended` file.
+follow_ready() {
+  local p
+  p="$(jget "$1/job" parent)"
+  [[ -z "$p" || ! -d "$QDIR/$p" || -e "$QDIR/$p/ended" ]]
 }
 
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
@@ -2149,10 +2197,20 @@ status_card() {
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.
+# The Lua filter turns raw HTML into code and a link or image with a scheme other than
+# http, https or mailto (`javascript:`, `data:`) into its text.
 md_html() {
-  local md out
+  local md out raw='
+function RawBlock(e) return pandoc.CodeBlock(e.text) end
+function RawInline(e) return pandoc.Code(e.text) end
+local function ok(u)
+  local s = u:gsub("[%c%s]", ""):lower():match("^([a-z][a-z0-9+.-]*):")
+  return not s or s == "http" or s == "https" or s == "mailto"
+end
+function Link(l) if not ok(l.target) then return l.content end end
+function Image(i) if not ok(i.src) then return i.caption end end'
   md="$(sed -E 's/\[([^]]*)\]\(file:[^)]*\)/\1/g')"
-  if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers -t html 2>/dev/null)"; then
+  if command -v pandoc >/dev/null 2>&1 && out="$(printf '%s\n' "$md" | pandoc -f gfm-gfm_auto_identifiers --lua-filter=<(printf '%s\n' "$raw") -t html 2>/dev/null)"; then
     printf '%s\n' "$out"
   else
     printf '<pre>%s</pre>\n' "$(esc "$md")"
@@ -2335,7 +2393,7 @@ report_rows() {
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
-    job_final "$d" || continue
+    job_settled "$d" || continue
     cls="$(jstate "$d" status)"
     if [[ "$cls" == "done" ]] && checks_failed "$d"; then cls=gate; fi
     # A done member job is in its feature's row.
@@ -2607,24 +2665,25 @@ is_member() {
 
 # feature_row FILE — F_PILL, F_PROGRESS (done/members), F_ITEMS (a `<repo> · <branch>  <status>  <note>`
 # line per member that needs you) and F_MEMBERS (`repo|branch|pr|state|note` per member).
-# A member is done with a PR and no job queued, running or in need of you; without
-# either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
+# A member is done with a PR and no job queued, running or in need of you (a done job with a
+# failed gate does); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
 feature_row() {
-  local f="$1" r b p j st ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
+  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
   F_ITEMS="" F_MEMBERS=""
   while IFS=$'\t' read -r r b p; do
     n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
-      any=1 st="$(jstate "$j" status)"
+      any=1 st="$(jstate "$j" status)" jn="$(jstate "$j" note)$(side_suffix "$j")"
       [[ ! -f "$j/held" ]] || st=held
+      if [[ "$st" == "done" && "$(jstate "$j" gate)" =~ ^[1-9] ]]; then st=gate jn="gate exit $(jstate "$j" gate)"; fi
       case "$st" in
         running | gpu) mrun=1 ;;
         "" | queued) mwait=1 ;;
-        held | blocked | failed | timeout | skipped)
-          if [[ -z "$ms" ]]; then ms="$st" note="$(jstate "$j" note)$(side_suffix "$j")"; fi
+        held | blocked | failed | timeout | skipped | gate)
+          if [[ -z "$ms" ]]; then ms="$st" note="$jn"; fi
           if [[ "$st" == held ]]; then ms=held note="$(jstate "$j" held)"; fi
-          F_ITEMS+="${r##*/} · $b  $st  $(jstate "$j" note)$(side_suffix "$j")"$'\n'
+          F_ITEMS+="${r##*/} · $b  $st  $jn"$'\n'
           ;;
       esac
       if [[ -z "$p" && "$(jstate "$j" pr)" == http* ]]; then p="$(jstate "$j" pr)"; fi
@@ -2889,7 +2948,19 @@ job_state_update() {
   esac
 }
 
-# job_due REPO JOB — "due", "stopped" (two failures), "not due", "invalid".
+# job_live REPO JOB — true when the queue holds an unfinished copy of the recurring job.
+job_live() {
+  local d
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    [[ "$(jget "$d/job" recurring)" == "$2" && "$(jget "$d/job" repo)" == "$1" ]] || continue
+    if ! job_final "$d"; then return 0; fi
+  done
+  return 1
+}
+
+# job_due REPO JOB — "due", "stopped" (two failures), "queued" (a copy is in
+# the queue), "not due", "invalid".
 job_due() {
   local repo="$1" job="$2" sched day last fails now period today
   [[ "$(job_check "$repo" "$job")" == ok ]] || {
@@ -2899,6 +2970,10 @@ job_due() {
   fails="$(job_state "$repo" "$job" fails)"
   if ((${fails:-0} >= 2)); then
     echo stopped
+    return 0
+  fi
+  if job_live "$repo" "$job"; then
+    echo queued
     return 0
   fi
   sched="$(job_key "$repo" "$job" schedule "")" day="$(job_key "$repo" "$job" day "")"
@@ -3113,12 +3188,23 @@ cmd_job_run() {
 }
 
 # TRIAGE_JQ — one line per PR: number url head base mergeable red-checks new-comments.
-# Split by \037: a tab IFS collapses an empty field. New: after the last non-merge commit.
+# EVENT_JQ — one line per fix request, oldest first: number url since fresh id text. INLINE_JQ — ME's inline comments.
+# Split by \037: a tab IFS collapses an empty field. New, fresh: after the last non-merge commit.
+# `def me` goes in front at run time. `asked`: starts a fix job. `told`: job_publish's summary comment.
 # shellcheck disable=SC2016  # jq variables, not shell ones
-TRIAGE_JQ='.[] | ([.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "") as $t
+TRIAGE_DEFS='def since: [.commits[] | select(.messageHeadline | startswith("Merge ") | not) | .committedDate] | max // "";
+def asked: .author.login == me and ((.body | test("^/fix(\\s|$)")) or .state == "CHANGES_REQUESTED");
+def told: .body | startswith("**Fix job**");
+'
+# shellcheck disable=SC2016
+TRIAGE_JQ='.[] | since as $t
 | [.number, .url, .headRefName, .baseRefName, .mergeable,
    ([.statusCheckRollup[] | select((.conclusion // .state // "") | test("^(FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED|STARTUP_FAILURE)$")) | (.name // .context)] | join(", ")),
-   ([.comments[].createdAt, .reviews[].submittedAt] | map(select(. > $t)) | length)] | map(tostring) | join("\u001f")'
+   (.comments + .reviews | map(select((asked or told) | not) | .createdAt // .submittedAt | select(. > $t)) | length)] | map(tostring) | join("\u001f")'
+# shellcheck disable=SC2016
+EVENT_JQ='.[] | since as $t | .number as $n | .url as $u | (.comments + .reviews | sort_by(.createdAt // .submittedAt))[] | select(asked)
+| [$n, $u, $t, ((.createdAt // .submittedAt) > $t), .id, (.body | sub("^/fix\\s*"; "") | gsub("\\s+"; " "))] | map(tostring) | join("\u001f")'
+INLINE_JQ='.[] | select(.user.login == me and .created_at > since) | "\(.path):\(.line // .original_line // "?") \(.body | gsub("\\s+"; " "))"'
 
 # triage_merge REPO HEAD BASE — merge origin/BASE into origin/HEAD in a scratch
 # worktree and push; one line on what happened. Skips a branch a job runs on
@@ -3138,30 +3224,46 @@ triage_merge() {
     return 0
   fi
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-triage.XXXXXX")/wt"
-  if ! git -C "$repo" worktree add -q --detach "$tmp" "origin/$head" >/dev/null 2>&1; then
+  if ! agent_git -C "$repo" worktree add -q --detach "$tmp" "origin/$head" >/dev/null 2>&1; then
     echo "conflicts with $base; not merged: no origin/$head"
     return 0
   fi
-  if git -C "$tmp" merge -q --no-edit -m "Merge branch '$base' into $head" "origin/$base" >/dev/null 2>&1; then
-    if git -C "$tmp" push -q origin "HEAD:refs/heads/$head" 2>/dev/null; then
+  if agent_git -C "$tmp" merge -q --no-edit -m "Merge branch '$base' into $head" "origin/$base" >/dev/null 2>&1; then
+    if agent_push "$tmp" -q origin "HEAD:refs/heads/$head" 2>/dev/null; then
       echo "merged $base and pushed"
     else
       echo "merged $base; push failed"
     fi
   else
-    files="$(git -C "$tmp" diff --name-only --diff-filter=U | tr '\n' ' ')"
-    git -C "$tmp" merge --abort 2>/dev/null || true
+    files="$(agent_git -C "$tmp" diff --name-only --diff-filter=U | tr '\n' ' ')"
+    agent_git -C "$tmp" merge --abort 2>/dev/null || true
     echo "conflicts with $base in ${files% }: needs a hand merge"
   fi
-  git -C "$repo" worktree remove --force "$tmp" 2>/dev/null || true
+  agent_git -C "$repo" worktree remove --force "$tmp" 2>/dev/null || true
   rm -rf "${tmp%/wt}"
 }
 
+# triage_fix REPO ME PR URL SINCE EVENT TEXT — a fix job for EVENT: TEXT and ME's inline comments
+# since SINCE; the agent has no gh, so its prompt carries them. One line on what happened.
+# A process of its own: a `die` in `queue fix` must not end the triage.
+triage_fix() {
+  local text="$7" inline msg
+  inline="$( (cd "$1" && gh api --paginate "repos/{owner}/{repo}/pulls/$3/comments?per_page=100" \
+    -q "def me: \"$2\"; def since: \"$5\"; $INLINE_JQ") 2>/dev/null || true)"
+  if [[ -n "$inline" ]]; then text="$text"$'\n'"$inline"; fi
+  if msg="$(VIBE_EVENT="$6" "$SELF_ROOT/bin/vibe" queue fix "$4" ${text:+"$text"} 2>&1)"; then
+    echo "fix job $msg"
+  else
+    echo "no fix job: ${msg#vibe: }"
+  fi
+}
+
 # vibe job triage [REPO...] — every open agent PR of every repo under the
-# root: merge the base into a conflicted one and push; red CI and unanswered
-# review comments become lines in QROOT/triage.md, which the briefing shows.
+# root: merge the base into a conflicted one and push; a `/fix` or "Request
+# changes" of your login starts one fix job; red CI and unanswered review
+# comments become lines in QROOT/triage.md, which the briefing shows.
 cmd_job_triage() {
-  local repo n url head base mergeable red comments out lines="" r
+  local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
   command -v gh >/dev/null 2>&1 || {
     echo "no gh — nothing to triage"
     return 0
@@ -3170,11 +3272,14 @@ cmd_job_triage() {
   if ((${#repos[@]} == 0)); then
     for r in "$JOBS_ROOT"/*/; do [[ ! -d "$r/.git" ]] || repos+=("${r%/}"); done
   fi
+  me="$(qconf pr_login "")"
+  if [[ -z "$me" ]]; then me="$(gh api user -q .login 2>/dev/null || true)"; fi
+  defs="def me: \"$me\"; $TRIAGE_DEFS"
   for repo in "${repos[@]+"${repos[@]}"}"; do
     repo="$(job_repo_path "$repo")"
     out="$( (cd "$repo" && gh pr list --label agent --state open \
       --json number,url,headRefName,baseRefName,mergeable,statusCheckRollup,comments,reviews,commits \
-      -q "$TRIAGE_JQ") 2>/dev/null || true)"
+      -q "$defs$TRIAGE_JQ") 2>/dev/null || true)"
     [[ -n "$out" ]] || continue
     git -C "$repo" fetch -q origin 2>/dev/null || warn "$(basename "$repo"): fetch failed"
     while IFS=$'\037' read -r n url head base mergeable red comments; do
@@ -3183,6 +3288,21 @@ cmd_job_triage() {
       if [[ "$mergeable" == CONFLICTING ]]; then lines+="$r $(triage_merge "$repo" "$head" "$base")"$'\n'; fi
       if [[ -n "$red" ]]; then lines+="$r CI red: $red"$'\n'; fi
       if ((comments > 0)); then lines+="$r unanswered review comments: $comments"$'\n'; fi
+    done <<<"$out"
+    # No login, no event: an empty `me` must not match an author.
+    [[ -n "$me" ]] || continue
+    out="$( (cd "$repo" && gh pr list --label agent --state open --json number,url,comments,reviews,commits \
+      -q "$defs$EVENT_JQ") 2>/dev/null || true)"
+    seen=""
+    while IFS=$'\037' read -r n url since fresh id text; do
+      [[ -n "$id" ]] || continue
+      if grep -qsxF "event=$id" "$QDIR"/*/job "$QROOT"/archive/*/*/job; then
+        seen="$url"
+        continue
+      fi
+      # A later commit answers an event, but a fix job's commits answer only the events of that job.
+      if [[ "$fresh" == false && "$seen" != "$url" ]]; then continue; fi
+      lines+="- $(basename "$repo") [#$n]($url): $(triage_fix "$repo" "$me" "$n" "$url" "$since" "$id" "$text")"$'\n'
     done <<<"$out"
   done
   mkdir -p "$QROOT"

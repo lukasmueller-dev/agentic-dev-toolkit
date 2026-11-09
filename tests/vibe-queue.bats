@@ -37,11 +37,18 @@ case "\$prompt" in
 esac
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt'
+    echo "queued: training" >"\$VIBE_JOB_DIR/result"
+    ;;
+  gpurace)
+    echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
+    "$VIBE" queue gpu -- true
+    GPUQ_EXIT=0 "$VIBE" queue follow "\$VIBE_JOB_DIR"
+    sleep 1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   ok)
@@ -280,6 +287,21 @@ putfeature() {
   [ -f "$F/teleop.ready" ]
 }
 
+@test "feature: a done member job with a failed gate needs you" {
+  putfeature teleop "$BATS_TEST_TMPDIR/bridge sticks" "$BATS_TEST_TMPDIR/cmdr gamepad"
+  mkjob 01-a "$BATS_TEST_TMPDIR/bridge" sticks ok
+  mkjob 02-b "$BATS_TEST_TMPDIR/cmdr" gamepad ok
+  echo "done" >"$Q/01-a/status"
+  echo "done" >"$Q/02-b/status"
+  echo https://example.com/pull/1 >"$Q/01-a/pr"
+  echo https://example.com/pull/2 >"$Q/02-b/pr"
+  echo 3 >"$Q/01-a/gate"
+  run "$VIBE" queue status
+  [[ "$output" == *$'\n  teleop · 1/2 · needs you\n'*$'\n    bridge · sticks  gate  gate exit 3\n'* ]] || false
+  echo 0 >"$Q/01-a/gate"
+  [ "$("$VIBE" queue status | grep -c '^  teleop · 2/2 · your test$')" = 1 ]
+}
+
 @test "page: a feature is one card on top; one click unpacks a lane card, a job card and a card with no job" {
   local r1 r2 f="$XDG_STATE_HOME/vibe/web/index.html"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
@@ -495,6 +517,31 @@ putfeature() {
   [ ! -e "$r/.git/config.lock" ]
 }
 
+@test "run: a relative core.hooksPath runs no hook of the job's tree on the runner's push" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+  [ ! -e "$m" ]
+}
+
+@test "run: the runner does not push a git-lfs tree with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  mkjob 01-a "$r" task-a ok
+  PATH="$lfs:$PATH" drain
+  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+}
+
 @test "run: a config.lock with content, or a writable one, stays" {
   local r
   r="$(make_repo proj)"
@@ -594,6 +641,34 @@ putfeature() {
   run grep -c -- '--head lane-x-beta' "$STUBS/gh.log"
   [ "$output" = 0 ]
   grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
+}
+
+@test "run: a relative core.hooksPath runs no post-checkout hook when a job resumes a branch whose worktree is gone" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" post-checkout
+  git -C "$r" push -q origin main:refs/heads/task-a
+  git -C "$r" branch task-b main
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" task-a ok
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+  [ ! -e "$m" ]
+}
+
+@test "lane: a relative core.hooksPath runs no hook of the job's tree when a blocked item leaves the lane" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push
+  git -C "$r" config core.hooksPath .githooks
+  mkjob 01-a "$r" lane-x itemwip "lane=Fix health" item=beta
+  drain
+  [ "$(cat "$Q/01-a/status")" = blocked ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/lane-x-beta)" ]
+  [ ! -e "$m" ]
 }
 
 @test "lane: an item that is blocked shows as <item> → <branch>-<item>; a job without lane= keeps its own body" {
@@ -1325,6 +1400,31 @@ pandoc_stub() {
   [ ! -e "$f.tmp" ]
 }
 
+@test "page: raw HTML in a job's text shows as code in the briefing" {
+  command -v pandoc >/dev/null || skip "pandoc not installed"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=<img src=x onerror=alert(1)> and <script>alert(2)</script>'
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF '<code>&lt;img src=x onerror=alert(1)&gt;</code>' "$f"
+  run grep -c '<img\|<script>alert' "$f"
+  [ "$output" = 0 ]
+}
+
+@test "page: a link or image with a javascript: or data: target shows as text in the briefing" {
+  command -v pandoc >/dev/null || skip "pandoc not installed"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=[bad](javascript:alert(1)) ![pic](data:text/html,x) <javascript:alert(2)> [ok](https://example.com/ok)'
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF 'href="https://example.com/ok"' "$f"
+  grep -qF 'bad pic javascript:alert(2)' "$f"
+  run grep -c 'href="javascript\|src="data' "$f"
+  [ "$output" = 0 ]
+}
+
 @test "page: with no working pandoc briefing and config are escaped Markdown in <pre>, file links as text" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
@@ -1550,6 +1650,30 @@ endedjob() {
   [[ "$output" != *"API"* ]] || false
 }
 
+@test "cost: the limit share reads no job that ended before the job started" {
+  local r f n0 n1 i
+  r="$(make_repo proj)"
+  printf '#!/bin/sh\necho x >>"%s/date.calls"\nexec /bin/date "$@"\n' "$STUBS" >"$STUBS/date"
+  chmod +x "$STUBS/date"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n0="$(wc -l <"$STUBS/date.calls")"
+  for i in $(seq 300); do
+    mkdir -p "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i"
+    echo "2020-01-01 10:00:00" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/started"
+    echo "2020-01-01 10:09:59" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/ended"
+    cp "$Q/01-a/log" "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/log"
+  done
+  : >"$STUBS/date.calls"
+  "$VIBE" queue report >/dev/null
+  n1="$(wc -l <"$STUBS/date.calls")"
+  [ "$n1" -eq "$n0" ]
+  for f in "$XDG_STATE_HOME"/vibe/briefings/*.md; do :; done
+  grep -F '| 01-a |' "$f" | grep -qF '≈2% 5h est.'
+}
+
 @test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
   local r f at
   r="$(make_repo proj)"
@@ -1639,6 +1763,79 @@ EOF
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
+# gpurace — a job whose GPU run ends while the job still runs: `queue follow` ends the job first.
+gpurace() {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a gpurace
+  timeout 60 "$VIBE" queue run --claude --drain >/dev/null 2>&1
+}
+
+@test "gpu: a follow-up that ended its parent first leaves the parent done" {
+  gpurace
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a/note")" = "GPU run exit 0 → 01-a-gpu" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu: the follow-up starts after its parent has an ended file" {
+  gpurace
+  [ "$(cat "$STUBS/parent-at-follow")" = ended ]
+}
+
+@test "gpu: a parent that died after its follow-up marked it done gets an ended file, and the follow-up runs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkdir -p "$Q/01-a" && echo "queued: training" >"$Q/01-a/result"
+  echo running >"$Q/01-a/status"
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  echo 999999 >"$Q/01-a/pid"
+  [ ! -e "$Q/01-a/ended" ]
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ -s "$Q/01-a/ended" ]
+  [ ! -e "$Q/01-a/pid" ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu: a requeued parent (usage limit) gets an ended file from queue follow, and the follow-up runs" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo queued >"$Q/01-a/status"
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  [ -s "$Q/01-a/ended" ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu: a parent that queue follow marked done while its process still runs is not archived or briefed" {
+  local r f
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo running >"$Q/01-a/status"
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/01-a" >/dev/null
+  echo $$ >"$Q/01-a/pid"
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  run "$VIBE" queue archive 01-a
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"has not ended"* ]] || false
+  [ -d "$Q/01-a" ]
+  run "$VIBE" queue report
+  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run cat "$f"
+  [[ "$output" != *"task-a"* ]] || false
+  rm -f "$Q/01-a/pid"
+  date '+%F %T' >"$Q/01-a/ended"
+  run "$VIBE" queue archive 01-a
+  [ "$status" -eq 0 ]
+  [ -d "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/01-a" ]
+}
+
 @test "gpu cancel: a queued or a running run ends the job failed, with no follow-up" {
   local r pid g
   r="$(make_repo proj)"
@@ -1717,7 +1914,7 @@ two_findings() {
 @test "review: findings → the job's session fixes them, a second round, one PR body with both rounds" {
   local r b
   r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a ok after=review
+  mkjob 01-a "$r" task-a ok after=review event=c1
   two_findings
   printf '%s' '{"type":"result","structured_output":{"findings":[]}}' >"$STUBS/review-2.json"
   printf '1=fixed @SHA@\n2=rejected not reachable\n' >"$STUBS/verdicts"
@@ -1727,6 +1924,7 @@ two_findings() {
   for d in 01-a 01-a-review1 01-a-review2; do [ "$(cat "$Q/$d/status")" = "done" ]; done
   [ ! -e "$Q/01-a/pr" ]
   [ "$(grep -c 'pr create' "$STUBS/gh.log")" = 1 ]
+  [ "$(grep -c 'issues/1/comments' "$STUBS/gh.log")" = 1 ]
   [ "$(cat "$Q/01-a-review2/pr")" = "https://example.com/pull/1" ]
   run "$VIBE" queue status
   [[ "$output" == "queue: 0 running · 0 on the GPU · 0 queued · 1 to review · 0 no PR"* ]] || false

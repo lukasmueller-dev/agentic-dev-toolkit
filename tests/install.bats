@@ -703,6 +703,24 @@ EOF
   jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: a retired entry is deleted from a live file that held it" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "sandbox": { "excludedCommands": ["git fetch *", "docker *"] } }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  # `git fetch --upload-pack=<cmd> .` would run <cmd> outside the sandbox
+  jq -e '.sandbox.excludedCommands | index("git fetch *") | not' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("docker *")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
+  # fetch still runs without a prompt, now inside the sandbox
+  jq -e '.permissions.allow | index("Bash(git fetch:*)")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("git fetch *") | not' "$REPO_ROOT/claude/settings.json"
+  run "$INSTALL" claude
+  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
+}
+
 @test "claude settings: a sandbox array only in the live file is left alone" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'
