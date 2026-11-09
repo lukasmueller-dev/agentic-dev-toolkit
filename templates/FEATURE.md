@@ -11,7 +11,7 @@
 
 ## Members
 
-_One line per member: `- <repo path> <branch>`; the PR URL follows once it exists._
+_One line per member: `- <absolute repo path> <branch>`; the PR URL follows once it exists._
 
 ## Goal
 

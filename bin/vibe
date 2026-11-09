@@ -2780,7 +2780,7 @@ feature_body() {
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
 cmd_feature_add() {
-  local src="${1:-}" name dst r b p f t n=0 seen=$'\n'
+  local src="${1:-}" name dst r b p f t c n=0 seen=$'\n'
   [[ $# -eq 1 && -f "$src" ]] || die "usage: vibe feature add <file>"
   name="$(basename "$src" .md)"
   [[ -n "$name" && "$(slug "$name")" == "$name" ]] || die "'$name' is not a slug — name the file <slug>.md"
@@ -2792,6 +2792,8 @@ cmd_feature_add() {
     [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
     seen+="$r#$b"$'\n'
     git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
+    c="$(cd "$r" && pwd)"
+    [[ "$c" == "$r" ]] || die "$r is not the path jobs store as their repo — write $c"
     git -C "$r" rev-parse -q --verify "refs/heads/$b" >/dev/null ||
       git -C "$r" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null || die "no branch '$b' in $r"
     f="$(feature_of "$r" "$b")"

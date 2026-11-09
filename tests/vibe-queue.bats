@@ -427,6 +427,19 @@ parallel_set_pr() {
   [ ! -e "$XDG_STATE_HOME/vibe/features/rel.md" ]
 }
 
+@test "feature add: refuses a member path that is not canonical and names the one to write" {
+  local r1 r2 p
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  for p in "$r1/../bridge" "$(dirname "$r1")//bridge"; do
+    run "$VIBE" feature add "$(mkfeature dots "$p sticks" "$r2 gamepad")"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"$p is not the path jobs store as their repo — write $r1"* ]] || false
+    [ ! -e "$XDG_STATE_HOME/vibe/features/dots.md" ]
+  done
+}
+
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features" A
   A="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/features"
