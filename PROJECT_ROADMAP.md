@@ -41,3 +41,9 @@ staged straight from it. Order matters within a track; tracks are independent.
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
       Done when a smoke job's Write outside its worktree and job dir is
       refused, and its `result` and `report.md` still land.
+- [ ] **[health] Flaky bats test** — `tests/vibe-queue.bats` "page: a feature is
+      one card on top" failed once in a full run, then passed 5 of 5 alone
+      (#176 report). Find the cause (shared state, timing, order) and remove
+      it; do not add a retry.
+      Done when the test passes 20 of 20 runs alone and in 3 full `bats tests/`
+      runs.
