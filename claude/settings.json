@@ -177,7 +177,6 @@
     },
     "excludedCommands": [
       "git clone *",
-      "git fetch *",
       "git pull *",
       "git push *",
       "rsync *",

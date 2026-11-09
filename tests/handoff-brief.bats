@@ -142,6 +142,35 @@ finish_handoff() {
   git -C "$BATS_TEST_TMPDIR/proj.git" show ship-task:HANDOFF.md | grep -q "Write the first failing test."
 }
 
+@test "publish: a relative core.hooksPath runs no hook of the staged branch on the commit and the push" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-commit commit-msg post-commit pre-push
+  git -C "$r" config core.hooksPath .githooks
+  cd "$r"
+  run_handoff create "hook task"
+  finish_handoff "$(wt hook-task)"
+  run run_handoff publish "hook task"
+  [ "$status" -eq 0 ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/hook-task)" ]
+  [ ! -e "$m" ]
+}
+
+@test "publish: a git-lfs repo is not pushed with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  cd "$r"
+  run_handoff create "big task"
+  finish_handoff "$(wt big-task)"
+  PATH="$lfs:$PATH" run run_handoff publish "big task"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"git-lfs: not pushed"* ]] || false
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/big-task)" ]
+}
+
 @test "publish: removes the staging worktree so a new session can switch to the branch" {
   local r
   r="$(make_repo proj)"
@@ -166,4 +195,19 @@ finish_handoff() {
   run run_handoff create "second task"
   [ "$status" -eq 0 ]
   [ "$(git -C "$(wt second-task)" log -1 --format=%s)" = "teammate" ]
+}
+
+@test "create: a failed fast-forward of main stops with git's error and the reason" {
+  local r other
+  r="$(make_repo proj)"
+  other="$(clone_repo proj other)"
+  echo upstream >"$other/clash.txt"
+  git -C "$other" add clash.txt && git -C "$other" commit -q -m "add clash.txt"
+  git -C "$other" push -q origin main
+  echo local >"$r/clash.txt"
+  cd "$r"
+  run run_handoff create "clash task"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"cannot fast-forward main"*"stale HEAD"*"clash.txt"* ]] || false
+  [ ! -d "$(wt clash-task)" ]
 }

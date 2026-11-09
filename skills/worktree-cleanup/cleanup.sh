@@ -7,9 +7,11 @@
 #       Fetch (best effort), then print one tab-separated line per linked
 #       worktree of <repo> (default: the current repo):
 #         <state>  <path>  <branch>  <reason>
-#       merged    work is on the default branch, or its upstream was deleted
+#       merged    work is on the default branch, or a merged PR has it
+#                 and its upstream was deleted
 #       prunable  directory is gone; only git's record is left
 #       dirty     uncommitted or untracked changes
+#       ignored   git-ignored files that removal would delete
 #       unpushed  commits that are not on the default branch
 #       locked    held by a running session
 #       current   the worktree this command runs in
@@ -65,6 +67,57 @@ physical() {
 # The worktree the caller runs in, resolved before any cd: never removable.
 CUR_WT="$(physical "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
 
+# ignored_keep PATH — the git-ignored files of worktree PATH that removal
+# would lose, as "a, b, c (+N more)"; empty when nothing but caches is left.
+ignored_keep() {
+  local all
+  all="$(git -C "$1" -c core.quotePath=false ls-files --others --ignored --exclude-standard 2>/dev/null)" || {
+    printf 'cannot list the git-ignored files\n'
+    return 0
+  }
+  awk '
+    function regen(p) {
+      return p ~ /(^|\/)(\.venv|node_modules|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.vscode)(\/|$)/ ||
+        p ~ /(^|\/)[^\/]+\.egg-info(\/|$)/ ||
+        p ~ /(^|\/)(\.DS_Store|[^\/]+\.sw[po])$/ ||
+        p ~ /^(target|dist|build)(\/|$)/ ||
+        p == ".claude/settings.local.json"
+    }
+    length($0) && !regen($0) {
+      n++
+      if (n <= 3) l = l (n > 1 ? ", " : "") $0
+    }
+    END { if (n > 3) l = l " (+" (n - 3) " more)"; if (n) print l }
+  ' <<<"$all"
+}
+
+# landed_or_ignored PATH REASON — "merged<TAB>REASON", or "ignored" when
+# PATH holds git-ignored files that removal would delete.
+landed_or_ignored() {
+  local keep
+  keep="$(ignored_keep "$1")"
+  if [[ -n "$keep" ]]; then
+    printf 'ignored\t%s\n' "$keep"
+  else
+    printf 'merged\t%s\n' "$2"
+  fi
+}
+
+# pr_landed PATH BRANCH — succeed when a merged PR of BRANCH holds the HEAD of PATH:
+# as one of its commits, or in the history of its head. Fails when gh is missing or errors.
+pr_landed() {
+  local oids oid head
+  command -v gh >/dev/null 2>&1 || return 1
+  head="$(git -C "$1" rev-parse HEAD 2>/dev/null)" || return 1
+  oids="$(gh pr list --head "$2" --state merged --json headRefOid,commits --limit 100 \
+    --jq '.[] | .headRefOid, (.commits[].oid)' 2>/dev/null)" || return 1
+  while IFS= read -r oid; do
+    [[ -n "$oid" ]] || continue
+    if [[ "$oid" == "$head" ]] || git -C "$1" merge-base --is-ancestor HEAD "$oid" 2>/dev/null; then return 0; fi
+  done <<<"$oids"
+  return 1
+}
+
 # classify PATH BRANCH LOCKED PRUNABLE REF CURRENT — print "state<TAB>reason".
 classify() {
   local path="$1" branch="$2" locked="$3" prunable="$4" ref="$5" cur="$6" track
@@ -77,28 +130,29 @@ classify() {
   elif [[ -n "$(git -C "$path" status --porcelain 2>/dev/null)" ]]; then
     printf 'dirty\tuncommitted or untracked changes\n'
   elif git -C "$path" merge-base --is-ancestor HEAD "$ref" 2>/dev/null; then
-    printf 'merged\tall commits are on %s\n' "$ref"
+    landed_or_ignored "$path" "all commits are on $ref"
   else
     track=""
     if [[ -n "$branch" ]]; then
       track="$(git for-each-ref --format='%(upstream:track)' "refs/heads/$branch" 2>/dev/null || true)"
     fi
-    if [[ "$track" == "[gone]" ]]; then
-      printf 'merged\tupstream branch was deleted (merged PR)\n'
+    if [[ "$track" == "[gone]" ]] && pr_landed "$path" "$branch"; then
+      landed_or_ignored "$path" "upstream branch was deleted after a merged PR"
     else
       printf 'unpushed\tcommits that are not on %s\n' "$ref"
     fi
   fi
 }
 
-# scan_lines — one "state<TAB>path<TAB>branch<TAB>reason" line per linked
-# worktree of the repo in $PWD; branch is "-" when detached. The first
-# porcelain record is the main checkout and is skipped.
+# scan_lines [PATH] — one "state<TAB>path<TAB>branch<TAB>reason" line per linked
+# worktree of the repo in $PWD, or only for PATH; branch is "-" when detached.
+# The first porcelain record is the main checkout and is skipped.
 scan_lines() {
-  local ref cur="${CUR_WT:-}" line path="" branch="" locked=0 prunable=0 n=0
+  local ref cur="${CUR_WT:-}" only="" line path="" branch="" locked=0 prunable=0 n=0
+  [[ $# -eq 0 ]] || only="$(physical "$1")"
   ref="$(default_ref)"
   emit() {
-    if ((n > 1)) && [[ -n "$path" ]]; then
+    if ((n > 1)) && [[ -n "$path" ]] && { [[ -z "$only" ]] || [[ "$(physical "$path")" == "$only" ]]; }; then
       local verdict
       verdict="$(classify "$path" "$branch" "$locked" "$prunable" "$ref" "$cur")"
       printf '%s\t%s\t%s\t%s\n' "${verdict%%$'\t'*}" "$path" "${branch:--}" "${verdict#*$'\t'}"
@@ -138,7 +192,7 @@ cmd_scan() {
 
 cmd_remove() {
   (($# > 0)) || die "usage: cleanup.sh remove <path>..."
-  local p dir main state path branch reason found rc=0
+  local p dir main state path branch reason found rc=0 want
   for p in "$@"; do
     dir="$(dirname "$p")"
     [[ -d "$p" ]] && dir="$p"
@@ -148,8 +202,8 @@ cmd_remove() {
       continue
     }
     found=0
+    want="$(physical "$p")" # before the cd below: a relative $p is the caller's
     while IFS=$'\t' read -r state path branch reason; do
-      [[ "$(physical "$path")" == "$(physical "$p")" ]] || continue
       found=1
       case "$state" in
         merged)
@@ -169,7 +223,7 @@ cmd_remove() {
           rc=1
           ;;
       esac
-    done < <(cd "$main" && scan_lines)
+    done < <(cd "$main" && scan_lines "$want")
     if ((found == 0)); then
       info "skip $p: not a linked worktree of $main"
       rc=1

@@ -164,8 +164,8 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"queued "*"-proj-jobs-crashy (pr)"* ]] || false
   [ -z "$(qjobs jobs-health)" ]
   run "$VIBE" job due
-  [[ "$output" == *"-proj-jobs-crashy"*"-proj-jobs-health"* ]] || false
-  [ "$(qjobs jobs-crashy | wc -l)" -eq 2 ]
+  [[ "$output" == *"-proj-jobs-health"* && "$output" != *"-proj-jobs-crashy"* ]] || false
+  [ "$(qjobs jobs-crashy | wc -l)" -eq 1 ]
   d="$(qjobs jobs-health)"
   run cat "$d/job"
   [[ "$output" == *"repo=$r"*"branch=jobs/health"*"model=sonnet"*"timeout=2h"*"recurring=health"*"output=pr"* ]] || false
@@ -173,6 +173,23 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"# Recurring job: health"*"\`\$VIBE_JOB_DIR\`"*"Check the code."*"MODE=ok"*"## In this repo"*"Skip legacy/."* ]] || false
   [[ "$output" == *"**Context:** <context>"*"**Changed:** <changed>"*"**Context:** <context>"*"**Needs you:** <needs-you>"* ]] || false
   [[ "$output" != *"<catalogue-instructions>"* ]] || false
+}
+
+@test "job due: a job with a queued, running or gpu copy in the queue is not queued again" {
+  local r d st
+  r="$(make_repo proj)"
+  optin "$r" health
+  "$VIBE" job due "$r" >/dev/null
+  d="$(qjobs jobs-health)"
+  for st in queued running gpu; do
+    echo "$st" >"$d/status"
+    run "$VIBE" job due "$r"
+    [[ "$output" == "nothing to queue" ]] || false
+    [[ "$("$VIBE" job list "$r")" == *"health"*"queued"* ]] || false
+  done
+  echo "done" >"$d/status"
+  "$VIBE" job due "$r" >/dev/null
+  [ "$(qjobs jobs-health | wc -l)" -eq 2 ]
 }
 
 @test "job due: a stopped job lands once as skipped under Needs you" {
@@ -399,6 +416,23 @@ branch_off() {
   "$VIBE" queue report >/dev/null
   run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"## Triage — "*"merged main and pushed"*"needs a hand merge"* ]] || false
+}
+
+@test "job triage: a relative core.hooksPath runs no hook of the PR's tree while the base is merged and pushed" {
+  local r m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)"
+  hook_files "$r" "$m" pre-push post-checkout post-merge pre-merge-commit commit-msg
+  branch_off "$r" jobs/clean a.txt a
+  echo main >"$r/f.txt" && git -C "$r" add f.txt && git -C "$r" commit -q -m "feat: main" && git -C "$r" push -q origin main
+  git -C "$r" config core.hooksPath .githooks
+  printf '[%s]' "$(pr 1 jobs/clean CONFLICTING)" >"$STUBS/prs.json"
+  run "$VIBE" job triage
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"merged main and pushed"* ]] || false
+  git -C "$r" fetch -q origin
+  git -C "$r" merge-base --is-ancestor origin/main origin/jobs/clean
+  [ ! -e "$m" ]
 }
 
 @test "job triage: red CI and review comments since the last commit become briefing lines" {

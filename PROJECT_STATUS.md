@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-01 · repo-review-job_
+_Last updated: 2026-11-07 · repo-review-fixes_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-07: **no repo hook runs with your credentials**: every unsandboxed
+  git call on an agent-written tree goes through `agent_git`/`agent_push`
+  (`core.hooksPath=/dev/null`). Details: `docs/vibe-queue.md`; calls: PR body.
 - 2026-11-02: **features across repos**: a job stays in one repo; a feature
   file links member branches in several repos into one row, one review
   decision and one merge batch after the human test. Design: PR body.

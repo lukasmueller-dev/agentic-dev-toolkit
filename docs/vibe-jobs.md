@@ -30,7 +30,7 @@ systemctl --user enable --now vibe-jobs.timer
 ## 3. Verify
 
 ```bash
-vibe job list                            # repo × job: schedule, last run, due / stopped / invalid
+vibe job list                            # repo × job: schedule, last run, due / queued / stopped / invalid
 vibe job list --all                      # also the catalogue jobs each repo has not opted into
 vibe job due --dry                       # what the next 01:00 run queues
 vibe job run <repo> <job>                # one job now; then: vibe queue status
@@ -73,6 +73,7 @@ Rules the dispatcher keeps:
 
 - Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
 - At most `--max` 8 jobs a run, oldest `last-run` first.
+- A job with an unfinished copy in the queue (`queued`, `running`, `gpu`) is not queued again; `vibe job list` shows `queued`.
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
 - One branch per job, `jobs/<job>`, reused while its PR is open; the runner replaces the PR body.
