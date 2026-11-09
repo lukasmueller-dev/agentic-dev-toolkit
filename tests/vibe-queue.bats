@@ -351,6 +351,24 @@ parallel_set_pr() {
   [ "$output" = 0 ]
 }
 
+@test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
+  local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
+  r="$(make_repo proj)"
+  mkdir "$tk" && cp -R "$REPO_ROOT/bin" "$REPO_ROOT/skills" "$REPO_ROOT/claude" "$REPO_ROOT/templates" "$tk"
+  mkjob 01-a "$r" task-a seq
+  "$tk/bin/vibe" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for i in $(seq 1 100); do
+    [ ! -s "$Q/01-a/pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$Q/01-a/pid" ]
+  { head -n 1 "$tk/bin/vibe" && echo '# a line the running vibe never reads, long enough to move its end offset' && tail -n +2 "$tk/bin/vibe"; } >"$BATS_TEST_TMPDIR/vibe.new"
+  cat "$BATS_TEST_TMPDIR/vibe.new" >"$tk/bin/vibe"
+  wait "$pid" || { cat "$BATS_TEST_TMPDIR/run.out" && false; }
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
 @test "report: a Features table before the repos; a done member job leaves the repo tables, a blocked one stays" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
