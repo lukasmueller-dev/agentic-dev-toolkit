@@ -1224,6 +1224,31 @@ died_job() {
   [ "$(cat "$Q/01-a/note")" = stopped ]
 }
 
+@test "report: a done job whose push failed is under Needs you with its note, not under Done" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a "push failed (git-lfs: push by hand)"
+  endjob 02-b "$r" task-b "push failed"
+  endjob 03-c "$r" task-c
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| 01-a | done |"*"**push failed (git-lfs: push by hand)** · "*"| 02-b | done |"*"**push failed** · "*"### Done, nothing to read"*"| 03-c | done |"* ]] || false
+  [ "$(grep -cE '^\| 0[12]-[ab] ' <<<"$output")" = 2 ]
+}
+
+@test "report: a lane whose push failed is one row under Needs you with the note" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" lane-x "push failed" "lane=Fix health" item=alpha
+  endjob 02-b "$r" lane-x "push failed (git-lfs: push by hand)" "lane=Fix health" item=beta
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| lane-x | 2/2 | Fix health | **push failed (git-lfs: push by hand)** · "* ]] || false
+  [[ "$output" != *"### Done, nothing to read"* ]] || false
+}
+
 @test "hold and archive: a held job stays; archive moves only ended jobs" {
   local r
   r="$(make_repo proj)"
