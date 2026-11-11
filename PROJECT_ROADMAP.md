@@ -12,6 +12,11 @@ _Last updated: 2026-11-09 · queue-verify-skills_
 One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) can be
 staged straight from it. Order matters within a track; tracks are independent.
 
+- [ ] **Briefing of a failed push** — a done job whose `pr` file holds
+      `push failed…` shows under "Done, nothing to read", with no link.
+      Show it under "Needs you" with its note.
+      Done when a bats test puts a done job with
+      `push failed (git-lfs: push by hand)` under "Needs you" with the note.
 - [ ] **Run `research-experiment-setup` on NCBF** — after the author reviews
       `references/cards.md` and both research `SKILL.md` files; card table
       first, on the author's branch off `pncbf-v2` (NCBF facts: PR #87 body);
