@@ -105,11 +105,12 @@ landed_or_ignored() {
 
 # pr_landed PATH BRANCH — succeed when a merged PR of BRANCH holds the HEAD of PATH:
 # as one of its commits, or in the history of its head. Fails when gh is missing or errors.
+# shortcut: --limit above 20 makes GitHub refuse the query (node cap); 10 is measured, raise only after a test.
 pr_landed() {
   local oids oid head
   command -v gh >/dev/null 2>&1 || return 1
   head="$(git -C "$1" rev-parse HEAD 2>/dev/null)" || return 1
-  oids="$(gh pr list --head "$2" --state merged --json headRefOid,commits --limit 100 \
+  oids="$(gh pr list --head "$2" --state merged --json headRefOid,commits --limit 10 \
     --jq '.[] | .headRefOid, (.commits[].oid)' 2>/dev/null)" || return 1
   while IFS= read -r oid; do
     [[ -n "$oid" ]] || continue
