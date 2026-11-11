@@ -156,11 +156,11 @@ finish_handoff() {
   [ ! -e "$m" ]
 }
 
-@test "publish: a git-lfs repo is not pushed with hooks off" {
+@test "publish: a handoff that adds an LFS-tracked file is not pushed with hooks off" {
   local r lfs="$BATS_TEST_TMPDIR/lfs"
   r="$(make_repo proj)"
   mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
-  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  echo '*.md filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
   git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
   cd "$r"
   run_handoff create "big task"

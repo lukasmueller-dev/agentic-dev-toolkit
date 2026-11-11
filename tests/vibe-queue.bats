@@ -530,7 +530,19 @@ putfeature() {
   [ ! -e "$m" ]
 }
 
-@test "run: the runner does not push a git-lfs tree with hooks off" {
+@test "run: the runner does not push a job that adds an LFS-tracked file, with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  echo '*.txt filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  mkjob 01-a "$r" task-a ok
+  PATH="$lfs:$PATH" drain
+  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+}
+
+@test "run: the runner pushes a job in a git-lfs repo when no changed path is LFS-tracked" {
   local r lfs="$BATS_TEST_TMPDIR/lfs"
   r="$(make_repo proj)"
   echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
@@ -538,8 +550,8 @@ putfeature() {
   mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
   mkjob 01-a "$r" task-a ok
   PATH="$lfs:$PATH" drain
-  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
-  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+  [ "$(cat "$Q/01-a/pr")" != "push failed (git-lfs: push by hand)" ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
 }
 
 @test "run: a config.lock with content, or a writable one, stays" {

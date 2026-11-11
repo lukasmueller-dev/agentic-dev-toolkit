@@ -267,7 +267,7 @@ sync_wt() {
         if agent_git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
       fi
     fi
-    if [[ "$note" == "push failed" ]] && uses_lfs "$dir"; then note="push failed (git-lfs: push by hand)"; fi
+    if [[ "$note" == "push failed" && -n "$LFS_REFUSED" ]]; then note="push failed (git-lfs: push by hand)"; fi
     [[ -z "$dirty" ]] || note="${note:+$note, }dirty"
     [[ -z "$locked" ]] || note="${note:+$note, }locked"
     [[ "$dir" != "$main" || "$br" == "$def" ]] || note="${note:+$note, }off $def"
@@ -776,7 +776,7 @@ job_publish() {
   ((ahead > 0)) || return 0
   clear_config_lock "$wt"
   if ! agent_push "$wt" -q -u origin "$branch"; then
-    if uses_lfs "$wt"; then echo "push failed (git-lfs: push by hand)" >"$d/pr"; else echo "push failed" >"$d/pr"; fi
+    if [[ -n "$LFS_REFUSED" ]]; then echo "push failed (git-lfs: push by hand)" >"$d/pr"; else echo "push failed" >"$d/pr"; fi
     return 0
   fi
   command -v gh >/dev/null 2>&1 || return 0
