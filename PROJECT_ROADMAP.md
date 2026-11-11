@@ -36,12 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] Push a git-lfs tree when no LFS path changes** — `agent_push`
-      refuses every push from a tree that uses git-lfs, so a repo that tracks
-      only `workspaces/scratch/**/*.{npz,pkl,pt}` fails every job push.
-      Done when a bats test in a git-lfs repo shows a push with no LFS-tracked
-      change goes through, and a push that adds an LFS-tracked file is refused
-      with `git-lfs: push by hand`.
 - [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
       `<file>.tmp` (queue page, `feature_set_pr`, `feature_prompt`,
       `cmd_feature_add`); two runners at once share the name. Use `mktemp` in
