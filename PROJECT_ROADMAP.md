@@ -34,6 +34,13 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when one recurring job per repo queues and its PR changes only
       `PROJECT_ROADMAP.md`.
 
+- [ ] **Lower the `gh pr list` limit in `pr_landed`** — GitHub refuses
+      `--limit 100` (1,000,000 nodes, maximum 500,000), so every squash-merged
+      branch with a deleted upstream rates `unpushed`. `--limit 10` works.
+      Done when `grep -n -- '--limit 100' skills/worktree-cleanup/cleanup.sh`
+      prints nothing and a bats test with a `gh` stub that refuses a high limit
+      rates a `[gone]` branch with a merged PR that holds its HEAD `merged`.
+
 ### Health items (repo review of 2026-11-03)
 
 - [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
