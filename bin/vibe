@@ -2384,12 +2384,12 @@ verify_failed() {
 }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
-# the classes: a status, `gate` (done with a failing gate or verify step), `push` (done, `pr` holds
-# `push failed…`; the row shows that note), or `pr` (done with a PR URL; `done` is then done without
-# one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done` table; a job of it that
-# needs the user keeps its own row. No rows, no table.
+# the classes: a status, `gate` (done with a failing gate or verify step), `nopr` (done, `pr` holds
+# `push failed…` or `PR not created`), or `pr` (done with a PR URL; `done` is then done without one).
+# That `pr` note leads the row in every class. A branch with 2+ jobs is one row (group_of) in the `pr`
+# or `done` table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links nx note pr
+  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links nx note pr grp
   shift 2
   for d in "$QDIR"/*/; do
     d="${d%/}"
@@ -2400,24 +2400,27 @@ report_rows() {
     # A done member job is in its feature's row.
     if [[ "$cls" == "done" ]] && is_member "$d"; then continue; fi
     group_of "$d"
-    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then
-      case "$G_PR" in http*) cls="pr" ;; "push failed"*) cls="push" note="**$G_PR** · " ;; esac
-      in_list "$cls" "$@" || continue
+    pr="$(jstate "$d" pr)" grp=0
+    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then pr="$G_PR" grp=1; fi
+    case "$pr" in
+      http*) if [[ "$cls" == "done" ]]; then cls="pr"; fi ;;
+      "push failed"* | "PR not created"*)
+        note="**$pr** · "
+        if [[ "$cls" == "done" ]]; then cls="nopr"; fi
+        ;;
+    esac
+    in_list "$cls" "$@" || continue
+    if ((grp)); then
       b="$(jget "$d/job" branch)"
       [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
       seen+="$b"$'\n'
       links=""
-      case "$G_PR" in http*) links="[PR]($G_PR)" ;; esac
+      case "$pr" in http*) links="[PR]($pr)" ;; esac
       nx="$G_NEXT"
       if [[ "$nx" == - && "${G_PROGRESS%/*}" == "${G_PROGRESS#*/}" ]]; then nx="$(report_tldr "$(printf '%s\n' "${GROUP[@]}" | LC_ALL=C sort | tail -n 1)")"; fi
       rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | ${note//|//}${nx//|//} | $links |"$'\n'
       continue
     fi
-    pr="$(jstate "$d" pr)"
-    if [[ "$cls" == "done" ]]; then
-      case "$pr" in http*) cls="pr" ;; "push failed"*) cls="push" note="**$pr** · " ;; esac
-    fi
-    in_list "$cls" "$@" || continue
     rows+="$(report_row "$d" "$note$(report_tldr "$d")$(side_suffix "$d")")"$'\n'
   done
   [[ -n "$rows" ]] || return 0
@@ -2473,7 +2476,7 @@ queue_report_md() {
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
-      report_rows "$repo" "Needs you" blocked failed timeout skipped gate push
+      report_rows "$repo" "Needs you" blocked failed timeout skipped gate nopr
       report_rows "$repo" "PR ready" pr
       report_rows "$repo" "Done, nothing to read" "done"
     )"
