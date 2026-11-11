@@ -1240,6 +1240,20 @@ died_job() {
   [ "$(grep -cE '^\| 0[1245]-[a-e] ' <<<"$output")" = 4 ]
 }
 
+@test "report: a feature member whose last round failed to push needs you although an earlier job holds a PR; a later PR clears it" {
+  local r1 r2
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  putfeature teleop "$r1 sticks" "$r2 gamepad"
+  endjob 01-a "$r1" sticks https://example.com/pull/1
+  endjob 01-a-review1 "$r1" sticks "push failed (git-lfs: push by hand)"
+  endjob 02-b "$r2" gamepad "push failed"
+  endjob 02-b-review1 "$r2" gamepad https://example.com/pull/2
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"| teleop | needs you | 1/2 |"*"| [bridge#1](https://example.com/pull/1) push failed (git-lfs: push by hand) · [cmdr#2](https://example.com/pull/2) done |"* ]] || false
+}
+
 @test "report: a lane whose push failed or whose PR was not created is one row under Needs you with the note" {
   local r
   r="$(make_repo proj)"

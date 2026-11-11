@@ -2383,6 +2383,9 @@ verify_failed() {
   return 1
 }
 
+# pr_missed TEXT — true when a job's `pr` text says that no PR carries its commits.
+pr_missed() { [[ "$1" == "push failed"* || "$1" == "PR not created"* ]]; }
+
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
 # the classes: a status, `gate` (done with a failing gate or verify step), `nopr` (done, `pr` holds
 # `push failed…` or `PR not created`), or `pr` (done with a PR URL; `done` is then done without one).
@@ -2402,13 +2405,12 @@ report_rows() {
     group_of "$d"
     pr="$(jstate "$d" pr)" grp=0
     if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then pr="$G_PR" grp=1; fi
-    case "$pr" in
-      http*) if [[ "$cls" == "done" ]]; then cls="pr"; fi ;;
-      "push failed"* | "PR not created"*)
-        note="**$pr** · "
-        if [[ "$cls" == "done" ]]; then cls="nopr"; fi
-        ;;
-    esac
+    if pr_missed "$pr"; then
+      note="**$pr** · "
+      if [[ "$cls" == "done" ]]; then cls="nopr"; fi
+    elif [[ "$pr" == http* && "$cls" == "done" ]]; then
+      cls="pr"
+    fi
     in_list "$cls" "$@" || continue
     if ((grp)); then
       b="$(jget "$d/job" branch)"
@@ -2673,12 +2675,12 @@ is_member() {
 # feature_row FILE — F_PILL, F_PROGRESS (done/members), F_ITEMS (a `<repo> · <branch>  <status>  <note>`
 # line per member that needs you) and F_MEMBERS (`repo|branch|pr|state|note` per member).
 # A member is done with a PR and no job queued, running or in need of you (a done job with a
-# failed gate does); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
+# failed gate does, and so does a last `pr` note of pr_missed); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
 feature_row() {
-  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
+  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any c lastpr
   F_ITEMS="" F_MEMBERS=""
   while IFS=$'\t' read -r r b p; do
-    n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0
+    n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0 lastpr=""
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
       any=1 st="$(jstate "$j" status)" jn="$(jstate "$j" note)$(side_suffix "$j")"
@@ -2693,13 +2695,18 @@ feature_row() {
           F_ITEMS+="${r##*/} · $b  $st  $jn"$'\n'
           ;;
       esac
-      if [[ -z "$p" && "$(jstate "$j" pr)" == http* ]]; then p="$(jstate "$j" pr)"; fi
+      c="$(jstate "$j" pr)"
+      if [[ -n "$c" ]]; then lastpr="$c"; fi
+      if [[ -z "$p" && "$c" == http* ]]; then p="$c"; fi
     done < <(branch_jobs "$r" "$b")
     if [[ -z "$ms" ]]; then
       if ((mrun)); then
         ms=running
       elif ((mwait)); then
         ms=queued
+      elif pr_missed "$lastpr"; then
+        ms="$lastpr"
+        F_ITEMS+="${r##*/} · $b  no PR  $lastpr"$'\n'
       elif [[ "$p" != http* ]]; then
         ms="no PR"
         F_ITEMS+="${r##*/} · $b  no PR  no job runs and no PR is open"$'\n'
