@@ -36,12 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] End `bin/gpu-queue` in an exit group** — bash reads a script
-      while it runs; an in-place edit during a long `gpu-queue run` can make it
-      read new text after the final `esac` (`unexpected EOF`). `bin/vibe` has
-      the `{ case …; exit; }` fix (PR #177).
-      Done when a bats test edits a copy of `bin/gpu-queue` in place during a
-      run and the run exits 0; the test fails on the old file.
 - [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
       `<file>.tmp` (queue page, `feature_set_pr`, `feature_prompt`,
       `cmd_feature_add`); two runners at once share the name. Use `mktemp` in
