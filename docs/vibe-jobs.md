@@ -45,6 +45,7 @@ systemctl --user list-timers vibe-jobs.timer
 | --- | --- | --- | --- |
 | `codebase-health` | weekly, sat | pr, 2h | `codebase-health` unattended: docs-drift fixes as commits, dedup/complexity as roadmap items |
 | `stale-state` | weekly, sat | report, 30m | stale `PROJECT_STATUS.md`, roadmap items without a done-when, handoffs and worktrees on merged branches |
+| `roadmap-cleanup` | weekly, sun | pr, 1h | deletes the roadmap items the repo proves done or dead, one proof line each; the PR changes only `PROJECT_ROADMAP.md` |
 | `toolkit-check` | weekly, sat | report, 30m | toolkit repo: `install.sh doctor`, `plug verify`, upstream vendor commits, lint, tests |
 | `experiment-hygiene` | weekly, sat | report, 1h | research repo: runs without a record, big unrecorded run dirs, tracker sync |
 | `flaky-tests` | weekly, sat | report, 1h | runs the suite 5 times; tests that pass in some runs and fail in others, with pass/fail counts |
