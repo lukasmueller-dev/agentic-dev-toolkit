@@ -36,12 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] Absolute member paths in `vibe feature add`** — `is_member`
-      and `feature_of` compare the member path as a string with the job's
-      absolute `repo`; a relative path never matches, so its jobs miss the
-      feature. `cmd_feature_add` accepts it.
-      Done when a bats test shows `vibe feature add` with member `./repo <branch>`
-      exits non-zero and names the path.
 - [ ] **[health] Deny `git push` with a combined force flag** — the deny rules
       name `-f` as a whole word, so `git push -uf origin x` passes (and `-fu`,
       if `:*` ends at a word boundary).
