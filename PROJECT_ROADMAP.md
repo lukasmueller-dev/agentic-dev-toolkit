@@ -36,13 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
-      `<file>.tmp` (queue page, `feature_set_pr`, `feature_prompt`,
-      `cmd_feature_add`); two runners at once share the name. Use `mktemp` in
-      the file's directory.
-      Done when `grep -nE '"\$[a-z0-9]+\.tmp"' bin/vibe` prints nothing and a
-      bats test with two parallel `feature_set_pr` calls leaves a whole file
-      and no `.tmp`.
 - [ ] **[health] Absolute member paths in `vibe feature add`** — `is_member`
       and `feature_of` compare the member path as a string with the job's
       absolute `repo`; a relative path never matches, so its jobs miss the
