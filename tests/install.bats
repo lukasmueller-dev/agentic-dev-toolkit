@@ -688,6 +688,47 @@ EOF
   jq -e 'has("model") | not' "$f"
 }
 
+# denied CMD — a Bash(...) deny rule in the baseline matches CMD.
+# `*` spans spaces; `:*` ends at a word boundary, so `-f:*` misses `-fu`.
+denied() {
+  local rule pat
+  while IFS= read -r rule; do
+    pat="${rule#Bash(}"
+    pat="${pat%)}"
+    case "$pat" in
+      *:\*)
+        pat="${pat%:\*}"
+        case "$1" in "$pat" | "$pat "*) return 0 ;; esac
+        ;;
+      *)
+        # shellcheck disable=SC2254
+        case "$1" in $pat) return 0 ;; esac
+        ;;
+    esac
+  done < <(jq -r '.permissions.deny[] | select(startswith("Bash("))' "$REPO_ROOT/claude/settings.json")
+  return 1
+}
+
+@test "claude settings: git push with a combined force flag is denied, -u alone is not" {
+  local c
+  for c in \
+    "git push -f origin x" "git push origin x -f" \
+    "git push -fu origin x" "git push -uf origin x" \
+    "git push origin x -fu" "git push origin x -uf" \
+    "git push origin -fu x" "git push origin -uf x"; do
+    denied "$c" || {
+      echo "not denied: $c" >&2
+      return 1
+    }
+  done
+  for c in "git push -u origin x" "git push origin feature" "git push -u origin fix-uf"; do
+    if denied "$c"; then
+      echo "denied by mistake: $c" >&2
+      return 1
+    fi
+  done
+}
+
 @test "claude settings: unions sandbox arrays instead of replacing them" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'
