@@ -33,6 +33,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       the roadmap items the repo proves done or dead, with one proof line each.
       Done when one recurring job per repo queues and its PR changes only
       `PROJECT_ROADMAP.md`.
+- [ ] **Stop gate between review walk units** — `skills/review-jobs/SKILL.md`
+      Phase 3 shows the next repo's rows right after a repo ends. Add a stop
+      step after each repo and each feature that asks only "Next: `<repo>`
+      (`<n>` rows)?".
+      Done when `grep -n 'Next: ' skills/review-jobs/SKILL.md` prints the gate
+      in the feature and the repo list and `./bin/skill-lint --strict skills` passes.
 
 ### Health items (repo review of 2026-11-03)
 
