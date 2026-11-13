@@ -36,11 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] Deny `git push` with a combined force flag** — the deny rules
-      name `-f` as a whole word, so `git push -uf origin x` passes (and `-fu`,
-      if `:*` ends at a word boundary).
-      Done when a bats test finds deny rules for `-fu` and `-uf` in
-      `claude/settings.json`, and `git push -u origin x` stays allowed.
 - [ ] **[health] Prove the job write fence** — `blockWritesOutsideWorkingDirectories`
       is in `claude/vibe-job-settings.json`, but the settings reference did not
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
