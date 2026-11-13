@@ -262,6 +262,7 @@ unsandboxed retry, no push to `main`/`master`, no `gh pr merge`. File tools
 GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
 [`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, job
 `<id>-gpu` continues on the same branch with the exit code and log.
+A `gpu-queue` run that no job's `gpu-job` names (a manual `submit`) counts in "on the GPU" and shows in a `GPU` block of `vibe queue status` and the page.
 
 ```bash
 gpu-queue status                      # queued, running, finished (exit code)

@@ -1319,6 +1319,57 @@ died_job() {
   [ "$(wc -l <<<"$output")" -eq 8 ]
 }
 
+# gpuq STATE NAME DIR — a run made by `gpu-queue submit`, so a change of its layout turns the test red;
+# STATE running moves it where `gpu-queue run` puts it. Prints the run's id.
+gpuq() {
+  local gq="${GPU_QUEUE_DIR:-$XDG_STATE_HOME/gpu-queue}" id
+  id="$("$REPO_ROOT/bin/gpu-queue" submit --name "$2" --dir "$3" -- true)"
+  if [ "$1" = running ]; then mv "$gq/queued/$id" "$gq/running/$id"; fi
+  echo "$id"
+}
+
+@test "status: a gpu-queue run no vibe job started counts on the GPU, in a GPU block with its id and dir" {
+  local id dir="$BATS_TEST_TMPDIR/sc-962d4a2"
+  unset GPU_QUEUE_DIR # the default state dir of gpu-queue and of vibe must agree
+  mkdir "$dir"
+  id="$(gpuq running t43 "$dir")"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  [ "$(sed -n 3p <<<"$output")" = "GPU" ]
+  [ "$(sed -n 4p <<<"$output")" = "  $id  running" ]
+  [ "$(sed -n 5p <<<"$output")" = "    $(cd "$dir" && pwd)" ]
+  run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  grep -q "<b>$id</b>" "$XDG_STATE_HOME/vibe/web/index.html"
+  grep -q '<b>1</b> on the GPU' "$XDG_STATE_HOME/vibe/web/index.html"
+}
+
+@test "status: a gpu-queue run a vibe job's gpu-job names counts once; an outside queued run is added" {
+  local r own other
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo gpu >"$Q/01-a/status"
+  own="$(gpuq running own "$r")"
+  echo "$own" >"$Q/01-a/gpu-job"
+  other="$(gpuq queued other "$r")"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 2 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  grep -qx "  $other  queued" <<<"$output"
+  [ "$(grep -c "$own" <<<"$output")" -eq 0 ]
+}
+
+@test "status: the <id>.tmp dir of a gpu-queue submit under way is no GPU run" {
+  local id
+  id="$(gpuq queued t43 "$BATS_TEST_TMPDIR")"
+  mkdir "$GPU_QUEUE_DIR/queued/$id.tmp"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  [ "$(grep -c '\.tmp' <<<"$output")" -eq 0 ]
+}
+
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
 endjob() {
   local id="$1" repo="$2" branch="$3" pr="${4:-}"
