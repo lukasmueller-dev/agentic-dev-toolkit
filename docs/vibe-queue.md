@@ -125,7 +125,8 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
 - Gate: after the agent (after the last review round and the verify step when due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
-- Each runner git call on a job's tree, the checkout of a resumed branch and `vibe sync` run with `core.hooksPath=/dev/null` (`agent_git` in `skills/_lib/lib.sh`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed. `agent_push` refuses a tree that uses git-lfs (`git-lfs` installed, and `filter=lfs` in a committed `.gitattributes` or a `pre-push` hook that runs it): the pre-push hook that uploads the LFS objects is off.
+- A failed push writes `push failed` (git-lfs: `push failed (git-lfs: push by hand)`) to `pr`; a failed `gh pr create` writes `PR not created`. The `done` job shows under "Needs you" with that note, not under "Done". A failing gate keeps its row and gains the note. A feature member whose last `pr` holds either note shows it as its state, and the feature `needs you`.
+- Each runner git call on a job's tree, the checkout of a resumed branch and `vibe sync` run with `core.hooksPath=/dev/null` (`agent_git` in `skills/_lib/lib.sh`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed. `agent_push` refuses a push when `git-lfs` is installed and a commit to push adds or changes a path that `filter=lfs` maps (any `.gitattributes`, `.git/info/attributes`): the pre-push hook that uploads the LFS objects is off. A push that changes no LFS path goes through.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
 - Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes.
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
@@ -173,7 +174,7 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
 - Status, the briefing and the page show a `Features` group first. Member jobs leave their repo groups; in the briefing a member job keeps its row only when it needs you.
 - Count: done members / members. Done: a PR, and no job queued, running or in need of you.
-- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
+- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member whose last `pr` is `push failed` or `PR not created`; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
 
 ## Page actions
@@ -295,7 +296,7 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
 - A job `failed`, note `job process died twice` → the process died on both runs (reboot, oomd); read `runner.log` and `log`, then queue it again.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
-- Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A git-lfs repo: the runner and `vibe sync` refuse the push (`git-lfs: push by hand`) → push the branch yourself.
+- Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A push that adds or changes an LFS-tracked file: the runner and `vibe sync` refuse it (`git-lfs: push by hand`) → push the branch yourself.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
 - Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).

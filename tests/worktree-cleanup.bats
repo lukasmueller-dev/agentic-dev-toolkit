@@ -8,7 +8,7 @@ load helper
 
 # A gh on PATH that logs its arguments to $GH_LOG and answers `pr list` with
 # $GH_OIDS (one head sha per line) and, when the query asks for commits, $GH_COMMITS;
-# $GH_FAIL makes it exit 1. No test reaches the real gh.
+# $GH_FAIL makes it exit 1, as does a --limit above 20 (GitHub's node cap). No test reaches the real gh.
 setup() {
   git_env
   mkdir -p "$BATS_TEST_TMPDIR/stubs"
@@ -16,6 +16,8 @@ setup() {
 #!/bin/sh
 echo "$*" >>"$GH_LOG"
 [ -z "${GH_FAIL:-}" ] || exit 1
+lim="$(echo "$*" | sed -n 's/.*--limit \([0-9]*\).*/\1/p')"
+[ "${lim:-0}" -le 20 ] || exit 1
 [ -z "${GH_OIDS:-}" ] || printf '%s\n' "$GH_OIDS"
 [ -z "${GH_COMMITS:-}" ] || case "$*" in *commits*) printf '%s\n' "$GH_COMMITS" ;; esac
 EOF2
@@ -131,7 +133,7 @@ squash_merge() {
   git -C "$r" push -q origin --delete moved
   cd "$r"
   [ "$(state_of "$w")" = merged ]
-  grep -qF -- '--limit 100' "$GH_LOG"
+  grep -qF -- '--limit 10 ' "$GH_LOG"
 }
 
 # ignore_dirs REPO — commit a .gitignore before any worktree exists.

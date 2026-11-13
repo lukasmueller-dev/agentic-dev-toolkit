@@ -530,7 +530,19 @@ putfeature() {
   [ ! -e "$m" ]
 }
 
-@test "run: the runner does not push a git-lfs tree with hooks off" {
+@test "run: the runner does not push a job that adds an LFS-tracked file, with hooks off" {
+  local r lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  echo '*.txt filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
+  git -C "$r" add .gitattributes && git -C "$r" commit -q -m "chore: lfs" && git -C "$r" push -q origin main
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  mkjob 01-a "$r" task-a ok
+  PATH="$lfs:$PATH" drain
+  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
+  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+}
+
+@test "run: the runner pushes a job in a git-lfs repo when no changed path is LFS-tracked" {
   local r lfs="$BATS_TEST_TMPDIR/lfs"
   r="$(make_repo proj)"
   echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$r/.gitattributes"
@@ -538,8 +550,8 @@ putfeature() {
   mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
   mkjob 01-a "$r" task-a ok
   PATH="$lfs:$PATH" drain
-  [ "$(cat "$Q/01-a/pr")" = "push failed (git-lfs: push by hand)" ]
-  [ -z "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
+  [ "$(cat "$Q/01-a/pr")" != "push failed (git-lfs: push by hand)" ]
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/task-a)" ]
 }
 
 @test "run: a config.lock with content, or a writable one, stays" {
@@ -1222,6 +1234,50 @@ died_job() {
   [ "$rc" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = failed ]
   [ "$(cat "$Q/01-a/note")" = stopped ]
+}
+
+@test "report: a done job whose push failed or whose PR was not created is under Needs you with its note, not under Done" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" task-a "push failed (git-lfs: push by hand)"
+  endjob 02-b "$r" task-b "push failed"
+  endjob 03-c "$r" task-c
+  endjob 04-d "$r" task-d "PR not created"
+  endjob 05-e "$r" task-e "push failed"
+  echo 1 >"$Q/05-e/gate" && echo red >"$Q/05-e/gate.log"
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| 01-a | done |"*"**push failed (git-lfs: push by hand)** · "*"| 02-b | done |"*"**push failed** · "*"| 04-d | done |"*"**PR not created** · "*"| 05-e | done |"*"**gate exit 1** · **push failed** · "*"### Done, nothing to read"*"| 03-c | done |"* ]] || false
+  [ "$(grep -cE '^\| 0[1245]-[a-e] ' <<<"$output")" = 4 ]
+}
+
+@test "report: a feature member whose last round failed to push needs you although an earlier job holds a PR; a later PR clears it" {
+  local r1 r2
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  putfeature teleop "$r1 sticks" "$r2 gamepad"
+  endjob 01-a "$r1" sticks https://example.com/pull/1
+  endjob 01-a-review1 "$r1" sticks "push failed (git-lfs: push by hand)"
+  endjob 02-b "$r2" gamepad "push failed"
+  endjob 02-b-review1 "$r2" gamepad https://example.com/pull/2
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"| teleop | needs you | 1/2 |"*"| [bridge#1](https://example.com/pull/1) push failed (git-lfs: push by hand) · [cmdr#2](https://example.com/pull/2) done |"* ]] || false
+}
+
+@test "report: a lane whose push failed or whose PR was not created is one row under Needs you with the note" {
+  local r
+  r="$(make_repo proj)"
+  endjob 01-a "$r" lane-x "push failed" "lane=Fix health" item=alpha
+  endjob 02-b "$r" lane-x "push failed (git-lfs: push by hand)" "lane=Fix health" item=beta
+  endjob 03-c "$r" lane-y "PR not created" "lane=Fix wiring" item=gamma
+  endjob 04-d "$r" lane-y "PR not created" "lane=Fix wiring" item=delta
+  run "$VIBE" queue report
+  [ "$status" -eq 0 ]
+  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  [[ "$output" == *"### Needs you"*"| lane-x | 2/2 | Fix health | **push failed (git-lfs: push by hand)** · "*"| lane-y | 2/2 | Fix wiring | **PR not created** · "* ]] || false
+  [[ "$output" != *"### Done, nothing to read"* ]] || false
 }
 
 @test "hold and archive: a held job stays; archive moves only ended jobs" {

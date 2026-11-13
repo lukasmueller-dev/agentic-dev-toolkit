@@ -118,23 +118,25 @@ ff_main_quiet() {
 # a relative core.hooksPath would run the agent's hook with the user's credentials.
 agent_git() { git -c core.hooksPath=/dev/null "$@"; }
 
-# uses_lfs DIR — git-lfs is installed and DIR uses it: a committed .gitattributes with
-# filter=lfs, or a pre-push hook that runs git-lfs (also true for .git/info/attributes).
-uses_lfs() {
-  local hook
-  command -v git-lfs >/dev/null 2>&1 || return 1
-  if agent_git -C "$1" grep -q 'filter=lfs' HEAD -- ':(glob)**/.gitattributes' 2>/dev/null; then return 0; fi
-  hook="$(git -C "$1" rev-parse --git-path hooks/pre-push 2>/dev/null)" || return 1
-  [[ "$hook" == /* ]] || hook="$1/$hook"
-  grep -qE 'git[ -]lfs' "$hook" 2>/dev/null
+# lfs_push_paths DIR REMOTE REF — the paths filter=lfs maps that REF adds or changes and
+# REMOTE lacks. shortcut: attributes come from DIR's work tree, so a .gitattributes REF changes is missed.
+lfs_push_paths() {
+  agent_git -C "$1" log --cc --name-only --format= --diff-filter=d "$3" --not "--remotes=$2" -- 2>/dev/null |
+    agent_git -C "$1" check-attr --stdin filter 2>/dev/null | grep ': filter: lfs$' || true
 }
 
-# agent_push DIR ARGS — `git push` from DIR with hooks off. A git-lfs tree is refused:
-# the pre-push hook that uploads the LFS objects is off, so only pointers would land.
+# agent_push DIR ARGS REMOTE REFSPEC — `git push` from DIR with hooks off. Refused when git-lfs
+# is installed and the commits to push add or change an LFS path: the pre-push hook that uploads
+# the LFS objects is off, so only pointers would land. A refusal sets LFS_REFUSED=1.
 agent_push() {
-  local dir="$1"
+  local dir="$1" remote="" ref="" a
   shift
-  if uses_lfs "$dir"; then
+  for a in "$@"; do remote="$ref" ref="$a"; done
+  ref="${ref#+}"
+  LFS_REFUSED=""
+  if command -v git-lfs >/dev/null 2>&1 && [[ -n "$(lfs_push_paths "$dir" "$remote" "${ref%%:*}")" ]]; then
+    # shellcheck disable=SC2034 # read by bin/vibe
+    LFS_REFUSED=1
     echo "git-lfs: not pushed from $dir (hooks off) — push it by hand" >&2
     return 1
   fi
