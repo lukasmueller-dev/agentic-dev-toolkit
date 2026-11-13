@@ -29,6 +29,12 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
+- [ ] **Show GPU runs outside the vibe queue** — `queue_counts` counts only
+      vibe jobs with status `gpu`, so `vibe queue status` says `0 on the GPU`
+      while a `gpu-queue` run that no job's `gpu-job` names holds the GPU.
+      Done when `bats tests/vibe-queue.bats` has a test: a `running` run in the
+      `gpu-queue` state dir that no `gpu-job` names shows `1 on the GPU` in the
+      header and a row with its id and dir.
 - [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
       the roadmap items the repo proves done or dead, with one proof line each.
       Done when one recurring job per repo queues and its PR changes only
