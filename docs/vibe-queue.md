@@ -8,7 +8,7 @@ and refill it whenever you like.
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
 | [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, or a feature; your approval; `vibe queue add` |
-| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
+| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
 | 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |

@@ -85,6 +85,10 @@ Take the features first. For each feature:
 3. After `ready`, give one merge order across repos, one line each:
    `<n>. <repo>#<pr> — <who merges> — <why here>`. A repo that owns a contract row merges before the repos with its copies.
    Who merges: the user, or the repo's owner when `gh repo view --json owner` names another account than `gh api user`.
+4. **Stop and wait before the next feature or repo.** Ask only:
+   "Next: `<feature>` (`<n>` members)?" or "Next: `<repo>` (`<n>` rows)?"
+   Show no row, context, TL;DR or action of it. Show its step 1 only after the
+   user says yes. On no, skip it; its rows stay for the next review.
 
 Then take the repos one at a time, in table order. For each repo:
 
@@ -100,8 +104,9 @@ Then take the repos one at a time, in table order. For each repo:
    `<n>. #<pr> — <why here>`. Put a PR before the ones whose files it shares,
    smallest first, and name the PRs that can conflict after it. Give the
    merge method of the repo's last merges.
-
-Then go to the next repo.
+7. **Stop and wait before the next repo.** Ask only: "Next: `<repo>` (`<n>` rows)?"
+   Show no row, context, TL;DR or action of that repo. Show its rows (step 1)
+   only after the user says yes. On no, skip it; its rows stay for the next review.
 
 For `requeue` of a job without `side`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
