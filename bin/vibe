@@ -1851,6 +1851,7 @@ gpu_outside() {
     for d in "$gq/$s"/*/; do
       [[ -d "$d" ]] || continue
       d="${d%/}" id="${d##*/}"
+      [[ "$id" != *.tmp ]] || continue # shortcut: a submit under way is <id>.tmp, and so is a run named *.tmp; no run has been
       if [[ "$own" != *$'\n'"$id"$'\n'* ]]; then printf '%s\t%s\t%s\n' "$s" "$id" "$(jstate "$d" dir)"; fi
     done
   done

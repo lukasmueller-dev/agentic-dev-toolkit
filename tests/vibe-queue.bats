@@ -1360,6 +1360,16 @@ gpuq() {
   [ "$(grep -c "$own" <<<"$output")" -eq 0 ]
 }
 
+@test "status: the <id>.tmp dir of a gpu-queue submit under way is no GPU run" {
+  local id
+  id="$(gpuq queued t43 "$BATS_TEST_TMPDIR")"
+  mkdir "$GPU_QUEUE_DIR/queued/$id.tmp"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  [ "$(grep -c '\.tmp' <<<"$output")" -eq 0 ]
+}
+
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
 endjob() {
   local id="$1" repo="$2" branch="$3" pr="${4:-}"
