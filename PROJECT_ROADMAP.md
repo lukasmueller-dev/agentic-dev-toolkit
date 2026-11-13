@@ -36,6 +36,13 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
+- [ ] **[health] Deny any short force-flag cluster in `git push`** — deny rules
+      match whole tokens and `*` spans spaces, so `-vf`, `-fv`, `-qf` and `-fuv`
+      still pass; `git push -*f*` would also block `git push -u origin feature`.
+      Done when a `PreToolUse` hook denies a `git push` flag cluster that holds
+      `f`, a bats test shows `-vf` and `-fuv` denied and `git push -u origin
+      feature` allowed, and the hook is wired in `claude/settings.json` and
+      `.claude-plugin/hooks.json`.
 - [ ] **[health] Prove the job write fence** — `blockWritesOutsideWorkingDirectories`
       is in `claude/vibe-job-settings.json`, but the settings reference did not
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
