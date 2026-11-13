@@ -217,6 +217,24 @@ putfeature() {
   [ "$output" = 0 ]
 }
 
+@test "feature: parallel feature_set_pr calls all succeed and leave a whole file and no temp file" {
+  local d="$BATS_TEST_TMPDIR/par" i pid pids=()
+  mkdir "$d"
+  # shellcheck disable=SC1090  # the function text comes from bin/vibe
+  source <(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")
+  {
+    printf '## Members\n\n'
+    for i in 1 2 3 4 5 6 7 8; do echo "- r$i b$i"; done
+  } >"$d/f.md"
+  for i in 1 2 3 4 5 6 7 8; do
+    feature_set_pr "$d/f.md" "r$i" "b$i" "https://example.com/pull/$i" &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  [ "$(ls "$d")" = f.md ]
+  [ "$(grep -c '^- r[1-8] b[1-8]\( https://example.com/pull/[1-8]\)\?$' "$d/f.md")" = 8 ]
+}
+
 @test "feature: a member PR body has the Feature line below its TL;DR and the decisions and contract above its footer; the file gets the PR" {
   local r F="$XDG_STATE_HOME/vibe/features"
   r="$(make_repo bridge)"
