@@ -1510,20 +1510,20 @@ follow_dir() {
 
 # task_append PROMPT LINE... — the lines end the `## Task` section of PROMPT.
 task_append() {
-  local f="$1"
+  local f="$1" t
   shift
-  ADD="$(printf '%s\n' "$@")" awk '
+  t="$(mktemp "$f.XXXXXX")" && ADD="$(printf '%s\n' "$@")" awk '
     function put() { if (!t) { print ENVIRON["ADD"]; print ""; t = 1 } }
     s && /^## / { put() }
     { print }
     $0 == "## Task" { s = 1 }
-    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp" && mv -f "$f.tmp" "$f"
+    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$t" && mv -f "$t" "$f"
 }
 
 # vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in place of Next action and Blockers of the job's HANDOFF.md (commit,
 # push) or, for a lane side job, in a retry prompt; a follow-up job is queued, the original archived.
 cmd_queue_answer() {
-  local d tmp side item n st text wt branch
+  local d tmp side item n st text wt branch t
   (($# >= 2)) || die "usage: vibe queue answer <id> <answer>"
   d="$(queue_job "$1")"
   shift
@@ -1534,11 +1534,12 @@ cmd_queue_answer() {
     branch_idle "$d"
     wt="$(jstate "$d" worktree)"
     [[ -f "$wt/HANDOFF.md" ]] || die "no HANDOFF.md in the worktree ${wt:-of the job} — retry takes a job without one"
+    t="$(mktemp "$wt/HANDOFF.md.XXXXXX")"
     ANS="Answer: $text" awk '
       /^## / { s = ($0 == "## Next action" || $0 == "## Blockers"); if (s) { print; print ""; print ENVIRON["ANS"]; print ""; f = 1; next } }
       !s { print }
-      END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$wt/HANDOFF.md.tmp"
-    mv -f "$wt/HANDOFF.md.tmp" "$wt/HANDOFF.md"
+      END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$t"
+    mv -f "$t" "$wt/HANDOFF.md"
     if ! git -C "$wt" diff --quiet -- HANDOFF.md; then
       git -C "$wt" commit -q -m "docs(handoff): ${d##*/} unblocked" -- HANDOFF.md || die "commit in $wt failed"
     fi
@@ -2738,11 +2739,29 @@ feature_row() {
 }
 
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
+# Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
 feature_set_pr() {
-  awk -v r="${2%/}" -v b="$3" -v u="$4" '
+  local t rc=0 tries=0
+  # shortcut: a lock over 1 min old is a killed job's; the waiter that gets FILE.reap removes it. A reaper killed
+  # inside that step leaves FILE.reap and blocks the removal; a waiter fails after 3 min. flock is not on macOS.
+  until mkdir "$1.lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    if ((tries > 1800)); then
+      echo "vibe: no lock on $1 after 3 min — remove $1.lock and $1.reap if no job runs, or check the directory is writable" >&2
+      return 1
+    fi
+    if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]] && mkdir "$1.reap" 2>/dev/null; then
+      if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]]; then rmdir "$1.lock" 2>/dev/null || true; fi
+      rmdir "$1.reap" 2>/dev/null || true
+    fi
+    sleep 0.1
+  done
+  t="$(mktemp "$1.XXXXXX")" && awk -v r="${2%/}" -v b="$3" -v u="$4" '
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
-    { print }' "$1" >"$1.tmp" && mv -f "$1.tmp" "$1"
+    { print }' "$1" >"$t" && mv -f "$t" "$1" || rc=1
+  rmdir "$1.lock" 2>/dev/null || true
+  return "$rc"
 }
 
 # feature_prompt JOB — a member job's prompt.md ends with the feature block, once.
@@ -2763,7 +2782,7 @@ feature_prompt() {
 # feature_body JOB FILE — JOB/pr-body.md gets the `**Feature:**` line below its TL;DR (siblings as
 # repo#pr, else repo:branch) and the feature's decisions and contract in a <details> above its footer.
 feature_body() {
-  local d="$1" f="$2" b="$1/pr-body.md" r m p repo branch name sib="" det
+  local d="$1" f="$2" b="$1/pr-body.md" r m p repo branch name sib="" det t
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)" name="$(basename "$f" .md)"
   while IFS=$'\t' read -r r m p; do
     if [[ "$r" == "${repo%/}" && "$m" == "$branch" ]]; then continue; fi
@@ -2776,18 +2795,19 @@ feature_body() {
     md_section "$f" Contract
     printf '\n</details>\n'
   )"
+  t="$(mktemp "$b.XXXXXX")" || return 1
   FLINE="**Feature:** $name — merges together with $sib" FDET="$det" awk '
     FNR == NR { if ($0 == "---") n = FNR; if (/^\*\*Decisions\/risks:\*\*/) r = 1; next }
     !r && !t && NF { print ENVIRON["FLINE"]; print ""; t = 1 }
     FNR == n { print ENVIRON["FDET"]; print "" }
     { print }
     r && !t && /^\*\*Decisions\/risks:\*\*/ { print ENVIRON["FLINE"]; t = 1 }
-    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$b.tmp" && mv -f "$b.tmp" "$b"
+    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$t" && mv -f "$t" "$b"
 }
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
 cmd_feature_add() {
-  local src="${1:-}" name dst r b p f n=0 seen=$'\n'
+  local src="${1:-}" name dst r b p f t n=0 seen=$'\n'
   [[ $# -eq 1 && -f "$src" ]] || die "usage: vibe feature add <file>"
   name="$(basename "$src" .md)"
   [[ -n "$name" && "$(slug "$name")" == "$name" ]] || die "'$name' is not a slug — name the file <slug>.md"
@@ -2795,6 +2815,7 @@ cmd_feature_add() {
   [[ ! -e "$dst" ]] || die "feature '$name' exists: $dst"
   while IFS=$'\t' read -r r b _; do
     n=$((n + 1))
+    [[ "$r" == /* ]] || die "$r is not an absolute path — jobs match a member by their absolute repo"
     [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
     seen+="$r#$b"$'\n'
     git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
@@ -2805,13 +2826,14 @@ cmd_feature_add() {
   done < <(feature_members "$src")
   ((n >= 2)) || die "a feature needs 2 or more '- <repo> <branch>' lines under ## Members"
   mkdir -p "$FROOT"
-  cp "$src" "$dst.tmp"
+  t="$(mktemp "$dst.XXXXXX")"
+  cp "$src" "$t"
   while IFS=$'\t' read -r r b p; do
     if [[ -z "$p" ]]; then p="$(pr_of "$(open_prs "$r")" "$b")"; fi
-    if [[ -n "$p" ]]; then feature_set_pr "$dst.tmp" "$r" "$b" "$p"; fi
+    if [[ -n "$p" ]]; then feature_set_pr "$t" "$r" "$b" "$p"; fi
     echo "  ${r##*/} · $b${p:+ · $p}"
   done < <(feature_members "$src")
-  mv "$dst.tmp" "$dst"
+  mv "$t" "$dst"
   echo "feature $name: $n members → $dst"
 }
 

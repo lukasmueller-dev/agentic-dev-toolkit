@@ -217,6 +217,49 @@ putfeature() {
   [ "$output" = 0 ]
 }
 
+# par_set_pr DIR — DIR/f.md has 8 members; 8 parallel feature_set_pr calls each give one a PR URL.
+par_set_pr() {
+  local i pid pids=()
+  eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  {
+    printf '## Members\n\n'
+    for i in 1 2 3 4 5 6 7 8; do echo "- r$i b$i"; done
+  } >"$1/f.md"
+  [ ! -e "$1/f.md.lock" ] || touch -t 200001010000 "$1/f.md.lock"
+  for i in 1 2 3 4 5 6 7 8; do
+    feature_set_pr "$1/f.md" "r$i" "b$i" "https://example.com/pull/$i" &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do wait "$pid"; done
+  [ "$(ls "$1")" = f.md ]
+  for i in 1 2 3 4 5 6 7 8; do grep -qxF -- "- r$i b$i https://example.com/pull/$i" "$1/f.md"; done
+}
+
+@test "feature: parallel feature_set_pr calls all succeed, keep every PR and leave no temp file or lock" {
+  mkdir "$BATS_TEST_TMPDIR/par"
+  par_set_pr "$BATS_TEST_TMPDIR/par"
+}
+
+# locked_out ARGS — feature_set_pr where mkdir always fails (a read-only directory, a stuck FILE.reap), in a subshell.
+locked_out() (
+  eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  mkdir() { return 1; }
+  find() { :; }
+  sleep() { :; }
+  feature_set_pr "$@"
+)
+
+@test "feature: feature_set_pr gives up with a message when it cannot take the lock" {
+  run locked_out "$BATS_TEST_TMPDIR/f.md" r b https://example.com/pull/1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no lock on $BATS_TEST_TMPDIR/f.md after 3 min"* ]] || false
+}
+
+@test "feature: a stale lock from a killed job is removed once; parallel feature_set_pr calls still keep every PR" {
+  mkdir -p "$BATS_TEST_TMPDIR/par/f.md.lock"
+  par_set_pr "$BATS_TEST_TMPDIR/par"
+}
+
 @test "feature: a member PR body has the Feature line below its TL;DR and the decisions and contract above its footer; the file gets the PR" {
   local r F="$XDG_STATE_HOME/vibe/features"
   r="$(make_repo bridge)"
@@ -385,6 +428,18 @@ putfeature() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"is not a slug"* ]] || false
   [ "$(find "$F" -type f | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "feature add: refuses a relative member path and names it" {
+  local r1 r2 F="$XDG_STATE_HOME/vibe/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  cd "$BATS_TEST_TMPDIR"
+  run "$VIBE" feature add "$(mkfeature rel "./bridge sticks" "$r2 gamepad")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"./bridge is not an absolute path"* ]] || false
+  [ ! -e "$F/rel.md" ]
 }
 
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {

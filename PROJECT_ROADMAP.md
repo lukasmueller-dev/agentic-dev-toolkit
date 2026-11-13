@@ -36,24 +36,13 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Health items (repo review of 2026-11-03)
 
-- [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
-      `<file>.tmp` (queue page, `feature_set_pr`, `feature_prompt`,
-      `cmd_feature_add`); two runners at once share the name. Use `mktemp` in
-      the file's directory.
-      Done when `grep -nE '"\$[a-z0-9]+\.tmp"' bin/vibe` prints nothing and a
-      bats test with two parallel `feature_set_pr` calls leaves a whole file
-      and no `.tmp`.
-- [ ] **[health] Absolute member paths in `vibe feature add`** — `is_member`
-      and `feature_of` compare the member path as a string with the job's
-      absolute `repo`; a relative path never matches, so its jobs miss the
-      feature. `cmd_feature_add` accepts it.
-      Done when a bats test shows `vibe feature add` with member `./repo <branch>`
-      exits non-zero and names the path.
-- [ ] **[health] Deny `git push` with a combined force flag** — the deny rules
-      name `-f` as a whole word, so `git push -uf origin x` passes (and `-fu`,
-      if `:*` ends at a word boundary).
-      Done when a bats test finds deny rules for `-fu` and `-uf` in
-      `claude/settings.json`, and `git push -u origin x` stays allowed.
+- [ ] **[health] Deny any short force-flag cluster in `git push`** — deny rules
+      match whole tokens and `*` spans spaces, so `-vf`, `-fv`, `-qf` and `-fuv`
+      still pass; `git push -*f*` would also block `git push -u origin feature`.
+      Done when a `PreToolUse` hook denies a `git push` flag cluster that holds
+      `f`, a bats test shows `-vf` and `-fuv` denied and `git push -u origin
+      feature` allowed, and the hook is wired in `claude/settings.json` and
+      `.claude-plugin/hooks.json`.
 - [ ] **[health] Prove the job write fence** — `blockWritesOutsideWorkingDirectories`
       is in `claude/vibe-job-settings.json`, but the settings reference did not
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.

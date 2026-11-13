@@ -162,13 +162,13 @@ Branches in several repos that merge together run as one feature: one file, one 
 A job still changes only its own repo. `/fill-queue` and `/enqueue` make features: [`references/feature.md`](../skills/fill-queue/references/feature.md).
 
 ```bash
-vibe feature add <dir>/<slug>.md   # checks each member branch, fills in the open PRs
+vibe feature add <dir>/<slug>.md   # checks each member path and branch, fills in the open PRs
 vibe feature ready <slug>          # the human test passed: the pill shows merge
 vibe feature archive <slug>        # all member PRs merged; refuses an open one
 vibe queue ready --feature <slug>  # each member PR checked, then ready, then feature ready
 ```
 
-- A member is a `- <repo> <branch>` line under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
+- A member is a `- <repo> <branch>` line (absolute repo path; `feature add` refuses a relative one) under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
 - A member is one job, a lane, a `SPEC.md` chain, or a PR with no job. Its `SPEC.md` holds only its milestones and a pointer to the feature file.
 - At job start the runner adds a `## Feature` block to a member's prompt, once: the file path and the contract rule. A contract change ends the job `blocked: contract …`.
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
