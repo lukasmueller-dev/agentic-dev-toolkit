@@ -2741,10 +2741,14 @@ feature_row() {
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
 # Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
 feature_set_pr() {
-  local t n=0 rc=0
+  local t rc=0
+  # shortcut: a lock over 1 min old is a killed job's; the waiter that gets FILE.reap removes it. A reaper killed
+  # inside that step leaves FILE.reap and blocks the removal. flock is not on macOS.
   until mkdir "$1.lock" 2>/dev/null; do
-    # shortcut: after 10 s the lock counts as stale (a killed job) and is taken over; flock is not on macOS.
-    ((++n < 100)) || break
+    if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]] && mkdir "$1.reap" 2>/dev/null; then
+      if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]]; then rmdir "$1.lock" 2>/dev/null || true; fi
+      rmdir "$1.reap" 2>/dev/null || true
+    fi
     sleep 0.1
   done
   t="$(mktemp "$1.XXXXXX")" && awk -v r="${2%/}" -v b="$3" -v u="$4" '

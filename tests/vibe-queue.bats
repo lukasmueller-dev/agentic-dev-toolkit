@@ -217,21 +217,32 @@ putfeature() {
   [ "$output" = 0 ]
 }
 
-@test "feature: parallel feature_set_pr calls all succeed, keep every PR and leave no temp file or lock" {
-  local d="$BATS_TEST_TMPDIR/par" i pid pids=()
-  mkdir "$d"
+# par_set_pr DIR — DIR/f.md has 8 members; 8 parallel feature_set_pr calls each give one a PR URL.
+par_set_pr() {
+  local i pid pids=()
   eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
   {
     printf '## Members\n\n'
     for i in 1 2 3 4 5 6 7 8; do echo "- r$i b$i"; done
-  } >"$d/f.md"
+  } >"$1/f.md"
+  [ ! -e "$1/f.md.lock" ] || touch -t 200001010000 "$1/f.md.lock"
   for i in 1 2 3 4 5 6 7 8; do
-    feature_set_pr "$d/f.md" "r$i" "b$i" "https://example.com/pull/$i" &
+    feature_set_pr "$1/f.md" "r$i" "b$i" "https://example.com/pull/$i" &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do wait "$pid"; done
-  [ "$(ls "$d")" = f.md ]
-  for i in 1 2 3 4 5 6 7 8; do grep -qxF -- "- r$i b$i https://example.com/pull/$i" "$d/f.md"; done
+  [ "$(ls "$1")" = f.md ]
+  for i in 1 2 3 4 5 6 7 8; do grep -qxF -- "- r$i b$i https://example.com/pull/$i" "$1/f.md"; done
+}
+
+@test "feature: parallel feature_set_pr calls all succeed, keep every PR and leave no temp file or lock" {
+  mkdir "$BATS_TEST_TMPDIR/par"
+  par_set_pr "$BATS_TEST_TMPDIR/par"
+}
+
+@test "feature: a stale lock from a killed job is removed once; parallel feature_set_pr calls still keep every PR" {
+  mkdir -p "$BATS_TEST_TMPDIR/par/f.md.lock"
+  par_set_pr "$BATS_TEST_TMPDIR/par"
 }
 
 @test "feature: a member PR body has the Feature line below its TL;DR and the decisions and contract above its footer; the file gets the PR" {
