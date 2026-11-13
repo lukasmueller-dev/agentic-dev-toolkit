@@ -415,6 +415,18 @@ par_set_pr() {
   [ "$(find "$F" -type f | wc -l | tr -d ' ')" = 1 ]
 }
 
+@test "feature add: refuses a relative member path and names it" {
+  local r1 r2 F="$XDG_STATE_HOME/vibe/features"
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  cd "$BATS_TEST_TMPDIR"
+  run "$VIBE" feature add "$(mkfeature rel "./bridge sticks" "$r2 gamepad")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"./bridge is not an absolute path"* ]] || false
+  [ ! -e "$F/rel.md" ]
+}
+
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features" A
   A="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/features"
