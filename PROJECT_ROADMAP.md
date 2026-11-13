@@ -27,13 +27,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       prints `1` and `grep -n codebase-health PROJECT_STATUS.md` prints the
       scan decision.
 
-### Vibe queue follow-ups (design: PR for `job-review`)
-
-- [ ] **Repeated roadmap cleanup** — a recurring vibe job per repo deletes
-      the roadmap items the repo proves done or dead, with one proof line each.
-      Done when one recurring job per repo queues and its PR changes only
-      `PROJECT_ROADMAP.md`.
-
 ### Health items (repo review of 2026-11-03)
 
 - [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
