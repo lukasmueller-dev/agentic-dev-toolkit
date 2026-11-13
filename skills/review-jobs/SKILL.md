@@ -85,10 +85,9 @@ Take the features first. For each feature:
 3. After `ready`, give one merge order across repos, one line each:
    `<n>. <repo>#<pr> — <who merges> — <why here>`. A repo that owns a contract row merges before the repos with its copies.
    Who merges: the user, or the repo's owner when `gh repo view --json owner` names another account than `gh api user`.
-4. **Stop and wait before the next feature or repo.** Ask only:
-   "Next: `<feature>` (`<n>` members)?" or "Next: `<repo>` (`<n>` rows)?"
-   Show no row, context, TL;DR or action of it. Show its step 1 only after the
-   user says yes. On no, skip it; its rows stay for the next review.
+4. **Stop and wait before the next feature or repo.** Ask as in repo step 7:
+   "Next: `<feature>` (`<n>` members)?" After the last feature, ask for the first repo.
+   After yes, start at step 1 of the list for that feature or repo.
 
 Then take the repos one at a time, in table order. For each repo:
 
@@ -105,8 +104,8 @@ Then take the repos one at a time, in table order. For each repo:
    smallest first, and name the PRs that can conflict after it. Give the
    merge method of the repo's last merges.
 7. **Stop and wait before the next repo.** Ask only: "Next: `<repo>` (`<n>` rows)?"
-   Show no row, context, TL;DR or action of that repo. Show its rows (step 1)
-   only after the user says yes. On no, skip it; its rows stay for the next review.
+   That message holds no row, context, TL;DR or action of that repo. After the
+   user says yes, start at its step 1. On no, skip it; its rows stay for the next review.
 
 For `requeue` of a job without `side`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
@@ -131,7 +130,7 @@ walked. It keeps its own approval gate. The user declines → stop.
 
 ## Done
 
-Done when every feature and repo is walked, its approved rows are carried out and
+Done when every feature and repo the user said yes to is walked, its approved rows are carried out and
 archived, and the cleanup is done or declined. Report in at most 6 lines:
 marked ready, requeued, held, closed, archived, worktrees removed, and
 `Decisions/risks:`.
