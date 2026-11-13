@@ -27,6 +27,16 @@ staged straight from it. Order matters within a track; tracks are independent.
       prints `1` and `grep -n codebase-health PROJECT_STATUS.md` prints the
       scan decision.
 
+### Vibe queue follow-ups (design: PR for `job-review`)
+
+- [ ] **Opt every roadmap repo into `roadmap-cleanup`** — the catalogue job
+      exists, but only this repo opts in, and it has never run. In each repo
+      with a `PROJECT_ROADMAP.md`: `vibe job add <repo> roadmap-cleanup`, commit.
+      Done when
+      `for r in ~/github/*/PROJECT_ROADMAP.md; do [ -f "${r%/*}/.vibe-jobs/roadmap-cleanup.md" ] || echo "$r"; done`
+      prints nothing, and `gh pr diff <n> --name-only` on the first
+      `jobs/roadmap-cleanup` PR prints only `PROJECT_ROADMAP.md`.
+
 ### Health items (repo review of 2026-11-03)
 
 - [ ] **[health] Unique temp names in `bin/vibe`** — 4 writers use a fixed
