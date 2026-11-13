@@ -240,6 +240,21 @@ par_set_pr() {
   par_set_pr "$BATS_TEST_TMPDIR/par"
 }
 
+# locked_out ARGS — feature_set_pr where mkdir always fails (a read-only directory, a stuck FILE.reap), in a subshell.
+locked_out() (
+  eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  mkdir() { return 1; }
+  find() { :; }
+  sleep() { :; }
+  feature_set_pr "$@"
+)
+
+@test "feature: feature_set_pr gives up with a message when it cannot take the lock" {
+  run locked_out "$BATS_TEST_TMPDIR/f.md" r b https://example.com/pull/1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no lock on $BATS_TEST_TMPDIR/f.md after 3 min"* ]] || false
+}
+
 @test "feature: a stale lock from a killed job is removed once; parallel feature_set_pr calls still keep every PR" {
   mkdir -p "$BATS_TEST_TMPDIR/par/f.md.lock"
   par_set_pr "$BATS_TEST_TMPDIR/par"
