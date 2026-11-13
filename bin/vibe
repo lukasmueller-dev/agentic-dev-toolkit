@@ -1842,7 +1842,22 @@ follow_ready() {
   [[ -z "$p" || ! -d "$QDIR/$p" || -e "$QDIR/$p/ended" ]]
 }
 
+# gpu_outside — `STATE<TAB>ID<TAB>DIR` per gpu-queue run (running, then queued) that no job's `gpu-job` names.
+# Files only: the state dir of bin/gpu-queue.
+gpu_outside() {
+  local gq="${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}" own=$'\n' d s id
+  for d in "$QDIR"/*/; do own+="$(jstate "${d%/}" gpu-job)"$'\n'; done
+  for s in running queued; do
+    for d in "$gq/$s"/*/; do
+      [[ -d "$d" ]] || continue
+      d="${d%/}" id="${d##*/}"
+      if [[ "$own" != *$'\n'"$id"$'\n'* ]]; then printf '%s\t%s\t%s\n' "$s" "$id" "$(jstate "$d" dir)"; fi
+    done
+  done
+}
+
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
+# On the GPU: jobs with status `gpu`, plus the gpu-queue runs no job started (gpu_outside).
 # A PR counts once by the URL in a job's `pr` file. A `done` job with no URL is covered by a URL on
 # its repo and branch (a review round, a lane item) and waits while a job there is live (its review
 # round is queued). A failed or blocked job with no URL always counts. Files only: no gh, every 30 s.
@@ -1864,6 +1879,7 @@ queue_counts() {
     esac
     rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
   done
+  g=$((g + $(gpu_outside | wc -l)))
   echo "$r $g $q $(printf '%s' "$rows" | awk -F'\t' '
     { k = $1 "\t" $2 }
     $4 == "live" { live[k] = 1; next }
@@ -1959,12 +1975,19 @@ job_phases() {
   esac
 }
 
-# queue_jobs PRINTER — the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
+# queue_jobs PRINTER — the GPU group (`PRINTER repo GPU`, `PRINTER job ID STATE DIR` per outside run, `PRINTER end`),
+# the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
 # PROGRESS CONTEXT ITEMS MEMBERS` per feature, `PRINTER end`), then per repo with a job outside every
 # feature `PRINTER repo NAME`, a card per job or branch (branch_card), `PRINTER end`.
 # ITEMS, MEMBERS: feature_row's F_ITEMS and F_MEMBERS.
 queue_jobs() {
-  local repo d b f seen head
+  local repo d b f seen head s id rows
+  rows="$(gpu_outside)"
+  if [[ -n "$rows" ]]; then
+    "$1" repo GPU
+    while IFS=$'\t' read -r s id d; do "$1" job "$id" "$s" "$d" "" "" ""; done <<<"$rows"
+    "$1" end
+  fi
   feature_keys
   if [[ -n "$(feature_files)" ]]; then
     "$1" repo Features

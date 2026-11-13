@@ -1319,6 +1319,41 @@ died_job() {
   [ "$(wc -l <<<"$output")" -eq 8 ]
 }
 
+# gpuq STATE ID DIR — a gpu-queue job in the state dir (STATE: running, queued).
+gpuq() {
+  mkdir -p "$GPU_QUEUE_DIR/$1/$2"
+  echo "$3" >"$GPU_QUEUE_DIR/$1/$2/dir"
+}
+
+@test "status: a gpu-queue run no vibe job started counts on the GPU, in a GPU block with its id and dir" {
+  gpuq running 20261112-155327-465432-t43-h25 /work/sc-962d4a2
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  [ "$(sed -n 3p <<<"$output")" = "GPU" ]
+  [ "$(sed -n 4p <<<"$output")" = "  20261112-155327-465432-t43-h25  running" ]
+  [ "$(sed -n 5p <<<"$output")" = "    /work/sc-962d4a2" ]
+  run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  grep -q '<b>20261112-155327-465432-t43-h25</b>' "$XDG_STATE_HOME/vibe/web/index.html"
+  grep -q '<b>1</b> on the GPU' "$XDG_STATE_HOME/vibe/web/index.html"
+}
+
+@test "status: a gpu-queue run a vibe job's gpu-job names counts once; an outside queued run is added" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo gpu >"$Q/01-a/status"
+  echo own-run >"$Q/01-a/gpu-job"
+  gpuq running own-run /work/own
+  gpuq queued other-run /work/other
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 2 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  grep -qx '  other-run  queued' <<<"$output"
+  [ "$(grep -c 'own-run' <<<"$output")" -eq 0 ]
+}
+
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
 endjob() {
   local id="$1" repo="$2" branch="$3" pr="${4:-}"
