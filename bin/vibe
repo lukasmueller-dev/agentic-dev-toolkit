@@ -2739,12 +2739,20 @@ feature_row() {
 }
 
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
+# Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
 feature_set_pr() {
-  local t
+  local t n=0 rc=0
+  until mkdir "$1.lock" 2>/dev/null; do
+    # shortcut: after 10 s the lock counts as stale (a killed job) and is taken over; flock is not on macOS.
+    ((++n < 100)) || break
+    sleep 0.1
+  done
   t="$(mktemp "$1.XXXXXX")" && awk -v r="${2%/}" -v b="$3" -v u="$4" '
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
-    { print }' "$1" >"$t" && mv -f "$t" "$1"
+    { print }' "$1" >"$t" && mv -f "$t" "$1" || rc=1
+  rmdir "$1.lock" 2>/dev/null || true
+  return "$rc"
 }
 
 # feature_prompt JOB — a member job's prompt.md ends with the feature block, once.
