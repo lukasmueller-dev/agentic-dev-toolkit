@@ -8,6 +8,7 @@ copy.
 | -------------------- | --------------- | ------------------------------- |
 | `HANDOFF.md`         | worktree root   | Short — one per worktree/branch, cleared when the task ends |
 | `SPEC.md`            | worktree root   | Short — one per big work item; its last milestone deletes or rewrites it |
+| `RESEARCH.md`        | worktree root   | Short — one per research job (question, budget, backlog, ledger); its end action deletes or rewrites it |
 | `FEATURE.md`         | the queue's `features/<feature>.md` | Short — one per feature across repos; archived once its PRs merge |
 | `PROJECT_STATUS.md`  | repo root       | Long  — one per repo            |
 | `PROJECT_ROADMAP.md` | repo root       | Long  — one per repo; finished items removed, not archived |

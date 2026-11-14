@@ -14,7 +14,7 @@ briefing: `docs/vibe-queue.md` in the toolkit.
 - **Never merge a PR.** You mark it ready and give the merge order; the user merges.
 - **Never mark ready, close, comment, push or archive without approval of that repo's rows.**
 - **Never mark ready a PR whose checks fail**, or one the user has not seen the TL;DR of.
-- **Never mark ready a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
+- **Never mark ready a PR whose diff still holds `SPEC.md`, `RESEARCH.md` or `HANDOFF.md`.**
 - **Never mark ready one PR of a feature alone.** All its PRs go ready together, after the user says the human test passed.
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
 - **Never archive a row you did not carry out.** A skipped row stays for the next review.
