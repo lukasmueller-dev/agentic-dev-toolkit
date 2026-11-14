@@ -1458,12 +1458,17 @@ gpuq_end() {
   [ "$(grep -c 'class="job s-held"' "$html")" -eq 2 ]
 }
 
-@test "status: the 3 latest finished outside runs show exit code and end time and do not count on the GPU; a job's own run stays out" {
-  local r id1 id2 id3 id4 own html="$XDG_STATE_HOME/vibe/web/index.html"
+@test "status: the 3 latest finished outside runs show exit code and end time and do not count on the GPU; the run of a live or an archived job stays out" {
+  local r id1 id2 id3 id4 own arch html="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
-  id1="$(gpuq_end 1 5)" id2="$(gpuq_end 2 0)" id3="$(gpuq_end 3 1)" id4="$(gpuq_end 4 cancelled)" own="$(gpuq_end 5 0)"
+  id1="$(gpuq_end 1 5)" id2="$(gpuq_end 2 0)" id3="$(gpuq_end 3 1)" id4="$(gpuq_end 4 cancelled)" own="$(gpuq_end 5 0)" arch="$(gpuq_end 6 0)"
   mkjob 01-a "$r" task-a ok
   echo "$own" >"$Q/01-a/gpu-job"
+  endjob 02-b "$r" task-b
+  echo "$arch" >"$Q/02-b/gpu-job"
+  run "$VIBE" queue archive 02-b
+  [ "$status" -eq 0 ]
+  [ -f "$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)/02-b/gpu-job" ]
   run "$VIBE" queue status
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 0 no PR · 4 slots" ]
@@ -1471,13 +1476,13 @@ gpuq_end() {
   $id2  exit 0 · 2026-11-12 12:02
   $id3  exit 1 · 2026-11-13 12:03
   $id4  exit cancelled · 2026-11-14 12:04" ]
-  [ "$(grep -cE "$id1|$own" <<<"$output")" -eq 0 ]
+  [ "$(grep -cE "$id1|$own|$arch" <<<"$output")" -eq 0 ]
   run "$VIBE" queue page
   [ "$status" -eq 0 ]
   grep -qF '<b>0</b> on the GPU' "$html"
   grep -qF '<span class="pill">exit 1</span></div><p>2026-11-13 12:03</p>' "$html"
   grep -qF '<span class="pill">exit cancelled</span></div><p>2026-11-14 12:04</p>' "$html"
-  [ "$(grep -cE "$id1|$own" "$html")" -eq 0 ]
+  [ "$(grep -cE "$id1|$own|$arch" "$html")" -eq 0 ]
 }
 
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.

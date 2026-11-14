@@ -1864,11 +1864,16 @@ follow_ready() {
 gpu_state_dir() { echo "${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}"; }
 
 # gpu_outside STATE... — `STATE<TAB>ID` per gpu-queue run in the STATE dirs (running queued held parked finished)
-# that no job's `gpu-job` names, in the order given; finished: the last 3 (ids start with the submit time).
+# that no job's `gpu-job` names (a live or an archived job), in the order given; finished: the last 3 (ids start with the submit time).
 # Files only; a missing dir (held/, parked/) gives no row.
 gpu_outside() {
   local own=$'\n' d s id list
-  for d in "$QDIR"/*/; do own+="$(jstate "${d%/}" gpu-job)"$'\n'; done
+  # Live and archived jobs (as job_limit_pct does); read, not jstate: no fork per archived job.
+  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    [[ -f "${d}gpu-job" ]] || continue
+    read -r id <"${d}gpu-job" || true
+    own+="$id"$'\n'
+  done
   for s in "$@"; do
     list=""
     for d in "$(gpu_state_dir)/$s"/*/; do
