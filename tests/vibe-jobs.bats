@@ -204,8 +204,7 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   d="$(qjobs jobs-crashy)"
   [ "$(cat "$d/status")" = skipped ]
   [ "$(cat "$d/note")" = "stopped after 2 failures — vibe job reset proj crashy" ]
-  "$VIBE" queue report >/dev/null
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  run "$VIBE" queue report
   [[ "$output" == *"### Needs you"*"| ${d##*/} | skipped |  | stopped after 2 failures"* ]] || false
 }
 
@@ -271,7 +270,7 @@ eval_run() {
   wait "$pid"
 }
 
-@test "job kind gpu: the follow-up gets the last run; a drop opens a roadmap item, the briefing shows both numbers" {
+@test "job kind gpu: the follow-up gets the last run; a drop opens a roadmap item, the report shows both numbers" {
   local r d
   r="$(make_repo proj)"
   optin "$r" evalreg
@@ -290,8 +289,7 @@ eval_run() {
   git -C "$r/.claude/worktrees/jobs/evalreg" log -1 --format=%s | grep -qx 'docs: drop'
   grep -qx -- '- \[ \] find the success drop from 0.86 to 0.79' "$r/.claude/worktrees/jobs/evalreg/ROADMAP.md"
   [ "$(cat "$XDG_STATE_HOME/vibe/jobs/proj/evalreg/last-result")" = "done: success 0.79 (last 0.86)" ]
-  "$VIBE" queue report >/dev/null
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  run "$VIBE" queue report
   [[ "$output" == *"### PR ready"*"| jobs/evalreg | 2/2 |"*"success 0.79 (last 0.86), roadmap item."*"[PR]("* ]] || false
 }
 
@@ -413,8 +411,7 @@ branch_off() {
   run git -C "$r" merge-base --is-ancestor origin/main origin/jobs/local
   [ "$status" -ne 0 ]
   [ "$(git -C "$r" worktree list | wc -l)" -eq 1 ]
-  "$VIBE" queue report >/dev/null
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  run "$VIBE" queue report
   [[ "$output" == *"## Triage — "*"merged main and pushed"*"needs a hand merge"* ]] || false
 }
 
@@ -435,7 +432,7 @@ branch_off() {
   [ ! -e "$m" ]
 }
 
-@test "job triage: red CI and review comments since the last commit become briefing lines" {
+@test "job triage: red CI and review comments since the last commit become triage lines" {
   local r checks commits
   r="$(make_repo proj)"
   checks='{"name":"test","conclusion":"FAILURE"},{"name":"lint","conclusion":"SUCCESS"},{"context":"ci/old","state":"ERROR"},{"name":"slow","conclusion":null,"status":"IN_PROGRESS"}'
@@ -448,8 +445,7 @@ branch_off() {
   [[ "$output" == *"[#1]"*"\`jobs/a\`: CI red: test, ci/old"* ]] || false
   [[ "$output" == *"[#1]"*"\`jobs/a\`: unanswered review comments: 1"* ]] || false
   [[ "$output" != *"#2"* ]] || false
-  "$VIBE" queue report >/dev/null
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
+  run "$VIBE" queue report
   [[ "$output" == *"## Triage — "*"CI red: test, ci/old"* ]] || false
   echo '[]' >"$STUBS/prs.json"
   run "$VIBE" job triage "$r"
@@ -459,7 +455,7 @@ branch_off() {
   [ "$output" = "no gh — nothing to triage" ]
 }
 
-@test "job triage: your /fix yields one fix job and one summary comment; a collaborator's comment only a briefing line" {
+@test "job triage: your /fix yields one fix job and one summary comment; a collaborator's comment only a triage line" {
   local r j
   r="$(make_repo proj)"
   fixable "$r"
