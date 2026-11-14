@@ -190,6 +190,34 @@ putfeature() {
   cp "$(mkfeature "$@")" "$XDG_STATE_HOME/vibe/features/$1.md"
 }
 
+# parallel_set_pr SCRIPT — 20 rounds of two feature_set_pr calls at once (defined by SCRIPT); each round must hold both URLs. Echoes the directory listing.
+parallel_set_pr() {
+  local d="$BATS_TEST_TMPDIR/feat" i n pa pb
+  mkdir -p "$d"
+  eval "$1"
+  for i in $(seq 1 20); do
+    {
+      printf '# F\n\n## Members\n\n'
+      for n in $(seq 1 200); do echo "- /x/r$n b$n"; done
+    } >"$d/f.md"
+    cp "$d/f.md" "$d/orig"
+    feature_set_pr "$d/f.md" /x/r1 b1 https://u/1 &
+    pa=$!
+    feature_set_pr "$d/f.md" /x/r2 b2 https://u/2 &
+    pb=$!
+    wait "$pa" || return 1
+    wait "$pb" || return 1
+    sed -e 's#^- /x/r1 b1$#& https://u/1#' -e 's#^- /x/r2 b2$#& https://u/2#' "$d/orig" | cmp -s - "$d/f.md" || return 1
+  done
+  ls "$d"
+}
+
+@test "feature_set_pr: two parallel calls keep both URLs in a whole file and leave no temp file or lock" {
+  run parallel_set_pr "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  [ "$status" -eq 0 ]
+  [ "$output" = $'f.md\norig' ]
+}
+
 @test "feature: a member job's prompt ends with the feature block, once along a SPEC chain; another branch gets none" {
   local r w
   r="$(make_repo bridge)"
@@ -323,6 +351,24 @@ putfeature() {
   [ "$output" = 0 ]
 }
 
+@test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
+  local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
+  r="$(make_repo proj)"
+  mkdir "$tk" && cp -R "$REPO_ROOT/bin" "$REPO_ROOT/skills" "$REPO_ROOT/claude" "$REPO_ROOT/templates" "$tk"
+  mkjob 01-a "$r" task-a seq
+  "$tk/bin/vibe" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for i in $(seq 1 100); do
+    [ ! -s "$Q/01-a/pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$Q/01-a/pid" ]
+  { head -n 1 "$tk/bin/vibe" && echo '# a line the running vibe never reads, long enough to move its end offset' && tail -n +2 "$tk/bin/vibe"; } >"$BATS_TEST_TMPDIR/vibe.new"
+  cat "$BATS_TEST_TMPDIR/vibe.new" >"$tk/bin/vibe"
+  wait "$pid" || { cat "$BATS_TEST_TMPDIR/run.out" && false; }
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
 @test "report: a Features table before the repos; a done member job leaves the repo tables, a blocked one stays" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
@@ -385,6 +431,31 @@ putfeature() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"is not a slug"* ]] || false
   [ "$(find "$F" -type f | wc -l | tr -d ' ')" = 1 ]
+}
+
+@test "feature add: refuses a relative member path and names it" {
+  local r1 r2
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  cd "$(dirname "$r1")"
+  run "$VIBE" feature add "$(mkfeature rel "./$(basename "$r1") sticks" "$r2 gamepad")"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"./$(basename "$r1") is not an absolute path"* ]] || false
+  [ ! -e "$XDG_STATE_HOME/vibe/features/rel.md" ]
+}
+
+@test "feature add: refuses a member path that is not canonical and names the one to write" {
+  local r1 r2 p
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  for p in "$r1/../bridge" "$(dirname "$r1")//bridge"; do
+    run "$VIBE" feature add "$(mkfeature dots "$p sticks" "$r2 gamepad")"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"$p is not the path jobs store as their repo — write $r1"* ]] || false
+    [ ! -e "$XDG_STATE_HOME/vibe/features/dots.md" ]
+  done
 }
 
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {

@@ -48,6 +48,7 @@
 #   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; briefing lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
+# shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
 script_dir() {
@@ -1517,7 +1518,7 @@ task_append() {
     s && /^## / { put() }
     { print }
     $0 == "## Task" { s = 1 }
-    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp" && mv -f "$f.tmp" "$f"
+    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"
 }
 
 # vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in place of Next action and Blockers of the job's HANDOFF.md (commit,
@@ -2762,11 +2763,18 @@ feature_row() {
 }
 
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
+# shortcut: a mkdir lock stops two runners losing each other's URL; taken over after 5 s, so a holder slower than that loses its URL.
 feature_set_pr() {
+  local t lk="$1.lock" i=0 rc=0
+  t="$(mktemp "$1.XXXXXX")" || return 1
+  until mkdir "$lk" 2>/dev/null || ((++i > 50)); do sleep 0.1; done
   awk -v r="${2%/}" -v b="$3" -v u="$4" '
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
-    { print }' "$1" >"$1.tmp" && mv -f "$1.tmp" "$1"
+    { print }' "$1" >"$t" && mv -f "$t" "$1" || rc=1
+  rmdir "$lk" 2>/dev/null || true
+  if ((rc)); then rm -f "$t"; fi
+  return "$rc"
 }
 
 # feature_prompt JOB — a member job's prompt.md ends with the feature block, once.
@@ -2806,12 +2814,12 @@ feature_body() {
     FNR == n { print ENVIRON["FDET"]; print "" }
     { print }
     r && !t && /^\*\*Decisions\/risks:\*\*/ { print ENVIRON["FLINE"]; t = 1 }
-    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$b.tmp" && mv -f "$b.tmp" "$b"
+    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$b.tmp.$$" && mv -f "$b.tmp.$$" "$b"
 }
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
 cmd_feature_add() {
-  local src="${1:-}" name dst r b p f n=0 seen=$'\n'
+  local src="${1:-}" name dst r b p f t c n=0 seen=$'\n'
   [[ $# -eq 1 && -f "$src" ]] || die "usage: vibe feature add <file>"
   name="$(basename "$src" .md)"
   [[ -n "$name" && "$(slug "$name")" == "$name" ]] || die "'$name' is not a slug — name the file <slug>.md"
@@ -2819,9 +2827,12 @@ cmd_feature_add() {
   [[ ! -e "$dst" ]] || die "feature '$name' exists: $dst"
   while IFS=$'\t' read -r r b _; do
     n=$((n + 1))
+    [[ "$r" == /* ]] || die "$r is not an absolute path — jobs match a member by their absolute repo"
     [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
     seen+="$r#$b"$'\n'
     git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
+    c="$(cd "$r" && pwd)"
+    [[ "$c" == "$r" ]] || die "$r is not the path jobs store as their repo — write $c"
     git -C "$r" rev-parse -q --verify "refs/heads/$b" >/dev/null ||
       git -C "$r" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null || die "no branch '$b' in $r"
     f="$(feature_of "$r" "$b")"
@@ -2829,13 +2840,14 @@ cmd_feature_add() {
   done < <(feature_members "$src")
   ((n >= 2)) || die "a feature needs 2 or more '- <repo> <branch>' lines under ## Members"
   mkdir -p "$FROOT"
-  cp "$src" "$dst.tmp"
+  t="$(mktemp "$dst.XXXXXX")" || die "no temp file in $FROOT"
+  cp "$src" "$t"
   while IFS=$'\t' read -r r b p; do
     if [[ -z "$p" ]]; then p="$(pr_of "$(open_prs "$r")" "$b")"; fi
-    if [[ -n "$p" ]]; then feature_set_pr "$dst.tmp" "$r" "$b" "$p"; fi
+    if [[ -n "$p" ]]; then feature_set_pr "$t" "$r" "$b" "$p"; fi
     echo "  ${r##*/} · $b${p:+ · $p}"
   done < <(feature_members "$src")
-  mv "$dst.tmp" "$dst"
+  mv "$t" "$dst"
   echo "feature $name: $n members → $dst"
 }
 
@@ -3387,30 +3399,34 @@ cmd_job() {
   esac
 }
 
-case "${1:-}" in
-  queue)
-    shift
-    cmd_queue "$@"
-    ;;
-  job)
-    shift
-    cmd_job "$@"
-    ;;
-  feature)
-    shift
-    cmd_feature "$@"
-    ;;
-  update-toolkit)
-    shift
-    cmd_update_toolkit "$@"
-    ;;
-  start | sync | status)
-    cmd="$1"
-    shift
-    # sync fetches every repo anyway, so its check never uses the cache.
-    if [[ "$cmd" == sync ]]; then VIBE_FETCH_INTERVAL=0 toolkit_check; else toolkit_check; fi
-    "cmd_$cmd" "$@"
-    ;;
-  -h | --help | help) usage ;;
-  *) die "unknown command '${1:-}' — vibe help" ;;
-esac
+# One group ending in exit: bash never reads this file again after the command (an edit mid-run made vibe exit 2).
+{
+  case "${1:-}" in
+    queue)
+      shift
+      cmd_queue "$@"
+      ;;
+    job)
+      shift
+      cmd_job "$@"
+      ;;
+    feature)
+      shift
+      cmd_feature "$@"
+      ;;
+    update-toolkit)
+      shift
+      cmd_update_toolkit "$@"
+      ;;
+    start | sync | status)
+      cmd="$1"
+      shift
+      # sync fetches every repo anyway, so its check never uses the cache.
+      if [[ "$cmd" == sync ]]; then VIBE_FETCH_INTERVAL=0 toolkit_check; else toolkit_check; fi
+      "cmd_$cmd" "$@"
+      ;;
+    -h | --help | help) usage ;;
+    *) die "unknown command '${1:-}' — vibe help" ;;
+  esac
+  exit
+}

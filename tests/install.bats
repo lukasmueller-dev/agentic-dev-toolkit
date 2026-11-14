@@ -667,6 +667,46 @@ EOF
   jq -e '.permissions.allow | index("Bash(git status:*)")' "$HOME/.claude/settings.json"
 }
 
+# Succeeds when a `git push` deny rule in the baseline matches the command.
+# `P:*` is a word-boundary prefix; any other `*` spans anything, spaces too.
+push_denied() {
+  local rule pat rules
+  rules="$(jq -r '.permissions.deny[] | select(startswith("Bash(git push"))' \
+    "$REPO_ROOT/claude/settings.json")"
+  while IFS= read -r rule; do
+    pat="${rule#Bash(}"
+    pat="${pat%)}"
+    case "$pat" in
+      *:\*)
+        pat="${pat%:\*}"
+        if [[ "$1" == "$pat" || "$1" == "$pat "* ]]; then return 0; fi
+        ;;
+      *)
+        # shellcheck disable=SC2053 # the glob is the point
+        if [[ "$1" == $pat ]]; then return 0; fi
+        ;;
+    esac
+  done <<<"$rules"
+  return 1
+}
+
+@test "claude settings: a combined force flag is denied, a plain upstream push is not" {
+  local c
+  for c in "git push -f origin x" "git push -fu origin x" "git push -uf origin x" \
+    "git push origin x -fu" "git push origin x -uf" "git push -uf"; do
+    push_denied "$c" || {
+      echo "not denied: $c"
+      false
+    }
+  done
+  for c in "git push -u origin x" "git push -u origin fix-f" "git push origin feature"; do
+    if push_denied "$c"; then
+      echo "denied: $c"
+      false
+    fi
+  done
+}
+
 @test "claude settings: sandbox baseline lands on create" {
   run "$INSTALL" claude
   [ "$status" -eq 0 ]
