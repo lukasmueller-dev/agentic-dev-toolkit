@@ -455,7 +455,17 @@ verify_ok() {
   [[ "$(job_after "$1")" == review && "$(jget "$1/job" output)" != report ]] || die "$1: verify= on a job with no review"
 }
 
-# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad verify=.
+# deadline_of JOBFILE — epoch of its deadline= (`YYYY-MM-DD HH:MM`, local time); empty with none; dies on a bad one.
+deadline_of() {
+  local v e=""
+  v="$(jget "$1" deadline)"
+  [[ -n "$v" ]] || return 0
+  if [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]]; then e="$(epoch_of "$v:00")"; fi
+  [[ -n "$e" ]] || die "$1: deadline=$v — YYYY-MM-DD HH:MM"
+  echo "$e"
+}
+
+# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad verify= or deadline=.
 cmd_queue_add() {
   local now=0 dirs=() d
   for d in "$@"; do
@@ -467,7 +477,10 @@ cmd_queue_add() {
     esac
   done
   ((${#dirs[@]})) || die "usage: vibe queue add [--now] <dir>..."
-  for d in "${dirs[@]}"; do verify_ok "$d"; done
+  for d in "${dirs[@]}"; do
+    verify_ok "$d"
+    deadline_of "$d/job" >/dev/null
+  done
   for d in "${dirs[@]}"; do
     d="$(queue_add "$d" "$now")"
     echo "queued ${d##*/}"
@@ -1772,8 +1785,9 @@ cmd_queue_page() {
 
 # vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
+# Past the job's deadline= it queues nothing: the hard stop of a research job's budget.
 cmd_queue_gpu() {
-  local d="${VIBE_JOB_DIR:-}" id
+  local d="${VIBE_JOB_DIR:-}" id dl
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
   case "${1:-}" in
     -h | --help) usage ;;
@@ -1781,6 +1795,10 @@ cmd_queue_gpu() {
     -*) die "usage: vibe queue gpu -- CMD..." ;;
   esac
   (($#)) || die "usage: vibe queue gpu -- CMD..."
+  dl="$(deadline_of "$d/job")" || exit 1
+  if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
+    die "past this job's deadline ($(jget "$d/job" deadline)): queue no run, finish the task"
+  fi
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
     --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
   echo "$id" >"$d/gpu-job"

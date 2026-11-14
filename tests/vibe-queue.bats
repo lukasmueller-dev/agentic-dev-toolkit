@@ -1986,6 +1986,41 @@ gpurace() {
   [ ! -e "$Q/01-a/gpu-job" ]
 }
 
+@test "gpu: past the job's deadline= it queues no run; before it the run goes through" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok "deadline=2000-01-01 08:00"
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu -- true
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"past this job's deadline (2000-01-01 08:00)"* ]] || false
+  [ ! -e "$Q/01-a/gpu-job" ]
+  [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
+  mkjob 02-b "$r" task-b ok "deadline=2999-01-01 08:00"
+  VIBE_JOB_DIR="$Q/02-b" run "$VIBE" queue gpu -- true
+  [ "$status" -eq 0 ]
+  [ -s "$Q/02-b/gpu-job" ]
+}
+
+@test "add, gpu: a deadline= that is not YYYY-MM-DD HH:MM is refused" {
+  local r a
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkdir -p "$a"
+  echo task >"$a/prompt.md"
+  printf 'repo=%s\nbranch=x\ndeadline=monday\n' "$r" >"$a/job"
+  run "$VIBE" queue add "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"deadline=monday — YYYY-MM-DD HH:MM"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  mkjob 01-a "$r" task-a ok "deadline=2999-13-45 08:00"
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu -- true
+  [ "$status" -ne 0 ]
+  [ ! -e "$Q/01-a/gpu-job" ]
+  printf 'repo=%s\nbranch=x\ndeadline=2999-01-01 08:00\n' "$r" >"$a/job"
+  run "$VIBE" queue add "$a"
+  [ "$status" -eq 0 ]
+}
+
 # two_findings — the stub reviewer's first answer: two findings.
 two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
