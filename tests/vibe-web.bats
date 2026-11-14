@@ -438,7 +438,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "${lines[1]}" = 400 ]
 }
 
-@test "vibe queue ready: refuses a failing check and SPEC.md or HANDOFF.md in the diff; then marks no PR ready" {
+@test "vibe queue ready: refuses a failing check and SPEC.md, RESEARCH.md or HANDOFF.md in the diff; then marks no PR ready" {
   printf 'SUCCESS\nFAILURE\n' >"$STUBS/checks"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
@@ -447,7 +447,10 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   printf 'a.txt\nSPEC.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"still holds SPEC.md or HANDOFF.md"* ]] || false
+  [[ "$output" == *"still holds SPEC.md, RESEARCH.md or HANDOFF.md"* ]] || false
+  printf 'RESEARCH.md\n' >"$STUBS/files"
+  run "$REPO_ROOT/bin/vibe" queue ready "$URL"
+  [ "$status" -eq 1 ]
   printf 'HANDOFF.md\n' >"$STUBS/files-8"
   printf 'templates/HANDOFF.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL" https://github.com/o/proj/pull/8

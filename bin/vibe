@@ -31,7 +31,7 @@
 #   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
 #   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
 #   vibe queue ready <pr-url>...|--feature <slug>
-#                                   no failing check, no SPEC.md or HANDOFF.md: mark each PR ready
+#                                   no failing check, no SPEC.md, RESEARCH.md or HANDOFF.md: mark each PR ready
 #   vibe queue merge-order <repo>   the repo's ready PRs, smallest first, with the PRs each can conflict with
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
@@ -1597,13 +1597,13 @@ cmd_queue_fix() {
   echo "queued ${n##*/}"
 }
 
-# pr_check URL — dies when the PR at URL has a failing check or SPEC.md or HANDOFF.md in its diff.
+# pr_check URL — dies when the PR at URL has a failing check or SPEC.md, RESEARCH.md or HANDOFF.md in its diff.
 pr_check() {
   local c f
   c="$(gh pr view "$1" --json statusCheckRollup -q '.statusCheckRollup[] | if (.conclusion // "") != "" then .conclusion else (.state // .status // "") end')" || die "gh pr view $1 failed"
   if grep -qxE 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE' <<<"$c"; then die "$1 has a failing check"; fi
   f="$(gh pr diff "$1" --name-only)" || die "gh pr diff $1 failed"
-  if grep -qxE 'SPEC\.md|HANDOFF\.md' <<<"$f"; then die "$1 still holds SPEC.md or HANDOFF.md"; fi
+  if grep -qxE 'SPEC\.md|RESEARCH\.md|HANDOFF\.md' <<<"$f"; then die "$1 still holds SPEC.md, RESEARCH.md or HANDOFF.md"; fi
 }
 
 # vibe queue ready URL...|--feature SLUG — check every PR first, then mark each ready.
