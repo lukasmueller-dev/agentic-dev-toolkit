@@ -277,7 +277,7 @@ GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
 [`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, job
 `<id>-gpu` continues on the same branch with the exit code and log.
 A `gpu-queue` run that no job's `gpu-job` names (a manual `submit`) shows in a `GPU` block of `vibe queue status` and the page: elapsed time, dir, last log line, command, `then`, wandb link.
-The block adds the 3 latest `finished/` runs (exit code, end time) and the `held/` and `parked/` runs; only running and queued runs count in "on the GPU".
+The block adds the 3 latest `finished/` runs (exit code, end time) and the `held/` and `parked/` runs (`gpu-queue` does not write those dirs yet); only running and queued runs count in "on the GPU".
 
 ```bash
 gpu-queue status                      # queued, running, finished (exit code)
