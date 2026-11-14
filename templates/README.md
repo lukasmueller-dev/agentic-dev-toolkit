@@ -56,10 +56,10 @@ render still produces a readable file.
 | `<platform>`  | Hardware platform name (`research/HARDWARE_TRIAL.md` only) |
 | `<job>`       | Recurring job name (`VIBE_JOB.md`, `job-report.md`) |
 | `<feature>`   | Feature slug (`FEATURE.md` only) |
-| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`, `FEATURE.md`; the briefing's Context column) |
+| `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`, `FEATURE.md`; the report's Context column) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
-| `<updated>`, `<counts>`, `<flags>`, `<jobs>`, `<briefing>`, `<config>` | Render time; the counter chips; slots and flags; the job cards; the briefing and the settings as HTML (`queue-page.html` only) |
+| `<updated>`, `<counts>`, `<flags>`, `<jobs>`, `<config>` | Render time; the counter chips; slots and flags; the held jobs, triage lines and job cards; the settings as HTML (`queue-page.html` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the

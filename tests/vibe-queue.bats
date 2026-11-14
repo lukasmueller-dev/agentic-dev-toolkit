@@ -334,7 +334,6 @@ putfeature() {
   [ "$status" -eq 0 ]
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"## Features"*"| teleop | needs you | 1/3 | The gamepad drives the robot. | [bridge#1](https://example.com/pull/1) done · [cmdr#24](https://example.com/pull/24) blocked · vla:node no PR | [file](file://$F/teleop.md) |"*"## bridge"* ]] || false
   [[ "$output" == *"## cmdr"*"### Needs you"*"| 02-b | blocked |"* ]] || false
   [ "$(grep -c '| 01-a ' <<<"$output")" = 0 ]
@@ -725,7 +724,6 @@ putfeature() {
   [ "$status" -eq 0 ]
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### Needs you"*"| 02-b | blocked |  | blocked: beta needs a decision → lane-x-beta | [PR](https://example.com/pull/1) |"*"### PR ready"*"| lane-x | 2/3 | Fix health | - | [PR](https://example.com/pull/1) |"* ]] || false
   [ "$(grep -c '| 01-a \|| 03-c ' <<<"$output")" = 0 ]
 }
@@ -868,7 +866,7 @@ died_job() {
   [ ! -e "$STUBS/claude.log" ]
 }
 
-@test "gate: origin's default branch declares it; it runs in the worktree, exit code in the PR body and briefing" {
+@test "gate: origin's default branch declares it; it runs in the worktree, exit code in the PR body and report" {
   local r f
   r="$(make_repo proj)"
   mkdir -p "$r/.vibe-jobs"
@@ -884,8 +882,6 @@ died_job() {
   grep -qF '**Gate:** exit 3' "$Q/01-a/pr-body.md"
   grep -q '^docker stage red in task-a$' "$Q/01-a/pr-body.md"
   run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  run cat "$f"
   [[ "$output" == *"### Needs you"*"| 01-a | done | The repo lacks work.txt. | **gate exit 3** · work.txt added. |"*"[gate](file://$Q/01-a/gate.log) |"* ]] || false
   [[ "$output" != *"### PR ready"* ]] || false
   [[ "$output" == *"## 01-a — done · gate exit 3"*"docker stage red in task-a"* ]] || false
@@ -905,8 +901,6 @@ died_job() {
   run grep -c 'Gate' "$Q/01-a/pr-body.md" "$Q/02-b/pr-body.md"
   [ "$output" = "$(printf '%s:0\n%s:0' "$Q/01-a/pr-body.md" "$Q/02-b/pr-body.md")" ]
   run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  run cat "$f"
   [[ "$output" == *"### PR ready"*"| 02-b | done | The repo lacks work.txt. | work.txt added. | [PR](https://example.com/pull/1) |"* ]] || false
   [[ "$output" != *"gate exit"* && "$output" != *"gate.log"* ]] || false
 }
@@ -1247,7 +1241,6 @@ died_job() {
   echo 1 >"$Q/05-e/gate" && echo red >"$Q/05-e/gate.log"
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### Needs you"*"| 01-a | done |"*"**push failed (git-lfs: push by hand)** · "*"| 02-b | done |"*"**push failed** · "*"| 04-d | done |"*"**PR not created** · "*"| 05-e | done |"*"**gate exit 1** · **push failed** · "*"### Done, nothing to read"*"| 03-c | done |"* ]] || false
   [ "$(grep -cE '^\| 0[1245]-[a-e] ' <<<"$output")" = 4 ]
 }
@@ -1262,7 +1255,6 @@ died_job() {
   endjob 02-b-review1 "$r2" gamepad https://example.com/pull/2
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"| teleop | needs you | 1/2 |"*"| [bridge#1](https://example.com/pull/1) push failed (git-lfs: push by hand) · [cmdr#2](https://example.com/pull/2) done |"* ]] || false
 }
 
@@ -1275,7 +1267,6 @@ died_job() {
   endjob 04-d "$r" lane-y "PR not created" "lane=Fix wiring" item=delta
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"### Needs you"*"| lane-x | 2/2 | Fix health | **push failed (git-lfs: push by hand)** · "*"| lane-y | 2/2 | Fix wiring | **PR not created** · "* ]] || false
   [[ "$output" != *"### Done, nothing to read"* ]] || false
 }
@@ -1486,7 +1477,7 @@ pandoc_stub() {
   chmod +x "$STUBS/pandoc"
 }
 
-@test "page: the runner writes job cards with escaped text and the briefing through pandoc" {
+@test "page: the runner writes job cards with escaped text and the config through pandoc" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
   pandoc_stub OK
@@ -1507,32 +1498,36 @@ pandoc_stub() {
   [ ! -e "$f.tmp" ]
 }
 
-@test "page: raw HTML in a job's text shows as code in the briefing" {
+@test "page: raw HTML in a held job's note shows as code" {
   command -v pandoc >/dev/null || skip "pandoc not installed"
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
-  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=<img src=x onerror=alert(1)> and <script>alert(2)</script>'
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked
   drain
   [ "$status" -eq 0 ]
+  "$VIBE" queue hold 20261029-081414-proj-task-a '<img src=x onerror=alert(1)> and <script>alert(2)</script>' >/dev/null
+  "$VIBE" queue page
   grep -qF '<code>&lt;img src=x onerror=alert(1)&gt;</code>' "$f"
   run grep -c '<img\|<script>alert' "$f"
   [ "$output" = 0 ]
 }
 
-@test "page: a link or image with a javascript: or data: target shows as text in the briefing" {
+@test "page: a link or image with a javascript: or data: target in a held job's note shows as text" {
   command -v pandoc >/dev/null || skip "pandoc not installed"
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
-  mkjob 20261029-081414-proj-task-a "$r" task-a blocked 'context=[bad](javascript:alert(1)) ![pic](data:text/html,x) <javascript:alert(2)> [ok](https://example.com/ok)'
+  mkjob 20261029-081414-proj-task-a "$r" task-a blocked
   drain
   [ "$status" -eq 0 ]
+  "$VIBE" queue hold 20261029-081414-proj-task-a '[bad](javascript:alert(1)) ![pic](data:text/html,x) <javascript:alert(2)> [ok](https://example.com/ok)' >/dev/null
+  "$VIBE" queue page
   grep -qF 'href="https://example.com/ok"' "$f"
   grep -qF 'bad pic javascript:alert(2)' "$f"
   run grep -c 'href="javascript\|src="data' "$f"
   [ "$output" = 0 ]
 }
 
-@test "page: with no working pandoc briefing and config are escaped Markdown in <pre>, file links as text" {
+@test "page: held jobs, triage lines and config are escaped Markdown in <pre> with no working pandoc, file links as text" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)"
   pandoc_stub FAIL
@@ -1544,14 +1539,34 @@ pandoc_stub() {
   mkdir -p "$Q/01-a" && echo report >"$Q/01-a/report.md"
   drain
   [ "$status" -eq 0 ]
-  grep -q '^<pre># Vibe queue' "$f"
-  grep -qF '| 01-a | blocked |' "$f"
+  "$VIBE" queue hold 01-a look at it >/dev/null
+  printf '## Triage — now\n\n- proj [#1](https://example.com/pull/1): CI red: test\n' >"$XDG_STATE_HOME/vibe/triage.md"
+  "$VIBE" queue page
+  grep -q '^## Yours' "$f"
+  grep -qF '| 01-a | blocked |  | look at it |' "$f"
+  grep -qF -- '- proj [#1](https://example.com/pull/1): CI red: test' "$f"
   grep -q '^<pre>## Queue' "$f"
   grep -qF '| Slots | 4 |' "$f"
   grep -q '^| proj | health | weekly | sun | never | ' "$f"
   grep -qF 'fill-queue sweep (' "$f"
   run grep -c 'file:' "$f"
   [ "$output" = 0 ]
+}
+
+@test "page: held jobs and triage lines sit above the repo groups; with neither there is no block" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  pandoc_stub OK
+  mkjob 01-a "$r" task-a blocked
+  drain
+  [ "$status" -eq 0 ]
+  run grep -c '<div class="md">' "$f"
+  [ "$output" = 0 ]
+  printf '## Triage — now\n\n- proj [#1](https://example.com/pull/1): CI red: test\n' >"$XDG_STATE_HOME/vibe/triage.md"
+  "$VIBE" queue page
+  [ "$(grep -c '<div class="md">' "$f")" = 1 ]
+  [ "$(grep -n -m1 '<div class="md">' "$f" | cut -d: -f1)" -lt "$(grep -n -m1 '<div class="repo"' "$f" | cut -d: -f1)" ]
+  [ "$(grep -n -m1 '<div class="filter">' "$f" | cut -d: -f1)" -lt "$(grep -n -m1 '<div class="md">' "$f" | cut -d: -f1)" ]
 }
 
 @test "page: a running card shows its last step and the last 10 from the log, escaped" {
@@ -1660,8 +1675,8 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
-@test "report: header, held jobs under Yours, per repo tables, next actions; copied to the briefing dir" {
-  local r f
+@test "report: header, held jobs under Yours, per repo tables, next actions; writes no file" {
+  local r before
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
   mkjob 02-b "$r" task-b blocked
@@ -1672,14 +1687,11 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   printf '## Next action\n\nAsk the supervisor.\n\n## Blockers\n\nNeeds a | decision.\n' \
     >"$r/.claude/worktrees/task-b/HANDOFF.md"
   echo findings >"$Q/03-c/report.md"
-  echo "$BATS_TEST_TMPDIR/vault/inbox" >"$XDG_CONFIG_HOME/vibe/briefing-dir"
+  before="$(find "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" | sort)"
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  [[ "${f##*/}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}\.md$ ]] || false
-  [[ "$output" == *"copied: $BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}"* ]] || false
-  [ "$(head -n 2 "$BATS_TEST_TMPDIR/vault/inbox/briefing-${f##*/}")" = "$(printf -- '---\ncreated: %s' "$(date +%F)")" ]
-  run cat "$f"
+  [ "$(find "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" | sort)" = "$before" ]
+  [[ "$output" == "# Vibe queue — "* ]] || false
   [[ "$output" == *"queue: 0 running"*"1 to review · 3 no PR"* ]] || false
   [[ "$output" == *"## Yours"*"| 04-d | blocked |  | test it on the robot |  |"*"## proj"* ]] || false
   [[ "$output" == *"## proj"*"### Needs you"*"| 02-b | blocked |  | blocked: needs a decision |  |"*"| 03-c | failed | Task c needs a / fix. |"*"| [report](file://$Q/03-c/report.md) |"*"### PR ready"* ]] || false
@@ -1705,7 +1717,7 @@ endedjob() {
   } >"$Q/$id/log"
 }
 
-@test "cost: the PR footer and the briefing row show the API price, turns and minutes" {
+@test "cost: the PR footer and the report row show the API price, turns and minutes" {
   local r
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a cost
@@ -1714,25 +1726,22 @@ endedjob() {
   grep -qF -- "_agent job 01-a: done: costed · ≈\$1.04 API · 40 turns · 11m_" "$Q/01-a/pr-body.md"
   run "$VIBE" queue report
   [ "$status" -eq 0 ]
-  run cat "$XDG_STATE_HOME"/vibe/briefings/*.md
   [[ "$output" == *"| 01-a | done |"*"≈\$1.04 API · 40 turns · 11m |"* ]] || false
   [[ "$output" != *"5h est."* ]] || false
 }
 
 @test "cost: the limit share is the job cost over the cost of the jobs it overlaps, scaled by overlap time" {
-  local r f files
+  local r f
   r="$(make_repo proj)"
   endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
   endedjob 02-b "$r" 10:00:00 10:09:59 3 0.40 0.48
-  "$VIBE" queue report >/dev/null
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  f="$BATS_TEST_TMPDIR/report.md"
+  "$VIBE" queue report >"$f"
   grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · ≈2% 5h est. · 3 turns · 1m"
   grep -F '| 02-b |' "$f" | grep -qF "≈\$3.00 API · ≈6% 5h est. · 3 turns · 1m"
   # 03-c runs in the last tenth of 01-a and 02-b: its $20 counts for $2.
   endedjob 03-c "$r" 10:09:00 10:18:59 20 0.48 0.50
-  "$VIBE" queue report >/dev/null
-  files=("$XDG_STATE_HOME"/vibe/briefings/*.md)
-  f="${files[${#files[@]} - 1]}"
+  "$VIBE" queue report >"$f"
   grep -F '| 01-a |' "$f" | grep -qF '≈1% 5h est.'
   grep -F '| 02-b |' "$f" | grep -qF '≈4% 5h est.'
 }
@@ -1746,8 +1755,8 @@ endedjob() {
   : >"$Q/03-c/log"
   endedjob 05-e "$r" 12:00:00 12:09:59 1 0.40 0.48
   sed -i.bak '2d' "$Q/05-e/log" && rm "$Q/05-e/log.bak"
-  "$VIBE" queue report >/dev/null
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  f="$BATS_TEST_TMPDIR/report.md"
+  "$VIBE" queue report >"$f"
   grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
   grep -F '| 02-b |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
   grep -F '| 05-e |' "$f" | grep -qF "≈\$1.00 API · 3 turns"
@@ -1774,25 +1783,23 @@ endedjob() {
     cp "$Q/01-a/log" "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/log"
   done
   : >"$STUBS/date.calls"
-  "$VIBE" queue report >/dev/null
+  f="$BATS_TEST_TMPDIR/report.md"
+  "$VIBE" queue report >"$f"
   n1="$(wc -l <"$STUBS/date.calls")"
   [ "$n1" -eq "$n0" ]
-  for f in "$XDG_STATE_HOME"/vibe/briefings/*.md; do :; done
   grep -F '| 01-a |' "$f" | grep -qF '≈2% 5h est.'
 }
 
-@test "cost: the briefing header shows the 5h limit from the newest rate_limit_event" {
-  local r f at
+@test "cost: the report header shows the 5h limit from the newest rate_limit_event" {
+  local r at
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a cost
   drain
-  "$VIBE" queue report >/dev/null
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
+  run "$VIBE" queue report
   at="$(date -d @1793269800 +%H:%M 2>/dev/null || date -r 1793269800 +%H:%M)"
-  [[ "$(sed -n 3p "$f")" == "queue: "*" · limit 5h: 46%, resets $at" ]] || false
+  [[ "$(sed -n 3p <<<"$output")" == "queue: "*" · limit 5h: 46%, resets $at" ]] || false
   rm "$Q/01-a/log"
-  "$VIBE" queue report >/dev/null
-  run cat "$f"
+  run "$VIBE" queue report
   [[ "$output" != *"limit 5h"* ]] || false
 }
 
@@ -1800,52 +1807,10 @@ endedjob() {
   grep -q -- '--bare' "$REPO_ROOT/docs/vibe-queue.md"
 }
 
-@test "report --week: per repo jobs run, PRs merged, blockers open; old jobs count only while open" {
-  local r f since
-  r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a ok
-  mkjob 02-b "$r" task-b blocked
-  mkjob 03-c "$r" task-c crash
-  drain
-  "$VIBE" queue archive 01-a >/dev/null
-  mkdir -p "$Q/00-oldblock" "$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch"
-  printf 'repo=%s\nbranch=old\n' "$r" | tee "$Q/00-oldblock/job" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/job"
-  echo blocked >"$Q/00-oldblock/status"
-  echo "blocked: ancient" >"$Q/00-oldblock/note"
-  echo "2020-01-01 00:00:00" | tee "$Q/00-oldblock/ended" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/ended"
-  echo "done" >"$XDG_STATE_HOME/vibe/archive/2020-01/00-oldarch/status"
-  cat >"$STUBS/gh" <<EOF
-#!/bin/sh
-echo "\$*" >>"$STUBS/gh.log"
-echo "  - [#5](https://example.com/pull/5) feat: merged work"
-EOF
-  run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  [ "$(grep -c '^## Week' "$f")" -eq 0 ]
-  rm "$f"
+@test "report: takes no argument" {
   run "$VIBE" queue report --week
-  [ "$status" -eq 0 ]
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
-  grep -qF -- "merged:>=$since" "$STUBS/gh.log"
-  run cat "$f"
-  [[ "$output" == *"## proj"*"## Week since $since"*"### proj"*"- Jobs run: 3 (1 done, 1 blocked, 1 failed)"*"- PRs merged: 1"*"  - [#5](https://example.com/pull/5) feat: merged work"*"- Blockers open: 3"*"  - 00-oldblock — blocked: ancient"*"  - 02-b — blocked: needs a decision"*"  - 03-c — agent exit 3"* ]] || false
-  [[ "$output" != *"00-oldarch"* ]] || false
-}
-
-@test "report --week: no merged PRs say none; a failing gh says unknown; other arguments are refused" {
-  local r
-  r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a blocked
-  drain
-  run "$VIBE" queue report --week
-  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- Jobs run: 1 (1 blocked)"*"- PRs merged: none"* ]] || false
-  printf '#!/bin/sh\nexit 1\n' >"$STUBS/gh"
-  run "$VIBE" queue report --week
-  [[ "$(cat "$XDG_STATE_HOME"/vibe/briefings/*.md)" == *"- PRs merged: unknown (gh failed)"* ]] || false
-  run "$VIBE" queue report --bogus
   [ "$status" -ne 0 ]
-  [[ "$output" == *"usage: vibe queue report [--week]"* ]] || false
+  [[ "$output" == *"usage: vibe queue report"* ]] || false
 }
 
 @test "gpu: the job queues its run, the queue runs it, a follow-up job finishes the task" {
@@ -1933,8 +1898,6 @@ gpurace() {
   [[ "$output" == *"has not ended"* ]] || false
   [ -d "$Q/01-a" ]
   run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  run cat "$f"
   [[ "$output" != *"task-a"* ]] || false
   rm -f "$Q/01-a/pid"
   date '+%F %T' >"$Q/01-a/ended"
@@ -2265,8 +2228,6 @@ verify_skill() {
   [ "$(cat "$Q/02-b-verify/note")" = "V: verify failed" ]
   [ "$(cat "$Q/03-c-verify/note")" = "V: no verify skill" ]
   run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  run cat "$f"
   [[ "$output" == *"### Needs you"*"| 01-a-verify | done | The repo lacks work.txt. | V: fail · work.txt added. |"* ]] || false
   [[ "$output" == *"### Needs you"*"| 02-b-verify | done |"*"V: verify failed · "* ]] || false
   [[ "$output" != *"| 03-c-verify |"* ]] || false
@@ -2300,8 +2261,6 @@ verify_skill() {
     grep -q '^\*\*Review:\*\* .*V: dirty' "$Q/$d/pr.md"
   done
   run "$VIBE" queue report
-  f="$(ls "$XDG_STATE_HOME"/vibe/briefings/*.md)"
-  run cat "$f"
   [[ "$output" == *"### Needs you"*"| 01-a-verify | done |"*"V: dirty · "* ]] || false
 }
 

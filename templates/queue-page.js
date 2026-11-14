@@ -6,7 +6,7 @@
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   /* The real nodes, held at load: #panel is empty then and comes first, so a later lookup could land in a .md. */
-  const queue = $('#queue'), filter = $('.filter', queue), updated = $('.updated'), parts = ['.updated', '.chips', '.flags', '.acts', '#briefing', '#config'].map(s => [s, $(s)]);
+  const queue = $('#queue'), filter = $('.filter', queue), updated = $('.updated'), parts = ['.updated', '.chips', '.flags', '.acts', '#config'].map(s => [s, $(s)]);
   const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
   const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
   const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
@@ -98,9 +98,9 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* #queue and the rows rows() built only: their text is escaped; #briefing, #config and a panel .md carry agent-written Markdown. */
+    /* #queue and the rows rows() built only: their text is escaped; a .md (Yours and triage in #queue, #config, a panel) carries agent-written Markdown. */
     const b = e.target.closest('button[data-act]');
-    if (!b || !(queue.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
+    if (!b || b.closest('.md') || !(queue.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
     if (b.disabled || !document.body.classList.contains('can')) return;
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;

@@ -92,10 +92,10 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - `event=<id>` in the job file keeps it to one job per event. When the job ends, one `**Fix job**` comment on the PR carries its `result`.
 - A later non-merge commit answers an event. The commits of a fix job answer only the events of that job.
 - Your login: `pr_login=` in `queue.conf`, else `gh api user`. No login: no fix job.
-- Another login: a briefing line. Its text reaches no prompt.
+- Another login: a triage line. Its text reaches no prompt.
 - A job queued or running on the branch, a PR with no job, or no text: a `no fix job:` line. The next triage tries again.
 - A failed check, and other comments or reviews newer than the last non-merge commit: one line each.
-- The lines replace `triage.md`; the briefing shows them under `## Triage`. Nothing to report: no file.
+- The lines replace `triage.md`; the report and the page's Queue tab show them under `## Triage`. Nothing to report: no file.
 
 ## What breaks it
 
