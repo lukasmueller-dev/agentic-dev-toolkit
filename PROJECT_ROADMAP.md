@@ -12,12 +12,6 @@ _Last updated: 2026-11-09 · queue-verify-skills_
 One item per PR — sized so a `HANDOFF.md` (the `handoff-brief` skill) can be
 staged straight from it. Order matters within a track; tracks are independent.
 
-- [ ] **Drop the briefing machinery** — remove the `#briefing` tab, the
-      `briefings/` files, `briefing-dir` and `queue report --week`; the
-      report prints to stdout; the page shows Yours and triage lines above
-      the repo groups; Queue uses the full width.
-      Done when `git grep -niE 'briefing' -- . ':!vendor'` prints nothing and
-      lint, `bats tests/` and `skill-lint --strict skills` pass.
 - [ ] **Run `research-experiment-setup` on NCBF** — after the author reviews
       `references/cards.md` and both research `SKILL.md` files; card table
       first, on the author's branch off `pncbf-v2` (NCBF facts: PR #87 body);
