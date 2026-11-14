@@ -33,11 +33,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       the roadmap items the repo proves done or dead, with one proof line each.
       Done when one recurring job per repo queues and its PR changes only
       `PROJECT_ROADMAP.md`.
-- [ ] **Show all gpu-queue data on the GPU card** — `vibe queue status` and the
-      page show elapsed time, last log line, command, `then`, wandb link, the 3
-      latest finished runs and the held/parked runs; only running and queued
-      outside runs count in "on the GPU".
-      Done when `bats tests/vibe-queue.bats` passes with tests for each field.
 
 ### Health items (repo review of 2026-11-03)
 
