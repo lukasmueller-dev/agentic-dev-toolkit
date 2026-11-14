@@ -8,7 +8,7 @@ and refill it whenever you like.
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
 | [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, a research job, or a feature; your approval; `vibe queue add` |
-| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
+| [`/review-jobs`](../skills/review-jobs/SKILL.md) | the report of `vibe queue report`; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
 | 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |
@@ -25,7 +25,6 @@ and refill it whenever you like.
 ```bash
 mkdir -p ~/.config/vibe
 printf '%s\n' thesis pncbf humanoid_bridge >~/.config/vibe/repos   # the sweep, highest rank first
-echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # optional: briefing copies
 ```
 
 `~/.config/vibe/queue.conf`, optional — the defaults:
@@ -65,9 +64,10 @@ There `vibe queue status|report` and `vibe job list` run on the server; other `q
 
 ## 3. Phone page
 
-The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
+The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
-At 1024 px and wider, the page is 15% larger and shows Queue and Briefing side by side.
+The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups.
+At 1024 px and wider, the page is 15% larger and an open panel is a right column.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
 A feature card is a stack too: it unpacks into a lane, job or `no job` card per member.
@@ -95,7 +95,7 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Buttons, routes and commands: [Page actions](#page-actions).
-- Output and file links open in one panel: a bottom sheet on the phone, the Briefing column from 1024 px.
+- Output and file links open in one panel: a bottom sheet on the phone, a right column from 1024 px.
 - A `.md` in the panel keeps raw tags: `style` elements go, and every attribute except `href`, `src`, `alt`, `title`, `type`, `checked`, `start`. Its buttons do nothing; CSP blocks scripts and frames.
 - The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
@@ -104,14 +104,14 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 
 ```bash
 vibe queue status                                   # header, then per repo each job on two lines, then its phases; a branch with 2+ jobs is one row: done/total, running or next item, PR
-vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
+vibe queue report                                   # on stdout: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
 
 ## Rules the runner keeps
 
-- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the briefing skip a final job that has a `pid` file and no `ended` file: its process still writes.
+- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the report skip a final job that has a `pid` file and no `ended` file: its process still writes.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
 - `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`; other keys and bad values are refused.
@@ -154,7 +154,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 - `/review-jobs` retries an item out of the lane from the current tip: the lane branch while its PR is open, else `<branch>-<item>-retry` from the default branch. Its prompt names `git diff <start>..<side-branch>`.
 - After each item the runner writes the lane PR again: title and TL;DR from the latest done item's `pr.md`, a `<item> → <side-branch>` line per item out of the lane, one `<details>` per item.
 - The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
-- `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you. A finished branch shows its newest job's TL;DR in the briefing (a GPU run's metric).
+- `vibe queue status` and the report show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you. A finished branch shows its newest job's TL;DR in the report (a GPU run's metric).
 
 ## Features
 
@@ -172,7 +172,7 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 - A member is one job, a lane, a `SPEC.md` chain, or a PR with no job. Its `SPEC.md` holds only its milestones and a pointer to the feature file.
 - At job start the runner adds a `## Feature` block to a member's prompt, once: the file path and the contract rule. A contract change ends the job `blocked: contract …`.
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
-- Status, the briefing and the page show a `Features` group first. Member jobs leave their repo groups; in the briefing a member job keeps its row only when it needs you.
+- Status, the report and the page show a `Features` group first. Member jobs leave their repo groups; in the report a member job keeps its row only when it needs you.
 - Count: done members / members. Done: a PR, and no job queued, running or in need of you.
 - Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member whose last `pr` is `push failed` or `PR not created`; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
@@ -260,7 +260,6 @@ Add a route or a button:
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
 | `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
 | `web/index.html`, `page.js` | the phone page, rewritten each runner pass (`templates/queue-page.*`); its CSP runs only `page.js` |
 | `paused` | `vibe queue pause` |
 | `roadmap/<repo path, / as %>` | the origin commit `vibe queue roadmap` listed; `new --line` reads it |
@@ -286,7 +285,7 @@ gpu-queue cancel <id>                 # drop a queued run, TERM a running one; t
 
 ## Cost per job
 
-The PR footer line and the briefing row end with the job's size, from the last `result` event of `queue/<id>/log`:
+The PR footer line and the report row end with the job's size, from the last `result` event of `queue/<id>/log`:
 
 ```text
 ≈$1.04 API · ≈2% 5h est. · 40 turns · 11m
@@ -300,8 +299,8 @@ The PR footer line and the briefing row end with the job's size, from the last `
 
 - Interactive sessions are not in the sum, so the share is too high.
 - No share when `resetsAt` changes during the job, the log has under two events, or a job that overlaps has no `result` event.
-- The footer is written at publish: a job still running then has no `result` event, so the briefing row can show a share the footer lacks.
-- The briefing header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
+- The footer is written at publish: a job still running then has no `result` event, so the report row can show a share the footer lacks.
+- The report header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
 
 ## What breaks it
 
