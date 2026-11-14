@@ -1860,23 +1860,85 @@ follow_ready() {
   [[ -z "$p" || ! -d "$QDIR/$p" || -e "$QDIR/$p/ended" ]]
 }
 
-# gpu_outside — `STATE<TAB>ID<TAB>DIR` per gpu-queue run (running, then queued) that no job's `gpu-job` names.
-# Files only: the state dir of bin/gpu-queue.
+# gpu_state_dir — the state dir of bin/gpu-queue.
+gpu_state_dir() { echo "${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}"; }
+
+# gpu_outside STATE... — `STATE<TAB>ID` per gpu-queue run in the STATE dirs (running queued held parked finished)
+# that no job's `gpu-job` names (a live or an archived job), in the order given; finished: the last 3 (ids start with the submit time).
+# Files only; a missing dir (held/, parked/) gives no row.
 gpu_outside() {
-  local gq="${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}" own=$'\n' d s id
-  for d in "$QDIR"/*/; do own+="$(jstate "${d%/}" gpu-job)"$'\n'; done
-  for s in running queued; do
-    for d in "$gq/$s"/*/; do
+  local own=$'\n' d s id list
+  # Live and archived jobs (as job_limit_pct does); read, not jstate: no fork per archived job.
+  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    [[ -f "${d}gpu-job" ]] || continue
+    read -r id <"${d}gpu-job" || true
+    own+="$id"$'\n'
+  done
+  for s in "$@"; do
+    list=""
+    for d in "$(gpu_state_dir)/$s"/*/; do
       [[ -d "$d" ]] || continue
       d="${d%/}" id="${d##*/}"
       [[ "$id" != *.tmp ]] || continue # shortcut: a submit under way is <id>.tmp, and so is a run named *.tmp; no run has been
-      if [[ "$own" != *$'\n'"$id"$'\n'* ]]; then printf '%s\t%s\t%s\n' "$s" "$id" "$(jstate "$d" dir)"; fi
+      if [[ "$own" != *$'\n'"$id"$'\n'* ]]; then list+="$id"$'\n'; fi
     done
+    if [[ "$s" == finished ]]; then list="$(printf '%s' "$list" | tail -n 3)"; fi
+    while IFS= read -r id; do
+      if [[ -n "$id" ]]; then printf '%s\t%s\n' "$s" "$id"; fi
+    done <<<"$list"
   done
 }
 
+# short TEXT — TEXT cut to 80 characters, `…` last when cut; iconv -c drops a half character at the cut or the start.
+# shortcut: under the C locale (the runner unit sets none) the cut counts bytes, so non-ASCII text shows shorter; upgrade: set a UTF-8 locale in the unit.
+short() {
+  local t="$1" c="" u
+  if ((${#t} > 80)); then t="${t:0:79}" c="…"; fi
+  u="$(printf '%s' "$t" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)" || true # exit 1 when it drops a byte; no iconv: keep the text
+  printf '%s%s' "${u:-$t}" "$c"
+}
+
+# log_tail FILE — the last non-blank line of the last 4 KB of FILE, one line: ANSI codes and control
+# characters gone, a `\r` a line break (the last frame of a progress bar).
+log_tail() {
+  local esc=$'\033' t
+  t="$(tail -c 4096 "$1" 2>/dev/null | tr '\r' '\n' | sed -E "s/$esc\[[0-9;?]*[A-Za-z]//g" | tr '\001-\011\013-\037\177' ' ' |
+    awk 'NF { l = $0 } END { gsub(/^ +| +$/, "", l); print l }')" || true
+  short "$t"
+}
+
+# span_text SECONDS — `45s`, `12m`, `3h05m`.
+span_text() {
+  if (($1 < 60)); then
+    echo "$1s"
+  elif (($1 < 3600)); then
+    echo "$(($1 / 60))m"
+  else
+    printf '%dh%02dm\n' $(($1 / 3600)) $(($1 % 3600 / 60))
+  fi
+}
+
+# gpu_row STATE ID — the fields of one gpu_outside run, joined by US (a tab would merge empty ones):
+# DIR ELAPSED CMD THEN LOG WANDB EXIT ENDED. A finished run has only EXIT and ENDED; ELAPSED: running only.
+# The wandb link: the first run URL in the log (grep -m1 on the file, no pipe: SIGPIPE under pipefail).
+gpu_row() {
+  local d dir="" el="" cmd="" hook="" log="" w="" ex="" en="" t now
+  local re='https://[A-Za-z0-9.-]*wandb[A-Za-z0-9.-]*/[A-Za-z0-9_./-]+/runs/[A-Za-z0-9_-]+'
+  d="$(gpu_state_dir)/$1/$2"
+  if [[ "$1" == finished ]]; then
+    ex="$(jstate "$d" exit)" en="$(jstate "$d" ended)" en="${en%:*}"
+  else
+    dir="$(jstate "$d" dir)" cmd="$(jstate "$d" cmd)" hook="$(jstate "$d" "then")"
+    log="$(log_tail "$d/log")"
+    w="$(grep -m1 -o -E "$re" "$d/log" 2>/dev/null)" || true
+    t="$(epoch_of "$(jstate "$d" started)")" now="$(date +%s)"
+    if [[ "$1" == running && -n "$t" ]]; then el="$(span_text $((now > t ? now - t : 0)))"; fi
+  fi
+  printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$dir" "$el" "$(short "${cmd% }")" "$(short "$hook")" "$log" "${w%%$'\n'*}" "$ex" "$en"
+}
+
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
-# On the GPU: jobs with status `gpu`, plus the gpu-queue runs no job started (gpu_outside).
+# On the GPU: jobs with status `gpu`, plus the running and queued gpu-queue runs no job started (gpu_outside).
 # A PR counts once by the URL in a job's `pr` file. A `done` job with no URL is covered by a URL on
 # its repo and branch (a review round, a lane item) and waits while a job there is live (its review
 # round is queued). A failed or blocked job with no URL always counts. Files only: no gh, every 30 s.
@@ -1898,7 +1960,7 @@ queue_counts() {
     esac
     rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
   done
-  g=$((g + $(gpu_outside | wc -l)))
+  g=$((g + $(gpu_outside running queued | wc -l)))
   echo "$r $g $q $(printf '%s' "$rows" | awk -F'\t' '
     { k = $1 "\t" $2 }
     $4 == "live" { live[k] = 1; next }
@@ -1994,17 +2056,21 @@ job_phases() {
   esac
 }
 
-# queue_jobs PRINTER — the GPU group (`PRINTER repo GPU`, `PRINTER job ID STATE DIR` per outside run, `PRINTER end`),
+# queue_jobs PRINTER — the GPU group (`PRINTER repo GPU`, `PRINTER gpu ID STATE ELAPSED DIR CMD THEN LOG WANDB EXIT ENDED`
+# per outside run (gpu_row's fields), `PRINTER end`),
 # the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
 # PROGRESS CONTEXT ITEMS MEMBERS` per feature, `PRINTER end`), then per repo with a job outside every
 # feature `PRINTER repo NAME`, a card per job or branch (branch_card), `PRINTER end`.
 # ITEMS, MEMBERS: feature_row's F_ITEMS and F_MEMBERS.
 queue_jobs() {
-  local repo d b f seen head s id rows
-  rows="$(gpu_outside)"
+  local repo d b f seen head s id rows el cmd hook log w ex en
+  rows="$(gpu_outside running queued held parked finished)"
   if [[ -n "$rows" ]]; then
     "$1" repo GPU
-    while IFS=$'\t' read -r s id d; do "$1" job "$id" "$s" "$d" "" "" ""; done <<<"$rows"
+    while IFS=$'\t' read -r s id; do
+      IFS=$'\037' read -r d el cmd hook log w ex en <<<"$(gpu_row "$s" "$id")"
+      "$1" gpu "$id" "$s" "$el" "$d" "$cmd" "$hook" "$log" "$w" "$ex" "$en"
+    done <<<"$rows"
     "$1" end
   fi
   feature_keys
@@ -2078,11 +2144,19 @@ job_card() {
   "$1" job "$3" "${st:-queued}" "$txt$(side_suffix "$2")" "$(jstate "$2" pr)" "$2" "${4:-}"
 }
 
-# status_line repo|feature|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
+# status_line repo|feature|gpu|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
 status_line() {
   local r b p ms note
   case "$1" in
     repo) printf '\n%s\n' "$2" ;;
+    gpu)
+      if [[ "$3" == finished ]]; then
+        printf '  %s  exit %s%s\n' "$2" "${10}" "${11:+ · ${11}}"
+      else
+        printf '  %s  %s%s\n' "$2" "$3" "${4:+ $4}"
+        printf '%s\n' "$5" "${8:+log: $8}" "${6:+cmd: $6}" "${7:+then: $7}" "${9:+wandb: $9}" | sed -e '/^$/d' -e 's/^/    /'
+      fi
+      ;;
     job)
       printf '  %s  %s\n' "$2" "$3"
       if [[ -n "$4$5" ]]; then printf '    %s\n' "$4${5:+ $5}"; fi
@@ -2156,7 +2230,7 @@ job_buttons() {
   printf '<div class="jacts" data-id="%s"%s%s>%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$(btn_rows "$b" "$c")" "${links:+<div class=\"files\">$links</div>}"
 }
 
-# status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
+# status_card repo|feature|gpu|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
 # a lane unpacks into a job card per job, a feature into a card per member. The phase line opens to name the review passes.
 status_card() {
   local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
@@ -2170,6 +2244,13 @@ status_card() {
       fi
       ;;
     end) echo '</div>' ;;
+    gpu)
+      # An outside gpu-queue run: the pill is its state and elapsed time, or its exit code; the text its dir, or its end time.
+      pill="$3${4:+ $4}" txt="$5" pr=""
+      if [[ "$3" == finished ]]; then pill="exit ${10}" txt="${11}"; fi
+      extra="$(esc "$(printf '%s\n' "${8:+log: $8}" "${6:+cmd: $6}" "${7:+then: $7}" | sed '/^$/d')" | sed 's#.*#<p class="stats">&</p>#')"
+      if [[ -n "${9:-}" ]]; then extra+="<p class=\"stats\"><a href=\"$(esc "$9")\">wandb run</a></p>"; fi
+      ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ph="${7:-}" ;;
     lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" cls=" lane" ph="${11:-}" ;;
     feature)
@@ -2181,12 +2262,12 @@ status_card() {
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
   esac
-  if [[ "$1" != job && "$1" != lane && "$1" != feature ]]; then return 0; fi
-  # A feature or member state takes the look of a job status.
+  if [[ "$1" != job && "$1" != lane && "$1" != feature && "$1" != gpu ]]; then return 0; fi
+  # A feature, member or outside GPU run state takes the look of a job status.
   case "$st" in
     "needs you" | "no PR") st=blocked ;;
-    "your test") st=held ;;
-    merge | "no job") st="done" ;;
+    "your test" | parked) st=held ;;
+    merge | "no job" | finished) st="done" ;;
   esac
   case "$pr" in
     http*) link=" <a href=\"$(esc "$pr")\">PR</a>" ;;
