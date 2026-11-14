@@ -1884,8 +1884,14 @@ gpu_outside() {
   done
 }
 
-# short TEXT — TEXT cut to 80 characters, `…` last when cut.
-short() { if ((${#1} > 80)); then printf '%s…' "${1:0:79}"; else printf '%s' "$1"; fi; }
+# short TEXT — TEXT cut to 80 characters, `…` last when cut; iconv -c drops a half character at the cut or the start.
+# shortcut: under the C locale (the runner unit sets none) the cut counts bytes, so non-ASCII text shows shorter; upgrade: set a UTF-8 locale in the unit.
+short() {
+  local t="$1" c="" u
+  if ((${#t} > 80)); then t="${t:0:79}" c="…"; fi
+  u="$(printf '%s' "$t" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)" || true # exit 1 when it drops a byte; no iconv: keep the text
+  printf '%s%s' "${u:-$t}" "$c"
+}
 
 # log_tail FILE — the last non-blank line of the last 4 KB of FILE, one line: ANSI codes and control
 # characters gone, a `\r` a line break (the last frame of a progress bar).

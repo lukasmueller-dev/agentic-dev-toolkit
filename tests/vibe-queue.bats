@@ -1320,7 +1320,7 @@ died_job() {
 }
 
 # gpuq STATE NAME DIR — a run made by `gpu-queue submit`, so a change of its layout turns the test red;
-# STATE running, held, parked or finished moves it there (`gpu-queue run` moves a run to running and finished). Prints the run's id.
+# STATE running or finished moves it where `gpu-queue run` puts it. held and parked: `gpu-queue` writes no such dir yet, the test makes it. Prints the run's id.
 gpuq() {
   local gq="${GPU_QUEUE_DIR:-$XDG_STATE_HOME/gpu-queue}" id
   id="$("$REPO_ROOT/bin/gpu-queue" submit --name "$2" --dir "$3" -- true)"
@@ -1424,6 +1424,17 @@ gpuq_end() {
   grep -qxF "    log: $(printf '%079d' 0)…" <<<"$output"
   grep -qxF "    cmd: $(printf '%079d' 0)…" <<<"$output"
   [ "$(grep -cE '^ +(then|wandb):' <<<"$output")" -eq 0 ]
+}
+
+@test "status: a multi-byte log line is cut to valid UTF-8 under the C locale (the cut falls inside a character)" {
+  local id bar
+  bar="$(printf '%0100d' 0 | sed 's/0/█/g')"
+  id="$(gpuq running bar "$BATS_TEST_TMPDIR")"
+  printf '  5%%|%s| 5/100 [00:03<00:17, 4.9it/s]\n' "$bar" >"$GPU_QUEUE_DIR/running/$id/log"
+  LC_ALL=C run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  grep -qE '^    log: 5%\|█+…$' <<<"$output"
+  iconv -f UTF-8 -t UTF-8 <<<"$output" >/dev/null
 }
 
 @test "status: queued, held and parked outside runs show state, dir and command; only the queued one counts on the GPU" {
