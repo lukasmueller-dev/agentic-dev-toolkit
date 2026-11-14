@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-09 · queue-verify-skills_
+_Last updated: 2026-11-14 · research-job_
 
 ## Goal
 
@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-14: **the queue runs research jobs**: one job works the backlog of a
+  `RESEARCH.md` off through the GPU chain and may add its own experiments;
+  `deadline=` is the hard stop. A route of `/enqueue`, no new skill.
+  Details: `docs/vibe-queue.md`; calls: PR body.
 - 2026-11-07: **queue jobs run more skills**: each review round adds the `lean-review` rubric to `/code-review`; opt-in `verify=` adds a report-only `<id>-verify` step; `job_phases` feeds the page and status. Design: PR for `queue-verify-skills`.
 - 2026-11-07: **no repo hook runs with your credentials**: every unsandboxed
   git call on an agent-written tree goes through `agent_git`/`agent_push`

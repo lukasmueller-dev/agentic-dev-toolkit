@@ -7,7 +7,7 @@ and refill it whenever you like.
 | Skill | Does |
 | --- | --- |
 | [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
-| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, or a feature; your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, a research job, or a feature; your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
@@ -177,6 +177,20 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 - Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member whose last `pr` is `push failed` or `PR not created`; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
 
+## Research jobs
+
+An open question with a metric, a budget and a backlog of experiments runs as one job. The agent picks each next run from the last result.
+`/enqueue` makes one: route Research.
+
+- Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
+- Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.
+- The loop is the GPU chain: each session ends `queued:` after `vibe queue gpu`; the follow-up session closes that run and queues the next one.
+- The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
+- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
+- The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
+- Kind `gpu` only; no lane, no `SPEC.md` chain.
+- shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
+
 ## Page actions
 
 A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed argv (`ROUTES`). `<arg>` comes from the card's `data-*` or a prompt. ✓: a second tap within 4 s.
@@ -232,7 +246,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
@@ -295,6 +309,7 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `failed`, note `agent killed (SIGKILL)` → past its memory cap, or oomd under memory pressure; raise `memory_max=` or lower `slots=`, then restart the runner.
 - `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
+- A research job ended `failed` or `timeout` between two runs → `vibe queue retry <id>`; the new session reads `RESEARCH.md` and `HANDOFF.md` and goes on.
 - A job `failed`, note `job process died twice` → the process died on both runs (reboot, oomd); read `runner.log` and `log`, then queue it again.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
 - Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A push that adds or changes an LFS-tracked file: the runner and `vibe sync` refuse it (`git-lfs: push by hand`) → push the branch yourself.
