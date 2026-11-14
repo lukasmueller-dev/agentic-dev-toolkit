@@ -1320,11 +1320,23 @@ died_job() {
 }
 
 # gpuq STATE NAME DIR — a run made by `gpu-queue submit`, so a change of its layout turns the test red;
-# STATE running moves it where `gpu-queue run` puts it. Prints the run's id.
+# STATE running, held, parked or finished moves it there (`gpu-queue run` moves a run to running and finished). Prints the run's id.
 gpuq() {
   local gq="${GPU_QUEUE_DIR:-$XDG_STATE_HOME/gpu-queue}" id
   id="$("$REPO_ROOT/bin/gpu-queue" submit --name "$2" --dir "$3" -- true)"
-  if [ "$1" = running ]; then mv "$gq/queued/$id" "$gq/running/$id"; fi
+  if [ "$1" != queued ]; then
+    mkdir -p "$gq/$1"
+    mv "$gq/queued/$id" "$gq/$1/$id"
+  fi
+  echo "$id"
+}
+
+# gpuq_end N EXIT — the finished run `2026111N-120000-1-rN` (ids sort by submit time), ended 2026-11-1N 12:0N:30 with EXIT. Prints its id.
+gpuq_end() {
+  local gq="${GPU_QUEUE_DIR:-$XDG_STATE_HOME/gpu-queue}" id="2026111$1-120000-1-r$1"
+  mv "$gq/finished/$(gpuq finished "r$1" "$BATS_TEST_TMPDIR")" "$gq/finished/$id"
+  echo "$2" >"$gq/finished/$id/exit"
+  echo "2026-11-1$1 12:0$1:30" >"$gq/finished/$id/ended"
   echo "$id"
 }
 
@@ -1368,6 +1380,93 @@ gpuq() {
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
   [ "$(grep -c '\.tmp' <<<"$output")" -eq 0 ]
+}
+
+@test "status: an outside running gpu-queue run shows elapsed time, dir, last log line, command, then hook and wandb link, on the page too" {
+  local id dir="$BATS_TEST_TMPDIR/run-dir" t html="$XDG_STATE_HOME/vibe/web/index.html" rd
+  mkdir "$dir"
+  id="$(gpuq running train "$dir")"
+  rd="$GPU_QUEUE_DIR/running/$id"
+  t=$(($(date +%s) - 720))
+  { date -d "@$t" '+%F %T' 2>/dev/null || date -r "$t" '+%F %T'; } >"$rd/started"
+  echo "notify-me" >"$rd/then"
+  # An ANSI-coloured link, then a progress bar that redraws itself with \r and an erase code.
+  printf 'old line\n\033[34mwandb: run at \033[4mhttps://wandb.ai/me/proj/runs/abc123\033[0m\n  5%%|#  | 5/100\r 10%%|## | 10/100\r\033[2K 15%%|### | 15/100\r' >"$rd/log"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 4,9p <<<"$output")" = "  $id  running 12m
+    $(cd "$dir" && pwd)
+    log: 15%|### | 15/100
+    cmd: true
+    then: notify-me
+    wandb: https://wandb.ai/me/proj/runs/abc123" ]
+  [ "$(grep -c $'\033' <<<"$output")" -eq 0 ]
+  [ "$(grep -c $'\r' <<<"$output")" -eq 0 ]
+  run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  grep -qF '<span class="pill">running 12m</span>' "$html"
+  grep -qF "<p>$(cd "$dir" && pwd)</p>" "$html"
+  grep -qF '<p class="stats">log: 15%|### | 15/100</p>' "$html"
+  grep -qF '<p class="stats">cmd: true</p>' "$html"
+  grep -qF '<p class="stats">then: notify-me</p>' "$html"
+  grep -qF '<a href="https://wandb.ai/me/proj/runs/abc123">wandb run</a>' "$html"
+}
+
+@test "status: a long log line and a long command are cut to one line; no then or wandb line without data" {
+  local id long rd
+  long="$(printf '%0200d' 0)"
+  id="$(gpuq running long "$BATS_TEST_TMPDIR")"
+  rd="$GPU_QUEUE_DIR/running/$id"
+  echo "$long" >"$rd/cmd"
+  printf 'begin\n%s\n\n  \n' "$long" >"$rd/log"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  grep -qxF "    log: $(printf '%079d' 0)…" <<<"$output"
+  grep -qxF "    cmd: $(printf '%079d' 0)…" <<<"$output"
+  [ "$(grep -cE '^ +(then|wandb):' <<<"$output")" -eq 0 ]
+}
+
+@test "status: queued, held and parked outside runs show state, dir and command; only the queued one counts on the GPU" {
+  local q h p dir="$BATS_TEST_TMPDIR/q-dir" html="$XDG_STATE_HOME/vibe/web/index.html"
+  mkdir "$dir"
+  q="$(gpuq queued a "$dir")" h="$(gpuq held b "$dir")" p="$(gpuq parked c "$dir")"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 1 on the GPU · 0 queued · 0 to review · 0 no PR · 4 slots" ]
+  grep -qxF "  $q  queued" <<<"$output"
+  grep -qxF "  $h  held" <<<"$output"
+  grep -qxF "  $p  parked" <<<"$output"
+  [ "$(grep -cxF "    $(cd "$dir" && pwd)" <<<"$output")" -eq 3 ]
+  [ "$(grep -cxF '    cmd: true' <<<"$output")" -eq 3 ]
+  [ "$(grep -cE '^ +(log|then|wandb):' <<<"$output")" -eq 0 ]
+  run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  grep -qF '<b>1</b> on the GPU' "$html"
+  grep -qF '<span class="pill">held</span>' "$html"
+  grep -qF '<span class="pill">parked</span>' "$html"
+  [ "$(grep -c 'class="job s-held"' "$html")" -eq 2 ]
+}
+
+@test "status: the 3 latest finished outside runs show exit code and end time and do not count on the GPU; a job's own run stays out" {
+  local r id1 id2 id3 id4 own html="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  id1="$(gpuq_end 1 5)" id2="$(gpuq_end 2 0)" id3="$(gpuq_end 3 1)" id4="$(gpuq_end 4 cancelled)" own="$(gpuq_end 5 0)"
+  mkjob 01-a "$r" task-a ok
+  echo "$own" >"$Q/01-a/gpu-job"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p <<<"$output")" = "queue: 0 running · 0 on the GPU · 1 queued · 0 to review · 0 no PR · 4 slots" ]
+  [ "$(sed -n 3,6p <<<"$output")" = "GPU
+  $id2  exit 0 · 2026-11-12 12:02
+  $id3  exit 1 · 2026-11-13 12:03
+  $id4  exit cancelled · 2026-11-14 12:04" ]
+  [ "$(grep -cE "$id1|$own" <<<"$output")" -eq 0 ]
+  run "$VIBE" queue page
+  [ "$status" -eq 0 ]
+  grep -qF '<b>0</b> on the GPU' "$html"
+  grep -qF '<span class="pill">exit 1</span></div><p>2026-11-13 12:03</p>' "$html"
+  grep -qF '<span class="pill">exit cancelled</span></div><p>2026-11-14 12:04</p>' "$html"
+  [ "$(grep -cE "$id1|$own" "$html")" -eq 0 ]
 }
 
 # endjob ID REPO BRANCH [PR] [KEY=value...] — a job that ended `done`; PR is the text of its `pr` file.
