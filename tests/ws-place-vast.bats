@@ -47,7 +47,7 @@ if [ $((${#sock} + 17)) -ge 108 ]; then
 fi
 if [ -n "$sock" ]; then printf '%s %s\n' "$PWD" "$sock" >>"$STUBS/ssh.sock"; fi
 if [ "$stdin" = 1 ]; then cat >>"$STUBS/ssh.stdin"; fi
-case " $* " in *" -O check "*) exit 1 ;; esac
+case " $* " in *" -O check "*) exit "${SSH_CHECK:-1}" ;; esac
 exit "${SSH_EXIT:-0}"
 EOF
   cat >"$STUBS/bin/rsync" <<'EOF'
@@ -180,12 +180,16 @@ EOF
   [ ! -e "$WS_STATE/id" ]
 }
 
-@test "tick: pulls when pulled is 10 min old; destroys past limit" {
+@test "tick: pulls when pulled is 10 min old; a dead tunnel comes back; destroys past limit" {
   "$PLACE" up >/dev/null
   date +%s >"$WS_STATE/pulled"
   run "$PLACE" tick
   [ "$status" -eq 0 ]
   [ "$(grep -c 'vast:/ws/data' "$STUBS/rsync.argv")" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUBS/ssh.argv")" -eq 2 ]
+  SSH_CHECK=0 run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUBS/ssh.argv")" -eq 2 ]
 
   echo "$(($(date +%s) - 600))" >"$WS_STATE/pulled"
   run "$PLACE" tick

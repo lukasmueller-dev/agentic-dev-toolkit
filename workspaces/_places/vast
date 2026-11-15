@@ -205,9 +205,11 @@ cmd_tick() {
   t="$(date +%s)"
   if [ "$t" -ge "$(epoch "$WS_STATE/limit")" ]; then
     cmd_down
-  elif [ $((t - $(epoch "$WS_STATE/pulled"))) -ge 600 ]; then
-    cmd_pull
+    return
   fi
+  # A network drop or a reboot ends the tunnel master: url starts a new one, up only once.
+  if [ -n "${WS_CONF_PORTS:-}" ] && [ -s "$cfg" ]; then (cmd_url >/dev/null) || true; fi
+  if [ $((t - $(epoch "$WS_STATE/pulled"))) -ge 600 ]; then cmd_pull; fi
 }
 
 verb="${1:-}"
