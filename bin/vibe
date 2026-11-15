@@ -3356,7 +3356,7 @@ ws_check() {
       else if (k == "runs") { if (v != "container" && v != "host") bad("runs=" v ": container or host") }
       else if (k == "gpu") { if (v != "yes" && v != "no") bad("gpu=" v ": yes or no") }
       else if (k == "places") each(v, ",", "^(turing|runpod|vast)$", "unknown place")
-      else if (k == "hours") { if (v !~ /^[0-9]+$/ || v + 0 == 0) bad("hours=" v ": a whole number above 0") }
+      else if (k == "hours") { if (v !~ /^[1-9][0-9]*$/) bad("hours=" v ": a whole number above 0") }
       else if (k == "commit") { if (length(v) != 40 || v ~ /[^0-9a-f]/) bad("commit=" v ": 40 hex") }
       else if (k == "secrets") each(v, " ", "^[A-Z_][A-Z0-9_]*$", "bad env name")
       else if (k == "ports") each(v, ",", "^[0-9]+$", "bad port")

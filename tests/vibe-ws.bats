@@ -76,13 +76,14 @@ good() {
   conf e kind=job places=turing
   conf g kind=service places=turing commit=abc
   conf h kind=service places=turing hours=0
+  conf h2 kind=service places=turing hours=08
   conf i kind=service places=turing "secrets=API_KEY lower"
   conf j kind=service places=turing ports=80,ui
   conf p kind=run places=turing result=pr
   run "$VIBE" ws list
   [ "$status" -eq 1 ]
   [ "$output" = "$(printf '%-16s bad conf: %s\n' e "kind=job: service or run" g "commit=abc: 40 hex" \
-    h "hours=0: a whole number above 0" i "bad env name lower" j "bad port ui" p "result=pr: branch or folder")" ]
+    h "hours=0: a whole number above 0" h2 "hours=08: a whole number above 0" i "bad env name lower" j "bad port ui" p "result=pr: branch or folder")" ]
 }
 
 @test "ws list: an unreadable conf is a bad conf; the next tool still lists" {
