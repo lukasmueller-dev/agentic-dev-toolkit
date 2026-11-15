@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# status — one line: `up — <link with token>` on a healthy daemon, else `down — <why>`.
+set -euo pipefail
+
+PORT="${DS_PORT:-20999}"
+tok="$(cat "${WS_ROOT:-/ws}/data/.ws-token" 2>/dev/null || true)"
+
+body="$(curl -fsS --max-time 5 -H "Authorization: Bearer $tok" "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true)"
+if [ "$(jq -r '.status // empty' <<<"$body" 2>/dev/null || true)" = ok ]; then
+  echo "up — /?token=$tok"
+else
+  echo "down — no health answer on port $PORT"
+fi

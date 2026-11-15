@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# start — run the DeepScientist daemon detached; the login token goes to $DATA/.ws-token.
+set -euo pipefail
+
+ROOT="${WS_ROOT:-/ws}"
+DATA="$ROOT/data"
+SEED="${DS_SEED:-/opt/ds-seed}"
+PORT="${DS_PORT:-20999}"
+
+mkdir -p "$DATA"
+# The image's first-launch download sits in $SEED; a mounted $DATA hides it.
+if [ ! -e "$DATA/runtime/python-env" ]; then
+  cp -a "$SEED/." "$DATA/"
+fi
+
+if [ ! -r "$ROOT/secrets.env" ]; then
+  echo "start: $ROOT/secrets.env is missing" >&2
+  exit 1
+fi
+set -a
+# shellcheck source=/dev/null
+. "$ROOT/secrets.env"
+set +a
+
+# --auth true stays: without it the API takes shell input from anyone who reaches the port.
+if ! ds --daemon-only --no-browser --host 0.0.0.0 --port "$PORT" --auth true \
+  --runner claude --skip-update-check --home "$DATA" >"$DATA/start.log" 2>&1; then
+  tail -n 20 "$DATA/start.log" >&2
+  exit 1
+fi
+
+tok="$(jq -r '.auth_token // empty' "$DATA/runtime/daemon.json" || true)"
+if [ -z "$tok" ]; then
+  echo "start: daemon has no auth token; stopping it" >&2
+  ds --stop --home "$DATA" || true
+  exit 1
+fi
+(
+  umask 077
+  printf '%s\n' "$tok" >"$DATA/.ws-token"
+)
