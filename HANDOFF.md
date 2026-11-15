@@ -14,25 +14,23 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/deepscientist/` (conf, Dockerfile, `start`, `stop`, `status`) and `tests/ws-deepscientist.bats` (11 tests pass). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestones 1 and 2 are done: `workspaces/deepscientist/`, `tests/ws-deepscientist.bats` (11 tests pass) and the recipe `docs/workspaces/deepscientist.md` (6 `## ` headings). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The second open milestone of `SPEC.md`: the recipe `docs/workspaces/deepscientist.md` — requirements, numbered steps, verify, what breaks it — done when `grep -c '^## ' docs/workspaces/deepscientist.md` prints 4 or more.
+The third open milestone of `SPEC.md`, the end action `delete`: move each decision to `pr.md`, then `git rm SPEC.md HANDOFF.md` — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
-Facts the recipe needs:
+Decisions for `pr.md`:
 
-- First check: the Claude runner works from `CLAUDE_CODE_OAUTH_TOKEN` alone, with no `~/.claude` login file.
-- `status` prints `up — /?token=<token>`: a path, not a host. Add the address from the place's `url` verb.
-- The image build runs `ds init`; `runtime/` moves to `/opt/ds-seed/runtime`; each `start` links its entries into `/ws/data/runtime`.
-- `pull` copies links, not the Python env. A place that dereferences links copies the env again.
-- `start` keeps the launch-card log out of `/ws/data`. The token is in `.ws-token` and `runtime/daemon.json`, both mode 600.
-- Trap: Claude Code refuses all permissions as root without `IS_SANDBOX=1`. The image sets it, and `start` sets it with `PATH` too, because an ssh exec channel may not carry the image ENV.
-- Trap: `run` and `steer` have no script; the surface must treat a missing script as exit 3.
+- `--auth true` is fixed: without it the API takes shell input from anyone who reaches the port.
+- The login token goes to `/ws/data/.ws-token` and `runtime/daemon.json` (mode 600); the launch-card log stays outside `/ws/data`; the page list shows the link without the token.
+- The image build runs `ds init`; `runtime/` lives in `/opt/ds-seed` and each `start` links it into `/ws/data/runtime`.
+- `start` sets `PATH` and `IS_SANDBOX=1` itself, because an ssh exec channel may not carry the image `ENV`.
+- The recipe names `vibe ws start|stop` and the place verbs `exec status` and `url` with `WS_INSTANCE`, `WS_STATE`, `WS_DIR`. Check them against `ws-surface` when it lands: `WS_DIR` as the workspace folder is a guess.
 
 ## Blockers
 
-None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve on it. Drop it, or keep it?
+None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve on it. Drop it, or keep it? The recipe lists it under "What breaks it".
 
 ## Gotchas (unpromoted)
 
