@@ -163,7 +163,8 @@ good() {
 
 # stubs — the real turing place with stub docker, tailscale and gpu-queue in $S (logs, containers/).
 # $S/fail-run, fail-secrets, fail-cp, fail-rm: that docker step fails; $S/slow-cp: a copy out takes 1 s;
-# $S/exit-<script>: its exit; $S/hang-<script>: it sleeps 5 s; $S/gpu-busy: the lock waits.
+# $S/exit-<script>: its exit; $S/hang-<script>: it sleeps 5 s; $S/hang-cp-<container>: a copy out of it sleeps 30 s;
+# $S/gpu-busy: the lock waits.
 stubs() {
   S="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$S/containers" "$HOME/.config/vibe/workspaces"
@@ -206,6 +207,7 @@ case "$cmd" in
     case "$1" in
       *:/ws/*)
         [ ! -e "$S/slow-cp" ] || sleep 1
+        [ ! -e "$S/hang-cp-${1%%:*}" ] || sleep 30
         [ ! -e "$S/fail-cp" ] && [ -e "$S/containers/${1%%:*}" ] || { echo "No such container" >&2; exit 1; }
         mkdir -p "$2" && echo "$1" >"$2/from-container"
         ;;
@@ -391,6 +393,25 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   run "$VIBE" ws status
   [[ "${lines[0]}" == "new "*" up "* ]] || false
   [[ "${lines[1]}" == "old "*" down "* ]] || false
+}
+
+@test "ws tick: a hung pull ends after VIBE_WS_TICK_SECS; the next instance past its limit still goes down" {
+  stubs
+  good a-hang service
+  good b-late service
+  secrets a-hang
+  secrets b-late
+  "$VIBE" ws start a-hang
+  "$VIBE" ws start b-late
+  echo $(($(date +%s) - 1)) >"$STATES/b-late/limit"
+  touch "$S/hang-cp-ws-a-hang"
+  SECONDS=0
+  VIBE_WS_TICK_SECS=1 run "$VIBE" ws tick
+  [ "$SECONDS" -lt 20 ]
+  [[ "$output" == *"tick of a-hang failed or ran past 1 s"* ]] || false
+  [ ! -e "$STATES/b-late/id" ]
+  [ ! -e "$S/containers/ws-b-late" ]
+  [ -e "$S/containers/ws-a-hang" ]
 }
 
 @test "ws tick and stop at once: each pull finishes, data/ and out/ stay" {

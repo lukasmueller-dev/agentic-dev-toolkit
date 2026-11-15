@@ -3827,9 +3827,10 @@ ws_down() {
   return "$rc"
 }
 
-# vibe ws tick — for each instance with an id: past its limit the stop script and down, else the place's tick.
+# vibe ws tick — for each instance with an id: past its limit the stop script and down, else the place's tick,
+# 600 s at most (VIBE_WS_TICK_SECS): one hung pull must not keep the next instance from its limit.
 cmd_ws_tick() {
-  local d i
+  local d i secs="${VIBE_WS_TICK_SECS:-600}"
   for d in "$WS_STATES"/*/; do
     d="${d%/}" i="${d##*/}"
     if [[ ! -s "$d/id" ]]; then
@@ -3837,7 +3838,7 @@ cmd_ws_tick() {
     elif [[ "$(ws_state "$d")" == "past limit" ]]; then
       ws_down "$i" || warn "down of $i past its limit failed"
     else
-      ws_place "$i" tick || warn "tick of $i failed"
+      WS_SECS="$secs" ws_place "$i" tick || warn "tick of $i failed or ran past $secs s"
     fi
   done
 }
