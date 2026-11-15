@@ -27,12 +27,12 @@ Facts the recipe needs:
 - The image build runs `ds init`; `runtime/` moves to `/opt/ds-seed/runtime`; each `start` links its entries into `/ws/data/runtime`.
 - `pull` copies links, not the Python env. A place that dereferences links copies the env again.
 - `start` keeps the launch-card log out of `/ws/data`. The token is in `.ws-token` and `runtime/daemon.json`, both mode 600.
-- Trap: `IS_SANDBOX=1` in the image lets Claude Code run as root; without it the runner refuses all permissions.
+- Trap: Claude Code refuses all permissions as root without `IS_SANDBOX=1`. The image sets it, and `start` sets it with `PATH` too, because an ssh exec channel may not carry the image ENV.
 - Trap: `run` and `steer` have no script; the surface must treat a missing script as exit 3.
 
 ## Blockers
 
-None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only). Drop it, or keep it?
+None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve on it. Drop it, or keep it?
 
 ## Gotchas (unpromoted)
 
