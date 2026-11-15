@@ -6,7 +6,7 @@ set -euo pipefail
 
 [[ -f "$HLOOP_REPO/.env" ]] || hl_die "no $HLOOP_REPO/.env: copy .env.example there and fill it in"
 # Unset or empty, the tool rents on vast and runpod (lib_cloud_providers): a listed entry is the consent.
-[[ -n "$(hl_key CLOUD_COMPUTE_PROVIDERS)" ]] ||
+[[ -n "$(hl_key CLOUD_COMPUTE_PROVIDERS)$(hl_key CLOUD_COMPUTE_PROVIDER)" ]] ||
   hl_die "$HLOOP_REPO/.env does not set CLOUD_COMPUTE_PROVIDERS: unset, the tool rents on vast and runpod; list the providers you agree to rent on"
 sandbox="$(hl_key SANDBOX_PROVIDER | tr '[:lower:]' '[:upper:]')"
 missing=""
@@ -14,6 +14,19 @@ for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHR
   [[ -n "$(hl_key "$key")" ]] || missing="$missing $key"
 done
 [[ -z "$missing" ]] || hl_die "$HLOOP_REPO/.env does not set:$missing"
+# Compose publishes on an IP only; the tool also takes a host name here.
+HLOOP_BIND="$(hl_key LOCAL_REACHABLE_ADDRESS)"
+[[ "$HLOOP_BIND" =~ ^[0-9]+(\.[0-9]+){3}$ ]] ||
+  hl_die "$HLOOP_REPO/.env sets LOCAL_REACHABLE_ADDRESS=$HLOOP_BIND: start needs the tailnet IPv4 (tailscale ip -4)"
+TAG="$(cat "$HLOOP_REPO/localdev/.image-tag" 2>/dev/null || true)"
+[[ -n "$TAG" ]] || hl_die "no $HLOOP_REPO/localdev/.image-tag: build the images by docs/workspaces/hypothesisloop.md"
 
 make -C "$HLOOP_REPO" -s render-settings
-hl_compose up -d
+# The images make builds, by the name it tags them with: $(HOST_ADDRESS):5000.
+REGISTRY="$(cat "$HLOOP_REPO/localdev/.host-address"):5000"
+for image in control-service metrics-service; do
+  docker image inspect "$REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
+    hl_die "no image $REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
+done
+# Not the registry: this host already holds the images, and the registry serves remote clusters only.
+hl_compose up -d postgres greptimedb memgraph minio control-service metrics-service

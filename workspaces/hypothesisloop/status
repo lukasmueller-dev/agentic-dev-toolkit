@@ -4,9 +4,12 @@ set -euo pipefail
 # shellcheck source=workspaces/hypothesisloop/hloop.sh
 . "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
 
-url="http://127.0.0.1:$HL_API_PORT/health"
-if curl -fs -o /dev/null --max-time 5 "$url"; then
-  echo "up — the control service answers $url"
+api="http://127.0.0.1:$HL_API_PORT/health"
+# 3000: the UI, the first port of workspace.conf; any HTTP answer counts.
+if ! curl -fs -o /dev/null --max-time 5 "$api"; then
+  echo "down — no answer from $api"
+elif curl -s -o /dev/null --max-time 5 http://127.0.0.1:3000; then
+  echo "up — the control service answers $api"
 else
-  echo "down — no answer from $url"
+  echo "up — the control service answers; nothing serves the UI on :3000 (localdev/dev.sh ui)"
 fi
