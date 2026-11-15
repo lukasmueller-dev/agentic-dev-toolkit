@@ -25,12 +25,6 @@ rm -f "$stopflag"
 # stop reads this pid: run's own, so stop waits for the result, not only for the supervisor.
 echo $$ >"$pidfile"
 
-# A whole number above 0; 08 is 8. Vast also lets 0 through.
-if [[ ! "$hours" =~ ^[0-9]+$ ]] || [ "$((10#$hours))" -eq 0 ]; then
-  echo "failed: WS_HOURS is not a whole number above 0: $hours" >"$out/result"
-  exit 0
-fi
-
 # The secrets file is KEY=VALUE data: read it, never source it.
 if [ -f "$ws/secrets.env" ]; then
   while IFS= read -r line || [ -n "$line" ]; do
@@ -55,9 +49,9 @@ fi
 
 # The supervisor changes directory: both paths must be absolute.
 cd "$rt"
-# The place counts hours from the start of up (ssh wait up to 20 min on vast) and its down pulls at the limit.
+# The place counts hours from the start of up (a rented place waits for ssh) and its down pulls at the limit.
 # shortcut: fixed margin, the container gets no limit epoch; use the epoch when ws-surface passes one.
-deadline=$(($(date +%s) + 10#$hours * 3600 - ${AR_LIMIT_MARGIN:-1800}))
+deadline=$(($(date +%s) + hours * 3600 - ${AR_LIMIT_MARGIN:-1800}))
 scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
 pid=$!
 
