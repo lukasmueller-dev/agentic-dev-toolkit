@@ -1235,8 +1235,8 @@ tool_check() {
 
 # tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
 # in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
-# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, tool-exit and out/ (no symlinks:
-# the tool's links would read host files). The instance is the job's alone: once down, its state dir goes.
+# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, out/ (no symlinks: the tool's
+# links would read host files), then tool-exit. The instance is the job's alone: once down, its state dir goes.
 tool_run() {
   local d="$1" inst st h f pid rc=0
   inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
@@ -1272,12 +1272,13 @@ tool_run() {
     sleep "${VIBE_WS_POLL:-10}"
   done
   wait "$pid" || rc=$?
-  echo "$rc" >"$d/tool-exit"
   if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
   if [[ -d "$st/out" ]]; then
     cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
     find "$d/out" -type l -delete 2>/dev/null || rm -rf "$d/out"
   fi
+  # Last: a job process that dies before it runs the tool again.
+  echo "$rc" >"$d/tool-exit"
   if [[ ! -s "$st/id" ]]; then rm -rf "$st"; fi
 }
 
@@ -1298,11 +1299,12 @@ tool_unsafe() {
 # False once the job has ended: a stop, no out/result, a done branch result with no bundle, a bad or unsafe
 # branch, no fast-forward, no close.md.
 # Runs as a tested condition: each failure is handled, not left to errexit.
+# A requeue after a crash redoes what is not done: tool-exit marks the run, close.md the check and the merge too.
 tool_job() {
   local d="$1" wt b x e
   wt="$(jstate "$d" worktree)"
-  if [[ ! -f "$d/tool-exit" ]]; then
-    tool_run "$d"
+  if [[ ! -f "$d/close.md" ]]; then
+    if [[ ! -f "$d/tool-exit" ]]; then tool_run "$d"; fi
     if stopped "$d"; then return 1; fi
     if [[ ! -s "$d/out/result" ]]; then
       x="$(tail -n 1 "$d/tool.log" 2>/dev/null | cut -c 1-160)"
@@ -1785,8 +1787,9 @@ cmd_queue_answer() {
     fi
     task_append "$tmp/prompt.md" "Earlier try: git diff $(jstate "$d" start)..$side. Do not merge it." "Answer: $text"
   fi
-  # A tool run with a result: the follow-up closes that run again (tool_job), no new run.
+  # A tool run with a result: the follow-up closes that run again (tool_job), no new run; close.md: no new merge.
   if [[ -s "$d/out/result" ]]; then cp -R "$d/out" "$d/tool-exit" "$d/tool.log" "$tmp/"; fi
+  if [[ -f "$d/close.md" ]]; then cp "$d/close.md" "$tmp/"; fi
   n="$(queue_add "$tmp")"
   cmd_queue_archive "$d" >/dev/null
   echo "queued ${n##*/}; archived ${d##*/}"

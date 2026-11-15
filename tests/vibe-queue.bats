@@ -2810,6 +2810,26 @@ toolwait() {
   for f in "$Q"/*/status; do [ "$(cat "$f")" = "done" ]; done
 }
 
+@test "tool: a job process that died after the run checks and merges its result again; no new run" {
+  local r c="$BATS_TEST_TMPDIR/toolwork" o="$BATS_TEST_TMPDIR/proj.git"
+  r="$(make_repo proj)"
+  tool stub branch
+  tooljob 01-a "$r" tool-x
+  git clone -q "$o" "$c"
+  git -C "$c" checkout -q -b tool/try
+  echo tool >"$c/tool.txt" && git -C "$c" add tool.txt && git -C "$c" commit -q -m "feat: tool change"
+  mkdir -p "$Q/01-a/out"
+  git -C "$c" bundle create "$Q/01-a/out/repo.bundle" tool/try 2>/dev/null
+  echo tool/try >"$Q/01-a/out/branch"
+  echo "done: score 0.91" >"$Q/01-a/out/result"
+  echo 0 >"$Q/01-a/tool-exit"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$o" log -n 1 --format=%s tool-x)" = "feat: tool change" ]
+  [ ! -e "$STUBS/tool.log" ]
+}
+
 @test "tool: answer to a blocked closing session closes the same run again; no new run" {
   local r n
   r="$(make_repo proj)"
