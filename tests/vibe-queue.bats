@@ -3,7 +3,8 @@
 # vibe queue — the vibe queue in throwaway repos with a bare origin. A stub
 # `claude` acts on the MODE line of its prompt; a stub `gh` records its calls
 # under $STUBS. The stub prints a system/init event (session id sess-<job id>)
-# unless $STUBS/no-init exists. The runner runs with --drain, so each test ends.
+# unless $STUBS/no-init exists. With --input-format stream-json it reads its prompt
+# from the first message and ends with a result event. The runner runs with --drain, so each test ends.
 
 load helper
 
@@ -17,7 +18,11 @@ setup() {
   cat >"$STUBS/claude" <<EOF
 #!/usr/bin/env bash
 echo "\$*" >>"$STUBS/claude.log"
-prompt="\$(cat)"
+# text — the text of the stream-json user message on stdin.
+text() { jq -r '.message.content[0].text'; }
+sj=""
+case "\$*" in *"--input-format stream-json"*) sj=1 ;; esac
+if [ -n "\$sj" ]; then IFS= read -r m && prompt="\$(printf '%s' "\$m" | text)"; else prompt="\$(cat)"; fi
 case "\$prompt" in
   "Run /code-review"*)
     echo "\$prompt" >>"$STUBS/claude.log"
@@ -125,6 +130,11 @@ case "\$mode" in
     echo "done: tool result checked" >"\$VIBE_JOB_DIR/result"
     ;;
   blocked) echo "blocked: needs a decision" >"\$VIBE_JOB_DIR/result" ;;
+  steer)
+    touch "$STUBS/steer-up"
+    IFS= read -r -t 20 m && printf '%s' "\$m" | text >"$STUBS/steered"
+    echo "done: steered" >"\$VIBE_JOB_DIR/result"
+    ;;
   crash) exit 3 ;;
   oom) echo half >wip.txt && kill -9 \$\$ ;;
   silent) ;;
@@ -141,6 +151,7 @@ case "\$mode" in
     echo "failed: out of time — wip.txt" >"\$VIBE_JOB_DIR/result"
     ;;
 esac
+if [ -n "\$sj" ]; then echo '{"subtype":"success","type":"result"}' && cat >/dev/null; fi
 EOF
   cat >"$STUBS/gh" <<EOF
 #!/bin/sh
@@ -1037,7 +1048,7 @@ died_job() {
   run "$VIBE" queue conf web_login=evil@example.com
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown key 'web_login'"* ]] || false
-  for v in slots=0 slots=x after=maybe review_level=huge memory_max=-1 slots; do
+  for v in slots=0 slots=x after=maybe review_level=huge memory_max=-1 steer=yes slots; do
     run "$VIBE" queue conf "$v"
     [ "$status" -ne 0 ]
   done
@@ -2604,7 +2615,7 @@ toolwait() {
   mkjob 02-b "$r" task-b ok
   run "$VIBE" queue steer 02-b "go on"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"02-b runs no tool"* ]] || false
+  [[ "$output" == *"02-b takes no steer now"* ]] || false
   run "$VIBE" queue steer 01-a "go on"
   [ "$status" -ne 0 ]
   [[ "$output" == *"the tool of 01-a does not run now"* ]] || false
@@ -2619,6 +2630,44 @@ toolwait() {
   "$VIBE" queue stop 01-a >/dev/null
   wait "$runner"
   [ "$(grep '^steer' "$STUBS/tool.log")" = "$(printf 'steer try a smaller step\nsteer again')" ]
+}
+
+@test "steer: steer= unset leaves the agent's argv as it was and makes no FIFO; a plain job takes no steer" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  run "$VIBE" queue steer 01-a "go on"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"01-a takes no steer now"* ]] || false
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/claude.log")" = "-p --model sonnet --name proj-task-a --permission-mode auto --permission-prompts none --settings $REPO_ROOT/claude/vibe-job-settings.json --add-dir $Q/01-a --output-format stream-json --verbose" ]
+  [ ! -e "$Q/01-a/steer" ]
+}
+
+@test "steer: steer=1 hands the text of vibe queue steer to the running agent; a crash ends the input too" {
+  local r rpid i
+  r="$(make_repo proj)"
+  printf 'after=\nsteer=1\n' >"$CONF"
+  mkjob 01-a "$r" task-a steer
+  mkjob 02-b "$r" task-b crash
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/runner.log" 2>&1 3>&- &
+  rpid=$!
+  for i in $(seq 100); do
+    if [ -e "$STUBS/steer-up" ]; then break; fi
+    sleep 0.1
+  done
+  run "$VIBE" queue steer 01-a $'try a "smaller" step\\\nthen stop'
+  [ "$status" -eq 0 ]
+  [ "$output" = "steered 01-a" ]
+  wait "$rpid"
+  [ "$(cat "$STUBS/steered")" = $'try a "smaller" step\\\nthen stop' ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/02-b/status")" = "failed" ]
+  [ "$(grep -c -- '--verbose --input-format stream-json$' "$STUBS/claude.log")" = 2 ]
+  [ ! -e "$Q/01-a/steer" ]
+  run "$VIBE" queue steer 01-a "too late"
+  [ "$status" -ne 0 ]
 }
 
 @test "tool: a gpu=yes run on turing holds the GPU lock for the whole run" {
