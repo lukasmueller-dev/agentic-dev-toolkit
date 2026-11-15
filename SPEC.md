@@ -33,7 +33,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] Conf and the three scripts against a stub `docker` — code — done when `bats tests/ws-hypothesisloop.bats` passes: `start` refuses an unset `CLOUD_COMPUTE_PROVIDERS` and each missing key by name; `start` and `stop` call compose on the file under `HLOOP_REPO`; `status` prints `up` or `down`.
+- [x] Conf and the three scripts against a stub `docker` — code — done when `bats tests/ws-hypothesisloop.bats` passes: `start` refuses an unset `CLOUD_COMPUTE_PROVIDERS` and each missing key by name; `start` and `stop` call compose on the file under `HLOOP_REPO`; `status` prints `up` or `down`.
 - [ ] The recipe `docs/workspaces/hypothesisloop.md`: the accounts it needs, the keys, the first objective, what it rents — code — done when `grep -c '^## ' docs/workspaces/hypothesisloop.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 

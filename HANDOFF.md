@@ -14,11 +14,11 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/hypothesisloop/` (conf, `start`, `stop`, `status`, `hloop.sh`, `compose.tailnet.yml`) and `tests/ws-hypothesisloop.bats` (6 tests, green). Design reasons: the commit body of `feat(workspaces): hypothesisloop conf, start, stop and status`.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Conf and the three scripts against a stub `docker` — code — done when `bats tests/ws-hypothesisloop.bats` passes: `start` refuses an unset `CLOUD_COMPUTE_PROVIDERS` and each missing key by name; `start` and `stop` call compose on the file under `HLOOP_REPO`; `status` prints `up` or `down`.
+The second milestone of `SPEC.md`: the recipe `docs/workspaces/hypothesisloop.md` (accounts, keys, first objective, what it rents) — code — done when `grep -c '^## ' docs/workspaces/hypothesisloop.md` prints 4 or more.
 
 ## Blockers
 
@@ -26,4 +26,8 @@ None.
 
 ## Gotchas (unpromoted)
 
-None.
+- The compose stack rents nothing: only `make dev` (`localdev/dev.sh`) renders the sandbox and cloud_compute sections. Hosted agents need `make dev`. The recipe must say so.
+- The UI (port 3000) is `npm run dev` from `localdev/dev.sh ui`, outside compose. `next dev` binds every interface.
+- `start` needs `localdev/.image-tag` and `localdev/.host-address`: one `make local-images` and one `make render-settings` by hand. Both default to podman; docker needs `CONTAINER_ENGINE=docker IMAGE_PLATFORM=linux/amd64` (Makefile comment).
+- `start` binds to `LOCAL_REACHABLE_ADDRESS` of the checkout's `.env`: it must be `tailscale ip -4`.
+- `compose.tailnet.yml` needs docker compose 2.24.4 or later (`!override`); turing has v5.7.1.
