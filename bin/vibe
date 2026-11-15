@@ -3418,7 +3418,7 @@ cmd_ws_status() {
   local -a dirs=()
   (($# <= 1)) || die "usage: vibe ws status [<instance>]"
   if (($#)); then
-    [[ "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+    [[ "$1" != .* && "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
     dirs=("$WS_STATES/$1")
   else
     for d in "$WS_STATES"/*/; do

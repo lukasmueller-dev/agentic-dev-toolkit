@@ -140,6 +140,10 @@ good() {
   run "$VIBE" ws status nope
   [ "$status" -ne 0 ]
   [[ "$output" == *"no instance 'nope'"* ]] || false
-  run "$VIBE" ws status '../x'
-  [ "$status" -ne 0 ]
+  mkdir -p "$STATES"
+  for bad in ../x .. .; do
+    run "$VIBE" ws status "$bad"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no instance '$bad'"* ]] || false
+  done
 }
