@@ -154,6 +154,58 @@ wait_for() {
   grep -q -- '--resume' "$STUB_LOG"
 }
 
+@test "run: exit 1 of the tool with a complete summary (a skipped stage 21 failed) is done: at exit 0" {
+  STUB_RC=1 STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [[ "$(result)" == "done: paper in files/"* ]] || false
+  [ -s "$WS_ROOT/out/files/paper_final.md" ]
+}
+
+@test "run: exit 1 of the tool with an unfinished summary, or none, stays failed: at exit 1" {
+  STUB_RC=1 STUB_SUMMARY="$FAILED" run "$WSDIR/run"
+  [ "$status" -eq 1 ]
+  [[ "$(result)" == "failed: ended at stage 12 (failed)"* ]] || false
+  STUB_RC=1 run "$WSDIR/run"
+  [ "$status" -eq 1 ]
+  [[ "$(result)" == "failed: no valid pipeline_summary.json"* ]] || false
+}
+
+@test "run: a checkpoint at stage 23 does not start the tool again, the verdict and copy still happen" {
+  mkdir -p "$RUN_DIR/deliverables"
+  echo '{"last_completed_stage": 23}' >"$RUN_DIR/checkpoint.json"
+  echo "$DONE" >"$RUN_DIR/pipeline_summary.json"
+  echo "# Paper" >"$RUN_DIR/deliverables/paper_final.md"
+  run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUB_LOG" ]
+  [[ "$(result)" == "done: paper in files/"* ]] || false
+  [ -s "$WS_ROOT/out/files/paper_final.md" ]
+}
+
+@test "run: a summary left by an earlier part never gives a verdict to a tool that wrote none" {
+  mkdir -p "$RUN_DIR"
+  echo '{"last_completed_stage": 5}' >"$RUN_DIR/checkpoint.json"
+  echo "$DONE" >"$RUN_DIR/pipeline_summary.json"
+  STUB_RC=1 run "$WSDIR/run"
+  [ "$status" -eq 1 ]
+  [[ "$(result)" == "failed: no valid pipeline_summary.json"* ]] || false
+}
+
+@test "run: after a resume, result and report say the counts cover the last part only, also in a later run" {
+  STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [[ "$(result)" == "done:"* ]] || false
+  [[ "$(result)" != *resumed* ]] || false
+  rm -rf "$RUN_DIR"
+  mkdir -p "$RUN_DIR"
+  echo '{"last_completed_stage": 5}' >"$RUN_DIR/checkpoint.json"
+  STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [[ "$(result)" == "done:"*"(resumed run: counts cover the last part only)" ]] || false
+  grep -q 'resumed run: counts cover the last part only' "$WS_ROOT/out/report.md"
+  echo '{"last_completed_stage": 23}' >"$RUN_DIR/checkpoint.json"
+  run "$WSDIR/run"
+  [[ "$(result)" == "done:"*"(resumed run: counts cover the last part only)" ]] || false
+}
+
 @test "run: secrets.env reaches the tool, value kept literally" {
   # shellcheck disable=SC2016
   printf '# token\nCLAUDE_CODE_OAUTH_TOKEN=sk-a=b$c d\n' >"$WS_ROOT/secrets.env"

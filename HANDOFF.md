@@ -14,7 +14,7 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/autoresearchclaw/` (conf, `config.yaml`, Dockerfile, `run`, `steer`, `stop`) and `tests/ws-autoresearchclaw.bats` (23 tests pass). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/autoresearchclaw/` (conf, `config.yaml`, Dockerfile, `run`, `steer`, `stop`) and `tests/ws-autoresearchclaw.bats` (28 tests pass). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
@@ -23,6 +23,7 @@ Put these in it:
 - Token check: `claude setup-token` gives `CLAUDE_CODE_OAUTH_TOKEN`; test it in the container with `acpx claude exec "say ok"`.
 - Limits: `steer` works at stages 8 and 9 only; cost limits are dead code, the hour limit is the only stop; no LaTeX in the image, so no PDF.
 - Not for: its RL prompt allows only small classic-control tasks.
+- Resume: the tool counts only the stages of its own call, so the numbers after a resume cover the last part (the result line says so). A finished run (checkpoint 23) is not started again.
 - Token risk: the agent (`--approve-all`) and the experiment code run as root in one container and can read `CLAUDE_CODE_OAUTH_TOKEN` and `/ws/secrets.env`. Say so, and advise a token you can revoke.
 
 ## Blockers

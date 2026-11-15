@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # run: one pipeline, topic from /ws/in/brief.md to a paper folder in /ws/out/files.
-# Exit code = researchclaw's; /ws/out/result holds the verdict (exit 0 is no proof of a paper).
+# Exit code = researchclaw's, but 0 for a finished paper (the tool exits 1 after any failed stage).
+# /ws/out/result holds the verdict (exit 0 is no proof of a paper).
 set -euo pipefail
 
 ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
@@ -10,8 +11,11 @@ here="$(cd "$(dirname "$0")" && pwd)"
 run_dir="$ws/data/artifacts/$inst"
 summary="$run_dir/pipeline_summary.json"
 out="$ws/out"
+ckpt="$run_dir/checkpoint.json"
+resumed_mark="$run_dir/.ws-resumed"
 pidfile="${TMPDIR:-/tmp}/ws-run.pid"
 pid=
+note=
 
 # finish "<result line>" [exit code]: write result and report.md, then exit.
 finish() {
@@ -19,7 +23,7 @@ finish() {
   {
     printf '# AutoResearchClaw — %s\n\n%s\n' "$inst" "$1"
     if jq -e . "$summary" >/dev/null 2>&1; then
-      jq -r '"\n- stages: \(.stages_done) done, \(.stages_failed) failed, last \(.final_stage) (\(.final_status))\n- citations verified: \(.content_metrics.verified_citations // "n/a") of \(.content_metrics.total_citations // "n/a")\n- degraded: \(.degraded)\n\nThe tool made these numbers: treat them as claims."' "$summary"
+      jq -r --arg note "$note" '"\n- stages: \(.stages_done) done, \(.stages_failed) failed, last \(.final_stage) (\(.final_status))\($note)\n- citations verified: \(.content_metrics.verified_citations // "n/a") of \(.content_metrics.total_citations // "n/a")\n- degraded: \(.degraded)\n\nThe tool made these numbers: treat them as claims."' "$summary"
     fi
   } >"$out/report.md"
   exit "${2:-0}"
@@ -60,28 +64,46 @@ fi
 [ -s "$ws/in/brief.md" ] || finish "failed: no brief at /ws/in/brief.md" 1
 topic="$(cat "$ws/in/brief.md")"
 
-resume=()
-if [ -f "$run_dir/checkpoint.json" ]; then resume=(--resume); fi
+# last_stage: last completed stage from checkpoint.json; 0 when there is none or it is unreadable.
+last_stage() {
+  local n=0
+  if [ -f "$ckpt" ]; then n="$(jq -r '.last_completed_stage // 0' "$ckpt" 2>/dev/null)" || n=0; fi
+  echo "$n"
+}
 
-cd "$ws/data"
-# -k 60: the hour limit and a stop end the tool for good, also when it ignores TERM.
-timeout -k 60 "${hours}h" researchclaw run -c "$here/config.yaml" -t "$topic" -o "$run_dir" \
-  --auto-approve --skip-noncritical-stage "${resume[@]+"${resume[@]}"}" &
-pid=$!
-echo "$$" >"$pidfile" # exists only while the tool runs, so stop never signals before pid is set
-# A trapped signal ends wait early: loop until the tool is gone, then keep its own exit code.
-while :; do
-  rc=0
-  wait "$pid" || rc=$?
-  kill -0 "$pid" 2>/dev/null || break
-done
+last="$(last_stage)"
+rc=0
+if [ "$last" -ge 23 ]; then
+  # The tool restarts at stage 1 after the last stage: a finished run goes to the verdict and the copy.
+  echo "run: checkpoint.json says all 23 stages are done; the tool does not start again" >&2
+else
+  resume=()
+  if [ -f "$ckpt" ]; then
+    resume=(--resume)
+    : >"$resumed_mark"
+  fi
+  rm -f "$summary" # a stale summary must not give a verdict
+  cd "$ws/data"
+  # -k 60: the hour limit and a stop end the tool for good, also when it ignores TERM.
+  timeout -k 60 "${hours}h" researchclaw run -c "$here/config.yaml" -t "$topic" -o "$run_dir" \
+    --auto-approve --skip-noncritical-stage "${resume[@]+"${resume[@]}"}" &
+  pid=$!
+  echo "$$" >"$pidfile" # exists only while the tool runs, so stop never signals before pid is set
+  # A trapped signal ends wait early: loop until the tool is gone, then keep its own exit code.
+  while :; do
+    rc=0
+    wait "$pid" || rc=$?
+    kill -0 "$pid" 2>/dev/null || break
+  done
+  last="$(last_stage)"
+fi
 
-last=0
-if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json" 2>/dev/null)" || last=0; fi
+# The tool counts only the stages of its own call: after a resume the numbers cover the last part.
+if [ -e "$resumed_mark" ]; then note=" (resumed run: counts cover the last part only)"; fi
 
 verdict=
 case "$rc" in
-  0) ;;
+  0 | 1) ;; # exit 1 follows any failed stage, also a skipped stage 21: the summary decides
   124) verdict="failed: hour limit of $hours h reached after stage $last" ;;
   137) verdict="failed: killed after stage $last, the tool ignored TERM; a new run resumes" ;;
   143) verdict="failed: stopped after stage $last; a new run resumes" ;;
@@ -90,13 +112,14 @@ esac
 if [ -n "$verdict" ]; then
   :
 elif ! jq -e . "$summary" >/dev/null 2>&1; then
-  verdict="failed: no valid pipeline_summary.json after stage $last"
+  verdict="failed: no valid pipeline_summary.json after stage $last; see tool.log"
 elif ! jq -e '.final_status == "done" and .final_stage == 23' "$summary" >/dev/null; then
-  verdict="failed: $(jq -r '"ended at stage \(.final_stage) (\(.final_status)), \(.stages_failed) stage(s) failed"' "$summary")"
+  verdict="failed: $(jq -r --arg note "$note" '"ended at stage \(.final_stage) (\(.final_status)), \(.stages_failed) stage(s) failed\($note)"' "$summary")"
 elif [ ! -s "$run_dir/deliverables/paper_final.md" ]; then
   verdict="failed: all 23 stages done, but deliverables/paper_final.md is missing"
 else
-  verdict="done: $(jq -r '"paper in files/, \(.stages_done) stages done, \(.stages_failed) failed, degraded=\(.degraded)"' "$summary")"
+  verdict="done: $(jq -r --arg note "$note" '"paper in files/, \(.stages_done) stages done, \(.stages_failed) failed, degraded=\(.degraded)\($note)"' "$summary")"
+  rc=0
 fi
 
 # Copy after the verdict: a failed copy (disk full) must not hide why the run ended.
