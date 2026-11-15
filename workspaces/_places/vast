@@ -65,10 +65,6 @@ tunnel() {
   (cd "$WS_STATE" && ssh -F "$cfg" -S tunnel.sock "$@")
 }
 
-close_tunnel() {
-  if [ -S "$WS_STATE/tunnel.sock" ]; then tunnel -O exit vast 2>/dev/null || true; fi
-}
-
 # ssh_config JSON — point host "vast" at the instance: direct port 22, else the Vast proxy.
 ssh_config() {
   local hp host port
@@ -197,7 +193,7 @@ cmd_down() {
   local pulled=0
   [ -s "$WS_STATE/id" ] || return 0
   if cmd_pull; then pulled=1; fi
-  close_tunnel
+  tunnel -O exit vast 2>/dev/null || true
   destroy || exit 1
   [ "$pulled" = 1 ] || die "pull failed before the destroy: $WS_STATE/data may be old"
 }
