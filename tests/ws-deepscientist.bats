@@ -13,7 +13,7 @@ setup() {
   export WS_ROOT="$BATS_TEST_TMPDIR/ws"
   export DS_SEED="$BATS_TEST_TMPDIR/seed"
   STUBS="$BATS_TEST_TMPDIR/stubs"
-  mkdir -p "$WS_ROOT/data" "$WS_ROOT/out" "$DS_SEED/runtime/python-env" "$STUBS"
+  mkdir -p "$WS_ROOT/data" "$WS_ROOT/out" "$DS_SEED/runtime/python-env" "$DS_SEED/runtime/tools" "$STUBS"
   echo "CLAUDE_CODE_OAUTH_TOKEN=oauth-secret" >"$WS_ROOT/secrets.env"
   # The stub ds logs its argv and the secret it sees, and writes the daemon
   # state a real start writes. A file $STUBS/no-token leaves the token out.
@@ -89,14 +89,16 @@ EOF
   [ "$perm" = 600 ]
 }
 
-@test "start copies the seed into an empty data folder, once" {
+@test "start links the seed runtime into the data folder on every start" {
   run "$WSD/start"
   [ "$status" -eq 0 ]
-  [ -d "$WS_ROOT/data/runtime/python-env" ]
-  # a second start with the seed gone must not copy again
-  rm -rf "$DS_SEED"
+  [ "$(readlink "$WS_ROOT/data/runtime/python-env")" = "$DS_SEED/runtime/python-env" ]
+  [ "$(readlink "$WS_ROOT/data/runtime/tools")" = "$DS_SEED/runtime/tools" ]
+  # a link lost to an interrupted start or a restored data folder comes back
+  rm "$WS_ROOT/data/runtime/tools"
   run "$WSD/start"
   [ "$status" -eq 0 ]
+  [ -L "$WS_ROOT/data/runtime/tools" ]
 }
 
 @test "start stops the daemon and fails when ds reports no token" {

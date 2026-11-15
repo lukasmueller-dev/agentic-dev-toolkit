@@ -17,10 +17,12 @@ RUN git clone https://github.com/ResearAI/DeepScientist /opt/ds \
 # claude comes from the repo's own npm install; IS_SANDBOX lets it run as root with all permissions.
 ENV PATH=/opt/ds/node_modules/.bin:$PATH IS_SANDBOX=1
 
-# First launch at build: uv and the Python env land in /ws/data/runtime.
-# A start mounts /ws/data over that, so the result moves to /opt/ds-seed; `start` copies it back once.
-RUN mkdir -p /ws/data \
+# First launch at build: uv and the Python env land in /ws/data/runtime. The home stays /ws/data: the launcher's stamp records that path.
+# A start mounts /ws/data over it, so runtime/ moves to /opt/ds-seed; `start` links its entries back and `pull` copies links, not the env.
+RUN mkdir -p /ws/data /opt/ds-seed \
  && ds --home /ws/data init \
- && mv /ws/data /opt/ds-seed
+ && rm -rf /ws/data/runtime/uv-cache \
+ && mv /ws/data/runtime /opt/ds-seed/runtime \
+ && rm -rf /ws/data
 
 CMD ["sleep", "infinity"]
