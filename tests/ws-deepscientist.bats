@@ -113,6 +113,24 @@ EOF
   [ -L "$WS_ROOT/data/runtime/tools" ]
 }
 
+@test "start keeps a real directory already in data/runtime" {
+  mkdir -p "$WS_ROOT/data/runtime/python-env"
+  touch "$WS_ROOT/data/runtime/python-env/rebuilt"
+  run "$WSD/start"
+  [ "$status" -eq 0 ]
+  [ ! -L "$WS_ROOT/data/runtime/python-env" ]
+  [ -e "$WS_ROOT/data/runtime/python-env/rebuilt" ]
+  [ ! -e "$WS_ROOT/data/runtime/python-env/python-env" ]
+  [ -L "$WS_ROOT/data/runtime/tools" ]
+}
+
+@test "start fails when the image has no seed" {
+  rm -rf "$DS_SEED"
+  run "$WSD/start"
+  [ "$status" -eq 1 ]
+  [ ! -e "$STUBS/ds.log" ]
+}
+
 @test "start stops the daemon and fails when ds reports no token" {
   touch "$STUBS/no-token"
   run "$WSD/start"
