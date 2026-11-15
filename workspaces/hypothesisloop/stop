@@ -5,5 +5,5 @@ set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
 
 # Placeholders: down only parses them, so stop works when .env or the make outputs are gone.
-TAG=down REGISTRY=localhost:5000 HLOOP_BIND=127.0.0.1
+TAG=down HLOOP_BIND=127.0.0.1
 hl_compose down

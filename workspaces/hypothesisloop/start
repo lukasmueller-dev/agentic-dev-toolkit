@@ -25,11 +25,9 @@ TAG="$(cat "$HLOOP_REPO/localdev/.image-tag" 2>/dev/null || true)"
 
 # TAG: the settings name the tag compose runs, not the tag of the working tree.
 make -C "$HLOOP_REPO" -s render-settings TAG="$TAG"
-# The images make builds, by the name it tags them with: $(HOST_ADDRESS):5000.
-REGISTRY="$(cat "$HLOOP_REPO/localdev/.host-address"):5000"
 for image in control-service metrics-service; do
-  docker image inspect "$REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
-    hl_die "no image $REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
+  docker image inspect "$HL_REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
+    hl_die "no image $HL_REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
 done
 # Not the registry: this host already holds the images, and the registry serves remote clusters only.
 hl_compose up -d postgres greptimedb memgraph minio control-service metrics-service

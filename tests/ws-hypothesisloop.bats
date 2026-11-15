@@ -15,7 +15,6 @@ setup() {
   : >"$HL/localdev/controlplane/docker-compose.yml"
   printf 'services:\n  api_port: 8081\n  metric_controller_port: 8084\n' >"$HL/controlplane/settings/hypothesisloop.yaml"
   echo abc123 >"$HL/localdev/.image-tag"
-  echo 192.168.1.5 >"$HL/localdev/.host-address"
   write_env
   printf 'HLOOP_REPO=%s\n' "$HL" >"$HOME/.config/vibe/workspaces/hypothesisloop.env"
   chmod 600 "$HOME/.config/vibe/workspaces/hypothesisloop.env"
@@ -140,7 +139,7 @@ write_env() {
 @test "start refuses an image this host does not hold and does not call compose" {
   DOCKER_NO_IMAGE=1 run "$WS/start"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no image 192.168.1.5:5000/hypothesisloop-control-service:abc123"* ]] || false
+  [[ "$output" == *"no image localhost:5000/hypothesisloop-control-service:abc123"* ]] || false
   [ "$(grep -c 'docker compose' "$LOG")" -eq 0 ]
 }
 
@@ -148,11 +147,11 @@ write_env() {
   run "$WS/start"
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings TAG=abc123" ]
-  [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=192.168.1.5:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
+  [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
 }
 
 @test "stop takes the compose file under HLOOP_REPO down, keeps the volumes and needs no .env or make output" {
-  rm "$HL/.env" "$HL/localdev/.image-tag" "$HL/localdev/.host-address"
+  rm "$HL/.env" "$HL/localdev/.image-tag"
   run "$WS/stop"
   [ "$status" -eq 0 ]
   [[ "$(cat "$LOG")" == "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml down TAG="*" API=8081 METRICS=8084" ]] || false

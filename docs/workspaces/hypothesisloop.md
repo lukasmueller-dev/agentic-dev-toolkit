@@ -53,22 +53,22 @@ cp -n .env.example .env && chmod 600 .env    # -n keeps an existing .env; set th
 make -s render-settings
 ```
 
-`render-settings` names each key it misses and writes `localdev/.host-address`. Repeat until it prints nothing.
+`render-settings` names each key it misses. Repeat until it prints nothing.
 
 ## 2. Build the images
 
 ```bash
 cd <checkout>
-tag="$(bash localdev/lib/image-tag.sh)" registry="$(cat localdev/.host-address):5000"
+tag="$(bash localdev/lib/image-tag.sh)"
 go mod vendor &&
-  docker build --platform linux/amd64 -f controlplane/build/Dockerfile.control-service -t "$registry/hypothesisloop-control-service:$tag" . &&
-  docker build --platform linux/amd64 -f controlplane/build/Dockerfile.metrics-service -t "$registry/hypothesisloop-metrics-service:$tag" . &&
+  docker build --platform linux/amd64 -f controlplane/build/Dockerfile.control-service -t "localhost:5000/hypothesisloop-control-service:$tag" . &&
+  docker build --platform linux/amd64 -f controlplane/build/Dockerfile.metrics-service -t "localhost:5000/hypothesisloop-metrics-service:$tag" . &&
   echo "$tag" >localdev/.image-tag
 rm -rf vendor
 for i in library/postgres:16-alpine greptime/greptimedb:v1.2.1 memgraph/memgraph:3.13.1 pgsty/silo:RELEASE.2026-09-16T00-00-00Z; do docker pull "docker.io/$i"; done
 ```
 
-`make local-images` fails on turing. It runs `podman compose` and pushes over HTTP. These are its two build lines for docker, with no push.
+`make local-images` fails on turing. It runs `podman compose` and pushes over HTTP. These are its two build lines for docker, with no push. The name `localhost:5000` is local: nothing pulls it.
 The pull moves the store downloads out of `start`, which must return in 120 s. Unchecked: no docker build of these two images has run.
 
 ## 3. Start
@@ -135,7 +135,6 @@ Open `http://<tailnet ip>:3000` on the phone. The sign-in page loads, and GitHub
 ## What breaks it
 
 - `start of hypothesisloop ran past 120 s` → docker pulled the store images, or Go compiled `localdev/envfiles`, inside `start`. Run step 1 and the pull of step 2 first.
-- `start` prints `no image <address>:5000/…` after a network change → `.host-address` holds the new LAN address. Build again by step 2.
 - `start` prints `does not set UI_ORIGIN` or another key → `make render-settings` checks keys that `start` does not. Set the key in `.env`.
 - `start` fails on `!override` → docker compose is older than 2.24.4. Update it.
 - `start` refuses `LOCAL_REACHABLE_ADDRESS=<name>` → compose publishes on an IP only. Set the output of `tailscale ip -4`.

@@ -34,14 +34,17 @@ hl_key() {
   )
 }
 
+# The name of the two service images, local only: compose runs them from this host, and nothing pulls them.
+HL_REGISTRY=localhost:5000
+
 # hl_compose ARG...: docker compose on the checkout's file and the tailnet override, with the
-# caller's TAG, REGISTRY and HLOOP_BIND.
+# caller's TAG and HLOOP_BIND.
 hl_compose() {
   local bind="$HLOOP_BIND" google="$HOME/.config/gcloud/application_default_credentials.json"
   # A bind mount of a missing file fails; localdev/lib/auth.sh mounts /dev/null then.
   [[ -f "$google" ]] || google=/dev/null
   # 5001: HL_IMAGE_REGISTRY_PORT of localdev/lib/env.sh, which the compose file needs set.
-  TAG="$TAG" REGISTRY="$REGISTRY" HLOOP_BIND="$bind" REGISTRY_PUBLISH_IP="$bind" \
+  TAG="$TAG" REGISTRY="$HL_REGISTRY" HLOOP_BIND="$bind" REGISTRY_PUBLISH_IP="$bind" \
     HL_API_PORT="$HL_API_PORT" HL_METRICS_PORT="$HL_METRICS_PORT" HL_IMAGE_REGISTRY_PORT=5001 \
     HL_GOOGLE_CREDENTIALS_FILE="$google" \
     docker compose -f "$hl_compose_file" -f "$hl_dir/compose.tailnet.yml" "$@"
