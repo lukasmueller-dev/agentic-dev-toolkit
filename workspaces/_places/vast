@@ -63,10 +63,14 @@ close_tunnel() {
 
 # ssh_config JSON — point host "vast" at the instance: direct port 22, else the Vast proxy.
 ssh_config() {
-  local hp
+  local hp host port
   hp="$(printf '%s' "$1" | jq -r 'if .ports["22/tcp"] then "\(.public_ipaddr | gsub("\\s"; "")) \(.ports["22/tcp"][0].HostPort)" else "\(.ssh_host) \(.ssh_port)" end')" || return 1
+  host="${hp% *}" port="${hp##* }"
+  # The rented host reports these: a newline in them would add an ssh option.
+  case "$host" in '' | *[!A-Za-z0-9.:-]*) return 1 ;; esac
+  case "$port" in '' | *[!0-9]*) return 1 ;; esac
   printf 'Host vast\n  HostName %s\n  Port %s\n  User root\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile "%s"\n  ConnectTimeout 20\n  ServerAliveInterval 30\n' \
-    "${hp% *}" "${hp##* }" "$WS_STATE/known_hosts" >"$cfg"
+    "$host" "$port" "$WS_STATE/known_hosts" >"$cfg"
 }
 
 # wait_ready ID — wait VAST_WAIT s for `running` and an ssh answer; fail at once on a state that never runs.
