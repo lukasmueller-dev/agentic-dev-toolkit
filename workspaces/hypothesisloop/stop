@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# stop: takes the compose stack down and keeps its data volumes, as make controlplane-down does.
+# stop: ends the UI of the recipe's step 4, then takes the compose stack down and keeps its data volumes.
 set -euo pipefail
 # shellcheck source=workspaces/hypothesisloop/hloop.sh
 . "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
 
 # Placeholders: down only parses them, so stop works when .env or the make outputs are gone.
 TAG=down HLOOP_BIND=127.0.0.1
+# The tmux session step 4 of docs/workspaces/hypothesisloop.md starts; gone or no tmux is fine.
+tmux kill-session -t '=hloop-ui' 2>/dev/null || true
 hl_compose down

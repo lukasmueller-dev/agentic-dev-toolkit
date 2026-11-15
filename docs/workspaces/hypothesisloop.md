@@ -133,7 +133,7 @@ hl platform-experiments get --platform-experiment <PE>    # in the step-5 shell:
 ```
 
 Open `http://<tailnet ip>:3000` on the phone. The sign-in page loads, and GitHub signs you in.
-`vibe ws stop hypothesisloop` takes the stack down and keeps its data volumes. `tmux kill-session -t '=hloop-ui'` stops the UI.
+`vibe ws stop hypothesisloop` ends the UI session, takes the stack down and keeps its data volumes.
 
 ## What breaks it
 

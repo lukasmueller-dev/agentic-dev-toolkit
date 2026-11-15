@@ -32,6 +32,11 @@ echo "make $*" >>"$LOG"
 if [ -n "${MAKE_FAIL:-}" ]; then echo "render-settings: .env does not set UI_ORIGIN" >&2 && exit 1; fi
 exit 0
 EOF
+  # tmux logs its argv, so no test ends a real session.
+  cat >"$BATS_TEST_TMPDIR/bin/tmux" <<'EOF'
+#!/bin/sh
+echo "tmux $*" >>"$LOG"
+EOF
   # curl fails for a URL that holds CURL_FAIL.
   cat >"$BATS_TEST_TMPDIR/bin/curl" <<'EOF'
 #!/bin/sh
@@ -150,11 +155,12 @@ write_env() {
   [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
 }
 
-@test "stop takes the compose file under HLOOP_REPO down, keeps the volumes and needs no .env or make output" {
+@test "stop ends the UI session, takes the compose file under HLOOP_REPO down, keeps the volumes and needs no .env or make output" {
   rm "$HL/.env" "$HL/localdev/.image-tag"
   run "$WS/stop"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$LOG")" == "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml down TAG="*" API=8081 METRICS=8084" ]] || false
+  [ "$(sed -n 1p "$LOG")" = "tmux kill-session -t =hloop-ui" ]
+  [[ "$(grep -v '^tmux ' "$LOG")" == "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml down TAG="*" API=8081 METRICS=8084" ]] || false
   [ "$(grep -cE -- '--volumes|-v( |$)' "$LOG")" -eq 0 ]
 }
 
