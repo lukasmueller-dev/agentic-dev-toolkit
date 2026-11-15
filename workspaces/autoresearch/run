@@ -6,28 +6,63 @@ ws="${WS_ROOT:-/ws}"
 rt="${AR_RUNTIME:-/opt/autoresearch/ar-runtime}"
 proj="$ws/data/project"
 pidfile="${TMPDIR:-/tmp}/ar-supervisor.pid"
-hours="${WS_HOURS:?WS_HOURS is unset}"
+stopflag="${TMPDIR:-/tmp}/ar-stop"
+hours="${WS_HOURS:-}"
 out="$ws/out"
 
+mkdir -p "$out"
+# Any abort leaves a result line, so the queue never sees only an exit code.
+finish() {
+  local st=$?
+  if [ ! -s "$out/result" ]; then echo "failed: run aborted, exit $st" >"$out/result"; fi
+  rm -f "$pidfile" "$stopflag"
+}
+trap finish EXIT
+rm -f "$stopflag"
+
+case "$hours" in
+  '' | *[!0-9.]* | *.*.* | .)
+    echo "failed: WS_HOURS is not a number: $hours" >"$out/result"
+    exit 0
+    ;;
+esac
+limit="${AR_LIMIT_SECONDS:-$(awk -v h="$hours" 'BEGIN { printf "%d", h * 3600 }')}"
+
+# The secrets file is KEY=VALUE data: read it, never source it.
 if [ -f "$ws/secrets.env" ]; then
-  set -a
-  # shellcheck source=/dev/null
-  . "$ws/secrets.env"
-  set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *=*) ;; *) continue ;; esac
+    key="${line%%=*}"
+    case "$key" in '' | [0-9]* | *[!A-Za-z0-9_]*) continue ;; esac
+    export "$key=${line#*=}"
+  done <"$ws/secrets.env"
 fi
 
 # The supervisor changes directory: both paths must be absolute.
 cd "$rt"
-trap 'rm -f "$pidfile"' EXIT
+deadline=$(($(date +%s) + limit))
 scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
 pid=$!
 echo "$pid" >"$pidfile"
 
-# WS_HOURS ends the run: TERM lets the supervisor stop its attempt and seal the manifest.
-deadline=$(($(date +%s) + ${AR_LIMIT_SECONDS:-$((hours * 3600))}))
+# TERM at WS_HOURS or on `stop` lets the supervisor stop its attempt and seal the manifest.
+# KILL follows after the grace, so run never outlasts the limit by more than that.
+cut=""
+kill_at=0
 while kill -0 "$pid" 2>/dev/null; do
-  if [ "$(date +%s)" -ge "$deadline" ]; then
-    kill -TERM "$pid" 2>/dev/null || true
+  now="$(date +%s)"
+  if [ -z "$cut" ]; then
+    if [ "$now" -ge "$deadline" ]; then
+      cut="stopped at the limit"
+    elif [ -e "$stopflag" ]; then
+      cut="stopped"
+    fi
+    if [ -n "$cut" ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      kill_at=$((now + ${AR_KILL_GRACE:-60}))
+    fi
+  elif [ "$now" -ge "$kill_at" ]; then
+    kill -KILL "$pid" 2>/dev/null || true
     break
   fi
   sleep 1
@@ -40,7 +75,10 @@ for p in results review.md critic.md blind_review.md state.md decisions.log; do
   if [ -e "$proj/$p" ]; then cp -R "$proj/$p" "$out/files/"; fi
 done
 
-if [ "$rc" -eq 0 ]; then
+# A run that was cut is never done:, whatever exit code the supervisor returns.
+if [ -n "$cut" ]; then
+  echo "failed: $cut, supervisor exit $rc" >"$out/result"
+elif [ "$rc" -eq 0 ]; then
   echo "done: AutoResearch finished, files/ holds the results" >"$out/result"
 else
   echo "failed: supervisor exit $rc" >"$out/result"

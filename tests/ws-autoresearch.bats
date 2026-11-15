@@ -16,6 +16,7 @@ setup() {
   cat >"$AR_RUNTIME/scripts/ar-supervisor.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" "$PWD" "$FAKE_KEY" >"$TMPDIR/stub.log"
+printf '%s\n' "${URL-}" "${KEY2-}" "${KEY3-}" >"$TMPDIR/stub.env"
 mkdir -p "$2/results"
 for f in results/summary.md review.md critic.md blind_review.md state.md decisions.log plan.md; do
   echo "$f" >"$2/$f"
@@ -25,6 +26,17 @@ case "${STUB_MODE:-}" in
   hang)
     trap 'kill $s 2>/dev/null; exit 143' TERM
     sleep 30 &
+    s=$!
+    wait $s
+    ;;
+  deaf)
+    trap '' TERM
+    sleep 5 >/dev/null 2>&1 &
+    wait $!
+    ;;
+  term0)
+    trap 'kill $s 2>/dev/null; exit 0' TERM
+    sleep 30 >/dev/null 2>&1 &
     s=$!
     wait $s
     ;;
@@ -61,7 +73,21 @@ EOF
 @test "run ends the supervisor at the limit" {
   STUB_MODE=hang AR_LIMIT_SECONDS=1 run "$WSDIR/run"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WS_ROOT/out/result")" = "failed: supervisor exit 143" ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 143" ]
+}
+
+@test "a run cut at the limit is never done:, also when the supervisor exits 0 on TERM" {
+  STUB_MODE=term0 AR_LIMIT_SECONDS=1 run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 0" ]
+  [ -f "$WS_ROOT/out/files/state.md" ]
+}
+
+@test "run kills a supervisor that ignores TERM after the grace" {
+  STUB_MODE=deaf AR_LIMIT_SECONDS=1 AR_KILL_GRACE=1 run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 137" ]
+  [ -f "$WS_ROOT/out/report.md" ]
 }
 
 @test "stop ends a running supervisor and waits for run to write the result" {
@@ -74,8 +100,44 @@ EOF
   [ -s "$TMPDIR/ar-supervisor.pid" ]
   run "$WSDIR/stop"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WS_ROOT/out/result")" = "failed: supervisor exit 143" ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped, supervisor exit 143" ]
   wait "$rp"
+}
+
+# shellcheck disable=SC2016
+@test "secrets are data: &, spaces, \$ and = in a value arrive as they are" {
+  {
+    echo '# a comment'
+    echo 'URL=https://x.example/v1?a=1&b=2'
+    echo 'KEY2=has space here'
+    echo 'KEY3=sk-ab$cd=='
+    echo 'not a pair'
+    echo 'FAKE_KEY=from-secrets'
+  } >"$WS_ROOT/secrets.env"
+  run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p "$TMPDIR/stub.env")" = 'https://x.example/v1?a=1&b=2' ]
+  [ "$(sed -n 2p "$TMPDIR/stub.env")" = 'has space here' ]
+  [ "$(sed -n 3p "$TMPDIR/stub.env")" = 'sk-ab$cd==' ]
+  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
+}
+
+@test "a decimal WS_HOURS is passed on; a non-number writes failed: and starts nothing" {
+  WS_HOURS=1.5 run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 4p "$TMPDIR/stub.log")" = "1.5h" ]
+  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
+  rm -f "$WS_ROOT/out/result" "$TMPDIR/stub.log"
+  WS_HOURS=abc run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: WS_HOURS is not a number: abc" ]
+  [ ! -e "$TMPDIR/stub.log" ]
+}
+
+@test "an abort before the supervisor starts still leaves a failed: result" {
+  AR_RUNTIME="$BATS_TEST_TMPDIR/missing" run "$WSDIR/run"
+  [ "$status" -ne 0 ]
+  [ "$(cut -c1-7 "$WS_ROOT/out/result")" = "failed:" ]
 }
 
 @test "stop with no run exits 0" {
