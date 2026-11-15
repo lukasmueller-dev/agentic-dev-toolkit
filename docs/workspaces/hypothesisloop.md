@@ -49,10 +49,12 @@ Hosted agents call models on the Claude subscription. `make dev` runs `podman co
 
 ```bash
 cd <checkout>
-cp -n .env.example .env && chmod 600 .env    # -n keeps an existing .env; set the keys of Requirements
+[ -e .env ] || { cp .env.example .env && sed -i '/^CLOUD_COMPUTE_PROVIDERS*=/d' .env; }
+chmod 600 .env    # set the keys of Requirements
 make -s render-settings
 ```
 
+A fresh `.env` loses the rent list of the example, so you write `CLOUD_COMPUTE_PROVIDERS` yourself.
 `render-settings` names each key it misses. Repeat until it prints nothing.
 
 ## 2. Build the images
