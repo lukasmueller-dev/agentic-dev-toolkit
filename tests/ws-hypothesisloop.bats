@@ -158,13 +158,15 @@ write_env() {
   [ "$(grep -cE -- '--volumes|-v( |$)' "$LOG")" -eq 0 ]
 }
 
-@test "status prints up on a healthy answer, names a missing UI, and prints down on none" {
+@test "status prints up on a healthy answer, probes the UI on the tailnet address, names a missing UI, and prints down on none" {
   run "$WS/status"
   [ "$status" -eq 0 ]
   [[ "$output" == "up — the control service answers http://127.0.0.1:8081/health" ]] || false
+  [ "$(grep -c 'http://100.64.0.9:3000' "$LOG")" -eq 1 ]
+  [ "$(grep -c '127.0.0.1:3000' "$LOG")" -eq 0 ]
   CURL_FAIL=:3000 run "$WS/status"
   [ "$status" -eq 0 ]
-  [[ "$output" == "up — "*"nothing serves the UI on :3000"* ]] || false
+  [[ "$output" == "up — "*"nothing serves the UI on http://100.64.0.9:3000"* ]] || false
   CURL_FAIL=/health run "$WS/status"
   [ "$status" -eq 0 ]
   [[ "$output" == "down — "* ]] || false
