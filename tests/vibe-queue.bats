@@ -2631,6 +2631,24 @@ toolwait() {
   [ "$(cat "$STUBS/lock")" = held ]
 }
 
+@test "tool: a second gpu=yes tool job stays queued, not in a slot, while the first runs its tool" {
+  local r runner
+  r="$(make_repo proj)"
+  tool stub folder gpu=yes
+  tooljob 01-a "$r" tool-a
+  tooljob 02-b "$r" tool-b
+  toolwait
+  sleep 1 # five runner passes
+  [ "$(cat "$Q/01-a/status")" = running ]
+  [ ! -e "$Q/02-b/status" ] || [ "$(cat "$Q/02-b/status")" = queued ]
+  [ ! -e "$Q/02-b/pid" ]
+  rm "$STUBS/tool-sleep"
+  "$VIBE" queue stop 01-a >/dev/null
+  wait "$runner"
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+}
+
 @test "tool: a job whose tool cannot run fails with the reason, before its worktree" {
   local r w="$BATS_TEST_TMPDIR/workspaces"
   r="$(make_repo proj)"
