@@ -1226,6 +1226,8 @@ tool_check() {
     echo "$n is kind=service — vibe ws start $n"
   elif [[ ",$(tool_conf "$1" places)," != *",$p,"* ]]; then
     echo "$n has no place '$p' — places=$(tool_conf "$1" places)"
+  elif [[ ! -x "$WS_ROOT/_places/$p" ]]; then
+    echo "no place script '$p' in $WS_ROOT/_places — place= names another"
   elif ! [[ "$h" =~ ^[1-9][0-9]*$ ]]; then
     echo "hours=$h: a whole number above 0, in the job or $f"
   elif ! [[ "$(tool_inst "$1")" =~ $WS_INST_RE ]]; then
@@ -3782,6 +3784,7 @@ cmd_ws_start() {
   [[ "$(ws_state "$st")" == down ]] || die "$1 is $(ws_state "$st") — vibe ws stop $1 first"
   place="$(jget "$f" places)"
   place="${place%%,*}"
+  [[ -x "$WS_ROOT/_places/$place" ]] || die "no place script '$place' in $WS_ROOT/_places"
   mkdir -p "$st"
   echo "$place" >"$st/place"
   rm -f "$st/waits" "$st/holder" "$st/url" "$st/hold.log"

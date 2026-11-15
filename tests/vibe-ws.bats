@@ -342,6 +342,16 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [[ "$output" == "svc "*" down "* ]] || false
 }
 
+@test "ws start: a first place with no script stops before any state" {
+  stubs
+  conf far kind=service places=runpod,turing
+  run "$VIBE" ws start far
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no place script 'runpod' in $VIBE_WORKSPACES/_places"* ]] || false
+  [ ! -e "$STATES/far" ]
+  [ ! -e "$S/docker.log" ]
+}
+
 @test "ws start: a second up while the first one runs fails and leaves the first one's container" {
   stubs
   good svc service

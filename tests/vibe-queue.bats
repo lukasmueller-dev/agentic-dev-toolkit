@@ -2717,15 +2717,17 @@ toolwait() {
   local r w="$BATS_TEST_TMPDIR/workspaces"
   r="$(make_repo proj)"
   tool stub branch
-  mkdir -p "$w/svc" "$w/keyed"
+  mkdir -p "$w/svc" "$w/keyed" "$w/far"
   printf '%s\n' kind=service places=turing >"$w/svc/workspace.conf"
   printf '%s\n' kind=run places=turing result=folder hours=1 secrets=API_KEY >"$w/keyed/workspace.conf"
+  printf '%s\n' kind=run places=runpod,turing result=folder hours=1 >"$w/far/workspace.conf"
   mkjob 01-a "$r" t-a close tool=nope
   mkjob 02-b "$r" t-b close tool=svc
   mkjob 03-c "$r" t-c close tool=stub place=vast
   mkjob 04-d "$r" t-d close tool=stub hours=0
   mkjob 05-e "$r" t-e close tool=keyed
   mkjob 06-f+x "$r" t-f close tool=stub
+  mkjob 07-g "$r" t-g close tool=far
   drain
   [ "$(cat "$Q/01-a/note")" = "no workspace 'nope' — vibe ws list" ]
   [ "$(cat "$Q/02-b/note")" = "svc is kind=service — vibe ws start svc" ]
@@ -2733,7 +2735,8 @@ toolwait() {
   [ "$(cat "$Q/04-d/note")" = "hours=0: a whole number above 0, in the job or $w/stub/workspace.conf" ]
   [[ "$(cat "$Q/05-e/note")" == "keyed needs API_KEY: write KEY=VALUE lines to "* ]] || false
   [ "$(cat "$Q/06-f+x/note")" = "instance 'stub-06-f+x': letters, digits, . _ - only — the repo folder or the branch breaks it" ]
-  for j in 01-a 02-b 03-c 04-d 05-e 06-f+x; do
+  [ "$(cat "$Q/07-g/note")" = "no place script 'runpod' in $w/_places — place= names another" ]
+  for j in 01-a 02-b 03-c 04-d 05-e 06-f+x 07-g; do
     [ "$(cat "$Q/$j/status")" = failed ]
   done
   [ ! -e "$r/.claude/worktrees" ] || [ -z "$(ls "$r/.claude/worktrees")" ]
