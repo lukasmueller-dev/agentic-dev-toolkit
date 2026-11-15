@@ -46,7 +46,7 @@ EOF
 
   export WS_INSTANCE=demo-j1 WS_STATE="$BATS_TEST_TMPDIR/state/demo-j1" WS_DIR="$BATS_TEST_TMPDIR/workspaces/demo"
   export WS_CONF_IMAGE=ghcr.io/example/demo WS_CONF_COMMIT=0123456789abcdef0123456789abcdef01234567
-  export WS_CONF_HOURS=2 WS_CONF_SECRETS=DEMO_TOKEN WS_CONF_PORTS=8080,8081
+  export WS_CONF_HOURS=08 WS_CONF_SECRETS=DEMO_TOKEN WS_CONF_PORTS=8080,8081
   mkdir -p "$WS_DIR" "$HOME/.config/vibe/workspaces"
   printf '#!/bin/sh\necho up\n' >"$WS_DIR/status"
   printf 'DEMO_TOKEN=%s\nVAST_QUERY=gpu_name=RTX_4090\nVAST_WAIT=2\n' "$SECRET" >"$HOME/.config/vibe/workspaces/demo.env"
@@ -60,7 +60,7 @@ EOF
   grep -q "^create instance 111 --image $WS_CONF_IMAGE:$WS_CONF_COMMIT --disk 50 .*--cancel-unavail" "$STUBS/vastai.argv"
   [ "$(grep -c -- --bid_price "$STUBS/vastai.argv")" -eq 0 ]
   [ "$(cat "$WS_STATE/id")" = 4242 ]
-  [ "$(($(cat "$WS_STATE/limit") - $(cat "$WS_STATE/started")))" -eq 7200 ]
+  [ "$(($(cat "$WS_STATE/limit") - $(cat "$WS_STATE/started")))" -eq 28800 ]
   grep -q 'HostName 203.0.113.7' "$WS_STATE/ssh_config"
   grep -q "^DEMO_TOKEN=$SECRET$" "$STUBS/ssh.stdin"
   [ "$(cat "$WS_STATE/url")" = http://100.64.0.1:8080 ]
@@ -68,7 +68,7 @@ EOF
 
   SSH_EXIT=3 run "$PLACE" exec steer "it's late"
   [ "$status" -eq 3 ]
-  grep -qF "WS_PLACE=vast WS_HOURS='2' exec '/ws/scripts/steer' 'it'\\''s late'" "$STUBS/ssh.argv"
+  grep -qF "WS_PLACE=vast WS_HOURS='08' exec '/ws/scripts/steer' 'it'\\''s late'" "$STUBS/ssh.argv"
 
   run "$PLACE" pull
   [ "$status" -eq 0 ]

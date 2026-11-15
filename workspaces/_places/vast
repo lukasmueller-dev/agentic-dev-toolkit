@@ -110,6 +110,7 @@ provision() {
 cmd_up() {
   local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" hours="${WS_CONF_HOURS:-}" query offer id t
   case "$hours" in '' | *[!0-9]*) die "hours is not a whole number: '$hours'" ;; esac
+  hours=$((10#$hours)) # 08 is not octal
   if [ -s "$WS_STATE/id" ]; then die "instance $(cat "$WS_STATE/id") is recorded in $WS_STATE: run down first"; fi
   mkdir -p "$WS_STATE"
   query="$(setting VAST_QUERY 'num_gpus=1 cpu_arch=amd64') verified=true rentable=true datacenter=True"
@@ -121,11 +122,11 @@ cmd_up() {
   [ -n "$id" ] || die "create failed for offer $offer"
   t="$(date +%s)"
   printf '%s\n' "$id" >"$WS_STATE/id"
+  trap destroy EXIT # a failed up leaves nothing behind
+  trap 'exit 1' INT TERM
   printf 'vast\n' >"$WS_STATE/place"
   printf '%s\n' "$t" >"$WS_STATE/started"
   printf '%s\n' "$((t + hours * 3600))" >"$WS_STATE/limit"
-  trap destroy EXIT # a failed up leaves nothing behind
-  trap 'exit 1' INT TERM
   wait_ready "$id" || exit 1
   provision || exit 1
   if [ -n "${WS_CONF_PORTS:-}" ]; then cmd_url >"$WS_STATE/url" || exit 1; fi
