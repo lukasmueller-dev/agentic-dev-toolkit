@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-14 · queue-report_
+_Last updated: 2026-11-15 · ws-surface_
 
 ## Goal
 
@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-15: **outside research tools run through `vibe ws`**: one folder per
+  tool under `workspaces/`, each in a container; a service stays up with a link,
+  a `kind=run` tool is a queue job (`tool=`) with stop, steer and a checked
+  result. Contract: `docs/workspaces.md`; decisions: PR for `ws-surface`.
 - 2026-11-14: **the report is stdout only**: `vibe queue report` writes no file
   and has no `--week`; the page's Queue tab shows the held jobs and the triage
   lines. Design: PR body.
