@@ -3,7 +3,8 @@
 set -euo pipefail
 
 PORT="${DS_PORT:-20999}"
-tok="$(cat "${WS_ROOT:-/ws}/data/.ws-token" 2>/dev/null || true)"
+# daemon.json is the live token: a restart or a hand-run `ds` rotates it.
+tok="$(jq -r '.auth_token // empty' "${WS_ROOT:-/ws}/data/runtime/daemon.json" 2>/dev/null || true)"
 
 body="$(curl -fsS --max-time 5 -H "Authorization: Bearer $tok" "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true)"
 if [ "$(jq -r '.status // empty' <<<"$body" 2>/dev/null || true)" = ok ]; then

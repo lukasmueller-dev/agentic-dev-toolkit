@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start — run the DeepScientist daemon detached; the login token goes to $DATA/.ws-token.
+# start — run the DeepScientist daemon detached; the login token stays in $DATA/runtime/daemon.json.
 set -euo pipefail
 
 # A place's exec channel (ssh) may not carry the image ENV: claude needs the PATH, and root needs IS_SANDBOX.
@@ -62,7 +62,3 @@ if [ -z "$tok" ]; then
   exit 1
 fi
 chmod 600 "$DATA/runtime/daemon.json"
-(
-  umask 077
-  printf '%s\n' "$tok" >"$DATA/.ws-token"
-)

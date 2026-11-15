@@ -59,14 +59,15 @@ teardown() {
   if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi
 }
 
-# serve_health — answer /api/health on $DS_PORT, `ok` only for the right token.
+# serve_health [token] — answer /api/health on $DS_PORT, `ok` only for the token (default $TOKEN).
 serve_health() {
+  local good_token="${1:-$TOKEN}"
   cat >"$STUBS/health.py" <<EOF
 import http.server, json, os
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        good = self.path == "/api/health" and self.headers.get("Authorization") == "Bearer $TOKEN"
+        good = self.path == "/api/health" and self.headers.get("Authorization") == "Bearer $good_token"
         self.send_response(200 if good else 401)
         self.end_headers()
         self.wfile.write(json.dumps({"status": "ok"} if good else {}).encode())
@@ -92,16 +93,14 @@ EOF
   [[ "$output" == *"--home $WS_ROOT/data"* ]] || false
 }
 
-@test "start hands the secret to ds and keeps both token files private" {
+@test "start hands the secret to ds and keeps the token file private" {
   run "$WSD/start"
   [ "$status" -eq 0 ]
   grep -q "oauth=oauth-secret" "$STUBS/ds.log"
-  [ "$(cat "$WS_ROOT/data/.ws-token")" = "$TOKEN" ]
   # mode 600 (GNU stat, then BSD stat)
-  for f in .ws-token runtime/daemon.json; do
-    perm="$(stat -c %a "$WS_ROOT/data/$f" 2>/dev/null || stat -f %Lp "$WS_ROOT/data/$f")"
-    [ "$perm" = 600 ]
-  done
+  f="$WS_ROOT/data/runtime/daemon.json"
+  perm="$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f")"
+  [ "$perm" = 600 ]
 }
 
 @test "start links the seed runtime into the data folder on every start" {
@@ -146,7 +145,6 @@ EOF
   run "$WSD/start"
   [ "$status" -eq 1 ]
   grep -q -- "--stop" "$STUBS/ds.log"
-  [ ! -e "$WS_ROOT/data/.ws-token" ]
 }
 
 @test "start stops the daemon, hides the token and fails when ds exits non-zero" {
@@ -156,7 +154,6 @@ EOF
   grep -q -- "--stop --home $WS_ROOT/data" "$STUBS/ds.log"
   [[ "$output" == *"Auth token"* ]] || false
   [[ "$output" != *"$TOKEN"* ]] || false
-  [ ! -e "$WS_ROOT/data/.ws-token" ]
 }
 
 @test "start keeps the daemon log, which holds the token, outside /ws/data" {
@@ -210,20 +207,28 @@ EOF
 @test "status prints down when the token is wrong" {
   "$WSD/start"
   serve_health
-  echo "wrong" >"$WS_ROOT/data/.ws-token"
+  echo '{"auth_token": "wrong"}' >"$WS_ROOT/data/runtime/daemon.json"
   run "$WSD/status"
   [[ "$output" == "down — "* ]] || false
 }
 
-@test "the token is in no file under /ws but .ws-token and daemon.json" {
+@test "status follows a token the daemon rotates after start" {
+  "$WSD/start"
+  rotated="fedcba9876543210"
+  echo "{\"auth_token\": \"$rotated\"}" >"$WS_ROOT/data/runtime/daemon.json"
+  serve_health "$rotated"
+  run "$WSD/status"
+  [ "$output" = "up — /?token=$rotated" ]
+}
+
+@test "the token is in no file under /ws but daemon.json" {
   "$WSD/start"
   serve_health
   run "$WSD/status"
   [[ "$output" == *"$TOKEN"* ]] || false
   run grep -rl "$TOKEN" "$WS_ROOT"
   [ "$status" -eq 0 ]
-  want="$(printf '%s\n%s\n' "$WS_ROOT/data/.ws-token" "$WS_ROOT/data/runtime/daemon.json" | LC_ALL=C sort)"
-  [ "$(printf '%s\n' "$output" | LC_ALL=C sort)" = "$want" ]
+  [ "$output" = "$WS_ROOT/data/runtime/daemon.json" ]
 }
 
 @test "stop calls ds --stop on the data folder" {
