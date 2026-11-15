@@ -1,0 +1,23 @@
+# The `run` script adds topic and output folder on the command line.
+project:
+  name: ws-autoresearchclaw
+  mode: full-auto
+research:
+  topic: set by run from /ws/in/brief.md
+runtime:
+  timezone: UTC
+notifications:
+  channel: console
+knowledge_base:
+  backend: markdown
+  root: /ws/data/kb
+llm:
+  provider: acp
+  acp:
+    agent: claude
+    cwd: /ws/data
+experiment:
+  mode: sandbox
+  sandbox:
+    python_path: /opt/venv/bin/python3
+    gpu_required: true
