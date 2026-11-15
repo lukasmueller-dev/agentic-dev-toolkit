@@ -14,11 +14,11 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/_places/runpod` and `tests/ws-place-runpod.bats` (6 tests, all pass). The script header lists its config keys.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: The place script against stub `runpodctl`, `ssh` and `rsync` — code — done when `bats tests/ws-place-runpod.bats` passes: a failed `up` deletes the pod; `down` deletes after a failed `pull`; `tick` past `limit` deletes; `tick` pulls when `pulled` is 10 min old or more; no secret value is in any stub's argv.
+The second milestone of `SPEC.md`: the recipe `docs/workspaces/place-runpod.md` (requirements, numbered steps, verify, what breaks it) — code — done when `grep -c '^## ' docs/workspaces/place-runpod.md` prints 4 or more. Put each gotcha below into the recipe.
 
 ## Blockers
 
@@ -26,4 +26,10 @@ None.
 
 ## Gotchas (unpromoted)
 
-None.
+- Config: `~/.config/vibe/places/runpod.env`, mode 600, `RUNPOD_GPU_ID` (needed), `RUNPOD_API_KEY` (else `~/.runpod/config.toml`), `RUNPOD_CLOUD_TYPE`, `RUNPOD_DISK_GB`, `RUNPOD_WAIT`, `RUNPOD_POLL`.
+- The image must start sshd from its entrypoint (key from `PUBLIC_KEY`) and hold rsync: `--docker-args "sleep infinity"` replaces the CMD.
+- `up` copies `$WS_STATE/in/` to `/ws/in/`; the contract names no source for `/ws/in`.
+- `runpodctl` output formats come from its source, not a real run: the recipe's first verify step runs `runpodctl ssh info <id>` and checks `ip`, `port`, `ssh_key.path`.
+- `url`: `ControlPath too long` when `$WS_STATE/tunnel.sock` is over 104 characters → keep service instance names short.
+- A dropped ssh ends a long `exec run`: the remote command gets SIGPIPE.
+- Last money stop (spec decision): prepaid credit, auto-pay off.

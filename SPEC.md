@@ -30,7 +30,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] The place script against stub `runpodctl`, `ssh` and `rsync` — code — done when `bats tests/ws-place-runpod.bats` passes: a failed `up` deletes the pod; `down` deletes after a failed `pull`; `tick` past `limit` deletes; `tick` pulls when `pulled` is 10 min old or more; no secret value is in any stub's argv.
+- [x] The place script against stub `runpodctl`, `ssh` and `rsync` — code — done when `bats tests/ws-place-runpod.bats` passes: a failed `up` deletes the pod; `down` deletes after a failed `pull`; `tick` past `limit` deletes; `tick` pulls when `pulled` is 10 min old or more; no secret value is in any stub's argv.
 - [ ] The recipe `docs/workspaces/place-runpod.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/place-runpod.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
