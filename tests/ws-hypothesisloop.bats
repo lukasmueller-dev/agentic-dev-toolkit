@@ -177,3 +177,15 @@ write_env() {
   [ "$status" -eq 0 ]
   [[ "$output" == "down — "* ]] || false
 }
+
+@test "compose.tailnet.yml replaces the ports of each service start brings up, each on loopback or the tailnet address" {
+  local f="$WS/compose.tailnet.yml" s bad
+  for s in postgres greptimedb memgraph minio control-service metrics-service; do
+    grep -qx "  $s:" "$f"
+  done
+  bad="$(grep -E '^ +ports:' "$f" | grep -v ': !override$' || true)"
+  [ -z "$bad" ]
+  [ "$(grep -cE '^ +- ' "$f")" -ge 6 ]
+  bad="$(grep -E '^ +- ' "$f" | grep -vE '^ +- "(127\.0\.0\.1|\$\{HLOOP_BIND:\?start sets it\}):[^:"]+:[^:"]+"$' || true)"
+  [ -z "$bad" ]
+}
