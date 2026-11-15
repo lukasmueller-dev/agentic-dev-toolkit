@@ -1,0 +1,159 @@
+#!/usr/bin/env bats
+#
+# workspaces/_places/runpod — the place verbs against stub runpodctl, ssh, rsync and tailscale.
+
+load helper
+
+PLACE="$REPO_ROOT/workspaces/_places/runpod"
+
+setup() {
+  STUB="$BATS_TEST_TMPDIR/stub"
+  mkdir -p "$STUB"
+  # runpodctl: a pod exists while $STUB/pod does; its status is $STUB/status (default running).
+  cat >"$STUB/runpodctl" <<'EOF'
+#!/bin/sh
+d="$(dirname "$0")"
+echo "$*" >>"$d/runpodctl.log"
+case "$1 $2" in
+  "pod create")
+    touch "$d/pod"
+    echo '{"id":"pod123","desiredStatus":"RUNNING"}' ;;
+  "pod get")
+    [ -f "$d/pod" ] || { echo '{"error":"failed to get pod: pod not found"}' >&2; exit 1; }
+    printf '{"id":"pod123","runtimeStatus":"%s"}\n' "$(cat "$d/status" 2>/dev/null || echo running)" ;;
+  "pod delete")
+    rm -f "$d/pod"
+    echo '{"deleted":true,"id":"pod123"}' ;;
+  "ssh info")
+    echo '{"id":"pod123","ip":"203.0.113.7","port":22022,"ssh_key":{"path":"/keys/rp","exists":true}}' ;;
+  *) exit 2 ;;
+esac
+EOF
+  # ssh: keeps what it gets on stdin for `cat >`; a /ws/scripts/ command prints and exits 7.
+  cat >"$STUB/ssh" <<'EOF'
+#!/bin/sh
+d="$(dirname "$0")"
+echo "$*" >>"$d/ssh.log"
+case "$*" in *"-O check"*) exit 255 ;; esac
+case "$*" in *"cat >"*) cat >>"$d/ssh.stdin" ;; esac
+case "$*" in *"/ws/scripts/"*) echo "script ran"; exit 7 ;; esac
+exit 0
+EOF
+  cat >"$STUB/rsync" <<'EOF'
+#!/bin/sh
+d="$(dirname "$0")"
+echo "$*" >>"$d/rsync.log"
+[ ! -f "$d/rsync-fail" ] || exit 23
+EOF
+  printf '#!/bin/sh\necho 100.64.0.1\n' >"$STUB/tailscale"
+  chmod +x "$STUB"/*
+  export PATH="$STUB:$PATH"
+
+  export WS_INSTANCE=tool WS_STATE="$BATS_TEST_TMPDIR/state/tool" WS_DIR="$BATS_TEST_TMPDIR/ws/tool"
+  export WS_CONF_IMAGE=ghcr.io/example/tool WS_CONF_COMMIT=0123456789abcdef0123456789abcdef01234567
+  export WS_CONF_HOURS=2 WS_CONF_PORTS=20999,21000
+  mkdir -p "$WS_DIR" "$HOME/.config/vibe/places" "$HOME/.config/vibe/workspaces"
+  echo "kind=run" >"$WS_DIR/workspace.conf"
+  printf '%s\n' RUNPOD_API_KEY=rp-secret-key 'RUNPOD_GPU_ID=NVIDIA GeForce RTX 4090' \
+    RUNPOD_WAIT=1 RUNPOD_POLL=0.1 >"$HOME/.config/vibe/places/runpod.env"
+  chmod 600 "$HOME/.config/vibe/places/runpod.env"
+  echo CLAUDE_CODE_OAUTH_TOKEN=sk-secret-token >"$HOME/.config/vibe/workspaces/tool.env"
+  chmod 600 "$HOME/.config/vibe/workspaces/tool.env"
+}
+
+# pod_up — the state of an instance whose pod runs.
+pod_up() {
+  mkdir -p "$WS_STATE"
+  echo pod123 >"$WS_STATE/id"
+  touch "$STUB/pod"
+}
+
+@test "up: a pod that never runs, or fails a copy, is deleted" {
+  echo initializing >"$STUB/status"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+
+  rm "$STUB/status" "$STUB/runpodctl.log"
+  touch "$STUB/rsync-fail"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "up, exec, pull, down: no secret value is in any stub's argv" {
+  mkdir -p "$WS_STATE/in"
+  echo brief >"$WS_STATE/in/brief.md"
+  run "$PLACE" up
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+  [ "$(cat "$WS_STATE/limit")" -eq $(($(cat "$WS_STATE/started") + 7200)) ]
+  grep -q -- "--gpu-id NVIDIA GeForce RTX 4090 --image $WS_CONF_IMAGE:$WS_CONF_COMMIT" "$STUB/runpodctl.log"
+  grep -q -- '--ports 22/tcp --cloud-type SECURE --docker-args sleep infinity' "$STUB/runpodctl.log"
+  grep -q "$WS_DIR/ root@203.0.113.7:/ws/scripts/" "$STUB/rsync.log"
+  grep -q "$WS_STATE/in/ root@203.0.113.7:/ws/in/" "$STUB/rsync.log"
+  grep -qx CLAUDE_CODE_OAUTH_TOKEN=sk-secret-token "$STUB/ssh.stdin"
+  run "$PLACE" exec steer "hello world"
+  run "$PLACE" pull
+  [ "$status" -eq 0 ]
+  run "$PLACE" down
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUB/pod" ]
+  run grep -rF -e sk-secret-token -e rp-secret-key "$STUB/runpodctl.log" "$STUB/ssh.log" "$STUB/rsync.log"
+  [ "$status" -eq 1 ]
+}
+
+@test "down: a failed pull still deletes the pod" {
+  pod_up
+  touch "$STUB/rsync-fail"
+  run "$PLACE" down
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"pull failed"* ]] || false
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "tick: past the limit deletes the pod" {
+  pod_up
+  echo $(($(date +%s) - 1)) >"$WS_STATE/limit"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "tick: pulls when pulled is 10 min old or more, not before" {
+  local now
+  pod_up
+  now="$(date +%s)"
+  echo $((now + 3600)) >"$WS_STATE/limit"
+  echo $((now - 590)) >"$WS_STATE/pulled"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUB/rsync.log" ]
+  echo $((now - 600)) >"$WS_STATE/pulled"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  grep -q "root@203.0.113.7:/ws/data/ $WS_STATE/data/" "$STUB/rsync.log"
+  grep -q "root@203.0.113.7:/ws/out/ $WS_STATE/out/" "$STUB/rsync.log"
+  [ "$(cat "$WS_STATE/pulled")" -ge "$now" ]
+  [ -e "$STUB/pod" ]
+}
+
+@test "exec passes stdout and the exit code; url tunnels the first port to the tailnet address" {
+  pod_up
+  run "$PLACE" exec steer "it's late"
+  [ "$status" -eq 7 ]
+  [ "$output" = "script ran" ]
+  grep -qF "exec /ws/scripts/'steer' 'it'\\''s late'" "$STUB/ssh.log"
+  run "$PLACE" url
+  [ "$status" -eq 0 ]
+  [ "$output" = "http://100.64.0.1:20999" ]
+  grep -q -- '-L 100.64.0.1:20999:localhost:20999 root@203.0.113.7' "$STUB/ssh.log"
+}
