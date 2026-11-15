@@ -149,6 +149,24 @@ EOF
   [ ! -e "$WS_STATE/up.lock" ]
 }
 
+@test "up: a TERM during the wait destroys the instance" {
+  local pid n=0 r=0
+  echo VAST_WAIT=600 >>"$HOME/.config/vibe/workspaces/demo.env" # only the TERM ends the wait
+  VAST_STATUS=loading "$PLACE" up >/dev/null 2>&1 &
+  pid=$!
+  until [ -s "$WS_STATE/limit" ]; do
+    n=$((n + 1))
+    [ "$n" -lt 100 ]
+    /bin/sleep 0.1 # sleep in PATH is the stub
+  done
+  kill -TERM "$pid"
+  wait "$pid" || r=$?
+  [ "$r" -eq 1 ]
+  grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ ! -e "$WS_STATE/id" ]
+  [ ! -e "$WS_STATE/up.lock" ]
+}
+
 @test "up: a host port that is not a number never reaches the ssh config" {
   VAST_PORT='22\nProxyCommand touch pwned' run "$PLACE" up
   [ "$status" -ne 0 ]
