@@ -14,11 +14,11 @@
 
 ## State
 
-Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 26 tests.
+Milestones 1 to 3 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` exists. `tests/vibe-queue.bats -f tool` has 7 tool tests.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the queue hook — code — done when `bats tests/vibe-queue.bats -f tool` passes with a stub tool: a branch result ends as commits on the job's branch and a `pr.md`; a folder result ends as a report job; `vibe queue stop` calls `stop`, then `down`; `vibe queue steer` hands its text to `steer`; exit 3 from `steer` prints `not supported`.
+The next open milestone of `SPEC.md`: the "tool run" route of `/enqueue`, the page list, the docs, the layout row in `CLAUDE.md`, the completion — code — done when `./bin/skill-lint --strict skills` and `bats tests/vibe-web.bats tests/vibe-queue.bats` pass and `grep -c 'workspaces/' CLAUDE.md` prints 1 or more.
 
 ## Blockers
 
@@ -26,11 +26,11 @@ None.
 
 ## Gotchas (unpromoted)
 
-- Reuse `ws_dir` (conf check), `ws_secrets`, `ws_place` (env, place script, `WS_SECS` bound), `ws_up` and `ws_down` (stop script, then down) in `bin/vibe` for the queue hook.
-- `ws_place` sets `WS_HOURS` from the conf `hours` → a run needs the job's `hours=` there: add an override.
-- `ws_name` finds the workspace of `<name>-<job id>` by the longest name that exists → write `place` into the state dir before the first `ws_place` call.
-- The turing place mounts `$WS_STATE/in` at `/ws/in`, and runpod copies it → the hook fills `$WS_STATE/in` (`repo/`, `brief.md`, `args`) before `up`.
-- `pull` copies `/ws/out` to `$WS_STATE/out` → the hook copies that to the job's `out/`.
-- A `gpu=yes` run on turing needs the lock for the whole `run` → wrap the run in `gpu-queue lock`; `ws hold` keys on `id` and fits services only.
-- Each place removes `id` in `down` (turing, runpod, vast) → `vibe` never removes `id` itself.
+- The `/enqueue` route writes `tool=`, `place=`, `hours=` in the job file and `in/brief.md`, `in/args` in the job dir. `job_prepare` adds `output=report` for `result=folder`.
+- No doc names `vibe queue steer`, the tool job flow or `tool-run.md` yet → `docs/vibe-queue.md`, `docs/workspaces.md`, a link from the `/enqueue` skill.
+- The completions lack `steer` in the queue verbs → `completions/vibe.bash`, `completions/_vibe`.
+- `follow_dir` (retry, answer, fix) copies `tool=` but not `in/` → a retry runs the tool with no brief; answer and fix run the tool again.
+- A run's state dir `<tool>-<job id>` stays after the job → `vibe ws status` lists each one as down.
+- A `runs=host` run is outside the job's memory scope (`MEM_CMD`).
 - `shfmt -f .` in a sandboxed job fails on `.claude/` placeholders (`permission denied`) → lint in a `git clone` under `$TMPDIR`.
+- `git add -A` fails on the sandbox placeholders (`.bash_profile`) → add files by name.
