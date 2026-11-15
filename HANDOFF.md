@@ -14,11 +14,11 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 of `SPEC.md` is done: `docs/workspaces.md` (the contract), `workspaces/README.md`, `vibe ws list|status` in `bin/vibe`, `tests/vibe-ws.bats`.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Reader and docs: `docs/workspaces.md` (the contract), `workspaces/README.md`, `vibe ws list` and `status` — code — done when `bats tests/vibe-ws.bats -f list` passes and `shfmt -f . | xargs shellcheck` prints nothing.
+The next open milestone of `SPEC.md`: the `turing` place, `vibe ws build|start|stop`, `tick` in the runner pass — code — done when `bats tests/vibe-ws.bats` passes with stub `docker` and `gpu-queue`: start refuses a missing secret and an env file that others can read; a `gpu=yes` service holds the lock until stop; `tick` removes a container past its limit; a failed `up` leaves no container.
 
 ## Blockers
 
@@ -26,4 +26,7 @@ None.
 
 ## Gotchas (unpromoted)
 
-None.
+- `vibe ws status` reads an `id` file as up → `stop` and `tick` remove `id` after `down`, else status keeps `up` or `past limit`.
+- `ws_state` has no state for a start that waits on the GPU lock → add one (a state file `vibe ws start` writes) with `waits for the GPU`.
+- `ws_check` in `bin/vibe` is the conf reader → reuse it in `start` and the queue hook; it accepts no unknown key.
+- `shfmt -f .` in a sandboxed job fails on `.claude/` placeholders (`permission denied`) → lint in a `git clone` under `$TMPDIR`.
