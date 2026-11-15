@@ -27,7 +27,9 @@
 #                                   a queued job: start it next, or with no review
 #   vibe queue retry <id>           a failed, timeout or skipped job again as a new job; the old one archived
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
-#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue
+#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue;
+#                                   a tool job's run: its stop script, then down
+#   vibe queue steer <id> <text>    a tool job's run: the text to its steer script; exit 3 there: not supported
 #   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
 #   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
 #   vibe queue ready <pr-url>...|--feature <slug>
@@ -499,12 +501,23 @@ cmd_queue_add() {
 # JOB/worktree on success, a final status otherwise. A lane job also gets
 # JOB/start (the branch tip) and JOB/lane-pr.md (the lane PR so far). Run it in a subshell.
 job_prepare() {
-  local d="$1" repo branch main def wt
+  local d="$1" repo branch main def wt c
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
   [[ -f "$d/prompt.md" ]] || {
     job_end "$d" failed "no prompt.md"
     return 0
   }
+  if [[ -n "$(jget "$d/job" tool)" && -z "$(jget "$d/job" review)" ]]; then
+    c="$(tool_check "$d")"
+    if [[ -n "$c" ]]; then
+      job_end "$d" failed "$c"
+      return 0
+    fi
+    # A folder result makes a report job.
+    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == folder && -z "$(jget "$d/job" output)" ]]; then
+      echo output=report >>"$d/job"
+    fi
+  fi
   cd "$repo" 2>/dev/null || {
     job_end "$d" failed "no directory '$repo'"
     return 0
@@ -1170,12 +1183,117 @@ stopped() {
   job_end "$1" failed stopped
 }
 
+# tool_inst JOB — the workspace instance of a tool= job: <tool>-<job id>.
+tool_inst() { echo "$(jget "$1/job" tool)-${1##*/}"; }
+
+# tool_place JOB — place= of a tool= job, else the first of its tool's places.
+tool_place() {
+  local p
+  p="$(jget "$1/job" place)"
+  [[ -n "$p" ]] || p="$(jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" places)"
+  echo "${p%%,*}"
+}
+
+# tool_hours JOB — hours= of a tool= job, else of its tool's workspace.conf.
+tool_hours() {
+  local h
+  h="$(jget "$1/job" hours)"
+  echo "${h:-$(jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" hours)}"
+}
+
+# tool_check JOB — why a tool= job cannot run (docs/workspaces.md, Queue job); empty when it can.
+tool_check() {
+  local n f p h m
+  n="$(jget "$1/job" tool)" p="$(tool_place "$1")" h="$(tool_hours "$1")"
+  f="$WS_ROOT/$n/workspace.conf"
+  if ! m="$( (ws_dir "$n" >/dev/null && ws_secrets "$n" "$f") 2>&1)"; then
+    echo "${m#vibe: }"
+  elif [[ "$(jget "$f" kind)" != run ]]; then
+    echo "$n is kind=service — vibe ws start $n"
+  elif [[ ",$(jget "$f" places)," != *",$p,"* ]]; then
+    echo "$n has no place '$p' — places=$(jget "$f" places)"
+  elif ! [[ "$h" =~ ^[1-9][0-9]*$ ]]; then
+    echo "hours=$h: a whole number above 0, in the job or $f"
+  fi
+}
+
+# tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
+# in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
+# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, tool-exit and out/.
+tool_run() {
+  local d="$1" inst st h f pid rc=0
+  inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
+  st="$WS_STATES/$inst"
+  local -a runcmd=("$SELF_ROOT/bin/vibe" ws run "$inst")
+  : >"$d/tool.log"
+  mkdir -p "$st"
+  # A job process that died left its instance up: down first; up brings its data/ back.
+  if [[ -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
+  tool_place "$d" >"$st/place"
+  rm -rf "$st/in" "$st/out" "$d/out"
+  mkdir -p "$st/in"
+  for f in brief.md args; do
+    if [[ -f "$d/in/$f" ]]; then cp "$d/in/$f" "$st/in/$f"; fi
+  done
+  agent_git clone -q --single-branch "$(jstate "$d" worktree)" "$st/in/repo" >>"$d/tool.log" 2>&1 || return 0
+  if [[ "$(jstate "$st" place)" == turing && "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" gpu)" == yes ]]; then
+    runcmd=("$SELF_ROOT/bin/gpu-queue" lock -- "${runcmd[@]}")
+  fi
+  # Its own process group: a stop TERMs a lock waiter, `vibe ws run` and the place's exec at once.
+  set -m
+  WS_HOURS="$h" "${runcmd[@]}" </dev/null >>"$d/tool.log" 2>&1 &
+  pid=$!
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -e "$d/stop" ]]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      break
+    fi
+    sleep "${VIBE_WS_POLL:-10}"
+  done
+  wait "$pid" || rc=$?
+  echo "$rc" >"$d/tool-exit"
+  if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
+  if [[ -d "$st/out" ]]; then cp -R "$st/out" "$d/out"; fi
+}
+
+# tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
+# fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
+# False once the job has ended: a stop, no out/result, a branch that does not fast-forward.
+# Runs as a tested condition: each failure is handled, not left to errexit.
+tool_job() {
+  local d="$1" wt b x e
+  wt="$(jstate "$d" worktree)"
+  if [[ ! -f "$d/tool-exit" ]]; then
+    tool_run "$d"
+    if stopped "$d"; then return 1; fi
+    if [[ ! -s "$d/out/result" ]]; then
+      x="$(tail -n 1 "$d/tool.log" 2>/dev/null | cut -c 1-160)"
+      e="$(jstate "$d" tool-exit)"
+      job_end "$d" failed "no out/result, tool exit ${e:-none} — tool.log: $x"
+      return 1
+    fi
+    b="$(jstate "$d/out" branch)"
+    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == branch && -f "$d/out/repo.bundle" ]] &&
+      ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b" &&
+        agent_git -C "$wt" merge -q --ff-only FETCH_HEAD; } >>"$d/tool.log" 2>&1; then
+      job_end "$d" failed "out/repo.bundle: no branch '$b' that fast-forwards $(jget "$d/job" branch) — tool.log"
+      return 1
+    fi
+  fi
+  {
+    cat "$d/prompt.md"
+    echo
+    cat "$SELF_ROOT/skills/fill-queue/references/tool-run.md"
+  } >"$d/close.md"
+}
+
 # job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
 # review due queues the review instead, and the review gates and publishes. A retry after a usage
 # limit resumes the saved session. Runs in the background; it writes the final
 # status itself, so it outlives a runner restart.
 job_run() {
-  local d="$1" rc=0 result st note="" t reset r
+  local d="$1" rc=0 result st note="" t reset r p="$1/prompt.md"
   date '+%F %T' >"$d/started"
   r="$(jget "$d/job" review)"
   if [[ "$r" == verify ]]; then
@@ -1187,7 +1305,11 @@ job_run() {
   fi
   t="$(job_timeout "$d")"
   : >"$d/log"
-  job_agent "$d" "$t" "$d/prompt.md" "$(jstate "$d" session)" || rc=$?
+  if [[ -n "$(jget "$d/job" tool)" ]]; then
+    tool_job "$d" || return 0
+    p="$d/close.md"
+  fi
+  job_agent "$d" "$t" "$p" "$(jstate "$d" session)" || rc=$?
   job_session "$d"
   if stopped "$d"; then return 0; fi
   result="$(jstate "$d" result)"
@@ -1493,7 +1615,7 @@ cmd_queue_cancel() {
 }
 
 # vibe queue stop ID — the runner stops a running job on its next pass: failed, note
-# stopped; no requeue, no publish.
+# stopped; no requeue, no publish. A tool job's run: the job's process stops it (tool_run).
 cmd_queue_stop() {
   local d
   [[ $# == 1 ]] || die "usage: vibe queue stop <id>"
@@ -1501,6 +1623,21 @@ cmd_queue_stop() {
   [[ "$(jstate "$d" status)" == running ]] || die "${d##*/} is $(jstate "$d" status), not running — cancel takes a queued job"
   date '+%F %T' >"$d/stop"
   echo "stop asked: the runner ends ${d##*/} on its next pass"
+}
+
+# vibe queue steer ID TEXT... — a tool job whose run is up: TEXT to its tool's steer script, for the tool's next boundary.
+cmd_queue_steer() {
+  local d inst r=0
+  (($# >= 2)) || die "usage: vibe queue steer <id> <text>"
+  d="$(queue_job "$1")"
+  shift
+  [[ -n "$(jget "$d/job" tool)" ]] || die "${d##*/} runs no tool — steer takes a tool job"
+  inst="$(tool_inst "$d")"
+  [[ "$(jstate "$d" status)" == running && -s "$WS_STATES/$inst/id" ]] || die "the tool of ${d##*/} does not run now"
+  WS_HOURS="$(tool_hours "$d")" ws_place "$inst" exec steer "$*" || r=$?
+  if ((r == 3)); then die "$(jget "$d/job" tool): steer not supported"; fi
+  ((r == 0)) || die "steer of $inst failed (exit $r)"
+  echo "steered $inst"
 }
 
 # branch_idle JOB — dies while a job on JOB's repo and branch is queued or running.
@@ -2583,9 +2720,9 @@ cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop | answer | fix | ready | new | roadmap) "cmd_queue_$sub" "$@" ;;
+    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop | steer | answer | fix | ready | new | roadmap) "cmd_queue_$sub" "$@" ;;
     merge-order) cmd_queue_merge_order "$@" ;;
-    *) die "usage: vibe queue add|new|roadmap|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop|answer|fix|ready|merge-order — see vibe --help" ;;
+    *) die "usage: vibe queue add|new|roadmap|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop|steer|answer|fix|ready|merge-order — see vibe --help" ;;
   esac
 }
 
@@ -3419,9 +3556,9 @@ ws_state() {
   fi
 }
 
-# ws_inst INSTANCE — dies unless INSTANCE names a state dir.
+# ws_inst INSTANCE — dies unless INSTANCE names a state dir; docker's container-name rule, a job id can hold upper case.
 ws_inst() {
-  [[ -n "$1" && "$1" != .* && "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
 }
 
 # vibe ws status [INSTANCE] — one line per instance: state, place, limit, address; state files only.
@@ -3484,7 +3621,8 @@ ws_place() {
     while IFS= read -r l; do export "WS_CONF_$l"; done < <(
       awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$WS_ROOT/$n/workspace.conf"
     )
-    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_CONF_HOURS:-}"
+    # A WS_HOURS the caller set (a tool job's hours=) wins over the conf's.
+    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
     # WS_SECS set: timeout(1) ends the call after WS_SECS, exit 124; no timeout(1) means no bound.
     if [[ -n "${WS_SECS:-}" ]] && t="$(command -v timeout || command -v gtimeout)"; then
       exec "$t" -k 10 "$WS_SECS" "$WS_ROOT/_places/$p" "$@"
@@ -3598,6 +3736,17 @@ cmd_ws_hold() {
   while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
 }
 
+# vibe ws run INSTANCE — a tool job's run (tool_run): up, the run script, down; exit: the run script's.
+cmd_ws_run() {
+  local r=0
+  (($# == 1)) || die "usage: vibe ws run <instance>"
+  ws_inst "$1"
+  ws_place "$1" up || die "up of $1 failed"
+  ws_place "$1" exec run || r=$?
+  ws_place "$1" down || warn "down of $1 failed — vibe ws status $1"
+  return "$r"
+}
+
 # vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
 cmd_ws_stop() {
   local st pid
@@ -3669,7 +3818,7 @@ cmd_ws() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | status | build | start | stop | tick | hold) "cmd_ws_$sub" "$@" ;;
+    list | status | build | start | stop | tick | hold | run) "cmd_ws_$sub" "$@" ;;
     *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
   esac
 }
