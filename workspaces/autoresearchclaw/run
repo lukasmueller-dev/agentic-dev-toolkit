@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# run: one pipeline, topic from /ws/in/brief.md to a paper folder in /ws/out/files.
+# Exit code = researchclaw's; /ws/out/result holds the verdict (exit 0 is no proof of a paper).
+set -euo pipefail
+
+ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
+inst="${WS_INSTANCE:?WS_INSTANCE unset}"
+hours="${WS_HOURS:?WS_HOURS unset}"
+here="$(cd "$(dirname "$0")" && pwd)"
+run_dir="$ws/data/artifacts/$inst"
+summary="$run_dir/pipeline_summary.json"
+out="$ws/out"
+pidfile="${TMPDIR:-/tmp}/ws-run.pid"
+
+# finish "<result line>" [exit code]: write result and report.md, then exit.
+finish() {
+  printf '%s\n' "$1" >"$out/result"
+  {
+    printf '# AutoResearchClaw — %s\n\n%s\n' "$inst" "$1"
+    if jq -e . "$summary" >/dev/null 2>&1; then
+      jq -r '"\n- stages: \(.stages_done) done, \(.stages_failed) failed, last \(.final_stage) (\(.final_status))\n- citations verified: \(.content_metrics.verified_citations // "n/a") of \(.content_metrics.total_citations // "n/a")\n- degraded: \(.degraded)\n\nThe tool made these numbers: treat them as claims."' "$summary"
+    fi
+  } >"$out/report.md"
+  exit "${2:-0}"
+}
+
+mkdir -p "$out"
+if [ -r "$ws/secrets.env" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '' | '#'*) continue ;; esac
+    export "${line%%=*}=${line#*=}"
+  done <"$ws/secrets.env"
+fi
+
+[ -s "$ws/in/brief.md" ] || finish "failed: no brief at /ws/in/brief.md" 1
+topic="$(cat "$ws/in/brief.md")"
+
+resume=()
+if [ -f "$run_dir/checkpoint.json" ]; then resume=(--resume); fi
+
+cd "$ws/data"
+timeout "${hours}h" researchclaw run -c "$here/config.yaml" -t "$topic" -o "$run_dir" \
+  --auto-approve --skip-noncritical-stage "${resume[@]+"${resume[@]}"}" &
+pid=$!
+echo "$pid" >"$pidfile"
+rc=0
+wait "$pid" || rc=$?
+rm -f "$pidfile"
+
+last=0
+if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json")"; fi
+if [ -d "$run_dir/deliverables" ]; then
+  mkdir -p "$out/files"
+  cp -R "$run_dir/deliverables/." "$out/files/"
+fi
+
+case "$rc" in
+  0) ;;
+  124) finish "failed: hour limit of $hours h reached after stage $last" "$rc" ;;
+  143) finish "failed: stopped after stage $last; a new run resumes" "$rc" ;;
+  *) finish "failed: researchclaw exit $rc after stage $last; see tool.log" "$rc" ;;
+esac
+
+jq -e . "$summary" >/dev/null 2>&1 || finish "failed: no valid pipeline_summary.json after stage $last"
+if ! jq -e '.final_status == "done" and .final_stage == 23' "$summary" >/dev/null; then
+  finish "failed: $(jq -r '"ended at stage \(.final_stage) (\(.final_status)), \(.stages_failed) stage(s) failed"' "$summary")"
+fi
+[ -s "$run_dir/deliverables/paper_final.md" ] || finish "failed: all 23 stages done, but deliverables/paper_final.md is missing"
+finish "done: $(jq -r '"paper in files/, \(.stages_done) stages done, \(.stages_failed) failed, degraded=\(.degraded)"' "$summary")"

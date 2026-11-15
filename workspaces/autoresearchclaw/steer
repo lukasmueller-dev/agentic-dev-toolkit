@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# steer "<text>": hand the text to the next stage that has not finished.
+set -euo pipefail
+
+ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
+run_dir="$ws/data/artifacts/${WS_INSTANCE:?WS_INSTANCE unset}"
+
+if [ $# -lt 1 ]; then
+  echo "usage: steer <text>" >&2
+  exit 2
+fi
+if [ ! -d "$run_dir" ]; then
+  echo "no run folder yet: $run_dir" >&2
+  exit 1
+fi
+
+last=0
+if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json")"; fi
+next=$((last + 1))
+if [ "$next" -gt 23 ]; then
+  echo "all 23 stages are done: nothing left to steer" >&2
+  exit 1
+fi
+case "$next" in
+  8 | 9) ;;
+  *) echo "warning: only stages 8 and 9 read guidance; stage $next ignores the text" >&2 ;;
+esac
+
+researchclaw guide "$run_dir" --stage "$next" --message "$1"
+echo "guidance handed to stage $next"

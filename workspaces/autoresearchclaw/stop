@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# stop: TERM the pipeline and wait for it. /ws/data stays; a later run resumes from checkpoint.json.
+set -euo pipefail
+
+pidfile="${TMPDIR:-/tmp}/ws-run.pid"
+[ -f "$pidfile" ] || exit 0
+pid="$(cat "$pidfile")"
+kill -TERM "$pid" 2>/dev/null || exit 0
+for _ in $(seq 60); do
+  kill -0 "$pid" 2>/dev/null || exit 0
+  sleep 1
+done
+kill -KILL "$pid" 2>/dev/null || true
