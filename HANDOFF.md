@@ -14,7 +14,7 @@
 
 ## State
 
-Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 19 tests.
+Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 23 tests.
 
 ## Next action
 
@@ -26,7 +26,7 @@ None.
 
 ## Gotchas (unpromoted)
 
-- Reuse `ws_dir` (conf check), `ws_secrets`, `ws_place` (env and place script) and `ws_up` in `bin/vibe` for the queue hook.
+- Reuse `ws_dir` (conf check), `ws_secrets`, `ws_place` (env, place script, `WS_SECS` bound), `ws_up` and `ws_down` (stop script, then down) in `bin/vibe` for the queue hook.
 - `ws_place` sets `WS_HOURS` from the conf `hours` → a run needs the job's `hours=` there: add an override.
 - `ws_name` finds the workspace of `<name>-<job id>` by the longest name that exists → write `place` into the state dir before the first `ws_place` call.
 - The turing place mounts `$WS_STATE/in` at `/ws/in`, and runpod copies it → the hook fills `$WS_STATE/in` (`repo/`, `brief.md`, `args`) before `up`.
