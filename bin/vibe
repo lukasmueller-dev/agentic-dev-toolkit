@@ -3326,18 +3326,6 @@ cmd_job() {
 WS_ROOT="${VIBE_WORKSPACES:-$SELF_ROOT/workspaces}"
 WS_STATES="$QROOT/workspaces"
 
-# ws_names — the workspaces: each directory under WS_ROOT whose name does not start with _.
-ws_names() {
-  local d
-  for d in "$WS_ROOT"/*/; do
-    [[ -d "$d" ]] || continue
-    d="${d%/}"
-    d="${d##*/}"
-    case "$d" in _*) continue ;; esac
-    echo "$d"
-  done
-}
-
 # ws_check DIR — "ok", or the first reason DIR/workspace.conf breaks the contract.
 ws_check() {
   [[ -f "$1/workspace.conf" && -r "$1/workspace.conf" ]] || {
@@ -3379,12 +3367,15 @@ ws_check() {
     }' "$1/workspace.conf"
 }
 
-# vibe ws list — one line per workspace: name, kind, gpu, places, label: role; a bad conf prints why, exit 1.
+# vibe ws list — one line per workspace (a directory not named _*): name, kind, gpu, places,
+# label: role; a bad conf prints why, exit 1.
 cmd_ws_list() {
-  local n c f l g bad=0
+  local d n c f l g bad=0
   (($# == 0)) || die "usage: vibe ws list"
   [[ -d "$WS_ROOT" ]] || die "no folder $WS_ROOT"
-  while IFS= read -r n; do
+  for d in "$WS_ROOT"/*/; do
+    n="${d%/}" n="${n##*/}"
+    if [[ ! -d "$d" || "$n" == _* ]]; then continue; fi
     c="$(ws_check "$WS_ROOT/$n")"
     [[ "$(slug "$n")" == "$n" ]] || c="bad name: lower case, digits, . _ -"
     if [[ "$c" != ok ]]; then
@@ -3395,7 +3386,7 @@ cmd_ws_list() {
     f="$WS_ROOT/$n/workspace.conf"
     l="$(jget "$f" label)" g="$(jget "$f" gpu)"
     printf '%-16s %-7s gpu=%-3s %-18s %s\n' "$n" "$(jget "$f" kind)" "${g:-no}" "$(jget "$f" places)" "${l:+$l: }$(jget "$f" role)"
-  done < <(ws_names)
+  done
   return "$bad"
 }
 
