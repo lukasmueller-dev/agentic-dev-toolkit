@@ -41,6 +41,7 @@ memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
 web_login=         # your tailnet login; empty: every page write gets 403
 pr_login=          # the GitHub login whose /fix starts a fix job; empty: gh's login
+steer=             # 1: vibe queue steer reaches a running session; read at each session start
 ```
 
 Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
@@ -114,10 +115,11 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the report skip a final job that has a `pid` file and no `ended` file: its process still writes.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
-- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`; other keys and bad values are refused.
+- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
 - `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
+- `vibe queue steer <id> <text>` with `steer=1`: each session starts with `--input-format stream-json` and reads the FIFO `<job>/steer`. The running session gets the text as a user message at its next boundary. Its first result event ends the input; `vibe queue steer` refuses a text after it. A tool job's run: [Tool jobs](#tool-jobs).
 - `vibe queue unlimit` removes `limit`: jobs start again.
 - `vibe queue new <repo> <branch> <done-when> <task>`: a job from [`job-prompt.md`](../skills/fill-queue/references/job-prompt.md), source `new`. No done-when, or a job on the branch queued or running: refused.
 - `--line <n> <repo> <branch>`: the item at line `n` of the last `vibe queue roadmap <repo>` listing (its origin commit in `roadmap/`); refused when that item changed or left `origin/<default>` since. Its done-when is the text after `Done when`.
@@ -337,4 +339,5 @@ The PR footer line and the report row end with the job's size, from the last `re
 - `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
 - No buttons on the page → `vibe-web.service` down, no `/queue/api` serve path, or `web_login` is not your login: `journalctl --user -u vibe-web`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
+- `vibe queue steer` prints `takes no steer now` → the session started before `steer=1`, or its first turn ended; `steer=1` acts from the next session on.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.
