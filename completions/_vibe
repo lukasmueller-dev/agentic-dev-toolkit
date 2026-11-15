@@ -30,6 +30,7 @@ _vibe() {
       'start:start a task in its own worktree'
       'sync:sync worktrees with the default branch'
       'status:show agent servers on this machine'
+      'ws:launch and stop outside research tools'
       'update-toolkit:pull, install and run doctor'
       'help:show usage'
     )
@@ -48,6 +49,7 @@ _vibe() {
       ;;
     sync) compadd -- --all --wip ;;
     status) _vibe_agents ;;
+    ws) (( CURRENT == 3 )) && compadd -- list status build start stop tick ;;
   esac
 }
 
