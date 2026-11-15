@@ -14,11 +14,20 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/deepscientist/` (conf, Dockerfile, `start`, `stop`, `status`) and `tests/ws-deepscientist.bats` (11 tests pass). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Conf, Dockerfile and the three scripts against a stub `ds` and a stub health endpoint — code — done when `bats tests/ws-deepscientist.bats` passes: the `start` argv holds `--auth true` and `--host 0.0.0.0`; `status` prints `up` on a healthy answer and `down` on none; the token is in `status` output and in no file under `/ws/out`.
+The second open milestone of `SPEC.md`: the recipe `docs/workspaces/deepscientist.md` — requirements, numbered steps, verify, what breaks it — done when `grep -c '^## ' docs/workspaces/deepscientist.md` prints 4 or more.
+
+Facts the recipe needs:
+
+- First check: the Claude runner works from `CLAUDE_CODE_OAUTH_TOKEN` alone, with no `~/.claude` login file.
+- `status` prints `up — /?token=<token>`: a path, not a host. Add the address from the place's `url` verb.
+- The image build runs `ds init`; the result moves to `/opt/ds-seed`; `start` copies it into `/ws/data` once.
+- Trap: the `pull` copies `/ws/data` with that Python env inside. The copy is large.
+- Trap: `IS_SANDBOX=1` in the image lets Claude Code run as root; without it the runner refuses all permissions.
+- Trap: `run` and `steer` have no script; the surface must treat a missing script as exit 3.
 
 ## Blockers
 

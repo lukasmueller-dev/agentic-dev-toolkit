@@ -33,7 +33,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] Conf, Dockerfile and the three scripts against a stub `ds` and a stub health endpoint — code — done when `bats tests/ws-deepscientist.bats` passes: the `start` argv holds `--auth true` and `--host 0.0.0.0`; `status` prints `up` on a healthy answer and `down` on none; the token is in `status` output and in no file under `/ws/out`.
+- [x] Conf, Dockerfile and the three scripts against a stub `ds` and a stub health endpoint — code — done when `bats tests/ws-deepscientist.bats` passes: the `start` argv holds `--auth true` and `--host 0.0.0.0`; `status` prints `up` on a healthy answer and `down` on none; the token is in `status` output and in no file under `/ws/out`.
 - [ ] The recipe `docs/workspaces/deepscientist.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/deepscientist.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
