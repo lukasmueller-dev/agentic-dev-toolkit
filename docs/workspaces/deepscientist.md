@@ -57,6 +57,6 @@ The full link is the address plus the path from `status`. Open it on the phone: 
 - Step 2 prints a login prompt or an auth error → the token is wrong or expired; run `claude setup-token` again.
 - `pull` is slow and big → the place follows the `runtime/` links and copies the Python env again. Copy links as links.
 - The token shows in a file under `/ws/data` → only `runtime/daemon.json` may hold it, mode 600.
-  The daemon also prints it into `logs/daemon.log`. `start` links `/ws/data/logs` to `${TMPDIR:-/tmp}/ds-logs`, so `pull` skips the log. A place that follows links copies it.
+  The daemon also prints it into `logs/daemon.log`. `start` links `/ws/data/logs/daemon.log` to `${TMPDIR:-/tmp}/ds-daemon.log`, so `pull` skips that file and keeps the connector state in `logs/`. A place that follows links copies it.
   The launch-card log is a temp file, not in `/ws/data`.
 - `run` or `steer` exits 3 → expected. DeepScientist is a service, so both scripts only `exit 3`: "verb not supported".

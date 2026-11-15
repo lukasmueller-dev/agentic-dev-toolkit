@@ -156,20 +156,23 @@ EOF
   [[ "$output" != *"$TOKEN"* ]] || false
 }
 
-@test "start keeps the daemon log, which holds the token, outside /ws/data" {
+@test "start links only daemon.log out of /ws/data; the rest of logs/ stays" {
+  mkdir -p "$WS_ROOT/data/logs/connectors/telegram"
+  echo '{"update_offset": 42}' >"$WS_ROOT/data/logs/connectors/telegram/runtime.json"
   run "$WSD/start"
   [ "$status" -eq 0 ]
-  [ -L "$WS_ROOT/data/logs" ]
-  grep -q "$TOKEN" "$TMPDIR/ds-logs/daemon.log"
-  [ "$(cd "$WS_ROOT/data/logs" && pwd -P)" = "$(cd "$TMPDIR/ds-logs" && pwd -P)" ]
+  [ -d "$WS_ROOT/data/logs" ] && [ ! -L "$WS_ROOT/data/logs" ]
+  [ -L "$WS_ROOT/data/logs/daemon.log" ]
+  grep -q "$TOKEN" "$TMPDIR/ds-daemon.log"
+  grep -q '"update_offset": 42' "$WS_ROOT/data/logs/connectors/telegram/runtime.json"
 }
 
-@test "start replaces a real logs folder from an older start" {
+@test "start replaces a real daemon.log from an older start" {
   mkdir -p "$WS_ROOT/data/logs"
   echo "DeepScientist auth token: oldtoken" >"$WS_ROOT/data/logs/daemon.log"
   run "$WSD/start"
   [ "$status" -eq 0 ]
-  [ -L "$WS_ROOT/data/logs" ]
+  [ -L "$WS_ROOT/data/logs/daemon.log" ]
   run grep -R oldtoken "$WS_ROOT" "$TMPDIR"
   [ "$status" -eq 1 ]
 }

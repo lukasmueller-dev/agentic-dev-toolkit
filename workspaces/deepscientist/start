@@ -24,14 +24,10 @@ for e in "$SEED"/runtime/*; do
   fi
 done
 
-# The daemon prints the login token into $DATA/logs/daemon.log: keep that folder outside /ws/data, which `pull` copies.
-# A real folder there holds logs from an older start, with their tokens: it goes.
-LOGS="${TMPDIR:-/tmp}/ds-logs"
-mkdir -p "$LOGS"
-if [ ! -L "$DATA/logs" ]; then
-  rm -rf "$DATA/logs"
-fi
-ln -sfn "$LOGS" "$DATA/logs"
+# The daemon prints the login token into $DATA/logs/daemon.log: link that one file out of /ws/data, which `pull` copies.
+# The rest of logs/ is connector state (offsets, cursors) and stays. `ln -f` drops a real daemon.log from an older start, with its token.
+mkdir -p "$DATA/logs"
+ln -sfn "${TMPDIR:-/tmp}/ds-daemon.log" "$DATA/logs/daemon.log"
 
 if [ ! -r "$ROOT/secrets.env" ]; then
   echo "start: $ROOT/secrets.env is missing" >&2
