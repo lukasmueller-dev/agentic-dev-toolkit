@@ -66,7 +66,7 @@ There `vibe queue status|report`, `vibe job list` and `vibe ws list|status` run 
 
 The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
-The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups.
+The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups, then `Tools`: the lines of `vibe ws status`, from state files only.
 At 1024 px and wider, the page is 15% larger and an open panel is a right column.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
@@ -191,6 +191,22 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
 
+## Tool jobs
+
+An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
+`/enqueue` makes one: route Tool run. Contract: [`docs/workspaces.md`](workspaces.md).
+
+- Job file: `tool=<name>`, `place=` (default: the first of its `places`), `hours=` (default: its `hours`). Job dir: `in/brief.md`, `in/args`.
+- At start the runner checks the tool's conf, its secrets, `kind=run`, the place and `hours`. A fail ends the job `failed` with the reason, before the worktree.
+- The run: instance `<tool>-<id>`, `/ws/in/repo` a clone of the job's worktree. `hours=` limits it; `timeout=` limits the closing session. `gpu=yes` on turing: under the `gpu-queue` lock.
+- After the run: `out/` (the copy of `/ws/out`, links removed), `tool.log`, `tool-exit`. No `out/result` → `failed`.
+- `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
+- `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
+- The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command. Review, gate and PR as for any job.
+- `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
+- `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
+- Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
+
 ## Page actions
 
 A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed argv (`ROUTES`). `<arg>` comes from the card's `data-*` or a prompt. ✓: a second tap within 4 s.
@@ -246,7 +262,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `tool=` `place=` `hours=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
@@ -257,6 +273,8 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
+| `queue/<id>/in/`, `out/`, `tool.log`, `tool-exit`, `close.md` | [tool job](#tool-jobs): its input, the copy of `/ws/out`, the run's log and exit code, the closing prompt |
+| `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
 | `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |

@@ -16,12 +16,13 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `queue` runs unattended agent jobs; `job` queues recurring ones. [Docs](docs/remote-sessions.md), [queue](docs/vibe-queue.md), [jobs](docs/vibe-jobs.md) |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `queue` runs unattended agent jobs; `job` queues recurring ones; `ws` launches outside research tools. [Docs](docs/remote-sessions.md), [queue](docs/vibe-queue.md), [jobs](docs/vibe-jobs.md), [workspaces](docs/workspaces.md) |
 | [`bin/gpu-queue`](bin/gpu-queue) | One GPU job at a time across all repos; the vibe queue queues its runs here. [Docs](docs/vibe-queue.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
 | [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |
 | [`templates/`](templates/) | The documents the tools emit — one copy each |
+| [`workspaces/`](workspaces/) | One folder per outside research tool, one script per place. [Docs](docs/workspaces.md) |
 | [`memory/GLOBAL.md`](memory/GLOBAL.md) | Global memory for every agent: where information goes, handoff discipline. [README](memory/README.md) |
 | [`claude/`](claude/) | Claude Code config: settings baseline (merged, not symlinked), `CLAUDE.md`, hooks, the Remote Control server unit |
 | [`.claude-plugin/`](.claude-plugin/) | The same skills and hooks as a Claude Code plugin, for sessions with no `$HOME`. [Docs](docs/plugin.md) |
@@ -84,7 +85,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
   · [research skills](docs/research-skills.md) · [vibe queue](docs/vibe-queue.md)
-  · [recurring jobs](docs/vibe-jobs.md) · [pstack adapter](docs/pstack-adapter.md)
+  · [recurring jobs](docs/vibe-jobs.md) · [workspaces](docs/workspaces.md) · [pstack adapter](docs/pstack-adapter.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

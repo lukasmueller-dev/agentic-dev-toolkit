@@ -18,6 +18,7 @@ global memory this repo installs into every agent) and
 | `completions/`| bash (`<cmd>.bash`) and zsh (`_<cmd>`) completion for a `bin/` CLI | No             |
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
+| `workspaces/` | One folder per outside research tool, `_places/` one script per place; read in place by `vibe ws`, not installed ([`docs/workspaces.md`](docs/workspaces.md)) | No |
 | `memory/`     | Global memory installed into every agent            | No             |
 | `claude/`     | Claude Code config: settings, hooks, response style, systemd unit | Yes |
 | `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |

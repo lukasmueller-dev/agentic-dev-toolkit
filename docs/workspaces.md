@@ -23,6 +23,8 @@ vibe ws tick                 # each instance with an id: its place's tick; the r
 - `stop` and a tick past the limit run the stop script for 300 s at most, then `down`.
 - `start` on turing with `gpu=yes` runs under `gpu-queue lock`, detached, and prints `up` or `waits for the GPU`. The lock stays held until `stop` or the limit removes the `id` file.
 - The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
+- The queue page lists the lines of `status` under `Tools`.
+- A `kind=run` tool runs as a queue job: `/enqueue` route Tool run. Flow, stop and steer: [Tool jobs](vibe-queue.md#tool-jobs).
 
 ## Layout
 
