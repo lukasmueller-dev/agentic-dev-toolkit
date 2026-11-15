@@ -358,8 +358,12 @@ vendored code.
 checks the one skill in *this repo's own* Claude config and reports
 success — green, having linted none of the skills you shipped.
 
-**3 `install.bats` tests fail inside a sandboxed agent job** (`.claude/` placeholder
-files in the worktree root). Run that suite again in a `git clone` under `$TMPDIR`.
+**Inside a sandboxed agent job, `.claude/` placeholder files in the worktree root
+fail 3 `install.bats` tests, `shfmt -f .` and `git add -A`.** Run the lint and that
+suite in a `git clone` under `$TMPDIR`; add files by name.
+
+**`bats -j 8 tests/vibe-queue.bats` fails 5 review and verify tests under load.**
+Run that file without `-j`.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
 It is the sandbox's mount point for its write-deny on `.git/config`; no setting

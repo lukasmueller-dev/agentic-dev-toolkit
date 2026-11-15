@@ -209,6 +209,7 @@ An outside research tool (`kind=run` under `workspaces/`) does the first part of
 - `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
 - `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
 - Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
+- shortcut: the run has no memory limit (`MEM_CMD` covers sessions and gates only); add one at the place when a tool runs the machine out of RAM.
 
 ## Page actions
 
