@@ -113,6 +113,17 @@ provision() {
   ssh -F "$cfg" -n vast 'chmod -R a-w /ws/scripts /ws/in' || return 1
 }
 
+# undo_up — the EXIT trap of up: a signal or an error after the create can come before the id write.
+undo_up() {
+  local id
+  rmdir "$WS_STATE/up.lock" || true
+  if [ ! -s "$WS_STATE/id" ]; then
+    id="$(vastai show instances --raw | jq -r --arg l "$WS_INSTANCE" 'first(.[]? | objects | select(.label == $l) | .id) // empty' 2>/dev/null)" || id=""
+    if [ -n "$id" ]; then printf '%s\n' "$id" >"$WS_STATE/id"; fi
+  fi
+  destroy
+}
+
 cmd_up() {
   local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" hours="${WS_CONF_HOURS:-}" query offer id t
   case "$hours" in '' | *[!0-9]*) die "hours is not a whole number: '$hours'" ;; esac
@@ -126,13 +137,13 @@ cmd_up() {
   query="$(setting VAST_QUERY 'num_gpus=1 cpu_arch=amd64') verified=true rentable=true datacenter=True"
   offer="$(vastai search offers "$query" -o dph --raw | jq -r '.[0].id // empty')" || offer=""
   [ -n "$offer" ] || die "no offer for: $query"
+  trap undo_up EXIT # a failed up leaves nothing behind
   # No --bid_price: on-demand, so no bid can interrupt the run.
   id="$(vastai create instance "$offer" --image "$image:$commit" --disk "$(setting VAST_DISK 50)" \
     --label "$WS_INSTANCE" --ssh --direct --cancel-unavail --raw | jq -r '.new_contract // empty')" || id=""
   [ -n "$id" ] || die "create failed for offer $offer"
   t="$(date +%s)"
   printf '%s\n' "$id" >"$WS_STATE/id"
-  trap 'rmdir "$WS_STATE/up.lock" || true; destroy' EXIT # a failed up leaves nothing behind
   printf 'vast\n' >"$WS_STATE/place"
   printf '%s\n' "$t" >"$WS_STATE/started"
   printf '%s\n' "$((t + hours * 3600))" >"$WS_STATE/limit"

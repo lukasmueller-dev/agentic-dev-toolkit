@@ -16,7 +16,10 @@ setup() {
 printf '%s\n' "$*" >>"$STUBS/vastai.argv"
 case "$1 $2" in
   "search offers") echo '[{"id": 111, "dph_total": 0.4}, {"id": 222, "dph_total": 0.9}]' ;;
-  "create instance") echo '{"success": true, "new_contract": 4242}' ;;
+  "create instance")
+    if [ -n "${VAST_CREATE_FAIL:-}" ]; then echo '{"success": false}'; else echo '{"success": true, "new_contract": 4242}'; fi
+    ;;
+  "show instances") printf '[{"id": 7, "label": "other"}, {"id": 4242, "label": "%s"}]\n' "$WS_INSTANCE" ;;
   "show instance")
     if [ -n "${VAST_GONE:-}" ]; then
       echo '{"instances": null}'
@@ -145,6 +148,17 @@ EOF
   VAST_DESTROY=false VAST_GONE=1 run "$PLACE" down
   [ "$status" -eq 0 ]
   [ ! -e "$WS_STATE/id" ]
+}
+
+@test "up: a create that prints no id destroys the instance with its label" {
+  VAST_CREATE_FAIL=1 run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"create failed"* ]] || false
+  grep -q '^show instances --raw$' "$STUBS/vastai.argv"
+  grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ "$(grep -c '^destroy instance 7 ' "$STUBS/vastai.argv")" -eq 0 ]
+  [ ! -e "$WS_STATE/id" ]
+  [ ! -e "$WS_STATE/up.lock" ]
 }
 
 @test "up: a long run instance name keeps the tunnel socket under the 108-byte limit" {
