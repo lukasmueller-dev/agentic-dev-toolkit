@@ -28,7 +28,10 @@ case "$1 $2" in
     printf '{"id": 4242, "actual_status": "%s", "public_ipaddr": "203.0.113.7", "ports": {"22/tcp": [{"HostPort": "%s"}]}}\n' \
       "${VAST_STATUS:-running}" "${VAST_PORT:-40022}"
     ;;
-  "destroy instance") echo "{\"success\": ${VAST_DESTROY:-true}}" ;;
+  "destroy instance")
+    if [ -d "$WS_STATE/up.lock" ]; then echo "$3" >>"$STUBS/destroy.locked"; fi
+    echo "{\"success\": ${VAST_DESTROY:-true}}"
+    ;;
 esac
 EOF
   cat >"$STUBS/bin/ssh" <<'EOF'
@@ -172,14 +175,20 @@ EOF
   [ ! -e "$WS_STATE/id" ]
 }
 
-@test "up: a create that prints no id destroys the instance with its label" {
+@test "up: a create that prints no id destroys the instance with its label, under the lock" {
   VAST_CREATE_FAIL=1 run "$PLACE" up
   [ "$status" -ne 0 ]
   [[ "$output" == *"create failed"* ]] || false
   grep -q '^show instances --raw$' "$STUBS/vastai.argv"
   grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
   [ "$(grep -c '^destroy instance 7 ' "$STUBS/vastai.argv")" -eq 0 ]
+  grep -qx 4242 "$STUBS/destroy.locked" # the lock outlasts the destroy
   [ ! -e "$WS_STATE/id" ]
+  [ ! -e "$WS_STATE/up.lock" ]
+
+  VAST_CREATE_FAIL=1 VAST_DESTROY=false run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [ "$(cat "$WS_STATE/id")" = 4242 ]
   [ ! -e "$WS_STATE/up.lock" ]
 }
 

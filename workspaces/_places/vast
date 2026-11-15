@@ -117,14 +117,15 @@ provision() {
 }
 
 # undo_up — the EXIT trap of up: a signal or an error after the create can come before the id write.
+# The lock goes last: a second up in the cleanup would rent a machine with the same label.
 undo_up() {
   local id
-  rmdir "$WS_STATE/up.lock" || true
   if [ ! -s "$WS_STATE/id" ]; then
     id="$(vastai show instances --raw | jq -r --arg l "$WS_INSTANCE" 'first(.[]? | objects | select(.label == $l) | .id) // empty' 2>/dev/null)" || id=""
     if [ -n "$id" ]; then printf '%s\n' "$id" >"$WS_STATE/id"; fi
   fi
-  destroy
+  destroy || true # errexit in a trap would skip the rmdir
+  rmdir "$WS_STATE/up.lock" || true
 }
 
 cmd_up() {
