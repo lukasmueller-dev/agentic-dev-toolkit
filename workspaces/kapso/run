@@ -3,6 +3,9 @@
 # KAPSO_WS_ROOT moves /ws for the tests.
 set -euo pipefail
 
+# A rented place execs over ssh as root with no image ENV: kapso needs its PATH, and Claude Code refuses root without IS_SANDBOX.
+export PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH IS_SANDBOX=1
+
 ws=${KAPSO_WS_ROOT:-/ws}
 here=$(cd "$(dirname "$0")" && pwd)
 campaign=$ws/data/campaign

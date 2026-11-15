@@ -24,6 +24,7 @@ setup() {
   printf '|%s' "${@:2}"
   echo "|token=${CLAUDE_CODE_OAUTH_TOKEN-unset}"
 } >>"$STUB_LOG"
+echo "${IS_SANDBOX-unset}|$PATH" >>"${STUB_ENV:-/dev/null}"
 cmd=$1
 if [ "$cmd" = report ]; then
   echo "# stub report" >"$4"
@@ -135,6 +136,18 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   grep -qx '  enabled: false' "$WS_SRC/config.yaml"
   grep -qx '    cli: claude_code' "$WS_SRC/config.yaml"
   grep -qF "${commit:0:7}" "$REPO_ROOT/docs/workspaces/kapso.md"
+}
+
+@test "run, stop and steer put the image's kapso on PATH; only run sets IS_SANDBOX" {
+  solution '{"branch":"kapso/exp-2","score":1,"goal_achieved":true}'
+  export STUB_ENV="$BATS_TEST_TMPDIR/env.log"
+  unset IS_SANDBOX
+  "$WS_SRC/run"
+  "$WS_SRC/stop"
+  "$WS_SRC/steer" note
+  # run calls kapso twice (build, report), then stop, then steer.
+  [ "$(cut -d'|' -f1 "$STUB_ENV" | tr '\n' ' ')" = "1 1 unset unset " ]
+  [ "$(grep -c '^[^|]*|/home/node/venv/bin:/opt/kapso/bin:' "$STUB_ENV")" -eq 4 ]
 }
 
 # recipe_file NAME — the body of the recipe's `cat >NAME <<'EOF'` block.
