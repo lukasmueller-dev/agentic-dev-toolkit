@@ -1,6 +1,6 @@
 ---
 name: enqueue
-description: "Puts the one item just discussed in this session on the vibe queue as a single headless job that ends in a draft PR. Use when the user says 'enqueue this', 'queue this', 'put this on the queue', 'let the queue run this', or a discussion has scoped one feature or task that an unattended agent should do instead of this session. A small item becomes a job prompt; a big item (several milestones, a GPU run) becomes a SPEC.md on its own branch; an open question with a metric and a budget becomes a research job (a RESEARCH.md backlog the agent works off); work on several branches that merge together becomes a feature, one job per member. Adds one item; never sweeps the repos."
+description: "Puts the one item just discussed in this session on the vibe queue as a single headless job that ends in a draft PR. Use when the user says 'enqueue this', 'queue this', 'put this on the queue', 'let the queue run this', or a discussion has scoped one feature or task that an unattended agent should do instead of this session. A small item becomes a job prompt; a big item (several milestones, a GPU run) becomes a SPEC.md on its own branch; an open question with a metric and a budget becomes a research job (a RESEARCH.md backlog the agent works off); a run of an outside research tool (a kind=run tool under workspaces/) becomes a tool job that a session closes; work on several branches that merge together becomes a feature, one job per member. Adds one item; never sweeps the repos."
 disable-model-invocation: true
 argument-hint: "[<task name>]"
 ---
@@ -38,6 +38,8 @@ the first step. If the discussion settled no item, say so and stop.
 - **Big:** several milestones, or a GPU run. Route: `SPEC.md`.
 - **Research:** an open question with one metric, a budget and 2 or more candidate experiments; the next run depends on the last result. Route: `RESEARCH.md`.
 - **Feature:** 2 or more branches that merge together, most often in several repos. Route: `skills/fill-queue/references/feature.md`.
+- **Tool run:** a `kind=run` tool of `vibe ws list` does the work; a session closes its run ([`tool-run.md`](../fill-queue/references/tool-run.md)). Route: `tool=`. Contract: `docs/workspaces.md`.
+  A `kind=service` tool is no job: `vibe ws start <name>`.
 
 Propose the route in the draft. The user may change it.
 
@@ -54,11 +56,16 @@ Check `vibe queue status` and the gate. Then fill the draft:
 - Research: the full `RESEARCH.md` from `templates/RESEARCH.md`. Take each section from the conversation; grill only the open sections.
   Each backlog item has its pass criterion in the draft. Kind `gpu`. `deadline=`: the deadline of its Budget section.
 - Feature: the feature file and each member's `SPEC.md`, per the reference's step 1; grill only the open sections.
+- Tool run: the tool, its place (default: the first of its `places`), `hours` (default: its `hours`), the brief and the args.
+  The brief is the goal for the tool. Args are `key=value` lines, only the keys of its recipe `docs/workspaces/<name>.md`.
+  `result=branch`: the task names the repo's metric command, which checks the tool's score. No such command fails the gate.
+  Done-when: `result=branch`, the metric command backs the score; `result=folder`, `report.md` names each file.
+  Kind `code`. Timeout: the closing session, 1h. Verify `-` on `result=folder`.
 
 ## Phase 4 — Approve
 
 Show the draft as one piece: route, job line, and for a big item the whole
-`SPEC.md`; for a research item the whole `RESEARCH.md`; for a feature the feature file and each member's `SPEC.md`. **Stop and wait for explicit approval.** Apply each change the user
+`SPEC.md`; for a research item the whole `RESEARCH.md`; for a feature the feature file and each member's `SPEC.md`; for a tool run `in/brief.md` and `in/args`. **Stop and wait for explicit approval.** Apply each change the user
 asks for, then show the draft again.
 
 ## Phase 5 — Stage (big, research and feature)
@@ -72,7 +79,8 @@ commit `docs(research): <slug>`. Feature: the reference's steps 2 and 3.
 
 Write one job dir (`mktemp -d`) as `fill-queue` Phase 6 describes: `job` and
 `prompt.md` from `skills/fill-queue/references/job-prompt.md`, every `<…>`
-filled; `verify=` only when the draft sets it. Research: append
+filled; `verify=` only when the draft sets it. Tool run: add `tool=<name>`, `place=<place>` and `hours=<n>`
+to `job`; write the brief to `in/brief.md` and the args to `in/args` in the job dir. Research: append
 `skills/fill-queue/references/research.md` to `prompt.md`, and add `deadline=YYYY-MM-DD HH:MM` to `job`. A feature: one job dir per member with a `SPEC.md`. Then, outside the
 sandbox: `vibe queue add <dir>...`. Add `--now` only when the user asked for it.
 
