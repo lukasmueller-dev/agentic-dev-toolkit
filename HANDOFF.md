@@ -14,11 +14,11 @@
 
 ## State
 
-Milestones 1 to 3 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` exists. `tests/vibe-queue.bats -f tool` has 9 tool tests.
+Milestones 1 to 4 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` takes a tool job only. `/enqueue` has route Tool run; the queue page lists `vibe ws status` under `Tools`; `docs/vibe-queue.md` has `## Tool jobs`.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the "tool run" route of `/enqueue`, the page list, the docs, the layout row in `CLAUDE.md`, the completion — code — done when `./bin/skill-lint --strict skills` and `bats tests/vibe-web.bats tests/vibe-queue.bats` pass and `grep -c 'workspaces/' CLAUDE.md` prints 1 or more.
+The next open milestone of `SPEC.md`: steer for plain jobs — code — done when `bats tests/vibe-queue.bats -f steer` passes: with `steer=` unset the agent's argv is unchanged; with `steer=1` the stub agent receives the text of `vibe queue steer`.
 
 ## Blockers
 
@@ -26,11 +26,11 @@ None.
 
 ## Gotchas (unpromoted)
 
-- The `/enqueue` route writes `tool=`, `place=`, `hours=` in the job file and `in/brief.md`, `in/args` in the job dir. `job_prepare` adds `output=report` for `result=folder`.
-- No doc names `vibe queue steer`, the tool job flow or `tool-run.md` yet → `docs/vibe-queue.md`, `docs/workspaces.md`, a link from the `/enqueue` skill.
-- The completions lack `steer` in the queue verbs → `completions/vibe.bash`, `completions/_vibe`.
+- `cmd_queue_steer` (`bin/vibe`) dies on a job with no `tool=` → the plain-job branch goes there, behind `steer=1` in `queue.conf`.
 - Follow-ups of a tool job: retry runs the tool again with `in/`; answer closes the same run; fix, review rounds and GPU follow-ups run no tool.
 - `tool_unsafe` refuses a bundle that changes agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → name a new config path there.
 - A `runs=host` run is outside the job's memory scope (`MEM_CMD`).
+- The zsh completion has no `queue` verbs; it got `ws` only.
+- `bats -j 8` over `tests/vibe-queue.bats` fails 5 review and verify tests under load → run that file without `-j`.
 - `shfmt -f .` in a sandboxed job fails on `.claude/` placeholders (`permission denied`) → lint in a `git clone` under `$TMPDIR`.
 - `git add -A` fails on the sandbox placeholders (`.bash_profile`) → add files by name.
