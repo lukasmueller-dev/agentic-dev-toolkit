@@ -15,7 +15,7 @@ Conf: [`workspaces/kapso/workspace.conf`](../../workspaces/kapso/workspace.conf)
 | `evaluation` | the directory in the repo that holds the evaluator, for example `eval` |
 | `experiments` | the experiment budget, a whole number |
 
-- Kapso gets `hours` × 60 − 5 minutes, so the bundle fits before the place's limit. `config.yaml` turns the inbox off and picks Claude Code with `claude-opus-5-5`.
+- Kapso gets `hours` × 60 − 5 minutes, so the bundle fits before the place's limit. `config.yaml` turns the inbox off and runs Kapso's inference on Claude Code with `claude-opus-5-5`. The experiment sessions keep Kapso's host model, `claude-opus-5`.
 - Cost: each experiment starts Claude Code sessions on the subscription. `experiments` and `hours` bound the run, not the tokens.
 
 ## 1. Build the image
