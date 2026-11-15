@@ -167,6 +167,28 @@ post() {
   [ "$status" -eq 1 ]
 }
 
+@test "vibe queue page: a Tools list of the instances from the state files alone; none with no instance" {
+  local w="$Q/workspaces" lim f="$Q/web/index.html"
+  lim=$(($(date +%s) + 3600))
+  printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
+  printf '#!/bin/sh\ncat\n' >"$STUBS/pandoc"
+  chmod +x "$STUBS/docker" "$STUBS/pandoc"
+  "$REPO_ROOT/bin/vibe" queue page
+  run grep -c '## Tools' "$f"
+  [ "$output" = 0 ]
+  mkdir -p "$w/ds" "$w/old"
+  echo turing >"$w/ds/place"
+  echo c1 >"$w/ds/id"
+  echo http://100.64.0.1:8080 >"$w/ds/url"
+  echo "$lim" >"$w/ds/limit"
+  echo turing >"$w/old/place"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<div class="md">## Tools' "$f"
+  grep -qF -- "- **ds** up · turing · until $(date -d "@$lim" '+%F %H:%M' 2>/dev/null || date -r "$lim" '+%F %H:%M') http://100.64.0.1:8080" "$f"
+  grep -qF -- '- **old** down · turing</div>' "$f"
+  [ ! -e "$STUBS/docker.log" ]
+}
+
 @test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
   run post /queue/api/pause -H 'Content-Length: -1' --max-time 5
   [ "${lines[1]}" = 403 ]

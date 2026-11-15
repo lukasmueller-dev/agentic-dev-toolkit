@@ -2527,13 +2527,14 @@ new_work() {
 # queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q p o jobs lim front
+  local f="$QROOT/web/index.html" r g q p o jobs lim front tools
   local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
   read -r r g q p o <<<"$(queue_counts)"
   lim="$(limit_line)"
   jobs="$(queue_jobs status_card)"
-  front="$(queue_front_md)"
+  front="$(queue_front_md)" tools="$(ws_md)"
   [[ -z "$front" ]] || front="<div class=\"md\">$(md_html <<<"$front")</div>"$'\n'
+  [[ -z "$tools" ]] || tools="<div class=\"md\">$(md_html <<<"$tools")</div>"$'\n'
   mkdir -p "${f%/*}" || return 1
   # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
@@ -2542,7 +2543,7 @@ queue_web() {
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
     '<actions>' "$(page_buttons)" \
-    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$(new_work)" \
+    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$tools$(new_work)" \
     '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
     mv -f "$f.tmp.$$" "$f"
   else
@@ -3600,32 +3601,43 @@ ws_inst() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
 }
 
+# ws_line INSTANCE-DIR — instance, state, place, then limit and address, tab-separated; state files only.
+ws_line() {
+  local s lim more=""
+  s="$(ws_state "$1")"
+  if [[ "$s" != down ]]; then
+    lim="$(jstate "$1" limit)"
+    more="${lim:+until $(at_time "$lim") }$(jstate "$1" url)"
+  elif [[ -s "$1/hold.log" ]] && ! ws_holder "$1" >/dev/null; then
+    # A gpu=yes start that failed after `ws start` returned: its holder's last line is the reason.
+    more="$(tail -n 1 "$1/hold.log")"
+    if [[ "$more" == "vibe: holds the GPU" ]]; then more=""; fi
+  fi
+  printf '%s\t%s\t%s\t%s\n' "${1##*/}" "$s" "$(jstate "$1" place)" "$more"
+}
+
+# ws_lines — ws_line of each instance.
+ws_lines() {
+  local d
+  for d in "$WS_STATES"/*/; do
+    if [[ -d "$d" ]]; then ws_line "${d%/}"; fi
+  done
+}
+
 # vibe ws status [INSTANCE] — one line per instance: state, place, limit, address; state files only.
 cmd_ws_status() {
-  local d s lim more l
-  local -a dirs=()
   (($# <= 1)) || die "usage: vibe ws status [<instance>]"
   if (($#)); then
     ws_inst "$1"
-    dirs=("$WS_STATES/$1")
+    ws_line "$WS_STATES/$1"
   else
-    for d in "$WS_STATES"/*/; do
-      if [[ -d "$d" ]]; then dirs+=("${d%/}"); fi
-    done
-  fi
-  for d in "${dirs[@]+"${dirs[@]}"}"; do
-    s="$(ws_state "$d")" more=""
-    if [[ "$s" != down ]]; then
-      lim="$(jstate "$d" limit)"
-      more="${lim:+until $(at_time "$lim") }$(jstate "$d" url)"
-    elif [[ -s "$d/hold.log" ]] && ! ws_holder "$d" >/dev/null; then
-      # A gpu=yes start that failed after `ws start` returned: its holder's last line is the reason.
-      more="$(tail -n 1 "$d/hold.log")"
-      if [[ "$more" == "vibe: holds the GPU" ]]; then more=""; fi
-    fi
-    l="$(printf '%-24s %-10s %-7s %s' "${d##*/}" "$s" "$(jstate "$d" place)" "$more")"
-    echo "${l%"${l##*[! ]}"}"
-  done
+    ws_lines
+  fi | awk -F'\t' '{ l = sprintf("%-24s %-10s %-7s %s", $1, $2, $3, $4); sub(/ +$/, "", l); print l }'
+}
+
+# ws_md — the page's tool list: the lines of `vibe ws status` as Markdown; empty with no instance.
+ws_md() {
+  ws_lines | awk -F'\t' 'NR == 1 { print "## Tools\n" } { printf "- **%s** %s · %s%s\n", $1, $2, $3, ($4 == "" ? "" : " · " $4) }'
 }
 
 # ws_dir NAME — the folder of workspace NAME; dies on no such workspace or a conf that breaks the contract.
