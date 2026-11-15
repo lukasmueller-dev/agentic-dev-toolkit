@@ -38,7 +38,7 @@ docker run --rm --env-file ~/.config/vibe/workspaces/kapso.env \
 ```
 
 It prints `1000`, then a report where every item is ok, and exits 0. `--models` probes the Claude Code login with a few one-token calls.
-The `mkdir` repeats what `up` does as the container user `node` (uid 1000). Stop here if it fails.
+The `mkdir` repeats what `up` does as the container user `node` (uid 1000); the Dockerfile makes `/ws` writable for it. Stop here if it fails.
 
 ## 3. Make the test repo
 
@@ -101,7 +101,7 @@ While the run goes, `vibe queue steer <job id> "<text>"` adds a note: only agent
 
 ## What breaks it
 
-- `mkdir: cannot create directory '/ws/data': Permission denied`, in step 2 or at `up` → Docker creates `/ws` as root for the bind mounts, and `node` (uid 1000) cannot write there. Add `RUN mkdir -p /ws && chown node:node /ws` before `USER node` in the Dockerfile and rebuild. Unchecked: no Docker run has used the image.
+- `mkdir: cannot create directory '/ws/data': Permission denied`, in step 2 or at `up` → the image lacks the `chown node:node /ws` line: Docker makes `/ws` as root for the bind mounts. Rebuild from the current Dockerfile (step 1).
 - `failed: run exit <n>, see tool.log` → `kapso build` or a step before the verdict failed. `tool.log` has the error. A missing `evaluation=` or `experiments=` in `in/args` ends here too.
 - `failed: goal not achieved (<reason>)` → the campaign ended below the target, for example `budget_exhausted`. When Kapso picked a branch, `out/` still holds the bundle and the score.
 - `eval/result.json is the evaluator's own output, left by an earlier run` in `tool.log` → the repo commits a `result.json`. Remove it from the repo and queue again.
