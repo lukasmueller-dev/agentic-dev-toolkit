@@ -1220,7 +1220,7 @@ tool_check() {
 # tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
 # in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
 # A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, tool-exit and out/ (no symlinks:
-# the tool's links would read host files).
+# the tool's links would read host files). The instance is the job's alone: once down, its state dir goes.
 tool_run() {
   local d="$1" inst st h f pid rc=0
   inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
@@ -1236,7 +1236,10 @@ tool_run() {
   for f in brief.md args; do
     if [[ -f "$d/in/$f" ]]; then cp "$d/in/$f" "$st/in/$f"; fi
   done
-  agent_git clone -q --single-branch "$(jstate "$d" worktree)" "$st/in/repo" >>"$d/tool.log" 2>&1 || return 0
+  if ! agent_git clone -q --single-branch "$(jstate "$d" worktree)" "$st/in/repo" >>"$d/tool.log" 2>&1; then
+    rm -rf "$st"
+    return 0
+  fi
   if [[ "$(jstate "$st" place)" == turing && "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" gpu)" == yes ]]; then
     runcmd=("$SELF_ROOT/bin/gpu-queue" lock -- "${runcmd[@]}")
   fi
@@ -1259,6 +1262,7 @@ tool_run() {
     cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
     find "$d/out" -type l -delete 2>/dev/null || rm -rf "$d/out"
   fi
+  if [[ ! -s "$st/id" ]]; then rm -rf "$st"; fi
 }
 
 # tool_unsafe WT — the first path FETCH_HEAD adds, changes or deletes against WT's HEAD in agent or git

@@ -2553,9 +2553,7 @@ toolwait() {
   [ "$(cat "$STUBS/args")" = metric=loss ]
   [ "$(cat "$STUBS/lock")" = free ]
   [ "$(cat "$STUBS/tool.log")" = "run hours=3" ]
-  [ "$(cat "$st/place")" = turing ]
-  [ $(($(cat "$st/limit") - $(cat "$st/started"))) -eq 10800 ]
-  [ ! -e "$st/id" ]
+  [ ! -e "$st" ]
   [ "$(head -n 2 "$STUBS/close-prompt")" = "$(printf 'Do the task.\nMODE=close')" ]
   [ "$(tail -n "$(grep -c '' "$tr")" "$STUBS/close-prompt")" = "$(cat "$tr")" ]
 }
@@ -2593,8 +2591,7 @@ toolwait() {
   [ "$(cat "$Q/01-a/status")" = failed ]
   [ "$(cat "$Q/01-a/note")" = stopped ]
   [ "$(cat "$STUBS/tool.log")" = "$(printf 'run hours=2\nstop while up')" ]
-  [ ! -e "$st/id" ]
-  [ -s "$st/pulled" ]
+  [ ! -e "$st" ]
   [ ! -e "$STUBS/claude.log" ]
 }
 
