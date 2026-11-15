@@ -24,6 +24,7 @@ The last milestone of `SPEC.md`: the end action `delete` — code — done when 
 - Delete `SPEC.md` and `HANDOFF.md` (`git rm`, commit).
 - The recipe links `docs/workspaces.md`: it exists on `ws-surface` only, so the link is dead until that PR merges.
 - The places write `limit` before the image pull and the ssh wait, and the container gets no limit epoch. `run` leaves a 30 min margin (`AR_LIMIT_MARGIN`). A limit epoch in the container is a contract change: it needs the user.
+- Decision for `pr.md`: the conf does not name `AR_MODEL_AGENT` and `AR_LIMIT_MARGIN`. The surface (`ws_secrets`) refuses a start when a named key is unset, so naming makes both required. Vast copies only named keys, so it drops both: the Claude-token setup needs a named `AR_MODEL_AGENT` there, a change for the user.
 - The recipe names no queue command: `ws-surface` ships `vibe ws list` and `status` only. Add the command when it lands.
 
 ## Blockers
