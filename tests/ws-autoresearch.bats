@@ -92,6 +92,13 @@ EOF
   [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 143" ]
 }
 
+@test "AR_LIMIT_MARGIN in the secrets file moves the limit" {
+  printf 'FAKE_KEY=from-secrets\nAR_LIMIT_MARGIN=3599\n' >"$WS_ROOT/secrets.env"
+  STUB_MODE=hang run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 143" ]
+}
+
 @test "a run cut at the limit is never done:, also when the supervisor exits 0 on TERM" {
   STUB_MODE=term0 AR_LIMIT_MARGIN=3599 run "$WSDIR/run"
   [ "$status" -eq 0 ]
