@@ -57,8 +57,13 @@ destroy() {
   return 1
 }
 
+# tunnel ARG… — ssh on the tunnel socket, from WS_STATE: a long instance name passes the 108-byte socket path limit.
+tunnel() {
+  (cd "$WS_STATE" && ssh -F "$cfg" -S tunnel.sock "$@")
+}
+
 close_tunnel() {
-  if [ -S "$WS_STATE/tunnel.sock" ]; then ssh -F "$cfg" -S "$WS_STATE/tunnel.sock" -O exit vast 2>/dev/null || true; fi
+  if [ -S "$WS_STATE/tunnel.sock" ]; then tunnel -O exit vast 2>/dev/null || true; fi
 }
 
 # ssh_config JSON — point host "vast" at the instance: direct port 22, else the Vast proxy.
@@ -165,9 +170,9 @@ cmd_url() {
   [ -n "$port" ] || die "workspace.conf has no ports"
   [ -s "$cfg" ] || die "no instance is up"
   ip="$(tailscale ip -4)" || die "no tailnet address"
-  if ! ssh -F "$cfg" -S "$sock" -O check vast 2>/dev/null; then
+  if ! tunnel -O check vast 2>/dev/null; then
     rm -f "$sock" # a dead master's socket makes -M run with no control socket
-    ssh -F "$cfg" -f -N -M -S "$sock" -o ExitOnForwardFailure=yes -L "$ip:$port:localhost:$port" vast ||
+    tunnel -f -N -M -o ExitOnForwardFailure=yes -L "$ip:$port:localhost:$port" vast ||
       die "no ssh tunnel to port $port"
   fi
   printf 'http://%s:%s\n' "$ip" "$port"

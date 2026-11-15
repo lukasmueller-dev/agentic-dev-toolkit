@@ -31,8 +31,18 @@ EOF
   cat >"$STUBS/bin/ssh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$STUBS/ssh.argv"
-stdin=1
-for a in "$@"; do case "$a" in -n | -f | -O) stdin=0 ;; esac; done
+stdin=1 sock="" prev=""
+for a in "$@"; do
+  case "$a" in -n | -f | -O) stdin=0 ;; esac
+  if [ "$prev" = -S ]; then sock="$a"; fi
+  prev="$a"
+done
+# Real ssh: a master binds the path plus a 17-byte suffix, under the 108-byte limit.
+if [ $((${#sock} + 17)) -ge 108 ]; then
+  echo "ControlPath too long" >&2
+  exit 255
+fi
+if [ -n "$sock" ]; then printf '%s %s\n' "$PWD" "$sock" >>"$STUBS/ssh.sock"; fi
 if [ "$stdin" = 1 ]; then cat >>"$STUBS/ssh.stdin"; fi
 case " $* " in *" -O check "*) exit 1 ;; esac
 exit "${SSH_EXIT:-0}"
@@ -135,6 +145,16 @@ EOF
   VAST_DESTROY=false VAST_GONE=1 run "$PLACE" down
   [ "$status" -eq 0 ]
   [ ! -e "$WS_STATE/id" ]
+}
+
+@test "up: a long run instance name keeps the tunnel socket under the 108-byte limit" {
+  local inst=kapso-20261111-190828-robots_web_commander-gains-contract st
+  st="$BATS_TEST_TMPDIR/state/$inst"
+  [ $((${#st} + 12 + 17)) -ge 108 ] # /tunnel.sock: the absolute path would fail
+  WS_INSTANCE="$inst" WS_STATE="$st" run "$PLACE" up
+  [ "$status" -eq 0 ]
+  [ "$(cat "$st/url")" = http://100.64.0.1:8080 ]
+  grep -qxF "$st tunnel.sock" "$STUBS/ssh.sock"
 }
 
 @test "down: destroys after a failed pull, and says the pull failed" {
