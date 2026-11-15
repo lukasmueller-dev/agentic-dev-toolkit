@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# workspaces/_places/turing — the place verbs (docs/workspaces.md) in Docker on this machine.
+# runs=host: no container; exec runs the script on the host. Ports publish on the tailnet address only.
+set -euo pipefail
+
+die() {
+  echo "turing: $*" >&2
+  exit 1
+}
+
+: "${WS_INSTANCE:?}" "${WS_STATE:?}" "${WS_DIR:?}"
+name="${WS_DIR%/}"
+name="${name##*/}"
+hours="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+id="$(cat "$WS_STATE/id" 2>/dev/null || true)"
+c="ws-$WS_INSTANCE"
+host=0
+if [ "${WS_CONF_RUNS:-container}" = host ]; then host=1; fi
+
+tailnet_ip() {
+  local t
+  t="$(tailscale ip -4)" || die "tailscale gives no address"
+  echo "${t%%[[:space:]]*}"
+}
+
+# undo_up — a failed up leaves nothing: docker run can fail with the container already created.
+undo_up() {
+  local rc=$?
+  trap - EXIT INT TERM
+  docker rm -f "$c" >/dev/null 2>&1 || true
+  rm -f "$WS_STATE/id"
+  exit "$rc"
+}
+
+verb_up() {
+  local now p tip secrets=/dev/null
+  local -a args=()
+  [ -z "$id" ] || die "already up: $id"
+  case "$hours" in *[!0-9]* | 0*) die "hours must be a whole number above 0, not '$hours'" ;; esac
+  mkdir -p "$WS_STATE/in" "$WS_STATE/data" "$WS_STATE/out"
+  now="$(date +%s)"
+  echo "$now" >"$WS_STATE/started"
+  if [ -n "$hours" ]; then echo $((now + hours * 3600)) >"$WS_STATE/limit"; else rm -f "$WS_STATE/limit"; fi
+  if ((host)); then
+    echo host >"$WS_STATE/id"
+    return 0
+  fi
+  if [ -z "${WS_CONF_IMAGE:-}" ] || [ -z "${WS_CONF_COMMIT:-}" ]; then die "workspace.conf needs image and commit"; fi
+  if [ -n "${WS_CONF_PORTS:-}" ]; then
+    tip="$(tailnet_ip)"
+    for p in ${WS_CONF_PORTS//,/ }; do args+=(-p "$tip:$p:$p"); done
+  fi
+  if [ "${WS_CONF_GPU:-no}" = yes ]; then args+=(--gpus all); fi
+  [ ! -f "$HOME/.config/vibe/workspaces/$name.env" ] || secrets="$HOME/.config/vibe/workspaces/$name.env"
+  trap undo_up EXIT
+  trap 'exit 1' INT TERM
+  id="$(docker run -d --name "$c" ${args[@]+"${args[@]}"} \
+    -v "$WS_DIR:/ws/scripts:ro" -v "$WS_STATE/in:/ws/in:ro" \
+    -e "WS_NAME=$name" -e "WS_INSTANCE=$WS_INSTANCE" -e WS_PLACE=turing -e "WS_HOURS=$hours" \
+    "$WS_CONF_IMAGE:$WS_CONF_COMMIT" sleep infinity)"
+  echo "$id" >"$WS_STATE/id"
+  # Secrets go over stdin: never in argv, never in the container's env.
+  docker exec -i "$id" sh -c 'umask 077 && mkdir -p /ws/data /ws/out && cat >/ws/secrets.env' <"$secrets"
+  # The data a last down kept comes back.
+  docker cp "$WS_STATE/data/." "$id:/ws/data"
+  trap - EXIT INT TERM
+}
+
+verb_exec() {
+  local s="${1:-}"
+  case "$s" in '' | */* | .*) die "usage: turing exec <script> [arg…]" ;; esac
+  shift
+  [ -n "$id" ] || die "no container for $WS_INSTANCE"
+  if ((host)); then
+    [ -x "$WS_DIR/$s" ] || exit 3
+    cd "$WS_STATE"
+    WS_NAME="$name" WS_PLACE=turing WS_HOURS="$hours" exec "$WS_DIR/$s" "$@"
+  fi
+  exec docker exec "$id" sh -c 's="$1"; shift; test -x "/ws/scripts/$s" || exit 3; cd /ws && exec "/ws/scripts/$s" "$@"' sh "$s" "$@"
+}
+
+# Runs as a tested condition too (down): an && chain, so a failed step fails it.
+verb_pull() {
+  local t="$WS_STATE/.pull"
+  [ -n "$id" ] || return 1
+  if ((host)); then
+    date +%s >"$WS_STATE/pulled"
+    return 0
+  fi
+  rm -rf "$t" && mkdir "$t" &&
+    docker cp "$id:/ws/data" "$t/data" && docker cp "$id:/ws/out" "$t/out" &&
+    rm -rf "$WS_STATE/data" "$WS_STATE/out" && mv "$t/data" "$t/out" "$WS_STATE/" && rmdir "$t" &&
+    date +%s >"$WS_STATE/pulled"
+}
+
+verb_url() {
+  local p="${WS_CONF_PORTS:-}"
+  p="${p%%,*}"
+  [ -n "$p" ] || die "workspace.conf has no ports"
+  echo "http://$(tailnet_ip):$p"
+}
+
+# down — the id file goes only once the container is gone, so the next tick tries again.
+verb_down() {
+  [ -n "$id" ] || return 0
+  local rc=0
+  verb_pull || {
+    echo "turing: pull failed; removing $id anyway" >&2
+    rc=1
+  }
+  if ((!host)) && ! docker rm -f "$id" >/dev/null 2>&1 && docker inspect "$id" >/dev/null 2>&1; then
+    echo "turing: container $id still exists; remove it with: docker rm -f $id" >&2
+    return 1
+  fi
+  rm -f "$WS_STATE/id" "$WS_STATE/url"
+  return "$rc"
+}
+
+# tick — no limit file: no limit.
+verb_tick() {
+  [ -n "$id" ] || return 0
+  local now limit pulled
+  now="$(date +%s)"
+  limit="$(cat "$WS_STATE/limit" 2>/dev/null || true)"
+  pulled="$(cat "$WS_STATE/pulled" 2>/dev/null || echo 0)"
+  if [ -n "$limit" ] && [ "$now" -ge "$limit" ]; then
+    verb_down
+  elif [ $((now - pulled)) -ge 600 ]; then
+    verb_pull
+  fi
+}
+
+verb="${1:-}"
+case "$verb" in
+  up | exec | pull | url | down | tick)
+    shift
+    "verb_$verb" "$@"
+    ;;
+  *)
+    echo "usage: turing up|exec <script> [arg…]|pull|url|down|tick" >&2
+    exit 3
+    ;;
+esac
