@@ -24,14 +24,15 @@ Facts the recipe needs:
 
 - First check: the Claude runner works from `CLAUDE_CODE_OAUTH_TOKEN` alone, with no `~/.claude` login file.
 - `status` prints `up — /?token=<token>`: a path, not a host. Add the address from the place's `url` verb.
-- The image build runs `ds init`; the result moves to `/opt/ds-seed`; `start` copies it into `/ws/data` once.
-- Trap: the `pull` copies `/ws/data` with that Python env inside. The copy is large.
+- The image build runs `ds init`; `runtime/` moves to `/opt/ds-seed/runtime`; each `start` links its entries into `/ws/data/runtime`.
+- `pull` copies links, not the Python env. A place that dereferences links copies the env again.
+- `start` keeps the launch-card log out of `/ws/data`. The token is in `.ws-token` and `runtime/daemon.json`, both mode 600.
 - Trap: `IS_SANDBOX=1` in the image lets Claude Code run as root; without it the runner refuses all permissions.
 - Trap: `run` and `steer` have no script; the surface must treat a missing script as exit 3.
 
 ## Blockers
 
-None.
+None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only). Drop it, or keep it?
 
 ## Gotchas (unpromoted)
 
