@@ -2394,6 +2394,19 @@ verify_skill() {
   grep -q "Done elsewhere" "$a/PROJECT_ROADMAP.md"
 }
 
+@test "sweep: the open questions of PROJECT_STATUS.md on origin, the source of research proposals" {
+  local a
+  a="$(make_repo alpha)"
+  printf '## Goal\n\nWalk.\n\n## Open questions\n\n_placeholder_\n\n- Does gamma 0.8 beat 0.9?\n\n## Other\n\nx\n' >"$a/PROJECT_STATUS.md"
+  git -C "$a" add PROJECT_STATUS.md
+  git -C "$a" commit -q -m status
+  git -C "$a" push -q
+  run "$SWEEP" "$a"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"## goal"*"Walk."*"## open questions"*"- Does gamma 0.8 beat 0.9?"*"## roadmap"* ]] || false
+  [[ "$output" != *"placeholder"* ]] || false
+}
+
 @test "sweep: arguments override the config; no repos at all fails" {
   local a
   a="$(make_repo alpha)"
