@@ -2661,13 +2661,15 @@ toolwait() {
   mkjob 03-c "$r" t-c close tool=stub place=vast
   mkjob 04-d "$r" t-d close tool=stub hours=0
   mkjob 05-e "$r" t-e close tool=keyed
+  mkjob 06-f+x "$r" t-f close tool=stub
   drain
   [ "$(cat "$Q/01-a/note")" = "no workspace 'nope' — vibe ws list" ]
   [ "$(cat "$Q/02-b/note")" = "svc is kind=service — vibe ws start svc" ]
   [ "$(cat "$Q/03-c/note")" = "stub has no place 'vast' — places=turing" ]
   [ "$(cat "$Q/04-d/note")" = "hours=0: a whole number above 0, in the job or $w/stub/workspace.conf" ]
   [[ "$(cat "$Q/05-e/note")" == "keyed needs API_KEY: write KEY=VALUE lines to "* ]] || false
-  for j in 01-a 02-b 03-c 04-d 05-e; do
+  [ "$(cat "$Q/06-f+x/note")" = "instance 'stub-06-f+x': letters, digits, . _ - only — the repo folder or the branch breaks it" ]
+  for j in 01-a 02-b 03-c 04-d 05-e 06-f+x; do
     [ "$(cat "$Q/$j/status")" = failed ]
   done
   [ ! -e "$r/.claude/worktrees" ] || [ -z "$(ls "$r/.claude/worktrees")" ]

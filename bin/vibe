@@ -1222,6 +1222,8 @@ tool_check() {
     echo "$n has no place '$p' — places=$(tool_conf "$1" places)"
   elif ! [[ "$h" =~ ^[1-9][0-9]*$ ]]; then
     echo "hours=$h: a whole number above 0, in the job or $f"
+  elif ! [[ "$(tool_inst "$1")" =~ $WS_INST_RE ]]; then
+    echo "instance '$(tool_inst "$1")': letters, digits, . _ - only — the repo folder or the branch breaks it"
   fi
 }
 
@@ -3526,6 +3528,7 @@ cmd_job() {
 
 WS_ROOT="${VIBE_WORKSPACES:-$SELF_ROOT/workspaces}"
 WS_STATES="$QROOT/workspaces"
+WS_INST_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$' # docker's container-name rule
 
 # ws_check DIR — "ok", or the first reason DIR/workspace.conf breaks the contract.
 ws_check() {
@@ -3616,7 +3619,7 @@ ws_state() {
 
 # ws_inst INSTANCE — dies unless INSTANCE names a state dir; docker's container-name rule, a job id can hold upper case.
 ws_inst() {
-  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+  [[ "$1" =~ $WS_INST_RE && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
 }
 
 # ws_line INSTANCE-DIR — instance, state, place, then limit and address, tab-separated; state files only.
