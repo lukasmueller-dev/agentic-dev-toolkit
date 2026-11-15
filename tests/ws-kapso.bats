@@ -129,7 +129,27 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   grep -qxF "ARG COMMIT=$commit" "$WS_SRC/Dockerfile"
   grep -qE 'claude-code@[0-9]+\.[0-9]+\.[0-9]+ ' "$WS_SRC/Dockerfile"
   grep -q 'git config --system user.email' "$WS_SRC/Dockerfile"
+  # shellcheck disable=SC2016 # the Dockerfile line holds a literal $PATH
   grep -qx 'ENV PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH' "$WS_SRC/Dockerfile"
   grep -qx '  enabled: false' "$WS_SRC/config.yaml"
   grep -qx '    cli: claude_code' "$WS_SRC/config.yaml"
+  grep -qF "${commit:0:7}" "$REPO_ROOT/docs/workspaces/kapso.md"
+}
+
+# recipe_file NAME — the body of the recipe's `cat >NAME <<'EOF'` block.
+recipe_file() { sed -n "\\#^cat >$1 <<'EOF'\$#,/^EOF\$/p" "$REPO_ROOT/docs/workspaces/kapso.md" | sed '1d;$d'; }
+
+@test "recipe: the test repo scores 0.375 as written and 1.0 once count_words splits on any whitespace" {
+  local d="$BATS_TEST_TMPDIR/recipe-repo"
+  mkdir -p "$d/eval"
+  recipe_file words.py >"$d/words.py"
+  recipe_file eval/evaluate.py >"$d/eval/evaluate.py"
+  cd "$d"
+  run python3 -B eval/evaluate.py
+  [ "$status" -eq 0 ]
+  [ "$output" = "accuracy: 0.375" ]
+  printf 'def count_words(text):\n    return len(text.split())\n' >words.py
+  run python3 -B eval/evaluate.py
+  [ "$output" = "accuracy: 1.000" ]
+  jq -e '.score == 1 and .evaluation_script_path == "kapso_evaluation/evaluate.py"' eval/result.json
 }
