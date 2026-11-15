@@ -11,6 +11,9 @@ RUN apt-get update \
  && npm install -g @anthropic-ai/claude-code@2.1.310 \
  && python3 -m venv /opt/kapso \
  && /opt/kapso/bin/pip install --no-cache-dir "git+https://github.com/Leeroo-AI/kapso@${COMMIT}"
-ENV PATH=/opt/kapso/bin:$PATH
+ENV PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH
 # Claude Code refuses --dangerously-skip-permissions as root; `node` is uid 1000.
 USER node
+# A campaign's `pip install` lands here; /opt/kapso stays root-owned, so Kapso's pins hold.
+# shortcut: cost mode (off by default) runs the evaluator on /opt/kapso's python, which lacks these packages.
+RUN /usr/bin/python3 -m venv /home/node/venv

@@ -129,6 +129,7 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   grep -qxF "ARG COMMIT=$commit" "$WS_SRC/Dockerfile"
   grep -qE 'claude-code@[0-9]+\.[0-9]+\.[0-9]+ ' "$WS_SRC/Dockerfile"
   grep -q 'git config --system user.email' "$WS_SRC/Dockerfile"
+  grep -qx 'ENV PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH' "$WS_SRC/Dockerfile"
   grep -qx '  enabled: false' "$WS_SRC/config.yaml"
   grep -qx '    cli: claude_code' "$WS_SRC/config.yaml"
 }
