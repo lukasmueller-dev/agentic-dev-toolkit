@@ -97,6 +97,7 @@ git bundle list-heads "$job/out/repo.bundle"       # <sha> refs/heads/kapso/exp-
 ```
 
 The job ends as a draft PR on `kapso-test`. `out/report.md` and `out/score` are Kapso's claim. The closing session runs `python3 eval/evaluate.py` on the branch: the PR body shows `accuracy: 1.000`.
+The branch also carries Kapso's own `chore(kapso): …` commits: `.gitignore` additions, `kapso_evaluation/` (a copy of `eval/`), `kapso_datasets/.gitkeep` and `.kapso/repo_memory.json`. They are scaffolding, not the experiment: review the other commits, and drop these before the merge, because the `.gitignore` lines would also ignore a tracked `.claude/`.
 While the run goes, `vibe queue steer <job id> "<text>"` adds a note: only agent sessions that start after it read it. `vibe queue stop <job id>` ends the campaign and keeps its checkpoint.
 
 ## What breaks it
