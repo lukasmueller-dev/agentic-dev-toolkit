@@ -3612,12 +3612,17 @@ cmd_ws_stop() {
   echo "$1 down"
 }
 
-# ws_down INSTANCE — its stop script, then place down; then a GPU holder ends and the lock is free.
+# ws_down INSTANCE — its stop script (300 s at most, VIBE_WS_STOP_SECS), then place down;
+# then a GPU holder ends and the lock is free. down has no bound: a cut pull loses data.
 ws_down() {
-  local st="$WS_STATES/$1" pid r=0 rc=0
+  local st="$WS_STATES/$1" pid secs="${VIBE_WS_STOP_SECS:-300}" r=0 rc=0
   pid="$(ws_holder "$st")" || pid=""
-  ws_place "$1" exec stop || r=$?
-  if ((r != 0 && r != 3)); then warn "the stop script of $1 failed (exit $r) — down anyway"; fi
+  WS_SECS="$secs" ws_place "$1" exec stop || r=$?
+  if ((r == 124)); then
+    warn "the stop script of $1 ran past $secs s — down anyway"
+  elif ((r != 0 && r != 3)); then
+    warn "the stop script of $1 failed (exit $r) — down anyway"
+  fi
   ws_place "$1" down || rc=1
   # The lock follows the id file: a container down failed to remove keeps it.
   if [[ -n "$pid" && ! -s "$st/id" ]]; then

@@ -528,3 +528,18 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ -z "$(ls "$S/containers")" ]
   within5 dead "$(cat "$S/gpu.pid")"
 }
+
+@test "ws stop: a stop script past its time still brings the container down" {
+  { command -v timeout || command -v gtimeout; } >/dev/null 2>&1 || skip "no timeout(1)"
+  stubs
+  export VIBE_WS_STOP_SECS=1
+  good svc service
+  secrets svc
+  "$VIBE" ws start svc
+  touch "$S/hang-stop"
+  run "$VIBE" ws stop svc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"the stop script of svc ran past 1 s — down anyway"* ]] || false
+  [ ! -e "$S/containers/ws-svc" ]
+  [ ! -e "$STATES/svc/id" ]
+}

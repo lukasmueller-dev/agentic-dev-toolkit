@@ -20,6 +20,7 @@ vibe ws tick                 # each instance with an id: its place's tick; the r
 - `status` reads the state files only and calls no place: `waits for the GPU` while a start waits for the lock, `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
 - `start` refuses a secret the env file does not set, and an env file that others can read.
 - `start` fails and brings the place down when the start script runs past 120 s.
+- `stop` and a tick past the limit run the stop script for 300 s at most, then `down`.
 - `start` on turing with `gpu=yes` runs under `gpu-queue lock`, detached, and prints `up` or `waits for the GPU`. The lock stays held until `stop` or the limit removes the `id` file.
 - The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
 
