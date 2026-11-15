@@ -29,7 +29,6 @@ case "$hours" in
     exit 0
     ;;
 esac
-limit="${AR_LIMIT_SECONDS:-$((10#$hours * 3600))}"
 
 # The secrets file is KEY=VALUE data: read it, never source it.
 if [ -f "$ws/secrets.env" ]; then
@@ -55,7 +54,9 @@ fi
 
 # The supervisor changes directory: both paths must be absolute.
 cd "$rt"
-deadline=$(($(date +%s) + limit))
+# The place counts hours from the start of up (ssh wait up to 20 min on vast) and its down pulls at the limit.
+# shortcut: fixed margin, the container gets no limit epoch; use the epoch when ws-surface passes one.
+deadline=$(($(date +%s) + 10#$hours * 3600 - ${AR_LIMIT_MARGIN:-1800}))
 scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
 pid=$!
 

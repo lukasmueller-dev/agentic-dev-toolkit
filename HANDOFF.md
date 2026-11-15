@@ -23,6 +23,7 @@ The last milestone of `SPEC.md`: the end action `delete` — code — done when 
 - Move each decision of `SPEC.md` to `pr.md`.
 - Delete `SPEC.md` and `HANDOFF.md` (`git rm`, commit).
 - The recipe links `docs/workspaces.md`: it exists on `ws-surface` only, so the link is dead until that PR merges.
+- The places write `limit` before the image pull and the ssh wait, and the container gets no limit epoch. `run` leaves a 30 min margin (`AR_LIMIT_MARGIN`). A limit epoch in the container is a contract change: it needs the user.
 - The recipe names no queue command: `ws-surface` ships `vibe ws list` and `status` only. Add the command when it lands.
 
 ## Blockers

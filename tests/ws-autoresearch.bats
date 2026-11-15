@@ -86,21 +86,21 @@ EOF
   [ -f "$WS_ROOT/out/report.md" ]
 }
 
-@test "run ends the supervisor at the limit" {
-  STUB_MODE=hang AR_LIMIT_SECONDS=1 run "$WSDIR/run"
+@test "run ends the supervisor at WS_HOURS minus the margin" {
+  STUB_MODE=hang AR_LIMIT_MARGIN=3599 run "$WSDIR/run"
   [ "$status" -eq 0 ]
   [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 143" ]
 }
 
 @test "a run cut at the limit is never done:, also when the supervisor exits 0 on TERM" {
-  STUB_MODE=term0 AR_LIMIT_SECONDS=1 run "$WSDIR/run"
+  STUB_MODE=term0 AR_LIMIT_MARGIN=3599 run "$WSDIR/run"
   [ "$status" -eq 0 ]
   [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 0" ]
   [ -f "$WS_ROOT/out/files/state.md" ]
 }
 
 @test "run kills a supervisor that ignores TERM after the grace" {
-  STUB_MODE=deaf AR_LIMIT_SECONDS=1 AR_KILL_GRACE=1 run "$WSDIR/run"
+  STUB_MODE=deaf AR_LIMIT_MARGIN=3599 AR_KILL_GRACE=1 run "$WSDIR/run"
   [ "$status" -eq 0 ]
   [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped at the limit, supervisor exit 137" ]
   [ -f "$WS_ROOT/out/report.md" ]
