@@ -29,7 +29,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] The place script against stub `vastai`, `ssh` and `rsync` — code — done when `bats tests/ws-place-vast.bats` passes: the search query holds `datacenter=True`; a status that never reaches `running` ends in a destroy; `down` destroys after a failed `pull`; `tick` past `limit` destroys; no secret value is in any stub's argv.
+- [x] The place script against stub `vastai`, `ssh` and `rsync` — code — done when `bats tests/ws-place-vast.bats` passes: the search query holds `datacenter=True`; a status that never reaches `running` ends in a destroy; `down` destroys after a failed `pull`; `tick` past `limit` destroys; no secret value is in any stub's argv.
 - [ ] The recipe `docs/workspaces/place-vast.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/place-vast.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
