@@ -75,9 +75,10 @@ ssh_config() {
   hp="$(printf '%s' "$1" | jq -r 'if .ports["22/tcp"] then "\(.public_ipaddr | gsub("\\s"; "")) \(.ports["22/tcp"][0].HostPort)" else "\(.ssh_host) \(.ssh_port)" end')" || return 1
   host="${hp% *}" port="${hp##* }"
   # The rented host reports these: a newline in them would add an ssh option.
+  # ServerAliveCountMax 20: ssh ends after 10 min of silence, not 90 s; exec run is one ssh for hours.
   case "$host" in '' | *[!A-Za-z0-9.:-]*) return 1 ;; esac
   case "$port" in '' | *[!0-9]*) return 1 ;; esac
-  printf 'Host vast\n  HostName %s\n  Port %s\n  User root\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile "%s"\n  ConnectTimeout 20\n  ServerAliveInterval 30\n' \
+  printf 'Host vast\n  HostName %s\n  Port %s\n  User root\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile "%s"\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ServerAliveCountMax 20\n' \
     "$host" "$port" "$WS_STATE/known_hosts" >"$cfg"
 }
 
