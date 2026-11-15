@@ -368,7 +368,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   within5 dead "$pid"
 }
 
-@test "ws tick: removes a container past its limit; pulls one 10 min after its last pull" {
+@test "ws tick: runs the stop script past the limit, then removes the container; pulls one 10 min after its last pull" {
   stubs
   good old service
   good new service
@@ -380,6 +380,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   echo $(($(date +%s) - 600)) >"$STATES/new/pulled"
   run "$VIBE" ws tick
   [ "$status" -eq 0 ]
+  [ "$(grep -c '^stop' "$S/exec.log")" -eq 1 ]
   [ ! -e "$S/containers/ws-old" ]
   [ ! -e "$STATES/old/id" ]
   [ -f "$STATES/old/data/from-container" ]
@@ -465,4 +466,20 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   run "$VIBE" ws status h
   [[ "$output" == "h "*" down "* ]] || false
   [ ! -e "$S/docker.log" ]
+}
+
+@test "ws tick: a runs=host tool past its limit gets its stop script on the host" {
+  stubs
+  conf h kind=service runs=host places=turing hours=1
+  for v in start stop; do
+    printf '#!/bin/sh\necho %s >>"%s/host.log"\n' "$v" "$S" >"$VIBE_WORKSPACES/h/$v"
+    chmod +x "$VIBE_WORKSPACES/h/$v"
+  done
+  "$VIBE" ws start h
+  echo $(($(date +%s) - 1)) >"$STATES/h/limit"
+  run "$VIBE" ws tick
+  [ "$status" -eq 0 ]
+  [ "$(cat "$S/host.log")" = "$(printf 'start\nstop')" ]
+  run "$VIBE" ws status h
+  [[ "$output" == "h "*" down "* ]] || false
 }

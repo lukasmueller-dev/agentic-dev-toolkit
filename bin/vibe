@@ -3588,7 +3588,7 @@ cmd_ws_hold() {
 
 # vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
 cmd_ws_stop() {
-  local st pid r=0 rc=0
+  local st pid
   (($# == 1)) || die "usage: vibe ws stop <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
@@ -3601,6 +3601,14 @@ cmd_ws_stop() {
   fi
   rm -f "$st/waits"
   [[ -s "$st/id" ]] || die "$1 is down"
+  ws_down "$1" || die "down of $1 failed — vibe ws status $1"
+  echo "$1 down"
+}
+
+# ws_down INSTANCE — its stop script, then place down; then a GPU holder ends and the lock is free.
+ws_down() {
+  local st="$WS_STATES/$1" pid r=0 rc=0
+  pid="$(ws_holder "$st")" || pid=""
   ws_place "$1" exec stop || r=$?
   if ((r != 0 && r != 3)); then warn "the stop script of $1 failed (exit $r) — down anyway"; fi
   ws_place "$1" down || rc=1
@@ -3609,16 +3617,21 @@ cmd_ws_stop() {
     kill -TERM -- "-$pid" 2>/dev/null || true
     rm -f "$st/holder"
   fi
-  ((rc == 0)) || die "down of $1 failed — vibe ws status $1"
-  echo "$1 down"
+  return "$rc"
 }
 
-# vibe ws tick — the place's tick for each instance with an id: pull every 10 min, down past the limit.
+# vibe ws tick — for each instance with an id: past its limit the stop script and down, else the place's tick.
 cmd_ws_tick() {
-  local d
+  local d i
   for d in "$WS_STATES"/*/; do
-    d="${d%/}"
-    if [[ -s "$d/id" ]]; then ws_place "${d##*/}" tick || warn "tick of ${d##*/} failed"; fi
+    d="${d%/}" i="${d##*/}"
+    if [[ ! -s "$d/id" ]]; then
+      continue
+    elif [[ "$(ws_state "$d")" == "past limit" ]]; then
+      ws_down "$i" || warn "down of $i past its limit failed"
+    else
+      ws_place "$i" tick || warn "tick of $i failed"
+    fi
   done
 }
 
