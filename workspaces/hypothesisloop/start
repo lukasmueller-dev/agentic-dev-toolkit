@@ -30,5 +30,10 @@ for image in control-service metrics-service; do
   docker image inspect "$HL_REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
     hl_die "no image $HL_REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
 done
+# A failed start, or one the 120 s limit ends (TERM, then KILL 10 s later), takes its containers down:
+# for runs=host the place's down does not touch compose, and vibe calls no stop then.
+trap 'hl_compose down >/dev/null 2>&1 || echo "error — compose down failed: run $hl_dir/stop"' EXIT
+trap 'exit 1' TERM INT
 # Not the registry: this host already holds the images, and the registry serves remote clusters only.
 hl_compose up -d postgres greptimedb memgraph minio control-service metrics-service
+trap - EXIT

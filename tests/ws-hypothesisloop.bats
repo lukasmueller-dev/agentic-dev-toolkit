@@ -23,6 +23,12 @@ setup() {
 #!/bin/sh
 echo "docker $* TAG=$TAG REGISTRY=$REGISTRY BIND=$HLOOP_BIND PUBLISH=$REGISTRY_PUBLISH_IP API=$HL_API_PORT METRICS=$HL_METRICS_PORT" >>"$LOG"
 if [ "$1 $2" = "image inspect" ] && [ -n "${DOCKER_NO_IMAGE:-}" ]; then exit 1; fi
+# compose up fails under DOCKER_UP_FAIL and hangs under DOCKER_UP_SLEEP.
+case " $* " in *" up "*)
+  if [ -n "${DOCKER_UP_FAIL:-}" ]; then exit 1; fi
+  if [ -n "${DOCKER_UP_SLEEP:-}" ]; then sleep 30; fi
+  ;;
+esac
 exit 0
 EOF
   # make fails on stderr under MAKE_FAIL.
@@ -153,6 +159,20 @@ write_env() {
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings TAG=abc123" ]
   [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
+}
+
+@test "start takes the stack down when compose up fails" {
+  DOCKER_UP_FAIL=1 run "$WS/start"
+  [ "$status" -ne 0 ]
+  [ "$(grep -c 'docker compose .* up -d ' "$LOG")" -eq 1 ]
+  [ "$(grep 'docker compose' "$LOG" | tail -n 1 | grep -c ' down TAG=')" -eq 1 ]
+}
+
+@test "start takes the stack down when the time limit ends it" {
+  command -v timeout >/dev/null || skip "no timeout(1)"
+  DOCKER_UP_SLEEP=1 run timeout 2 "$WS/start"
+  [ "$status" -eq 124 ]
+  [ "$(grep 'docker compose' "$LOG" | tail -n 1 | grep -c ' down TAG=')" -eq 1 ]
 }
 
 @test "stop ends the UI session, takes the compose file under HLOOP_REPO down, keeps the volumes and needs no .env or make output" {
