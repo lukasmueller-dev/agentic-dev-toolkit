@@ -58,11 +58,12 @@ verb_up() {
     -v "$WS_DIR:/ws/scripts:ro" -v "$WS_STATE/in:/ws/in:ro" \
     -e "WS_NAME=$name" -e "WS_INSTANCE=$WS_INSTANCE" -e WS_PLACE=turing -e "WS_HOURS=$hours" \
     "$WS_CONF_IMAGE:$WS_CONF_COMMIT" sleep infinity)"
-  echo "$id" >"$WS_STATE/id"
   # Secrets go over stdin: never in argv, never in the container's env.
   docker exec -i "$id" sh -c 'umask 077 && mkdir -p /ws/data /ws/out && cat >/ws/secrets.env' <"$secrets"
   # The data a last down kept comes back.
   docker cp "$WS_STATE/data/." "$id:/ws/data"
+  # The id file last: a tick pulls a container only once its data/ is back.
+  echo "$id" >"$WS_STATE/id"
   trap - EXIT INT TERM
 }
 

@@ -212,6 +212,7 @@ case "$cmd" in
         [ ! -e "$S/fail-cp" ] && [ -e "$S/containers/${1%%:*}" ] || { echo "No such container" >&2; exit 1; }
         mkdir -p "$2" && echo "$1" >"$2/from-container"
         ;;
+      *) [ ! -e "$S/slow-restore" ] || { touch "$S/restoring" && sleep 2; } ;;
     esac
     ;;
   rm)
@@ -420,6 +421,24 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ ! -e "$STATES/b-late/id" ]
   [ ! -e "$S/containers/ws-b-late" ]
   [ -e "$S/containers/ws-a-hang" ]
+}
+
+@test "ws tick during the restore of a start: no pull over the kept data/" {
+  local p
+  stubs
+  good svc service
+  secrets svc
+  mkdir -p "$STATES/svc/data"
+  echo kept >"$STATES/svc/data/kept.txt"
+  touch "$S/slow-restore"
+  "$VIBE" ws start svc >/dev/null 3>&- &
+  p=$!
+  within5 test -e "$S/restoring"
+  run "$VIBE" ws tick
+  [ "$status" -eq 0 ]
+  wait "$p"
+  [ "$(cat "$STATES/svc/data/kept.txt")" = kept ]
+  [ "$(grep -c '^cp ws-svc:' "$S/docker.log")" -eq 0 ]
 }
 
 @test "ws tick and stop at once: each pull finishes, data/ and out/ stay" {
