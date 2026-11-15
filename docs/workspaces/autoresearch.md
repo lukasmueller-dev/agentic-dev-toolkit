@@ -1,6 +1,6 @@
 # AutoResearch workspace
 
-EvoMap AutoResearch takes one idea through plan, code, run and independent review. Queue job, GPU, pinned to `21f5912`.
+EvoMap AutoResearch takes one idea through plan, code, run and independent review. Queue job, GPU, pinned to the `commit` in the conf.
 Conf: [`workspaces/autoresearch/workspace.conf`](../../workspaces/autoresearch/workspace.conf). Contract: [`docs/workspaces.md`](../workspaces.md).
 
 ## Requirements
@@ -17,9 +17,9 @@ Conf: [`workspaces/autoresearch/workspace.conf`](../../workspaces/autoresearch/w
 ## 1. Build the image
 
 ```bash
-commit="$(sed -n 's/^commit=//p' workspaces/autoresearch/workspace.conf)"
-img="ghcr.io/lukasmueller-dev/ws-autoresearch:$commit"
-docker build -t "$img" workspaces/autoresearch
+vibe ws build autoresearch
+conf=workspaces/autoresearch/workspace.conf
+img="$(sed -n 's/^image=//p' "$conf"):$(sed -n 's/^commit=//p' "$conf")"
 ```
 
 The image is unbuilt. The apt packages and the `ralph-loop` plugin install unpinned, so a rebuild of the same tag can differ. `PIP_CUTOFF` in the Dockerfile fixes the Python packages.

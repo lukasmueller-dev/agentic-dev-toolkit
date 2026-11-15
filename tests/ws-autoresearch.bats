@@ -226,13 +226,12 @@ EOF2
   [ "$status" -eq 3 ]
 }
 
-@test "conf holds the contract keys and the commit matches the Dockerfile" {
+@test "conf holds the contract keys" {
   grep -q '^kind=run$' "$WSDIR/workspace.conf"
   grep -q '^gpu=yes$' "$WSDIR/workspace.conf"
   grep -q '^result=folder$' "$WSDIR/workspace.conf"
   grep -q '^places=turing,runpod$' "$WSDIR/workspace.conf"
   grep -Eq '^commit=[0-9a-f]{40}$' "$WSDIR/workspace.conf"
-  grep -q "^ARG COMMIT=$(sed -n 's/^commit=//p' "$WSDIR/workspace.conf")$" "$WSDIR/Dockerfile"
 }
 
 # shellcheck disable=SC2016

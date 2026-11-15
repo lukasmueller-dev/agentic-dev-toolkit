@@ -1,6 +1,6 @@
-# AutoResearch at one pinned commit; the image tag is that commit.
+# AutoResearch at the commit that `vibe ws build` passes from workspace.conf.
 FROM node:22-bookworm@sha256:e13726ca604184d7a91fcacab1fc09eefd642dc28e79ac34e85540dd93b78cfb
-ARG COMMIT=21f591298aca78690722686c38984ac2b7d6f7e6
+ARG COMMIT
 ARG BUN_VERSION=1.3.13
 ARG CLAUDE_VERSION=2.1.325
 ARG PIP_CUTOFF=2026-11-15
