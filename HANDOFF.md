@@ -14,7 +14,7 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/_places/vast` and `tests/ws-place-vast.bats` (5 tests, stub `vastai`, `ssh`, `rsync`). The commit body of `feat(workspaces): add the vast place script` holds the reasons.
+Milestone 1 is done: `workspaces/_places/vast` and `tests/ws-place-vast.bats` (6 tests, stub `vastai`, `ssh`, `rsync`). The commit body of `feat(workspaces): add the vast place script` holds the reasons.
 
 ## Next action
 
@@ -32,7 +32,8 @@ Facts for the recipe, read in the `vastai` 1.11.0 source, not run:
 - `vastai` exits 0 on an HTTP error. The script reads the JSON instead.
 - `vastai copy` ignores the exit code of its `rsync`. The script copies with `rsync` over ssh, so the image needs `rsync`.
 - The account needs an ssh key (`vastai create ssh-key`) and an API key (`vastai set api-key`). The script passes neither.
-- Settings in `~/.config/vibe/workspaces/<name>.env`: `VAST_QUERY` (default `num_gpus=1 cpu_arch=amd64`), `VAST_DISK` (GB, default 50).
+- Settings in `~/.config/vibe/workspaces/<name>.env`: `VAST_QUERY` (default `num_gpus=1 cpu_arch=amd64`), `VAST_DISK` (GB, default 50), `VAST_WAIT` (seconds to `running`, default 1200).
+- Only the keys named in `secrets` of `workspace.conf` reach the instance. The `VAST_*` settings stay on turing.
 - `url` binds the tunnel to `tailscale ip -4` on the first port. The same port in use on turing fails the tunnel.
 - `/ws/in` comes from `$WS_STATE/in`. The contract names no source; `ws-surface` must write it there.
 - Recovery: `vastai show instances` lists a leaked instance by its label, the instance name.
