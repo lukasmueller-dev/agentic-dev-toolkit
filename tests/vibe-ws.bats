@@ -161,7 +161,8 @@ good() {
   done
 }
 
-# stubs — the real turing place with stub docker, tailscale and gpu-queue in $S (logs, containers/).
+# stubs — the real turing place with stub docker and tailscale in $S (logs, containers/), and $VIBE in a
+# toolkit copy $T whose bin/gpu-queue is a stub: vibe calls its own, never one on PATH.
 # $S/fail-run, fail-secrets, fail-cp, fail-rm: that docker step fails; $S/slow-cp: a copy out takes 1 s;
 # $S/exit-<script>: its exit; $S/hang-<script>: it sleeps 5 s; $S/hang-cp-<container>: a copy out of it sleeps 30 s;
 # $S/gpu-busy: the lock waits.
@@ -221,14 +222,21 @@ case "$cmd" in
 esac
 STUB
   printf '#!/bin/sh\necho 100.64.0.1\n' >"$S/tailscale"
-  cat >"$S/gpu-queue" <<STUB
+  T="$BATS_TEST_TMPDIR/toolkit"
+  mkdir -p "$T/bin"
+  for f in "$REPO_ROOT"/*; do
+    if [ "${f##*/}" != bin ]; then ln -s "$f" "$T/"; fi
+  done
+  cp "$REPO_ROOT/bin/vibe" "$T/bin/vibe"
+  VIBE="$T/bin/vibe"
+  cat >"$T/bin/gpu-queue" <<STUB
 #!/bin/sh
 [ "\$1" = lock ] && shift && shift
 while [ -e "$S/gpu-busy" ]; do sleep 0.1; done
 echo \$\$ >"$S/gpu.pid"
 exec "\$@"
 STUB
-  chmod +x "$S/docker" "$S/tailscale" "$S/gpu-queue"
+  chmod +x "$S/docker" "$S/tailscale" "$T/bin/gpu-queue"
   PATH="$S:$PATH"
   export VIBE_WS_POLL=0.1
 }

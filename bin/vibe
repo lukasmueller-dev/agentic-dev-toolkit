@@ -3742,7 +3742,7 @@ cmd_ws_start() {
   fi
   : >"$st/waits"
   set -m
-  nohup gpu-queue lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
+  nohup "$SELF_ROOT/bin/gpu-queue" lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
   pid=$!
   set +m
   echo "$pid" >"$st/holder"
