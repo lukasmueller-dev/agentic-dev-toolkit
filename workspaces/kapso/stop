@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# kapso stop: end the running campaign; /ws/data keeps the checkpoint.
+set -euo pipefail
+exec kapso build --output "${KAPSO_WS_ROOT:-/ws}/data/campaign" --stop

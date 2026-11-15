@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# kapso steer "<text>": a note that every agent session started later reads.
+set -euo pipefail
+exec kapso inbox note "${KAPSO_WS_ROOT:-/ws}/data/campaign" "${1:?steer needs the text}"

@@ -1,0 +1,7 @@
+# Override layered over Kapso's packaged config: no pause for a human, no Codex.
+inbox:
+  enabled: false
+inference:
+  default:
+    cli: claude_code
+    model: claude-opus-5-5

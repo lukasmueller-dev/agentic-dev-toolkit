@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# kapso run: one campaign, /ws/in -> /ws/data/campaign -> /ws/out.
+# KAPSO_WS_ROOT moves /ws for the tests.
+set -euo pipefail
+
+ws=${KAPSO_WS_ROOT:-/ws}
+here=$(cd "$(dirname "$0")" && pwd)
+campaign=$ws/data/campaign
+out=$ws/out
+sol=$campaign/.kapso/solution.json
+
+# Any failure before the verdict still leaves a `result`.
+trap 'rc=$?; [ -s "$out/result" ] || echo "failed: run exit $rc, see tool.log" >"$out/result"' EXIT
+
+arg() { sed -n "s/^$1=//p" "$ws/in/args" | tail -n 1; }
+evaluation=$(arg evaluation)
+experiments=$(arg experiments)
+: "${evaluation:?args needs evaluation=<dir in the repo>}" "${experiments:?args needs experiments=<n>}"
+# 5 minutes of the limit stay free for the bundle.
+minutes=$(awk -v h="${WS_HOURS:?}" 'BEGIN { print h * 60 - 5 }')
+
+set -a
+# shellcheck source=/dev/null
+. "$ws/secrets.env"
+set +a
+
+rc=0
+kapso build --brief "$ws/in/brief.md" --repo "$ws/in/repo" \
+  --evaluation "$ws/in/repo/$evaluation" --output "$campaign" \
+  --budget-experiments "$experiments" --budget-minutes "$minutes" \
+  --config "$here/config.yaml" || rc=$?
+
+kapso report "$campaign" -o "$out/report.md" ||
+  echo "# Kapso report failed, see tool.log" >"$out/report.md"
+[ "$rc" -eq 0 ] || exit "$rc"
+
+# Exit 0 also means "waits on you": the record says which.
+branch=$(jq -r '.branch // empty' "$sol")
+if [ -n "$branch" ]; then
+  git -C "$campaign" bundle create "$out/repo.bundle" "$branch"
+  echo "$branch" >"$out/branch"
+  jq -r '.score' "$sol" >"$out/score"
+fi
+if jq -e '.goal_achieved == true' "$sol" >/dev/null; then
+  echo "done: $branch, score $(jq -r '.score' "$sol")" >"$out/result"
+else
+  echo "failed: goal not achieved ($(jq -r '.stopped_reason // "unknown"' "$sol"))" >"$out/result"
+fi
