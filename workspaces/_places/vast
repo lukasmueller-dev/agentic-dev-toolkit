@@ -209,6 +209,8 @@ cmd_tick() {
     cmd_down
     return
   fi
+  # An up still provisions: its own url and the first pull come after. A stale lock still ends at the limit.
+  if [ -d "$WS_STATE/up.lock" ]; then return 0; fi
   # A network drop or a reboot ends the tunnel master: url starts a new one, up only once.
   if [ -n "${WS_CONF_PORTS:-}" ] && [ -s "$cfg" ]; then (cmd_url >/dev/null) || true; fi
   if [ $((t - $(epoch "$WS_STATE/pulled"))) -ge 600 ]; then cmd_pull; fi

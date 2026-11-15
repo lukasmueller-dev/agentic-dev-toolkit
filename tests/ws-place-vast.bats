@@ -202,7 +202,7 @@ EOF
   [ ! -e "$WS_STATE/id" ]
 }
 
-@test "tick: pulls when pulled is 10 min old; a dead tunnel comes back; destroys past limit" {
+@test "tick: pulls when pulled is 10 min old; a dead tunnel comes back; waits for an up; destroys past limit" {
   "$PLACE" up >/dev/null
   date +%s >"$WS_STATE/pulled"
   run "$PLACE" tick
@@ -213,6 +213,14 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(grep -c -- ' -M ' "$STUBS/ssh.argv")" -eq 2 ]
 
+  mkdir "$WS_STATE/up.lock" # an up that still provisions
+  echo 0 >"$WS_STATE/pulled"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUBS/ssh.argv")" -eq 2 ]
+  [ "$(grep -c 'vast:/ws/data' "$STUBS/rsync.argv")" -eq 0 ]
+  rmdir "$WS_STATE/up.lock"
+
   echo "$(($(date +%s) - 600))" >"$WS_STATE/pulled"
   run "$PLACE" tick
   [ "$status" -eq 0 ]
@@ -220,6 +228,7 @@ EOF
   [ "$(grep -c '^destroy instance' "$STUBS/vastai.argv")" -eq 0 ]
 
   echo "$(($(date +%s) - 1))" >"$WS_STATE/limit"
+  mkdir "$WS_STATE/up.lock" # a stale lock never keeps the instance past its limit
   run "$PLACE" tick
   [ "$status" -eq 0 ]
   grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
