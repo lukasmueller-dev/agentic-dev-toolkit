@@ -1649,7 +1649,7 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=) and prompt.md; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=), prompt.md and in/; echoes it.
 # A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
@@ -1664,6 +1664,7 @@ follow_dir() {
     if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
+  if [[ -d "$1/in" ]]; then cp -R "$1/in" "$tmp/in"; fi
   echo "$tmp"
 }
 
@@ -1718,6 +1719,8 @@ cmd_queue_answer() {
     fi
     task_append "$tmp/prompt.md" "Earlier try: git diff $(jstate "$d" start)..$side. Do not merge it." "Answer: $text"
   fi
+  # A tool run with a result: the follow-up closes that run again (tool_job), no new run.
+  if [[ -s "$d/out/result" ]]; then cp -R "$d/out" "$d/tool-exit" "$d/tool.log" "$tmp/"; fi
   n="$(queue_add "$tmp")"
   cmd_queue_archive "$d" >/dev/null
   echo "queued ${n##*/}; archived ${d##*/}"
@@ -1735,7 +1738,8 @@ cmd_queue_fix() {
   d="${d%/pr}"
   branch_idle "$d"
   tmp="$(follow_dir "$d")"
-  grep -Ev '^(item|event)=' "$tmp/job" >"$tmp/job.new" || true
+  # A fix on a tool job's PR is agent work on its branch: no tool run.
+  grep -Ev '^(item|event|tool)=' "$tmp/job" >"$tmp/job.new" || true
   if [[ -n "${VIBE_EVENT:-}" ]]; then echo "event=$VIBE_EVENT" >>"$tmp/job.new"; fi
   mv -f "$tmp/job.new" "$tmp/job"
   task_append "$tmp/prompt.md" "Fix on $url (the task above is done; do only this): $*"
@@ -1952,9 +1956,10 @@ cmd_queue_gpu() {
 }
 
 # follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
-# KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
+# KEY=value lines (they replace FROM's), no tool=: a review round or a GPU follow-up runs no tool.
+# Last, so the runner skips TO until it is whole.
 follow_job() {
-  local from="$1" to="$2" l keys="follow|parent"
+  local from="$1" to="$2" l keys="follow|parent|tool"
   shift 2
   for l in "$@"; do keys+="|${l%%=*}"; done
   {

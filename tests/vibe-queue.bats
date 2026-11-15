@@ -112,6 +112,11 @@ case "\$mode" in
     ;;
   close)
     printf '%s\n' "\$prompt" >"$STUBS/close-prompt"
+    if [ -f "$STUBS/close-blocked" ]; then
+      printf '## Next action\n\nName the metric.\n' >HANDOFF.md && git add HANDOFF.md && git commit -q -m "docs: handoff"
+      echo "blocked: no metric command" >"\$VIBE_JOB_DIR/result"
+      exit 0
+    fi
     if [ -d "\$VIBE_JOB_DIR/out/files" ]; then
       echo "# One table" >"\$VIBE_JOB_DIR/report.md"
     else
@@ -2668,4 +2673,47 @@ toolwait() {
   run git -C "$o" rev-parse -q --verify refs/heads/tool-z
   [ "$status" -ne 0 ]
   [ ! -e "$STUBS/claude.log" ]
+}
+
+@test "tool: retry runs the tool again with in/; fix and a GPU follow-up run no tool" {
+  local r n
+  r="$(make_repo proj)"
+  tool stub branch
+  touch "$STUBS/tool-fail"
+  tooljob 01-a "$r" tool-x
+  drain
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  rm "$STUBS/tool-fail" "$STUBS/brief.md"
+  "$VIBE" queue retry 01-a >/dev/null
+  drain
+  n="$(ls "$Q")"
+  [ "$(cat "$Q/$n/status")" = "done" ]
+  [ "$(cat "$STUBS/brief.md")" = "Lower the loss." ]
+  [ "$(grep -c '^run' "$STUBS/tool.log")" -eq 2 ]
+  "$VIBE" queue fix "$(cat "$Q/$n/pr")" "rename tool.txt" >/dev/null
+  GPUQ_EXIT=0 "$VIBE" queue follow "$Q/$n" >/dev/null
+  [ "$(ls "$Q" | wc -l)" -eq 3 ]
+  [ "$(grep -l '^tool=' "$Q"/*/job)" = "$Q/$n/job" ]
+  drain
+  [ "$(grep -c '^run' "$STUBS/tool.log")" -eq 2 ]
+  for f in "$Q"/*/status; do [ "$(cat "$f")" = "done" ]; done
+}
+
+@test "tool: answer to a blocked closing session closes the same run again; no new run" {
+  local r n
+  r="$(make_repo proj)"
+  tool stub branch
+  touch "$STUBS/close-blocked"
+  tooljob 01-a "$r" tool-x
+  drain
+  [ "$(cat "$Q/01-a/status")" = blocked ]
+  rm "$STUBS/close-blocked"
+  "$VIBE" queue answer 01-a "use make eval" >/dev/null
+  n="$(ls "$Q")"
+  [ "$(cat "$Q/$n/out/score")" = 0.91 ]
+  drain
+  [ "$(cat "$Q/$n/status")" = "done" ]
+  [ "$(grep -c '^run' "$STUBS/tool.log")" -eq 1 ]
+  [[ "$(cat "$r/.claude/worktrees/tool-x/HANDOFF.md")" == *"Answer: use make eval"* ]] || false
+  [ "$(git -C "$r/.claude/worktrees/tool-x" log --format=%s | grep -c 'feat: tool change')" -eq 1 ]
 }
