@@ -14,7 +14,7 @@
 
 ## State
 
-Milestones 1 and 2 are done: `workspaces/hypothesisloop/`, `tests/ws-hypothesisloop.bats` (12 tests, green) and the recipe `docs/workspaces/hypothesisloop.md`. Reasons: the commit bodies.
+Milestones 1 and 2 are done: `workspaces/hypothesisloop/`, `tests/ws-hypothesisloop.bats` (13 tests, green) and the recipe `docs/workspaces/hypothesisloop.md`. Reasons: the commit bodies.
 
 ## Next action
 
