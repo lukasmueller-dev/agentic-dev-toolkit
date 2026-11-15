@@ -158,6 +158,15 @@ EOF
   grep -q "^ARG COMMIT=$(sed -n 's/^commit=//p' "$WSDIR/workspace.conf")$" "$WSDIR/Dockerfile"
 }
 
+# shellcheck disable=SC2016
+@test "the Dockerfile pins the base image, uv, claude and bun" {
+  grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$WSDIR/Dockerfile"
+  grep -Eq '^COPY --from=[^ ]+@sha256:[0-9a-f]{64} ' "$WSDIR/Dockerfile"
+  grep -Eq '^ARG CLAUDE_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$WSDIR/Dockerfile"
+  grep -Eq '^ARG BUN_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$WSDIR/Dockerfile"
+  grep -q 'claude-code@${CLAUDE_VERSION}' "$WSDIR/Dockerfile"
+}
+
 @test "nothing in the workspace names run_pending_forge" {
   run grep -rq run_pending_forge "$WSDIR"
   [ "$status" -eq 1 ]

@@ -18,7 +18,7 @@ Milestone 1 is done: `workspaces/autoresearch/` (conf, Dockerfile, `run`, `stop`
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it: the secrets file keys, the cost of the critic (other providers, paid per token), `steer` exits 3 and why, the unbuilt image.
+The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it: the secrets file keys, the cost of the critic (other providers, paid per token), `steer` exits 3 and why, the unbuilt image, and the ralph-loop plugin that the image takes unpinned (a rebuild of the same tag can differ).
 
 ## Blockers
 
