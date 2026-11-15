@@ -22,13 +22,14 @@ rm -f "$stopflag"
 # stop reads this pid: run's own, so stop waits for the result, not only for the supervisor.
 echo $$ >"$pidfile"
 
+# The places accept a whole number above 0 only.
 case "$hours" in
-  '' | *[!0-9.]* | *.*.* | .)
-    echo "failed: WS_HOURS is not a number: $hours" >"$out/result"
+  '' | *[!0-9]*)
+    echo "failed: WS_HOURS is not a whole number: $hours" >"$out/result"
     exit 0
     ;;
 esac
-limit="${AR_LIMIT_SECONDS:-$(awk -v h="$hours" 'BEGIN { printf "%d", h * 3600 }')}"
+limit="${AR_LIMIT_SECONDS:-$((10#$hours * 3600))}"
 
 # The secrets file is KEY=VALUE data: read it, never source it.
 if [ -f "$ws/secrets.env" ]; then

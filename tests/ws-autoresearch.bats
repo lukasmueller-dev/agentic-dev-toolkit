@@ -178,15 +178,10 @@ EOF2
   [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
 }
 
-@test "a decimal WS_HOURS is passed on; a non-number writes failed: and starts nothing" {
+@test "a WS_HOURS that is no whole number writes failed: and starts nothing" {
   WS_HOURS=1.5 run "$WSDIR/run"
   [ "$status" -eq 0 ]
-  [ "$(sed -n 4p "$TMPDIR/stub.log")" = "1.5h" ]
-  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
-  rm -f "$WS_ROOT/out/result" "$TMPDIR/stub.log"
-  WS_HOURS=abc run "$WSDIR/run"
-  [ "$status" -eq 0 ]
-  [ "$(cat "$WS_ROOT/out/result")" = "failed: WS_HOURS is not a number: abc" ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: WS_HOURS is not a whole number: 1.5" ]
   [ ! -e "$TMPDIR/stub.log" ]
 }
 
