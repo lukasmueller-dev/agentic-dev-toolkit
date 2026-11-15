@@ -23,7 +23,9 @@ set +a
 # --auth true stays: without it the API takes shell input from anyone who reaches the port.
 if ! ds --daemon-only --no-browser --host 0.0.0.0 --port "$PORT" --auth true \
   --runner claude --skip-update-check --home "$DATA" >"$DATA/start.log" 2>&1; then
-  tail -n 20 "$DATA/start.log" >&2
+  ds --stop --home "$DATA" || true
+  # The launch card holds the login token (16 hex digits): redact it.
+  tail -n 20 "$DATA/start.log" | sed -E 's/[0-9a-fA-F]{16,}/<redacted>/g' >&2
   exit 1
 fi
 

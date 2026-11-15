@@ -7,7 +7,7 @@
 load helper
 
 WSD="$REPO_ROOT/workspaces/deepscientist"
-TOKEN="tok-0123456789abcdef"
+TOKEN="0123456789abcdef"
 
 setup() {
   export WS_ROOT="$BATS_TEST_TMPDIR/ws"
@@ -20,6 +20,16 @@ setup() {
   cat >"$STUBS/ds" <<EOF
 #!/usr/bin/env bash
 echo "ds \$* | oauth=\${CLAUDE_CODE_OAUTH_TOKEN:-}" >>"$STUBS/ds.log"
+case "\$*" in *--stop*) exit 0 ;; esac
+if [ -f "$STUBS/ds-fail" ]; then
+  case "\$*" in
+    *--daemon-only*)
+      echo "Auth token: $TOKEN" >&2
+      echo "    $TOKEN    "
+      exit 1
+      ;;
+  esac
+fi
 home=""
 while [ \$# -gt 0 ]; do
   if [ "\$1" = --home ]; then home="\$2"; fi
@@ -106,6 +116,16 @@ EOF
   run "$WSD/start"
   [ "$status" -eq 1 ]
   grep -q -- "--stop" "$STUBS/ds.log"
+  [ ! -e "$WS_ROOT/data/.ws-token" ]
+}
+
+@test "start stops the daemon, hides the token and fails when ds exits non-zero" {
+  touch "$STUBS/ds-fail"
+  run "$WSD/start"
+  [ "$status" -eq 1 ]
+  grep -q -- "--stop --home $WS_ROOT/data" "$STUBS/ds.log"
+  [[ "$output" == *"Auth token"* ]] || false
+  [[ "$output" != *"$TOKEN"* ]] || false
   [ ! -e "$WS_ROOT/data/.ws-token" ]
 }
 
