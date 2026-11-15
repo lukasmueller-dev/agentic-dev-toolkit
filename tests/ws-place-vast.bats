@@ -49,7 +49,7 @@ EOF
   export WS_CONF_HOURS=2 WS_CONF_SECRETS=DEMO_TOKEN WS_CONF_PORTS=8080,8081
   mkdir -p "$WS_DIR" "$HOME/.config/vibe/workspaces"
   printf '#!/bin/sh\necho up\n' >"$WS_DIR/status"
-  printf 'DEMO_TOKEN=%s\nVAST_QUERY=gpu_name=RTX_4090\n' "$SECRET" >"$HOME/.config/vibe/workspaces/demo.env"
+  printf 'DEMO_TOKEN=%s\nVAST_QUERY=gpu_name=RTX_4090\nVAST_WAIT=2\n' "$SECRET" >"$HOME/.config/vibe/workspaces/demo.env"
   chmod 600 "$HOME/.config/vibe/workspaces/demo.env"
 }
 
@@ -85,7 +85,7 @@ EOF
 @test "up: a status that never reaches running ends in a destroy" {
   VAST_STATUS=loading run "$PLACE" up
   [ "$status" -ne 0 ]
-  [ "$(grep -c '^show instance 4242' "$STUBS/vastai.argv")" -gt 1 ]
+  [[ "$output" == *"not running after 2 s"* ]] || false
   grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
   [ ! -e "$WS_STATE/id" ]
 

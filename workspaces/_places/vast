@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # workspaces/_places/vast up|exec|pull|url|down|tick — the place contract on a Vast.ai datacenter host.
-# Env: WS_INSTANCE, WS_STATE, WS_DIR, WS_CONF_<KEY>. VAST_QUERY, VAST_DISK: the workspace env file.
+# Env: WS_INSTANCE, WS_STATE, WS_DIR, WS_CONF_<KEY>. VAST_QUERY, VAST_DISK, VAST_WAIT: the workspace env file.
 # Trap: vastai exits 0 on an HTTP error, so every call is judged by its JSON.
 set -euo pipefail
 
@@ -15,7 +15,6 @@ name="${name##*/}"
 env_file="$HOME/.config/vibe/workspaces/$name.env"
 cfg="$WS_STATE/ssh_config"
 rsh="ssh -F '$cfg'"
-wait_polls=120 # 10 s each: a big image on a fresh host
 
 # setting KEY DEFAULT — KEY from the workspace env file, else DEFAULT.
 setting() {
@@ -70,11 +69,13 @@ ssh_config() {
     "${hp% *}" "${hp##* }" "$WS_STATE/known_hosts" >"$cfg"
 }
 
-# wait_ready ID — wait for `running` and an ssh answer; fail at once on a state that never runs.
+# wait_ready ID — wait VAST_WAIT s for `running` and an ssh answer; fail at once on a state that never runs.
 wait_ready() {
-  local json st n=0
-  while [ "$n" -lt "$wait_polls" ]; do
-    n=$((n + 1))
+  local json st wait end
+  wait="$(setting VAST_WAIT 1200)"
+  case "$wait" in '' | *[!0-9]*) wait=1200 ;; esac
+  end=$(($(date +%s) + 10#$wait))
+  while :; do
     json="$(vastai show instance "$1" --raw)" || json=""
     st="$(printf '%s' "$json" | jq -r '.actual_status // .status // empty' 2>/dev/null)" || st=""
     case "$st" in
@@ -84,9 +85,10 @@ wait_ready() {
         return 1
         ;;
     esac
+    if [ "$(date +%s)" -ge "$end" ]; then break; fi
     sleep 10
   done
-  echo "vast: instance $1 is not running after $((wait_polls * 10)) s" >&2
+  echo "vast: instance $1 is not running after $wait s" >&2
   return 1
 }
 
