@@ -2,6 +2,9 @@
 # run: AutoResearch on /ws/in/brief.md; the result paths go to /ws/out/files.
 set -euo pipefail
 
+# A rented place starts run over ssh, which may not carry the image ENV: claude needs IS_SANDBOX as root, python3 needs the venv.
+export IS_SANDBOX=1 PATH="/opt/venv/bin:$PATH"
+
 ws="${WS_ROOT:-/ws}"
 rt="${AR_RUNTIME:-/opt/autoresearch/ar-runtime}"
 proj="$ws/data/project"

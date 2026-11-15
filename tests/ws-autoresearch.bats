@@ -31,7 +31,7 @@ EOF2
   cat >"$AR_RUNTIME/scripts/ar-supervisor.sh" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" "$PWD" "$FAKE_KEY" >"$TMPDIR/stub.log"
-printf '%s\n' "${URL-}" "${KEY2-}" "${KEY3-}" "$(cat "$AR_RUNTIME/.claude/settings.local.json" 2>/dev/null || echo missing)" >"$TMPDIR/stub.env"
+printf '%s\n' "${URL-}" "${KEY2-}" "${KEY3-}" "$(cat "$AR_RUNTIME/.claude/settings.local.json" 2>/dev/null || echo missing)" "${IS_SANDBOX-}" "$PATH" >"$TMPDIR/stub.env"
 mkdir -p "$2/results"
 for f in results/summary.md review.md critic.md blind_review.md state.md decisions.log plan.md; do
   echo "$f" >"$2/$f"
@@ -190,6 +190,14 @@ EOF2
   run "$WSDIR/run"
   [ "$status" -ne 0 ]
   [ "$(cut -c1-20 "$WS_ROOT/out/result")" = "failed: run aborted," ]
+}
+
+@test "run sets IS_SANDBOX and the venv PATH itself: a place may start it with a bare environment" {
+  run env -i PATH="$PATH" TMPDIR="$TMPDIR" WS_ROOT="$WS_ROOT" AR_RUNTIME="$AR_RUNTIME" WS_HOURS=1 "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 5p "$TMPDIR/stub.env")" = "1" ]
+  [ "$(sed -n 6p "$TMPDIR/stub.env" | cut -c1-14)" = "/opt/venv/bin:" ]
+  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
 }
 
 @test "run writes the Claude Code settings before the supervisor starts, and stops if that fails" {
