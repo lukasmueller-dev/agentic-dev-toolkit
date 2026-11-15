@@ -38,6 +38,12 @@ if [ -f "$ws/secrets.env" ]; then
   done <"$ws/secrets.env"
 fi
 
+# The tool's MCP preflight needs the Claude Code settings that render_env.py writes from these env values.
+if ! (cd "$rt/.." && python3 scripts/render_env.py); then
+  echo "failed: scripts/render_env.py did not write the Claude Code settings" >"$out/result"
+  exit 0
+fi
+
 # The supervisor changes directory: both paths must be absolute.
 cd "$rt"
 deadline=$(($(date +%s) + limit))

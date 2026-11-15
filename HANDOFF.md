@@ -18,7 +18,15 @@ Milestone 1 is done: `workspaces/autoresearch/` (conf, Dockerfile, `run`, `stop`
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it: the secrets file keys, the cost of the critic (other providers, paid per token), `steer` exits 3 and why, the unbuilt image, and the ralph-loop plugin that the image takes unpinned (a rebuild of the same tag can differ).
+The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it:
+
+- The secrets file keys, and that any other `KEY=VALUE` line in it reaches the tool.
+- The cost of the critic (other providers, paid per token).
+- `steer` exits 3, and why.
+- The image is unbuilt. It takes the apt packages and the ralph-loop plugin unpinned. The Python packages are fixed by `PIP_CUTOFF`.
+- `run` calls `scripts/render_env.py` after it exports the secrets. The tool's MCP preflight fails without that file.
+- With the default config the `agent` role is `deepseek-v4-pro`. For a Claude token, set `AR_MODEL_AGENT=claude-opus` in the secrets file (unchecked).
+- `stop` exits 1 when `run` has not written the result within 120 s.
 
 ## Blockers
 
