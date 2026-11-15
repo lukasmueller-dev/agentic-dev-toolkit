@@ -3480,6 +3480,10 @@ ws_place() {
       awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$WS_ROOT/$n/workspace.conf"
     )
     export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_CONF_HOURS:-}"
+    # WS_SECS set: timeout(1) ends the call after WS_SECS, exit 124; no timeout(1) means no bound.
+    if [[ -n "${WS_SECS:-}" ]] && t="$(command -v timeout || command -v gtimeout)"; then
+      exec "$t" -k 10 "$WS_SECS" "$WS_ROOT/_places/$p" "$@"
+    fi
     exec "$WS_ROOT/_places/$p" "$@"
   )
 }
@@ -3500,12 +3504,15 @@ ws_secrets() {
   [[ -z "$miss" ]] || die "$f does not set:$miss"
 }
 
-# ws_up INSTANCE — place up, the start script, the url; a failed start brings the place down again.
+# ws_up INSTANCE — place up, the start script (120 s at most, VIBE_WS_START_SECS), the url;
+# a failed start brings the place down again.
 ws_up() {
-  local st="$WS_STATES/$1" url=""
+  local st="$WS_STATES/$1" url="" secs="${VIBE_WS_START_SECS:-120}" r=0
   ws_place "$1" up || die "up of $1 failed"
-  if ! ws_place "$1" exec start; then
+  WS_SECS="$secs" ws_place "$1" exec start || r=$?
+  if ((r)); then
     ws_place "$1" down >&2 || true
+    if ((r == 124)); then die "start of $1 ran past $secs s — it is down again"; fi
     die "start of $1 failed — it is down again"
   fi
   if [[ -n "$(jget "$WS_ROOT/$(ws_name "$1")/workspace.conf" ports)" ]]; then

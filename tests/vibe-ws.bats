@@ -163,7 +163,7 @@ good() {
 
 # stubs — the real turing place with stub docker, tailscale and gpu-queue in $S (logs, containers/).
 # $S/fail-run, fail-secrets, fail-cp, fail-rm: that docker step fails; $S/slow-cp: a copy out takes 1 s;
-# $S/exit-<script>: its exit; $S/gpu-busy: the lock waits.
+# $S/exit-<script>: its exit; $S/hang-<script>: it sleeps 5 s; $S/gpu-busy: the lock waits.
 stubs() {
   S="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$S/containers" "$HOME/.config/vibe/workspaces"
@@ -199,7 +199,8 @@ case "$cmd" in
     fi
     shift 5
     echo "$*" >>"$S/exec.log"
-    exit "$(cat "$S/exit-${1%% *}" 2>/dev/null || echo 0)"
+    [ ! -e "$S/hang-$1" ] || exec sleep 5
+    exit "$(cat "$S/exit-$1" 2>/dev/null || echo 0)"
     ;;
   cp)
     case "$1" in
@@ -507,4 +508,23 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ ! -e "$S/containers/ws-svc" ]
   [ ! -e "$STATES/svc/id" ]
   within5 dead "$pid"
+}
+
+@test "ws start: a start script past its time fails the start, leaves no container and frees the GPU lock" {
+  { command -v timeout || command -v gtimeout; } >/dev/null 2>&1 || skip "no timeout(1)"
+  stubs
+  export VIBE_WS_START_SECS=1
+  good svc service
+  good gsv service gpu=yes
+  secrets svc
+  secrets gsv
+  touch "$S/hang-start"
+  run "$VIBE" ws start svc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"start of svc ran past 1 s — it is down again"* ]] || false
+  run "$VIBE" ws start gsv
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"start of gsv ran past 1 s — it is down again"* ]] || false
+  [ -z "$(ls "$S/containers")" ]
+  within5 dead "$(cat "$S/gpu.pid")"
 }
