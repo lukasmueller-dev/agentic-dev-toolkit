@@ -196,11 +196,11 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
 `/enqueue` makes one: route Tool run. Contract: [`docs/workspaces.md`](workspaces.md).
 
-- Job file: `tool=<name>`, `place=` (default: the first of its `places`), `hours=` (default: its `hours`). Job dir: `in/brief.md`, `in/args`.
+- Keys, input and output files: [Queue job](workspaces.md#queue-job). `place=` defaults to the first of its `places`, `hours=` to its `hours`.
 - At start the runner checks the tool's conf, its secrets, `kind=run`, the place and `hours`. A fail ends the job `failed` with the reason, before the worktree.
 - The run: instance `<tool>-<id>`, `/ws/in/repo` a clone of the job's worktree. `hours=` limits it; `timeout=` limits the closing session. `gpu=yes` on turing: under the `gpu-queue` lock.
 - One `gpu=yes` tool job on turing runs its tool at a time. The next one stays `queued` and takes no slot.
-- After the run: `out/` (the copy of `/ws/out`, links removed), `tool.log`, `tool-exit`. No `out/result` → `failed`.
+- After the run the runner removes each link from `out/`. No `out/result` → `failed`.
 - `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
 - `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
 - The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command. Review, gate and PR as for any job.
@@ -263,7 +263,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `tool=` `place=` `hours=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
@@ -274,7 +274,7 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
-| `queue/<id>/in/`, `out/`, `tool.log`, `tool-exit`, `close.md` | [tool job](#tool-jobs): its input, the copy of `/ws/out`, the run's log and exit code, the closing prompt |
+| `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
 | `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
