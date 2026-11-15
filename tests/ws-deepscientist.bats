@@ -12,6 +12,8 @@ TOKEN="0123456789abcdef"
 setup() {
   export WS_ROOT="$BATS_TEST_TMPDIR/ws"
   export DS_SEED="$BATS_TEST_TMPDIR/seed"
+  export TMPDIR="$BATS_TEST_TMPDIR/tmp"
+  mkdir -p "$TMPDIR"
   STUBS="$BATS_TEST_TMPDIR/stubs"
   mkdir -p "$WS_ROOT/data" "$WS_ROOT/out" "$DS_SEED/runtime/python-env" "$DS_SEED/runtime/tools" "$STUBS"
   echo "CLAUDE_CODE_OAUTH_TOKEN=oauth-secret" >"$WS_ROOT/secrets.env"
@@ -35,7 +37,8 @@ while [ \$# -gt 0 ]; do
   if [ "\$1" = --home ]; then home="\$2"; fi
   shift
 done
-mkdir -p "\$home/runtime"
+mkdir -p "\$home/runtime" "\$home/logs"
+echo "DeepScientist auth token: $TOKEN" >>"\$home/logs/daemon.log"
 if [ -f "$STUBS/no-token" ]; then
   echo '{}' >"\$home/runtime/daemon.json"
 else
@@ -154,6 +157,31 @@ EOF
   [[ "$output" == *"Auth token"* ]] || false
   [[ "$output" != *"$TOKEN"* ]] || false
   [ ! -e "$WS_ROOT/data/.ws-token" ]
+}
+
+@test "start keeps the daemon log, which holds the token, outside /ws/data" {
+  run "$WSD/start"
+  [ "$status" -eq 0 ]
+  [ -L "$WS_ROOT/data/logs" ]
+  grep -q "$TOKEN" "$TMPDIR/ds-logs/daemon.log"
+  [ "$(cd "$WS_ROOT/data/logs" && pwd -P)" = "$(cd "$TMPDIR/ds-logs" && pwd -P)" ]
+}
+
+@test "start replaces a real logs folder from an older start" {
+  mkdir -p "$WS_ROOT/data/logs"
+  echo "DeepScientist auth token: oldtoken" >"$WS_ROOT/data/logs/daemon.log"
+  run "$WSD/start"
+  [ "$status" -eq 0 ]
+  [ -L "$WS_ROOT/data/logs" ]
+  run grep -R oldtoken "$WS_ROOT" "$TMPDIR"
+  [ "$status" -eq 1 ]
+}
+
+@test "run and steer exit 3: the verb is not supported" {
+  for v in run steer; do
+    run "$WSD/$v" "text"
+    [ "$status" -eq 3 ]
+  done
 }
 
 @test "start fails with no secrets file" {

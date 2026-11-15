@@ -24,6 +24,15 @@ for e in "$SEED"/runtime/*; do
   fi
 done
 
+# The daemon prints the login token into $DATA/logs/daemon.log: keep that folder outside /ws/data, which `pull` copies.
+# A real folder there holds logs from an older start, with their tokens: it goes.
+LOGS="${TMPDIR:-/tmp}/ds-logs"
+mkdir -p "$LOGS"
+if [ ! -L "$DATA/logs" ]; then
+  rm -rf "$DATA/logs"
+fi
+ln -sfn "$LOGS" "$DATA/logs"
+
 if [ ! -r "$ROOT/secrets.env" ]; then
   echo "start: $ROOT/secrets.env is missing" >&2
   exit 1

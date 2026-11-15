@@ -23,14 +23,19 @@ The third open milestone of `SPEC.md`, the end action `delete`: move each decisi
 Decisions for `pr.md`:
 
 - `--auth true` is fixed: without it the API takes shell input from anyone who reaches the port.
-- The login token goes to `/ws/data/.ws-token` and `runtime/daemon.json` (mode 600); the launch-card log stays outside `/ws/data`; the page list shows the link without the token.
+- The login token goes to `/ws/data/.ws-token` and `runtime/daemon.json` (mode 600); the page list shows the link without the token.
+- The launch-card log is a temp file. The daemon prints the token into `logs/daemon.log`, so `start` links `/ws/data/logs` to `${TMPDIR:-/tmp}/ds-logs`: `pull` skips it. A place that follows links copies it.
+- `run` and `steer` are scripts that `exit 3`: the runpod place maps a missing script to 3, the vast place does not (127).
 - The image build runs `ds init`; `runtime/` lives in `/opt/ds-seed` and each `start` links it into `/ws/data/runtime`.
 - `start` sets `PATH` and `IS_SANDBOX=1` itself, because an ssh exec channel may not carry the image `ENV`.
-- The recipe names `vibe ws start|stop` and the place verbs `exec status` and `url` with `WS_INSTANCE`, `WS_STATE`, `WS_DIR`. Check them against `ws-surface` when it lands: `WS_DIR` as the workspace folder is a guess.
+- The recipe names `vibe ws start|stop` and the place verbs `exec status` and `url` with `WS_INSTANCE`, `WS_STATE`, `WS_DIR`. Check them against `ws-surface` when it lands: its docs list no `vibe ws start|stop` yet. `WS_DIR` is the workspace folder (the vast place copies it to `/ws/scripts`).
 
 ## Blockers
 
-None. One open question for the user: `workspace.conf` has `ports=20999,21000`, as `SPEC.md` decides. Nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve on it. Drop it, or keep it? The recipe lists it under "What breaks it".
+None. Two open questions for the user, both fixed by `SPEC.md`:
+
+- `ports=20999,21000`: nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve `/ws` there, secrets included. Drop it (conf, `tests/ws-deepscientist.bats`, last recipe bullet), or keep it?
+- `.ws-token` duplicates `runtime/daemon.json`. `status` could read `daemon.json` and `start` drop the file and its test lines (about 5 lines). Keep the file, or drop it?
 
 ## Gotchas (unpromoted)
 
