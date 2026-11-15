@@ -38,6 +38,9 @@
 #   vibe feature add <file>         register a feature: branches in several repos that merge together
 #   vibe feature ready <slug>       the human test passed: the batch waits for the merges
 #   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
+#   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
+#                                   a bad workspace.conf prints why, exit 1
+#   vibe ws status [<instance>]     each tool instance: up, past limit or down, from its state files
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -47,7 +50,7 @@
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
 #   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines
 #
-# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
+# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
 set -euo pipefail
 
 script_dir() {
@@ -357,7 +360,7 @@ role_gate() {
   [[ "$role" != server ]] || return 0
   [[ -n "$host" ]] || die "no server configured: echo 'client <host>' > ~/.config/vibe/role"
   case "$1 ${2:-}" in
-    "queue status" | "queue report" | "job list") ;;
+    "queue status" | "queue report" | "job list" | "ws list" | "ws status") ;;
     *) die "the queue runs on the server — ssh $host" ;;
   esac
   printf -v cmd ' %q' "$@"
@@ -3318,6 +3321,131 @@ cmd_job() {
   esac
 }
 
+# --- ws: outside research tools, one folder each under workspaces/ (docs/workspaces.md) ---
+
+WS_ROOT="${VIBE_WORKSPACES:-$SELF_ROOT/workspaces}"
+WS_STATES="$QROOT/workspaces"
+
+# ws_names — the workspaces: each directory under WS_ROOT whose name does not start with _.
+ws_names() {
+  local d
+  for d in "$WS_ROOT"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    d="${d##*/}"
+    case "$d" in _*) continue ;; esac
+    echo "$d"
+  done
+}
+
+# ws_check DIR — "ok", or the first reason DIR/workspace.conf breaks the contract.
+ws_check() {
+  [[ -f "$1/workspace.conf" ]] || {
+    echo "no workspace.conf"
+    return 0
+  }
+  awk '
+    function bad(m) { print m; done = 1; exit }
+    function each(v, sep, re, what,  a, n, j) {
+      n = split(v, a, sep)
+      for (j = 1; j <= n; j++) if (a[j] !~ re) bad(what " " a[j])
+    }
+    /^[ \t]*(#|$)/ { next }
+    {
+      i = index($0, "=")
+      if (i < 2) bad("not key=value: " $0)
+      k = substr($0, 1, i - 1)
+      v = substr($0, i + 1)
+      if (k in seen) bad("twice: " k)
+      seen[k] = v
+      if (k == "kind") { if (v != "service" && v != "run") bad("kind=" v ": service or run") }
+      else if (k == "runs") { if (v != "container" && v != "host") bad("runs=" v ": container or host") }
+      else if (k == "gpu") { if (v != "yes" && v != "no") bad("gpu=" v ": yes or no") }
+      else if (k == "places") each(v, ",", "^(turing|runpod|vast)$", "unknown place")
+      else if (k == "hours") { if (v !~ /^[0-9]+$/ || v + 0 == 0) bad("hours=" v ": a whole number above 0") }
+      else if (k == "commit") { if (length(v) != 40 || v ~ /[^0-9a-f]/) bad("commit=" v ": 40 hex") }
+      else if (k == "secrets") each(v, " ", "^[A-Z_][A-Z0-9_]*$", "bad env name")
+      else if (k == "ports") each(v, ",", "^[0-9]+$", "bad port")
+      else if (k == "result") { if (v != "branch" && v != "folder") bad("result=" v ": branch or folder") }
+      else if (k != "label" && k != "role" && k != "image") bad("unknown key " k)
+    }
+    END {
+      if (done) exit
+      if (seen["kind"] == "") bad("no kind")
+      if (seen["places"] == "") bad("no places")
+      if (seen["kind"] == "service" && "result" in seen) bad("result on a service")
+      if (seen["kind"] == "run" && seen["result"] == "") bad("kind=run needs result")
+      print "ok"
+    }' "$1/workspace.conf"
+}
+
+# vibe ws list — one line per workspace: name, kind, gpu, places, label: role; a bad conf prints why, exit 1.
+cmd_ws_list() {
+  local n c f l g bad=0
+  (($# == 0)) || die "usage: vibe ws list"
+  [[ -d "$WS_ROOT" ]] || die "no folder $WS_ROOT"
+  while IFS= read -r n; do
+    c="$(ws_check "$WS_ROOT/$n")"
+    [[ "$(slug "$n")" == "$n" ]] || c="bad name: lower case, digits, . _ -"
+    if [[ "$c" != ok ]]; then
+      printf '%-16s bad conf: %s\n' "$n" "$c"
+      bad=1
+      continue
+    fi
+    f="$WS_ROOT/$n/workspace.conf"
+    l="$(jget "$f" label)" g="$(jget "$f" gpu)"
+    printf '%-16s %-7s gpu=%-3s %-18s %s\n' "$n" "$(jget "$f" kind)" "${g:-no}" "$(jget "$f" places)" "${l:+$l: }$(jget "$f" role)"
+  done < <(ws_names)
+  return "$bad"
+}
+
+# ws_state INSTANCE-DIR — down with no id file, past limit when limit has passed, else up.
+ws_state() {
+  local lim
+  lim="$(jstate "$1" limit)"
+  if [[ ! -s "$1/id" ]]; then
+    echo down
+  elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
+    echo "past limit"
+  else
+    echo up
+  fi
+}
+
+# vibe ws status [INSTANCE] — one line per instance: state, place, limit, address; state files only.
+cmd_ws_status() {
+  local d s lim more l
+  local -a dirs=()
+  (($# <= 1)) || die "usage: vibe ws status [<instance>]"
+  if (($#)); then
+    [[ "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+    dirs=("$WS_STATES/$1")
+  else
+    for d in "$WS_STATES"/*/; do
+      if [[ -d "$d" ]]; then dirs+=("${d%/}"); fi
+    done
+  fi
+  for d in "${dirs[@]+"${dirs[@]}"}"; do
+    s="$(ws_state "$d")" more=""
+    if [[ "$s" != down ]]; then
+      lim="$(jstate "$d" limit)"
+      more="${lim:+until $(at_time "$lim") }$(jstate "$d" url)"
+    fi
+    l="$(printf '%-24s %-10s %-7s %s' "${d##*/}" "$s" "$(jstate "$d" place)" "$more")"
+    echo "${l%"${l##*[! ]}"}"
+  done
+}
+
+cmd_ws() {
+  role_gate ws "$@"
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    list | status) "cmd_ws_$sub" "$@" ;;
+    *) die "usage: vibe ws list|status — see vibe --help" ;;
+  esac
+}
+
 case "${1:-}" in
   queue)
     shift
@@ -3330,6 +3458,10 @@ case "${1:-}" in
   feature)
     shift
     cmd_feature "$@"
+    ;;
+  ws)
+    shift
+    cmd_ws "$@"
     ;;
   update-toolkit)
     shift

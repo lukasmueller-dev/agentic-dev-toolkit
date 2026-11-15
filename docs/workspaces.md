@@ -12,7 +12,7 @@ vibe ws status [<instance>]  # each instance: state, place, limit, address
 ```
 
 - `VIBE_WORKSPACES` overrides the folder; the default is `workspaces/` in the toolkit checkout.
-- `list` flags a conf with no `kind` or `places`, a line that is not `key=value`, an unknown or doubled key, a value outside its list below, `result` on a service, or a run with no `result`.
+- `list` flags a conf with no `kind` or `places`, a line that is not `key=value`, an unknown or doubled key, a value that breaks its row below, `result` on a service, or a run with no `result`. `hours` must be a whole number above 0.
 - `status` reads the state files only and calls no place: `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
 
 ## Layout
