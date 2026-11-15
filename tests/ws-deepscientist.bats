@@ -89,14 +89,16 @@ EOF
   [[ "$output" == *"--home $WS_ROOT/data"* ]] || false
 }
 
-@test "start hands the secret to ds and writes the login token to .ws-token" {
+@test "start hands the secret to ds and keeps both token files private" {
   run "$WSD/start"
   [ "$status" -eq 0 ]
   grep -q "oauth=oauth-secret" "$STUBS/ds.log"
   [ "$(cat "$WS_ROOT/data/.ws-token")" = "$TOKEN" ]
   # mode 600 (GNU stat, then BSD stat)
-  perm="$(stat -c %a "$WS_ROOT/data/.ws-token" 2>/dev/null || stat -f %Lp "$WS_ROOT/data/.ws-token")"
-  [ "$perm" = 600 ]
+  for f in .ws-token runtime/daemon.json; do
+    perm="$(stat -c %a "$WS_ROOT/data/$f" 2>/dev/null || stat -f %Lp "$WS_ROOT/data/$f")"
+    [ "$perm" = 600 ]
+  done
 }
 
 @test "start links the seed runtime into the data folder on every start" {
@@ -160,13 +162,15 @@ EOF
   [[ "$output" == "down — "* ]] || false
 }
 
-@test "the token is in no file under /ws/out" {
+@test "the token is in no file under /ws but .ws-token and daemon.json" {
   "$WSD/start"
   serve_health
   run "$WSD/status"
   [[ "$output" == *"$TOKEN"* ]] || false
-  run grep -r "$TOKEN" "$WS_ROOT/out"
-  [ "$status" -eq 1 ]
+  run grep -rl "$TOKEN" "$WS_ROOT"
+  [ "$status" -eq 0 ]
+  want="$(printf '%s\n%s\n' "$WS_ROOT/data/.ws-token" "$WS_ROOT/data/runtime/daemon.json" | LC_ALL=C sort)"
+  [ "$(printf '%s\n' "$output" | LC_ALL=C sort)" = "$want" ]
 }
 
 @test "stop calls ds --stop on the data folder" {
