@@ -14,11 +14,11 @@
 
 ## State
 
-Milestones 1 to 4 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` takes a tool job only. `/enqueue` has route Tool run; the queue page lists `vibe ws status` under `Tools`; `docs/vibe-queue.md` has `## Tool jobs`.
+Milestones 1 to 5 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `/enqueue` has route Tool run; the queue page lists `vibe ws status` under `Tools`. With `steer=1` in `queue.conf`, `vibe queue steer` reaches any running session through the FIFO `<job>/steer`; else a tool job's run.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: steer for plain jobs — code — done when `bats tests/vibe-queue.bats -f steer` passes: with `steer=` unset the agent's argv is unchanged; with `steer=1` the stub agent receives the text of `vibe queue steer`.
+The last milestone of `SPEC.md`: the end action — one line in `PROJECT_STATUS.md`, each decision into `pr.md` — done when `test ! -e SPEC.md -a ! -e HANDOFF.md` and `grep -c workspaces PROJECT_STATUS.md` prints 1 or more.
 
 ## Blockers
 
@@ -26,7 +26,9 @@ None.
 
 ## Gotchas (unpromoted)
 
-- `cmd_queue_steer` (`bin/vibe`) dies on a job with no `tool=` → the plain-job branch goes there, behind `steer=1` in `queue.conf`.
+- `steer=1` ran against the stub `claude` only → a human runs one real job with `vibe queue conf steer=1` and steers it.
+- `claude/vibe-job.sh` with a FIFO: a stop or a time limit reaches claude through timeout(1)'s process-group TERM only → without timeout(1) a stop ends the hook's shell, not claude.
+- Claude's result event has `"type":"result"` mid-line, not first → match it anywhere in the line.
 - Follow-ups of a tool job: retry runs the tool again with `in/`; answer closes the same run; fix, review rounds and GPU follow-ups run no tool.
 - `tool_unsafe` refuses a bundle that changes agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → name a new config path there.
 - A `runs=host` run is outside the job's memory scope (`MEM_CMD`).
