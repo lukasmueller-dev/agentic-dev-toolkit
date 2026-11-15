@@ -514,7 +514,7 @@ job_prepare() {
       return 0
     fi
     # A folder result makes a report job.
-    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == folder && -z "$(jget "$d/job" output)" ]]; then
+    if [[ "$(tool_conf "$d" result)" == folder && -z "$(jget "$d/job" output)" ]]; then
       echo output=report >>"$d/job"
     fi
   fi
@@ -1186,11 +1186,14 @@ stopped() {
 # tool_inst JOB — the workspace instance of a tool= job: <tool>-<job id>.
 tool_inst() { echo "$(jget "$1/job" tool)-${1##*/}"; }
 
+# tool_conf JOB KEY — KEY from the workspace.conf of the job's tool; empty when absent.
+tool_conf() { jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" "$2"; }
+
 # tool_place JOB — place= of a tool= job, else the first of its tool's places.
 tool_place() {
   local p
   p="$(jget "$1/job" place)"
-  [[ -n "$p" ]] || p="$(jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" places)"
+  [[ -n "$p" ]] || p="$(tool_conf "$1" places)"
   echo "${p%%,*}"
 }
 
@@ -1198,7 +1201,7 @@ tool_place() {
 tool_hours() {
   local h
   h="$(jget "$1/job" hours)"
-  echo "${h:-$(jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" hours)}"
+  echo "${h:-$(tool_conf "$1" hours)}"
 }
 
 # tool_check JOB — why a tool= job cannot run (docs/workspaces.md, Queue job); empty when it can.
@@ -1208,10 +1211,10 @@ tool_check() {
   f="$WS_ROOT/$n/workspace.conf"
   if ! m="$( (ws_dir "$n" >/dev/null && ws_secrets "$n" "$f") 2>&1)"; then
     echo "${m#vibe: }"
-  elif [[ "$(jget "$f" kind)" != run ]]; then
+  elif [[ "$(tool_conf "$1" kind)" != run ]]; then
     echo "$n is kind=service — vibe ws start $n"
-  elif [[ ",$(jget "$f" places)," != *",$p,"* ]]; then
-    echo "$n has no place '$p' — places=$(jget "$f" places)"
+  elif [[ ",$(tool_conf "$1" places)," != *",$p,"* ]]; then
+    echo "$n has no place '$p' — places=$(tool_conf "$1" places)"
   elif ! [[ "$h" =~ ^[1-9][0-9]*$ ]]; then
     echo "hours=$h: a whole number above 0, in the job or $f"
   fi
@@ -1240,7 +1243,7 @@ tool_run() {
     rm -rf "$st"
     return 0
   fi
-  if [[ "$(jstate "$st" place)" == turing && "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" gpu)" == yes ]]; then
+  if [[ "$(jstate "$st" place)" == turing && "$(tool_conf "$d" gpu)" == yes ]]; then
     runcmd=("$SELF_ROOT/bin/gpu-queue" lock -- "${runcmd[@]}")
   fi
   # Its own process group: a stop TERMs a lock waiter, `vibe ws run` and the place's exec at once.
@@ -1294,7 +1297,7 @@ tool_job() {
       return 1
     fi
     b="$(jstate "$d/out" branch)"
-    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == branch && -f "$d/out/repo.bundle" ]]; then
+    if [[ "$(tool_conf "$d" result)" == branch && -f "$d/out/repo.bundle" ]]; then
       if ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b"; } >>"$d/tool.log" 2>&1; then
         job_end "$d" failed "out/repo.bundle: no branch '$b' — tool.log"
         return 1
