@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# stop: takes the compose stack down and keeps its data volumes, as make controlplane-down does.
+set -euo pipefail
+# shellcheck source=workspaces/hypothesisloop/hloop.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
+
+hl_compose down

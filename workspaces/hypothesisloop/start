@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# start: checks the checkout's .env, renders its settings and brings the compose stack up detached.
+set -euo pipefail
+# shellcheck source=workspaces/hypothesisloop/hloop.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
+
+[[ -f "$HLOOP_REPO/.env" ]] || hl_die "no $HLOOP_REPO/.env: copy .env.example there and fill it in"
+# Unset or empty, the tool rents on vast and runpod (lib_cloud_providers): a listed entry is the consent.
+[[ -n "$(hl_key CLOUD_COMPUTE_PROVIDERS)" ]] ||
+  hl_die "$HLOOP_REPO/.env does not set CLOUD_COMPUTE_PROVIDERS: unset, the tool rents on vast and runpod; list the providers you agree to rent on"
+sandbox="$(hl_key SANDBOX_PROVIDER | tr '[:lower:]' '[:upper:]')"
+missing=""
+for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHROPIC_OAUTH_TOKEN GIT_HOST_PROVIDER LOCAL_REACHABLE_ADDRESS; do
+  [[ -n "$(hl_key "$key")" ]] || missing="$missing $key"
+done
+[[ -z "$missing" ]] || hl_die "$HLOOP_REPO/.env does not set:$missing"
+
+make -C "$HLOOP_REPO" -s render-settings
+hl_compose up -d

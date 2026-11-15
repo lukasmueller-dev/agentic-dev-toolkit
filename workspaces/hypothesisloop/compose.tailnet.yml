@@ -1,0 +1,31 @@
+# Added to the checkout's localdev/controlplane/docker-compose.yml: each port on loopback and the
+# tailnet address (HLOOP_BIND) only, in place of every interface. The registry takes
+# REGISTRY_PUBLISH_IP. Loopback stays: the tool's own host commands reach localhost.
+# `!override` needs docker compose 2.24.4 or later.
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:5433:5432"
+      - "${HLOOP_BIND:?start sets it}:5433:5432"
+  greptimedb:
+    ports: !override
+      - "127.0.0.1:4010:4000"
+      - "${HLOOP_BIND:?start sets it}:4010:4000"
+      - "127.0.0.1:4001:4001"
+      - "${HLOOP_BIND:?start sets it}:4001:4001"
+  memgraph:
+    ports: !override
+      - "127.0.0.1:7687:7687"
+      - "${HLOOP_BIND:?start sets it}:7687:7687"
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "${HLOOP_BIND:?start sets it}:9000:9000"
+  control-service:
+    ports: !override
+      - "127.0.0.1:${HL_API_PORT}:${HL_API_PORT}"
+      - "${HLOOP_BIND:?start sets it}:${HL_API_PORT}:${HL_API_PORT}"
+  metrics-service:
+    ports: !override
+      - "127.0.0.1:${HL_METRICS_PORT}:${HL_METRICS_PORT}"
+      - "${HLOOP_BIND:?start sets it}:${HL_METRICS_PORT}:${HL_METRICS_PORT}"

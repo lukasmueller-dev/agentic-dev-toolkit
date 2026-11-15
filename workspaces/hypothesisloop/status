@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# status: up while the control service answers the health check make controlplane-up waits on.
+set -euo pipefail
+# shellcheck source=workspaces/hypothesisloop/hloop.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
+
+url="http://127.0.0.1:$HL_API_PORT/health"
+if curl -fs -o /dev/null --max-time 5 "$url"; then
+  echo "up — the control service answers $url"
+else
+  echo "down — no answer from $url"
+fi
