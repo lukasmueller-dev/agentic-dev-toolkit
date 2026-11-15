@@ -404,7 +404,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [[ "${lines[1]}" == "old "*" down "* ]] || false
 }
 
-@test "ws tick: a hung pull ends after VIBE_WS_TICK_SECS; the next instance past its limit still goes down" {
+@test "ws tick: a hung pull ends after VIBE_WS_TICK_SECS and leaves no temp dir; the next instance past its limit still goes down" {
   stubs
   good a-hang service
   good b-late service
@@ -421,6 +421,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ ! -e "$STATES/b-late/id" ]
   [ ! -e "$S/containers/ws-b-late" ]
   [ -e "$S/containers/ws-a-hang" ]
+  [ -z "$(find "$STATES/a-hang" -maxdepth 1 -name '.pull.*')" ]
 }
 
 @test "ws tick during the restore of a start: no pull over the kept data/" {

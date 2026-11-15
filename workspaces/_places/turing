@@ -92,8 +92,11 @@ verb_pull() {
     return 0
   fi
   t="$(mktemp -d "$WS_STATE/.pull.XXXXXX")" || return 1
+  # A pull cut before the swap (the tick's timeout) leaves no temp dir; from the swap on, $t can hold the only copy.
+  trap 'rm -rf "$t"; exit 1' INT TERM
   if ! { docker cp "$id:/ws/data" "$t/data" && docker cp "$id:/ws/out" "$t/out"; }; then
     rm -rf "$t"
+    trap - INT TERM
     return 1
   fi
   until mkdir "$WS_STATE/.swap" 2>/dev/null; do
@@ -101,6 +104,7 @@ verb_pull() {
     if [ "$n" -ge 100 ]; then rm -rf "$WS_STATE/.swap" && n=0; fi
     sleep 0.1
   done
+  trap - INT TERM
   mkdir -p "$t/old"
   for x in data out; do
     if [ -e "$WS_STATE/$x" ] && ! mv "$WS_STATE/$x" "$t/old/"; then rc=1; fi
