@@ -82,7 +82,7 @@ Open the address on the phone. An ssh tunnel from turing to the instance carries
 - `is not running after <n> s` → the image is private, `vastai show ssh-keys` lacks your key, or the image pull takes longer than `VAST_WAIT`. `up` destroys the instance first.
 - `instance <id> is exited` (or `unknown`, `offline`) → the host failed. `up` destroys the instance; start again.
 - `no ssh tunnel to port <port>` → a process on turing holds that port. Stop it and start again.
-- `instance <id> is still alive` → Vast did not confirm the destroy. The `id` file stays, so the next `vibe ws tick` past the limit tries again. Check https://cloud.vast.ai/instances/.
+- `instance <id> is still alive` → Vast did not confirm the destroy. The `id` file stays and `limit` becomes 0, so the next `vibe ws tick` tries again. Check https://cloud.vast.ai/instances/.
 - `pull failed before the destroy` → the image has no `rsync`, or the host died. `data/` holds the last good `pull`, at most 10 min old.
 - A secret is missing in `/ws/secrets.env` → only the names in `secrets` of `workspace.conf` leave turing. Add the name there.
 - A storage charge after a stop → a stopped instance still bills storage. Never `vastai stop instance`; `down` destroys it.

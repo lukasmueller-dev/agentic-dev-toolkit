@@ -53,6 +53,7 @@ destroy() {
     fi
     sleep 10
   done
+  echo 0 >"$WS_STATE/limit" # the next tick tries again, not the old limit's
   printf 'vast: instance %s is still alive: destroy it at https://cloud.vast.ai/instances/\n' "$id" >&2
   return 1
 }

@@ -186,7 +186,7 @@ EOF
   [ ! -e "$WS_STATE/id" ]
 }
 
-@test "up refuses a running up and a recorded instance; an unconfirmed destroy keeps the id" {
+@test "up refuses a running up and a recorded instance; an unconfirmed destroy keeps the id, the next tick retries" {
   mkdir -p "$WS_STATE/up.lock"
   run "$PLACE" up
   [ "$status" -ne 0 ]
@@ -203,4 +203,11 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"still alive"* ]] || false
   [ "$(cat "$WS_STATE/id")" = 4242 ]
+  [ "$(cat "$WS_STATE/limit")" = 0 ]
+
+  : >"$STUBS/vastai.argv"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ ! -e "$WS_STATE/id" ]
 }
