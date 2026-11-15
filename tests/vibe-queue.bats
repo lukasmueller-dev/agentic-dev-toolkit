@@ -2649,6 +2649,20 @@ toolwait() {
   [ "$(cat "$Q/02-b/status")" = "done" ]
 }
 
+@test "tool: a gpu=yes tool job that fails at start holds back no other; the drain runs it" {
+  local r w="$BATS_TEST_TMPDIR/workspaces"
+  r="$(make_repo proj)"
+  tool stub folder gpu=yes
+  mkdir -p "$w/keyed"
+  printf '%s\n' kind=run places=turing result=folder hours=1 gpu=yes secrets=API_KEY >"$w/keyed/workspace.conf"
+  mkjob 01-a "$r" t-a close tool=keyed
+  tooljob 02-b "$r" tool-b
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+}
+
 @test "tool: a job whose tool cannot run fails with the reason, before its worktree" {
   local r w="$BATS_TEST_TMPDIR/workspaces"
   r="$(make_repo proj)"

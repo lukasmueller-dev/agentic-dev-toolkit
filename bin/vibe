@@ -1525,10 +1525,7 @@ cmd_queue_run() {
       [[ " $busy " != *" $(branch_key "$d") "* ]] || continue
       # One GPU tool run at a time: the next waits queued, not in a slot inside `gpu-queue lock`.
       # shortcut: a GPU run outside the queue still makes that one wait in its slot; cap it if that bites.
-      if tool_gpu "$d"; then
-        if ((gpu_tool)); then continue; fi
-        gpu_tool=1
-      fi
+      if ((gpu_tool)) && tool_gpu "$d"; then continue; fi
       echo running >"$d/status"
       (job_prepare "$d") >>"$d/runner.log" 2>&1 || true
       if [[ "$(jstate "$d" status)" != running || ! -s "$d/worktree" ]]; then
@@ -1538,6 +1535,7 @@ cmd_queue_run() {
       job_run "$d" >>"$d/runner.log" 2>&1 &
       echo "$!" >"$d/pid"
       running=$((running + 1)) busy+=" $(branch_key "$d")" started=1
+      if tool_gpu "$d"; then gpu_tool=1; fi
       info "started ${d##*/}"
     done <<<"$order"
     # A drain whose only startable jobs wait on a busy branch must not spin.
