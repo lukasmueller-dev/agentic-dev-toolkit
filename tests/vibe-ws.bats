@@ -483,3 +483,28 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   run "$VIBE" ws status h
   [[ "$output" == "h "*" down "* ]] || false
 }
+
+@test "ws stop: a container down cannot remove keeps its id and the GPU lock; a failed pull still removes it" {
+  stubs
+  good svc service gpu=yes
+  secrets svc
+  "$VIBE" ws start svc
+  pid="$(cat "$S/gpu.pid")"
+  touch "$S/fail-rm"
+  run "$VIBE" ws stop svc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"container ws-svc still exists"* ]] || false
+  [[ "$output" == *"down of svc failed"* ]] || false
+  [ -s "$STATES/svc/id" ]
+  [ -e "$S/containers/ws-svc" ]
+  sleep 0.3
+  kill -0 "$pid"
+  rm "$S/fail-rm"
+  touch "$S/fail-cp"
+  run "$VIBE" ws stop svc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"pull failed; removing ws-svc anyway"* ]] || false
+  [ ! -e "$S/containers/ws-svc" ]
+  [ ! -e "$STATES/svc/id" ]
+  within5 dead "$pid"
+}
