@@ -21,7 +21,6 @@ ENV PATH=/opt/ds/node_modules/.bin:$PATH IS_SANDBOX=1
 # A start mounts /ws/data over that, so the result moves to /opt/ds-seed; `start` copies it back once.
 RUN mkdir -p /ws/data \
  && ds --home /ws/data init \
- && rm -f /ws/data/runtime/daemon.json \
  && mv /ws/data /opt/ds-seed
 
 CMD ["sleep", "infinity"]
