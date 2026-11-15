@@ -13,6 +13,7 @@ setup() {
   echo "# brief" >"$WS/in/brief.md"
   printf 'evaluation=eval\nexperiments=3\n' >"$WS/in/args"
   echo "CLAUDE_CODE_OAUTH_TOKEN=tok" >"$WS/secrets.env"
+  unset CLAUDE_CODE_OAUTH_TOKEN
   export KAPSO_WS_ROOT="$WS" WS_HOURS=2 STUB_LOG="$BATS_TEST_TMPDIR/kapso.log"
   export STUB_SOLUTION="$BATS_TEST_TMPDIR/solution.json"
   # The stub logs its arguments joined by |; `build` seeds a campaign repo with one branch.
@@ -77,6 +78,17 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   [ "$(cat "$WS/out/result")" = "failed: goal not achieved (budget_exhausted)" ]
 }
 
+@test "run: a campaign with no branch gives failed: and no bundle, branch or score" {
+  solution '{"branch":null,"commit":null,"score":null,"goal_achieved":false,"stopped_reason":"budget_exhausted"}'
+  run "$WS_SRC/run"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS/out/result")" = "failed: goal not achieved (budget_exhausted)" ]
+  [ -s "$WS/out/report.md" ]
+  [ ! -e "$WS/out/repo.bundle" ]
+  [ ! -e "$WS/out/branch" ]
+  [ ! -e "$WS/out/score" ]
+}
+
 @test "run: a kapso exit code is the script's, with a failed: result and a report" {
   solution '{"branch":"kapso/exp-2","score":1,"goal_achieved":true}'
   STUB_RC=7 run "$WS_SRC/run"
@@ -115,6 +127,8 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   grep -qx 'result=branch' "$WS_SRC/workspace.conf"
   grep -qx 'secrets=CLAUDE_CODE_OAUTH_TOKEN' "$WS_SRC/workspace.conf"
   grep -qxF "ARG COMMIT=$commit" "$WS_SRC/Dockerfile"
+  grep -qE 'claude-code@[0-9]+\.[0-9]+\.[0-9]+ ' "$WS_SRC/Dockerfile"
+  grep -q 'git config --system user.email' "$WS_SRC/Dockerfile"
   grep -qx '  enabled: false' "$WS_SRC/config.yaml"
   grep -qx '    cli: claude_code' "$WS_SRC/config.yaml"
 }
