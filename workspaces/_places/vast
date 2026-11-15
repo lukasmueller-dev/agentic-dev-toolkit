@@ -145,7 +145,6 @@ cmd_up() {
   [ -n "$id" ] || die "create failed for offer $offer"
   t="$(date +%s)"
   printf '%s\n' "$id" >"$WS_STATE/id"
-  printf 'vast\n' >"$WS_STATE/place"
   printf '%s\n' "$t" >"$WS_STATE/started"
   printf '%s\n' "$((t + hours * 3600))" >"$WS_STATE/limit"
   wait_ready "$id" || exit 1
