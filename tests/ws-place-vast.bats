@@ -63,6 +63,7 @@ EOF
   [ "$(($(cat "$WS_STATE/limit") - $(cat "$WS_STATE/started")))" -eq 28800 ]
   grep -q 'HostName 203.0.113.7' "$WS_STATE/ssh_config"
   grep -q "^DEMO_TOKEN=$SECRET$" "$STUBS/ssh.stdin"
+  [ "$(grep -c VAST_QUERY "$STUBS/ssh.stdin")" -eq 0 ]
   [ "$(cat "$WS_STATE/url")" = http://100.64.0.1:8080 ]
   grep -q -- '-L 100.64.0.1:8080:localhost:8080 vast$' "$STUBS/ssh.argv"
 

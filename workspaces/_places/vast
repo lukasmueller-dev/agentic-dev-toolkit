@@ -98,9 +98,9 @@ wait_ready() {
 
 # provision — /ws/scripts, /ws/in, /ws/data and the secrets file, over ssh only.
 provision() {
-  local secrets=/dev/null
-  if [ -f "$env_file" ]; then secrets="$env_file"; fi
-  ssh -F "$cfg" vast 'mkdir -p /ws/scripts /ws/in /ws/data /ws/out && umask 077 && cat >/ws/secrets.env' <"$secrets" || return 1
+  # Only the keys named in WS_CONF_SECRETS leave turing.
+  if [ -f "$env_file" ]; then awk -F= -v keys=" ${WS_CONF_SECRETS:-} " 'index(keys, " " $1 " ")' "$env_file"; fi |
+    ssh -F "$cfg" vast 'mkdir -p /ws/scripts /ws/in /ws/data /ws/out && umask 077 && cat >/ws/secrets.env' || return 1
   rsync -a -e "$rsh" "$WS_DIR/" vast:/ws/scripts/ || return 1
   if [ -d "$WS_STATE/in" ]; then rsync -a -e "$rsh" "$WS_STATE/in/" vast:/ws/in/ || return 1; fi
   if [ -d "$WS_STATE/data" ]; then rsync -a -e "$rsh" "$WS_STATE/data/" vast:/ws/data/ || return 1; fi
