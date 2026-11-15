@@ -1259,7 +1259,7 @@ tool_run() {
     rm -rf "$st"
     return 0
   fi
-  if [[ "$(jstate "$st" place)" == turing && "$(tool_conf "$d" gpu)" == yes ]]; then
+  if tool_gpu "$d"; then
     runcmd=("$SELF_ROOT/bin/gpu-queue" lock -- "${runcmd[@]}")
   fi
   # Its own process group: a stop TERMs a lock waiter, `vibe ws run` and the place's exec at once.
