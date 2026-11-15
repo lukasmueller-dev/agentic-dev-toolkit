@@ -30,6 +30,7 @@ Facts for the recipe, read in the `vastai` 1.11.0 source, not run:
 
 - `destroy instance` without `-y` asks, then prints `Aborted.` and exits 0. The script passes `-y`; the recipe pins `vastai` 1.11.0 or newer.
 - `vastai` exits 0 on an HTTP error. The script reads the JSON instead.
+- `pull` uses `rsync --safe-links`. The recipe needs `rsync` 3.4.0, or a distro build with the fixes for CVE-2024-12084 to 12088 and 12747. Turing's `3.2.7-1ubuntu1.5` has them (`zcat /usr/share/doc/rsync/changelog.Debian.gz | grep CVE-2024-12088`).
 - `vastai copy` ignores the exit code of its `rsync`. The script copies with `rsync` over ssh, so the image needs `rsync`.
 - The account needs an ssh key (`vastai create ssh-key`) and an API key (`vastai set api-key`). The script passes neither.
 - Settings in `~/.config/vibe/workspaces/<name>.env`: `VAST_QUERY` (default `num_gpus=1 cpu_arch=amd64`), `VAST_DISK` (GB, default 50), `VAST_WAIT` (seconds to `running`, default 1200).

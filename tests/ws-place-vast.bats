@@ -76,7 +76,7 @@ EOF
 
   run "$PLACE" pull
   [ "$status" -eq 0 ]
-  grep -q "vast:/ws/data vast:/ws/out $WS_STATE/$" "$STUBS/rsync.argv"
+  grep -q -- "--safe-links -e .* vast:/ws/data vast:/ws/out $WS_STATE/$" "$STUBS/rsync.argv"
   [ -s "$WS_STATE/pulled" ]
 
   run "$PLACE" down

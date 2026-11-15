@@ -150,7 +150,8 @@ cmd_pull() {
     echo "vast: no instance is up" >&2
     return 1
   fi
-  rsync -a -e "$rsh" vast:/ws/data vast:/ws/out "$WS_STATE/" || return 1
+  # --safe-links: a link the container plants to a turing file must not arrive.
+  rsync -a --safe-links -e "$rsh" vast:/ws/data vast:/ws/out "$WS_STATE/" || return 1
   date +%s >"$WS_STATE/pulled"
 }
 
