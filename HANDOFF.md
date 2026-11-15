@@ -14,7 +14,7 @@
 
 ## State
 
-Milestones 1 to 3 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` exists. `tests/vibe-queue.bats -f tool` has 7 tool tests.
+Milestones 1 to 3 of `SPEC.md` are done. A `tool=` job runs the hidden `vibe ws run <tool>-<job id>` in place of a first session, then a closing session with `skills/fill-queue/references/tool-run.md` at the prompt's end. `vibe queue steer` exists. `tests/vibe-queue.bats -f tool` has 9 tool tests.
 
 ## Next action
 
@@ -29,8 +29,8 @@ None.
 - The `/enqueue` route writes `tool=`, `place=`, `hours=` in the job file and `in/brief.md`, `in/args` in the job dir. `job_prepare` adds `output=report` for `result=folder`.
 - No doc names `vibe queue steer`, the tool job flow or `tool-run.md` yet → `docs/vibe-queue.md`, `docs/workspaces.md`, a link from the `/enqueue` skill.
 - The completions lack `steer` in the queue verbs → `completions/vibe.bash`, `completions/_vibe`.
-- `follow_dir` (retry, answer, fix) copies `tool=` but not `in/` → a retry runs the tool with no brief; answer and fix run the tool again.
-- A run's state dir `<tool>-<job id>` stays after the job → `vibe ws status` lists each one as down.
+- Follow-ups of a tool job: retry runs the tool again with `in/`; answer closes the same run; fix, review rounds and GPU follow-ups run no tool.
+- `tool_unsafe` refuses a bundle that changes agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → name a new config path there.
 - A `runs=host` run is outside the job's memory scope (`MEM_CMD`).
 - `shfmt -f .` in a sandboxed job fails on `.claude/` placeholders (`permission denied`) → lint in a `git clone` under `$TMPDIR`.
 - `git add -A` fails on the sandbox placeholders (`.bash_profile`) → add files by name.
