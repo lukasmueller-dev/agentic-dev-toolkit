@@ -2,6 +2,9 @@
 # start — run the DeepScientist daemon detached; the login token goes to $DATA/.ws-token.
 set -euo pipefail
 
+# A place's exec channel (ssh) may not carry the image ENV: claude needs the PATH, and root needs IS_SANDBOX.
+export PATH="/opt/ds/node_modules/.bin:$PATH" IS_SANDBOX=1
+
 ROOT="${WS_ROOT:-/ws}"
 DATA="$ROOT/data"
 SEED="${DS_SEED:-/opt/ds-seed}"

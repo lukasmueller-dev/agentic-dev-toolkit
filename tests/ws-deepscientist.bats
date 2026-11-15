@@ -19,7 +19,7 @@ setup() {
   # state a real start writes. A file $STUBS/no-token leaves the token out.
   cat >"$STUBS/ds" <<EOF
 #!/usr/bin/env bash
-echo "ds \$* | oauth=\${CLAUDE_CODE_OAUTH_TOKEN:-}" >>"$STUBS/ds.log"
+echo "ds \$* | oauth=\${CLAUDE_CODE_OAUTH_TOKEN:-} sandbox=\${IS_SANDBOX:-} path=\$PATH" >>"$STUBS/ds.log"
 case "\$*" in *--stop*) exit 0 ;; esac
 if [ -f "$STUBS/ds-fail" ]; then
   case "\$*" in
@@ -111,6 +111,13 @@ EOF
   run "$WSD/start"
   [ "$status" -eq 0 ]
   [ -L "$WS_ROOT/data/runtime/tools" ]
+}
+
+@test "start sets PATH and IS_SANDBOX itself, not from the exec channel" {
+  run env -u IS_SANDBOX "$WSD/start"
+  [ "$status" -eq 0 ]
+  grep -q "sandbox=1 " "$STUBS/ds.log"
+  grep -q "path=/opt/ds/node_modules/.bin:" "$STUBS/ds.log"
 }
 
 @test "start keeps a real directory already in data/runtime" {
