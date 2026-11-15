@@ -33,7 +33,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] Conf, config file, Dockerfile and the three scripts against a stub `researchclaw` — code — done when `bats tests/ws-autoresearchclaw.bats` passes: a `pipeline_summary.json` with a failed stage gives `failed:` at exit 0; `steer` names the next stage; `grep -c 'mode: sandbox' workspaces/autoresearchclaw/*.yaml` prints 1.
+- [x] Conf, config file, Dockerfile and the three scripts against a stub `researchclaw` — code — done when `bats tests/ws-autoresearchclaw.bats` passes: a `pipeline_summary.json` with a failed stage gives `failed:` at exit 0; `steer` names the next stage; `grep -c 'mode: sandbox' workspaces/autoresearchclaw/*.yaml` prints 1.
 - [ ] The recipe `docs/workspaces/autoresearchclaw.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/autoresearchclaw.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 

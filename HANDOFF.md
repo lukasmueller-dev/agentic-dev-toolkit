@@ -14,11 +14,15 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/autoresearchclaw/` (conf, `config.yaml`, Dockerfile, `run`, `steer`, `stop`) and `tests/ws-autoresearchclaw.bats` (16 tests pass). The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Conf, config file, Dockerfile and the three scripts against a stub `researchclaw` — code — done when `bats tests/ws-autoresearchclaw.bats` passes: a `pipeline_summary.json` with a failed stage gives `failed:` at exit 0; `steer` names the next stage; `grep -c 'mode: sandbox' workspaces/autoresearchclaw/*.yaml` prints 1.
+The first open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearchclaw.md` — requirements, numbered steps, verify, what breaks it — done when `grep -c '^## ' docs/workspaces/autoresearchclaw.md` prints 4 or more.
+Put these in it:
+- Token check: `claude setup-token` gives `CLAUDE_CODE_OAUTH_TOKEN`; test it in the container with `acpx claude exec "say ok"`.
+- Limits: `steer` works at stages 8 and 9 only; cost limits are dead code, the hour limit is the only stop; no LaTeX in the image, so no PDF.
+- Not for: its RL prompt allows only small classic-control tasks.
 
 ## Blockers
 
