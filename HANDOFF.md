@@ -14,11 +14,11 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/autoresearch/` (conf, Dockerfile, `run`, `stop`, `steer`) and `tests/ws-autoresearch.bats` pass against a stub supervisor. `steer` exits 3. The image is not built. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Conf, Dockerfile and the three scripts against a stub supervisor — code — done when `bats tests/ws-autoresearch.bats` passes: `run` hands over the idea and the project root, copies the six result paths, and writes `failed:` when the supervisor exits non-zero; `grep -rc run_pending_forge workspaces/autoresearch` prints only zeros.
+The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it: the secrets file keys, the cost of the critic (other providers, paid per token), `steer` exits 3 and why, the unbuilt image.
 
 ## Blockers
 
