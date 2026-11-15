@@ -64,7 +64,7 @@ good() {
     "c-key +bad conf: unknown key gpus" "d-twice +bad conf: twice: gpu" "f-place +bad conf: unknown place aws" \
     "k-svcresult +bad conf: result on a service" "l-runnoresult +bad conf: kind=run needs result" \
     "m-line +bad conf: not key=value: just text" "n-runs +bad conf: runs=vm: container or host" \
-    "o-gpu +bad conf: gpu=maybe: yes or no" "q-noconf +bad conf: no workspace.conf"; do
+    "o-gpu +bad conf: gpu=maybe: yes or no" "q-noconf +bad conf: no readable workspace.conf"; do
     grep -qE "^$want" <<<"$output" || {
       echo "missing: $want"
       false
@@ -83,6 +83,18 @@ good() {
   [ "$status" -eq 1 ]
   [ "$output" = "$(printf '%-16s bad conf: %s\n' e "kind=job: service or run" g "commit=abc: 40 hex" \
     h "hours=0: a whole number above 0" i "bad env name lower" j "bad port ui" p "result=pr: branch or folder")" ]
+}
+
+@test "ws list: an unreadable conf is a bad conf; the next tool still lists" {
+  [ "$(id -u)" -ne 0 ] || skip "root reads a mode 000 file"
+  good a-unread service
+  good b-next service
+  chmod 000 "$VIBE_WORKSPACES/a-unread/workspace.conf"
+  run "$VIBE" ws list
+  [ "$status" -eq 1 ]
+  [ "${#lines[@]}" -eq 2 ]
+  [[ "${lines[0]}" == "a-unread "*"bad conf: no readable workspace.conf" ]] || false
+  [[ "${lines[1]}" == "b-next "*" service "* ]] || false
 }
 
 @test "ws list: no folder stops with its path" {

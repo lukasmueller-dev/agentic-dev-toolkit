@@ -3340,8 +3340,8 @@ ws_names() {
 
 # ws_check DIR — "ok", or the first reason DIR/workspace.conf breaks the contract.
 ws_check() {
-  [[ -f "$1/workspace.conf" ]] || {
-    echo "no workspace.conf"
+  [[ -f "$1/workspace.conf" && -r "$1/workspace.conf" ]] || {
+    echo "no readable workspace.conf"
     return 0
   }
   awk '
