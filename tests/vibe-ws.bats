@@ -439,14 +439,19 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ -z "$(find "$STATES/svc" -maxdepth 1 -name '.*' ! -name . ! -name ..)" ]
 }
 
-@test "ws tick: the runner pass ticks the instances" {
+@test "ws tick: the runner pass ticks the instances; a tick.pid that names another live process does not stop it" {
+  local p
   stubs
   good old service
   secrets old
   "$VIBE" ws start old
   echo $(($(date +%s) - 1)) >"$STATES/old/limit"
+  sleep 30 3>&- &
+  p=$!
+  echo "$p" >"$STATES/tick.pid"
   "$VIBE" queue run --claude --drain >/dev/null 2>&1
   within5 test ! -e "$S/containers/ws-old"
+  kill "$p"
   [ ! -e "$STATES/old/id" ]
 }
 

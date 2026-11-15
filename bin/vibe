@@ -3895,9 +3895,10 @@ cmd_ws_tick() {
 ws_tick_bg() {
   local p
   p="$(jstate "$WS_STATES" tick.pid)"
-  if [[ "$p" =~ ^[1-9][0-9]*$ ]] && kill -0 "$p" 2>/dev/null; then return 0; fi
+  # The command, not only a live pid: tick.pid outlives a reboot, and its pid then names another process.
+  if [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws tick" ]]; then return 0; fi
   if ! compgen -G "$WS_STATES/*/id" >/dev/null; then return 0; fi
-  cmd_ws_tick >>"$WS_STATES/tick.log" 2>&1 &
+  "$SELF_ROOT/bin/vibe" ws tick </dev/null >>"$WS_STATES/tick.log" 2>&1 &
   echo "$!" >"$WS_STATES/tick.pid"
 }
 
