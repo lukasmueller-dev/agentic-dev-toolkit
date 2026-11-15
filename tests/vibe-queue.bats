@@ -2474,7 +2474,8 @@ phase_jobs() {
 
 # tool NAME RESULT [CONF-LINE...] — a kind=run workspace NAME on the real turing place, runs=host: no docker.
 # Its scripts run in the instance's state dir and log to $STUBS/tool.log. $STUBS/tool-sleep: the run waits
-# 30 s first; tool-fail: it exits 4 with no result; tool-branch: the ref name it writes; steer-exit: steer's exit.
+# 30 s first; tool-fail: it exits 4 with no result; tool-branch: the ref name it writes; tool-config: its commit
+# adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; steer-exit: steer's exit.
 tool() {
   local w="$BATS_TEST_TMPDIR/workspaces"
   export VIBE_WORKSPACES="$w" VIBE_WS_POLL=0.1
@@ -2495,10 +2496,13 @@ if [ "$2" = folder ]; then
   exit 0
 fi
 git clone -q in/repo work && cd work && git checkout -q -b tool/try
-echo tool >tool.txt && git add tool.txt && git commit -q -m "feat: tool change"
+echo tool >tool.txt && git add tool.txt
+if [ -e "$STUBS/tool-config" ]; then mkdir -p .claude && echo '{}' >.claude/settings.json && git add .claude; fi
+git commit -q -m "feat: tool change"
 git bundle create ../out/repo.bundle tool/try 2>/dev/null
 cd .. && echo 0.91 >out/score && echo "done: score 0.91" >out/result
 cat "$STUBS/tool-branch" 2>/dev/null >out/branch || echo tool/try >out/branch
+if [ -e "$STUBS/tool-link" ]; then ln -sf "$STUBS/secret" out/branch; fi
 EOF
   cat >"$w/$1/stop" <<EOF
 #!/usr/bin/env bash
@@ -2654,7 +2658,7 @@ toolwait() {
   [ ! -e "$STUBS/tool.log" ]
 }
 
-@test "tool: no out/result or a bad branch name fails the job; no closing session, the branch stays" {
+@test "tool: no out/result, a bad branch name, a link or agent config fails the job; no closing session, the branch stays" {
   local r o="$BATS_TEST_TMPDIR/proj.git"
   r="$(make_repo proj)"
   tool stub branch
@@ -2668,10 +2672,24 @@ toolwait() {
   tooljob 02-b "$r" tool-z
   drain
   [ "$(cat "$Q/02-b/status")" = failed ]
-  [ "$(cat "$Q/02-b/note")" = "out/repo.bundle: no branch 'x:refs/heads/main' that fast-forwards tool-z — tool.log" ]
+  [ "$(cat "$Q/02-b/note")" = "out/repo.bundle: no branch 'x:refs/heads/main' — tool.log" ]
   [ "$(git -C "$r/.claude/worktrees/tool-z" log -n 1 --format=%s)" = "$(git -C "$r" log -n 1 --format=%s main)" ]
   run git -C "$o" rev-parse -q --verify refs/heads/tool-z
   [ "$status" -ne 0 ]
+  rm "$STUBS/tool-branch"
+  echo "secret-line" >"$STUBS/secret"
+  touch "$STUBS/tool-link"
+  tooljob 03-c "$r" tool-l
+  drain
+  [ "$(cat "$Q/03-c/note")" = "out/repo.bundle: no branch '' — tool.log" ]
+  [ ! -L "$Q/03-c/out/branch" ]
+  [ -f "$Q/03-c/out/score" ]
+  rm "$STUBS/tool-link"
+  touch "$STUBS/tool-config"
+  tooljob 04-d "$r" tool-c
+  drain
+  [ "$(cat "$Q/04-d/note")" = "out/repo.bundle changes .claude/settings.json: agent and git config stay out of a tool's commits" ]
+  [ "$(git -C "$r/.claude/worktrees/tool-c" log -n 1 --format=%s)" = "$(git -C "$r" log -n 1 --format=%s main)" ]
   [ ! -e "$STUBS/claude.log" ]
 }
 

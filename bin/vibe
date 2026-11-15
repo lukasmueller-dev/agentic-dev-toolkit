@@ -1219,7 +1219,8 @@ tool_check() {
 
 # tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
 # in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
-# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, tool-exit and out/.
+# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, tool-exit and out/ (no symlinks:
+# the tool's links would read host files).
 tool_run() {
   local d="$1" inst st h f pid rc=0
   inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
@@ -1254,12 +1255,27 @@ tool_run() {
   wait "$pid" || rc=$?
   echo "$rc" >"$d/tool-exit"
   if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
-  if [[ -d "$st/out" ]]; then cp -R "$st/out" "$d/out"; fi
+  if [[ -d "$st/out" ]]; then
+    cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
+    find "$d/out" -type l -delete 2>/dev/null || rm -rf "$d/out"
+  fi
+}
+
+# tool_unsafe WT — the first path FETCH_HEAD adds, changes or deletes against WT's HEAD in agent or git
+# config (.claude/, CLAUDE.md, .mcp.json, .vibe-jobs/, .github/ …); `?` when the diff fails.
+# The closing session and the review run in WT on the host and load that config.
+tool_unsafe() {
+  local f
+  f="$(agent_git -c core.quotePath=false -C "$1" diff --no-renames --name-only HEAD FETCH_HEAD)" || {
+    echo "?"
+    return 0
+  }
+  printf '%s\n' "$f" | grep -Ei -m 1 '(^"?|/)(\.claude|\.mcp\.json|claude(\.local)?\.md|agents\.md|gemini\.md|\.vibe-jobs|\.gitattributes|\.gitmodules|\.githooks|\.github)(/|"?$)' || true
 }
 
 # tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
 # fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
-# False once the job has ended: a stop, no out/result, a branch that does not fast-forward.
+# False once the job has ended: a stop, no out/result, a bad or unsafe branch, no fast-forward.
 # Runs as a tested condition: each failure is handled, not left to errexit.
 tool_job() {
   local d="$1" wt b x e
@@ -1274,11 +1290,20 @@ tool_job() {
       return 1
     fi
     b="$(jstate "$d/out" branch)"
-    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == branch && -f "$d/out/repo.bundle" ]] &&
-      ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b" &&
-        agent_git -C "$wt" merge -q --ff-only FETCH_HEAD; } >>"$d/tool.log" 2>&1; then
-      job_end "$d" failed "out/repo.bundle: no branch '$b' that fast-forwards $(jget "$d/job" branch) — tool.log"
-      return 1
+    if [[ "$(jget "$WS_ROOT/$(jget "$d/job" tool)/workspace.conf" result)" == branch && -f "$d/out/repo.bundle" ]]; then
+      if ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b"; } >>"$d/tool.log" 2>&1; then
+        job_end "$d" failed "out/repo.bundle: no branch '$b' — tool.log"
+        return 1
+      fi
+      x="$(tool_unsafe "$wt")"
+      if [[ -n "$x" ]]; then
+        job_end "$d" failed "out/repo.bundle changes $x: agent and git config stay out of a tool's commits"
+        return 1
+      fi
+      if ! agent_git -C "$wt" merge -q --ff-only FETCH_HEAD >>"$d/tool.log" 2>&1; then
+        job_end "$d" failed "out/repo.bundle: '$b' does not fast-forward $(jget "$d/job" branch) — tool.log"
+        return 1
+      fi
     fi
   fi
   {
