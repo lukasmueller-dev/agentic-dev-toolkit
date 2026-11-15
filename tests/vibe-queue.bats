@@ -2485,7 +2485,7 @@ phase_jobs() {
 
 # tool NAME RESULT [CONF-LINE...] — a kind=run workspace NAME on the real turing place, runs=host: no docker.
 # Its scripts run in the instance's state dir and log to $STUBS/tool.log. $STUBS/tool-sleep: the run waits
-# 30 s first; tool-fail: it exits 4 with no result; tool-branch: the ref name it writes; tool-config: its commit
+# 30 s first; tool-fail: it exits 4 with no result; tool-failed: its result is failed: out of memory; tool-branch: the ref name it writes; tool-config: its commit
 # adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; tool-fifo: out/branch is a FIFO; tool-nobundle: no repo.bundle;
 # steer-exit: steer's exit.
 tool() {
@@ -2503,6 +2503,7 @@ L="$GPU_QUEUE_DIR/gpu.lock"
 if command -v flock >/dev/null; then flock -n "\$L" true && echo free || echo held; else [ -d "\$L.d" ] && echo held || echo free; fi >"$STUBS/lock"
 if [ -e "$STUBS/tool-sleep" ]; then touch "$STUBS/tool-up" && sleep 30; fi
 if [ -e "$STUBS/tool-fail" ]; then echo "tool: out of memory" >&2 && exit 4; fi
+if [ -e "$STUBS/tool-failed" ]; then echo "failed: out of memory" >out/result && exit 0; fi
 if [ "$2" = folder ]; then
   mkdir -p out/files && echo a,b >out/files/table.csv && echo "done: one table" >out/result
   exit 0
@@ -2743,7 +2744,7 @@ toolwait() {
   [ ! -e "$STUBS/tool.log" ]
 }
 
-@test "tool: no out/result, a bad branch name, a link, a FIFO, agent config, no bundle or no close.md fails the job; no closing session" {
+@test "tool: no out/result, a failed: result, a bad branch name, a link, a FIFO, agent config, no bundle or no close.md fails the job; no closing session" {
   local r o="$BATS_TEST_TMPDIR/proj.git"
   r="$(make_repo proj)"
   tool stub branch
@@ -2753,6 +2754,12 @@ toolwait() {
   [ "$(cat "$Q/01-a/status")" = failed ]
   [ "$(cat "$Q/01-a/note")" = "no out/result, tool exit 4 — tool.log: tool: out of memory" ]
   rm "$STUBS/tool-fail"
+  touch "$STUBS/tool-failed"
+  tooljob 01-b "$r" tool-y
+  drain
+  [ "$(cat "$Q/01-b/status")" = failed ]
+  [ "$(cat "$Q/01-b/note")" = "failed: out of memory" ]
+  rm "$STUBS/tool-failed"
   echo "x:refs/heads/main" >"$STUBS/tool-branch"
   tooljob 02-b "$r" tool-z
   drain

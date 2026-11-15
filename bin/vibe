@@ -1299,7 +1299,7 @@ tool_unsafe() {
 
 # tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
 # fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
-# False once the job has ended: a stop, no out/result, a done branch result with no bundle, a bad or unsafe
+# False once the job has ended: a stop, no out/result, a failed: out/result, a done branch result with no bundle, a bad or unsafe
 # branch, no fast-forward, no close.md.
 # Runs as a tested condition: each failure is handled, not left to errexit.
 # A requeue after a crash redoes what is not done: tool-exit marks the run, close.md the check and the merge too.
@@ -1313,6 +1313,11 @@ tool_job() {
       x="$(tail -n 1 "$d/tool.log" 2>/dev/null | cut -c 1-160)"
       e="$(jstate "$d" tool-exit)"
       job_end "$d" failed "no out/result, tool exit ${e:-none} — tool.log: $x"
+      return 1
+    fi
+    # A failed run has nothing to check: its line is the job's result, no closing session.
+    if [[ "$(jstate "$d/out" result)" == failed:* ]]; then
+      job_end "$d" failed "$(jstate "$d/out" result | cut -c 1-160)"
       return 1
     fi
     b="$(jstate "$d/out" branch)"

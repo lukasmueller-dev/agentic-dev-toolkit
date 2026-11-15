@@ -202,7 +202,7 @@ An outside research tool (`kind=run` under `workspaces/`) does the first part of
 - At start the runner checks the tool's conf, its secrets, `kind=run`, the place and `hours`. A fail ends the job `failed` with the reason, before the worktree.
 - The run: instance `<tool>-<id>`, `/ws/in/repo` a clone of the job's worktree. `hours=` limits it; `timeout=` limits the closing session. `gpu=yes` on turing: under the `gpu-queue` lock.
 - One `gpu=yes` tool job on turing runs its tool at a time. The next one stays `queued` and takes no slot.
-- After the run the runner removes each link from `out/`. No `out/result` → `failed`.
+- After the run the runner removes each link from `out/`. No `out/result` → `failed`. An `out/result` of `failed: …` → `failed` with that line, no closing session.
 - `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
 - `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
 - The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command; a tool commit that changes the metric fails the job. Review, gate and PR as for any job.
