@@ -14,7 +14,7 @@
 
 ## State
 
-Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 23 tests.
+Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 26 tests.
 
 ## Next action
 
