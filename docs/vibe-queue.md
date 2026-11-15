@@ -205,7 +205,7 @@ An outside research tool (`kind=run` under `workspaces/`) does the first part of
 - After the run the runner removes each link from `out/`. No `out/result` → `failed`.
 - `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
 - `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
-- The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command. Review, gate and PR as for any job.
+- The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command; a tool commit that changes the metric fails the job. Review, gate and PR as for any job.
 - `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
 - `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
 - Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
