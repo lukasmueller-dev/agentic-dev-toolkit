@@ -23,12 +23,15 @@ tailnet_ip() {
   echo "${t%%[[:space:]]*}"
 }
 
-# undo_up — a failed up leaves nothing: docker run can fail with the container already created.
+# undo_up — a failed up removes the container its create made, never one of the same name: that is another up's.
+# shortcut: a kill during docker create can leave a created container; label it when one turns up.
 undo_up() {
   local rc=$?
   trap - EXIT INT TERM
-  docker rm -f "$c" >/dev/null 2>&1 || true
-  rm -f "$WS_STATE/id"
+  if [ -n "$id" ]; then
+    docker rm -f "$id" >/dev/null 2>&1 || true
+    rm -f "$WS_STATE/id"
+  fi
   exit "$rc"
 }
 
@@ -54,10 +57,11 @@ verb_up() {
   [ ! -f "$HOME/.config/vibe/workspaces/$name.env" ] || secrets="$HOME/.config/vibe/workspaces/$name.env"
   trap undo_up EXIT
   trap 'exit 1' INT TERM
-  id="$(docker run -d --name "$c" ${args[@]+"${args[@]}"} \
+  id="$(docker create --name "$c" ${args[@]+"${args[@]}"} \
     -v "$WS_DIR:/ws/scripts:ro" -v "$WS_STATE/in:/ws/in:ro" \
     -e "WS_NAME=$name" -e "WS_INSTANCE=$WS_INSTANCE" -e WS_PLACE=turing -e "WS_HOURS=$hours" \
     "$WS_CONF_IMAGE:$WS_CONF_COMMIT" sleep infinity)"
+  docker start "$id" >/dev/null
   # Secrets go over stdin: never in argv, never in the container's env.
   docker exec -i "$id" sh -c 'umask 077 && mkdir -p /ws/data /ws/out && cat >/ws/secrets.env' <"$secrets"
   # The data a last down kept comes back.

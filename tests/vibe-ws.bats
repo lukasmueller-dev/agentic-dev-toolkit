@@ -163,7 +163,7 @@ good() {
 
 # stubs — the real turing place with stub docker and tailscale in $S (logs, containers/), and $VIBE in a
 # toolkit copy $T whose bin/gpu-queue is a stub: vibe calls its own, never one on PATH.
-# $S/fail-run, fail-secrets, fail-cp, fail-rm: that docker step fails; $S/slow-cp: a copy out takes 1 s;
+# $S/fail-start, fail-secrets, fail-cp, fail-rm: that docker step fails; a create on a name in use fails; $S/slow-cp: a copy out takes 1 s;
 # $S/exit-<script>: its exit; $S/hang-<script>: it sleeps 5 s; $S/hang-cp-<container>: a copy out of it sleeps 30 s;
 # $S/gpu-busy: the lock waits.
 stubs() {
@@ -180,15 +180,19 @@ echo "$*" >>"$S/docker.log"
 cmd="$1"
 shift
 case "$cmd" in
-  run)
+  create)
     name="" prev=""
     for a; do
       [ "$prev" != --name ] || name="$a"
       prev="$a"
     done
+    [ ! -e "$S/containers/$name" ] || { echo "Conflict. The container name \"/$name\" is already in use" >&2; exit 125; }
     echo "$*" >"$S/containers/$name"
-    [ ! -e "$S/fail-run" ] || { echo "docker: port is already allocated" >&2; exit 125; }
     echo "$name"
+    ;;
+  start)
+    [ ! -e "$S/fail-start" ] || { echo "docker: port is already allocated" >&2; exit 1; }
+    echo "$1"
     ;;
   exec)
     i=0
@@ -289,7 +293,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"svc up — http://100.64.0.1:8080" ]] || false
   c="$(cat "$S/containers/ws-svc")"
-  [[ "$c" == "-d --name ws-svc -p 100.64.0.1:8080:8080 -p 100.64.0.1:8081:8081 -v $VIBE_WORKSPACES/svc:/ws/scripts:ro -v $STATES/svc/in:/ws/in:ro "* ]] || false
+  [[ "$c" == "--name ws-svc -p 100.64.0.1:8080:8080 -p 100.64.0.1:8081:8081 -v $VIBE_WORKSPACES/svc:/ws/scripts:ro -v $STATES/svc/in:/ws/in:ro "* ]] || false
   [[ "$c" == *" -e WS_PLACE=turing -e WS_HOURS=4 ghcr.io/x/tool:$HEX sleep infinity" ]] || false
   [[ "$c" != *--gpus* ]] || false
   cmp "$S/secrets.got" "$HOME/.config/vibe/workspaces/svc.env"
@@ -320,7 +324,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   stubs
   good svc service
   secrets svc
-  for fail in fail-run fail-secrets; do
+  for fail in fail-start fail-secrets; do
     touch "$S/$fail"
     run "$VIBE" ws start svc
     [ "$status" -ne 0 ]
@@ -336,6 +340,19 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ -z "$(ls "$S/containers")" ]
   run "$VIBE" ws status svc
   [[ "$output" == "svc "*" down "* ]] || false
+}
+
+@test "ws start: a second up while the first one runs fails and leaves the first one's container" {
+  stubs
+  good svc service
+  secrets svc
+  echo first >"$S/containers/ws-svc"
+  run "$VIBE" ws start svc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"up of svc failed"* ]] || false
+  [ "$(cat "$S/containers/ws-svc")" = first ]
+  [ "$(grep -c '^rm ' "$S/docker.log")" -eq 0 ]
+  [ ! -e "$STATES/svc/id" ]
 }
 
 @test "ws start: a gpu=yes service holds the lock until stop" {
