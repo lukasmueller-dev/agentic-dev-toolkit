@@ -1,7 +1,9 @@
 # shellcheck shell=bash
 # Sourced by start, stop and status: the checkout, its ports and its compose call.
 
-# Stdout, not stderr: the place passes stdout and the exit code only.
+# The place passes stdout and the exit code only: stderr of make and compose joins stdout.
+exec 2>&1
+
 hl_die() {
   echo "error — $*"
   exit 1

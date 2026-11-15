@@ -26,9 +26,12 @@ echo "docker $* TAG=$TAG REGISTRY=$REGISTRY BIND=$HLOOP_BIND PUBLISH=$REGISTRY_P
 if [ "$1 $2" = "image inspect" ] && [ -n "${DOCKER_NO_IMAGE:-}" ]; then exit 1; fi
 exit 0
 EOF
+  # make fails on stderr under MAKE_FAIL.
   cat >"$BATS_TEST_TMPDIR/bin/make" <<'EOF'
 #!/bin/sh
 echo "make $*" >>"$LOG"
+if [ -n "${MAKE_FAIL:-}" ]; then echo "render-settings: .env does not set UI_ORIGIN" >&2 && exit 1; fi
+exit 0
 EOF
   # curl fails for a URL that holds CURL_FAIL.
   cat >"$BATS_TEST_TMPDIR/bin/curl" <<'EOF'
@@ -91,6 +94,19 @@ write_env() {
   [ ! -e "$LOG" ]
 }
 
+@test "start takes cloudrun, which has no account key" {
+  write_env SANDBOX_FLY_API_KEY
+  sed -i.bak "s/^SANDBOX_PROVIDER=.*/SANDBOX_PROVIDER='cloudrun'/" "$HL/.env"
+  run "$WS/start"
+  [ "$status" -eq 0 ]
+}
+
+@test "start shows the stderr of a failed make on stdout" {
+  MAKE_FAIL=1 run bash -c '"$0/start" 2>/dev/null' "$WS"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not set UI_ORIGIN"* ]] || false
+}
+
 @test "start reads the keys of a .env whose last command fails" {
   echo 'false' >>"$HL/.env"
   run "$WS/start"
@@ -131,7 +147,7 @@ write_env() {
 @test "start renders the settings, then brings up the compose file under HLOOP_REPO on the tailnet address" {
   run "$WS/start"
   [ "$status" -eq 0 ]
-  [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings" ]
+  [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings TAG=abc123" ]
   [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=192.168.1.5:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
 }
 
