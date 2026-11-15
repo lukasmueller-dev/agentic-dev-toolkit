@@ -14,19 +14,16 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/autoresearch/` (conf, Dockerfile, `run`, `stop`, `steer`) and `tests/ws-autoresearch.bats` pass against a stub supervisor. `steer` exits 3. The image is not built. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestones 1 and 2 are done: `workspaces/autoresearch/`, `tests/ws-autoresearch.bats` and the recipe `docs/workspaces/autoresearch.md` (6 `## ` headings). The image is unbuilt and no real run happened. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the recipe `docs/workspaces/autoresearch.md` — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more. Name in it:
+The last milestone of `SPEC.md`: the end action `delete` — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
-- The secrets file keys, and that any other `KEY=VALUE` line in it reaches the tool.
-- The cost of the critic (other providers, paid per token).
-- `steer` exits 3, and why.
-- The image is unbuilt. It takes the apt packages and the ralph-loop plugin unpinned. The Python packages are fixed by `PIP_CUTOFF`.
-- `run` calls `scripts/render_env.py` after it exports the secrets. The tool's MCP preflight fails without that file.
-- With the default config the `agent` role is `deepseek-v4-pro`. For a Claude token, set `AR_MODEL_AGENT=claude-opus` in the secrets file (unchecked).
-- `stop` exits 1 when `run` has not written the result within 120 s.
+- Move each decision of `SPEC.md` to `pr.md`.
+- Delete `SPEC.md` and `HANDOFF.md` (`git rm`, commit).
+- The recipe links `docs/workspaces.md`: it exists on `ws-surface` only, so the link is dead until that PR merges.
+- The recipe names no queue command: `ws-surface` ships `vibe ws list` and `status` only. Add the command when it lands.
 
 ## Blockers
 

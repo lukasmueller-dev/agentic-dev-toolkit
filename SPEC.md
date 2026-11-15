@@ -33,7 +33,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 ## Milestones
 
 - [x] Conf, Dockerfile and the three scripts against a stub supervisor — code — done when `bats tests/ws-autoresearch.bats` passes: `run` hands over the idea and the project root, copies the six result paths, and writes `failed:` when the supervisor exits non-zero; `grep -rc run_pending_forge workspaces/autoresearch` prints only zeros.
-- [ ] The recipe `docs/workspaces/autoresearch.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more.
+- [x] The recipe `docs/workspaces/autoresearch.md`: requirements, numbered steps, verify, what breaks it — code — done when `grep -c '^## ' docs/workspaces/autoresearch.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
 ## End action
