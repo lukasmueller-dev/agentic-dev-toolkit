@@ -3397,10 +3397,11 @@ cmd_ws_list() {
 }
 
 # ws_holder INSTANCE-DIR — the pid of its live `gpu-queue lock` holder; fails when none.
+# After a reboot the pid can name another process: its command must end in `ws hold <instance>`.
 ws_holder() {
   local p
   p="$(jstate "$1" holder)"
-  [[ "$p" =~ ^[1-9][0-9]*$ ]] && kill -0 "$p" 2>/dev/null && echo "$p"
+  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws hold ${1##*/}" ]] && echo "$p"
 }
 
 # ws_state INSTANCE-DIR — waits for the GPU, down with no id file, past limit when limit has passed, else up.
@@ -3617,6 +3618,7 @@ cmd_ws_stop() {
 ws_down() {
   local st="$WS_STATES/$1" pid secs="${VIBE_WS_STOP_SECS:-300}" r=0 rc=0
   pid="$(ws_holder "$st")" || pid=""
+  if [[ -z "$pid" ]]; then rm -f "$st/holder"; fi
   WS_SECS="$secs" ws_place "$1" exec stop || r=$?
   if ((r == 124)); then
     warn "the stop script of $1 ran past $secs s — down anyway"

@@ -543,3 +543,24 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ ! -e "$S/containers/ws-svc" ]
   [ ! -e "$STATES/svc/id" ]
 }
+
+@test "ws stop: a holder file whose pid names another process kills nothing" {
+  stubs
+  good svc service
+  secrets svc
+  "$VIBE" ws start svc
+  set -m
+  sleep 30 &
+  other=$!
+  set +m
+  echo "$other" >"$STATES/svc/holder"
+  : >"$STATES/svc/waits"
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" up "* ]] || false
+  run "$VIBE" ws stop svc
+  [ "$status" -eq 0 ]
+  [ "$output" = "svc down" ]
+  kill -0 "$other"
+  kill "$other"
+  [ ! -e "$STATES/svc/holder" ]
+}
