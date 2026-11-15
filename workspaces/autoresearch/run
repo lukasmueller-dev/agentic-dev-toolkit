@@ -25,13 +25,11 @@ rm -f "$stopflag"
 # stop reads this pid: run's own, so stop waits for the result, not only for the supervisor.
 echo $$ >"$pidfile"
 
-# The places accept a whole number above 0 only.
-case "$hours" in
-  '' | *[!0-9]*)
-    echo "failed: WS_HOURS is not a whole number: $hours" >"$out/result"
-    exit 0
-    ;;
-esac
+# A whole number above 0; 08 is 8. Vast also lets 0 through.
+if [[ ! "$hours" =~ ^[0-9]+$ ]] || [ "$((10#$hours))" -eq 0 ]; then
+  echo "failed: WS_HOURS is not a whole number above 0: $hours" >"$out/result"
+  exit 0
+fi
 
 # The secrets file is KEY=VALUE data: read it, never source it.
 if [ -f "$ws/secrets.env" ]; then

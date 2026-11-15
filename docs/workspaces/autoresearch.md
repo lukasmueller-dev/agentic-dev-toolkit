@@ -59,7 +59,7 @@ A cut run ends `failed: stopped at the limit, supervisor exit <n>`, and `files/`
 - `steer` exits 3 → by design. The tool hash-binds `idea.md` and the engine checks `state.md`, so no file takes a note. The surface reads 3 as "verb not supported".
 - `stop` exits 1 → `run` has not written the result in 120 s (`AR_STOP_WAIT`). Read `out/result` again before `down`.
 - `failed: scripts/render_env.py did not write the Claude Code settings` → the tool's MCP preflight fails without `ar-runtime/.claude/settings.local.json`. `run` calls `scripts/render_env.py` after it exports the secrets. Read the error in `tool.log`.
-- `failed: WS_HOURS is not a whole number: <x>` → `hours` is a whole number above 0, as the places need.
+- `failed: WS_HOURS is not a whole number above 0: <x>` → fix `hours`. Vast lets `0` through, so `run` refuses it.
 - No `out/result` after the place destroyed the machine at the limit → `up` took longer than the margin. Raise `AR_LIMIT_MARGIN`.
 - `failed: stopped` or `failed: stopped at the limit` → `run` sent TERM, then KILL after 60 s (`AR_KILL_GRACE`). A cut run is never `done:`.
 - `files/` lacks one of the six paths → the tool did not write it. `run` copies only the paths that exist.

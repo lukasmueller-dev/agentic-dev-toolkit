@@ -178,11 +178,21 @@ EOF2
   [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
 }
 
-@test "a WS_HOURS that is no whole number writes failed: and starts nothing" {
-  WS_HOURS=1.5 run "$WSDIR/run"
+@test "a WS_HOURS that is no whole number above 0 writes failed: and starts nothing" {
+  for h in 1.5 abc 0 00; do
+    rm -f "$WS_ROOT/out/result"
+    WS_HOURS=$h run "$WSDIR/run"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$WS_ROOT/out/result")" = "failed: WS_HOURS is not a whole number above 0: $h" ]
+    [ ! -e "$TMPDIR/stub.log" ]
+  done
+}
+
+@test "a WS_HOURS with a leading zero is the whole number it spells" {
+  WS_HOURS=08 run "$WSDIR/run"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WS_ROOT/out/result")" = "failed: WS_HOURS is not a whole number: 1.5" ]
-  [ ! -e "$TMPDIR/stub.log" ]
+  [ "$(sed -n 4p "$TMPDIR/stub.log")" = "08h" ]
+  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
 }
 
 @test "an abort in run itself still leaves a failed: result" {
