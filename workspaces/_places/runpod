@@ -20,11 +20,15 @@ place_env="$HOME/.config/vibe/places/runpod.env"
 if [ -f "$place_env" ]; then
   case "$(ls -lL "$place_env")" in
     -rw-------* | -r--------*) ;;
-    *) die "$place_env: others can read it; chmod 600 it" ;;
+    *)
+      # Fatal in up only: a bad file must never keep tick or down from the delete.
+      [ "${1:-}" != up ] || die "$place_env: others can read it; chmod 600 it"
+      echo "runpod: $place_env: others can read it; chmod 600 it" >&2
+      ;;
   esac
   # KEY=VALUE, not sourced: a GPU name holds spaces.
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in RUNPOD_*=*) export "${line%%=*}=${line#*=}" ;; esac
+    case "$line" in RUNPOD_*=*) export "${line%%=*}=${line#*=}" || true ;; esac
   done <"$place_env"
 fi
 wait_s="${RUNPOD_WAIT:-600}"
@@ -97,6 +101,7 @@ verb_up() {
   [ -n "${RUNPOD_GPU_ID:-}" ] || die "set RUNPOD_GPU_ID in $place_env"
   if [ -z "${WS_CONF_IMAGE:-}" ] || [ -z "${WS_CONF_COMMIT:-}" ]; then die "workspace.conf needs image and commit"; fi
   [ -z "$id" ] || die "already up: pod $id"
+  if [ "${WS_CONF_KIND:-}" = run ] && [ ! -d "$WS_STATE/in" ]; then die "no input: $WS_STATE/in/ is missing"; fi
   [ ! -f "$HOME/.config/vibe/workspaces/$name.env" ] || secrets="$HOME/.config/vibe/workspaces/$name.env"
   mkdir -p "$WS_STATE"
   now="$(date +%s)"
@@ -110,6 +115,7 @@ verb_up() {
   id="$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true)"
   [ -n "$id" ] || die "pod create printed no id; check runpodctl pod list: $out"
   echo "$id" >"$WS_STATE/id"
+  rm -f "$WS_STATE/known_hosts"
   local deadline=$(($(date +%s) + wait_s))
   until ready; do
     [ "$(date +%s)" -lt "$deadline" ] || die "pod $id gives no ssh after ${wait_s}s"
@@ -152,7 +158,8 @@ verb_url() {
   tip="${tip%%[[:space:]]*}"
   if ! ssh -S "$sock" -O check pod 2>/dev/null; then
     if [ -z "$id" ] || ! addr; then die "no pod for $WS_INSTANCE"; fi
-    ssh "${sshargs[@]}" -M -S "$sock" -f -N -o ExitOnForwardFailure=yes -L "$tip:$p:localhost:$p" "$host"
+    ssh "${sshargs[@]}" -M -S "$sock" -f -N -o ExitOnForwardFailure=yes -L "$tip:$p:localhost:$p" "$host" \
+      >/dev/null 2>>"$WS_STATE/tunnel.log" || die "no tunnel; see $WS_STATE/tunnel.log"
   fi
   echo "http://$tip:$p"
 }
@@ -176,6 +183,7 @@ verb_tick() {
   limit="$(cat "$WS_STATE/limit" 2>/dev/null || echo 0)"
   pulled="$(cat "$WS_STATE/pulled" 2>/dev/null || echo 0)"
   if [ "$now" -ge "$limit" ]; then
+    wait_s=0 # one delete per tick: a wait here stalls the runner pass
     verb_down
   elif [ $((now - pulled)) -ge 600 ]; then
     verb_pull

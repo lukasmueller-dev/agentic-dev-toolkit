@@ -22,6 +22,7 @@ case "$1 $2" in
     [ -f "$d/pod" ] || { echo '{"error":"failed to get pod: pod not found"}' >&2; exit 1; }
     printf '{"id":"pod123","runtimeStatus":"%s"}\n' "$(cat "$d/status" 2>/dev/null || echo running)" ;;
   "pod delete")
+    [ ! -f "$d/delete-fail" ] || exit 1
     rm -f "$d/pod"
     echo '{"deleted":true,"id":"pod123"}' ;;
   "ssh info")
@@ -29,12 +30,14 @@ case "$1 $2" in
   *) exit 2 ;;
 esac
 EOF
-  # ssh: keeps what it gets on stdin for `cat >`; a /ws/scripts/ command prints and exits 7.
+  # ssh: keeps what it gets on stdin for `cat >`; a /ws/scripts/ command prints and exits 7;
+  # -N leaves a child on its stdout and stderr, as `ssh -f` does.
   cat >"$STUB/ssh" <<'EOF'
 #!/bin/sh
 d="$(dirname "$0")"
 echo "$*" >>"$d/ssh.log"
 case "$*" in *"-O check"*) exit 255 ;; esac
+case "$*" in *" -N "*) sleep 3 3>&- & ;; esac
 case "$*" in *"cat >"*) cat >>"$d/ssh.stdin" ;; esac
 case "$*" in *"/ws/scripts/"*) echo "script ran"; exit 7 ;; esac
 exit 0
@@ -88,9 +91,11 @@ pod_up() {
 @test "up, exec, pull, down: no secret value is in any stub's argv" {
   mkdir -p "$WS_STATE/in"
   echo brief >"$WS_STATE/in/brief.md"
-  run "$PLACE" up
+  echo "[203.0.113.7]:22022 ssh-ed25519 old-key" >"$WS_STATE/known_hosts"
+  WS_CONF_KIND=run run "$PLACE" up
   [ "$status" -eq 0 ]
   [ "$(cat "$WS_STATE/id")" = pod123 ]
+  [ ! -e "$WS_STATE/known_hosts" ]
   [ "$(cat "$WS_STATE/limit")" -eq $(($(cat "$WS_STATE/started") + 7200)) ]
   grep -q -- "--gpu-id NVIDIA GeForce RTX 4090 --image $WS_CONF_IMAGE:$WS_CONF_COMMIT" "$STUB/runpodctl.log"
   grep -q -- '--ports 22/tcp --cloud-type SECURE --docker-args sleep infinity' "$STUB/runpodctl.log"
@@ -105,6 +110,43 @@ pod_up() {
   [ ! -e "$STUB/pod" ]
   run grep -rF -e sk-secret-token -e rp-secret-key "$STUB/runpodctl.log" "$STUB/ssh.log" "$STUB/rsync.log"
   [ "$status" -eq 1 ]
+}
+
+@test "up refuses a second pod, bad hours, a run with no input and an env file others can read" {
+  pod_up
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"already up: pod pod123"* ]] || false
+  rm "$WS_STATE/id"
+  WS_CONF_HOURS=0 run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"hours must be"* ]] || false
+  WS_CONF_KIND=run run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no input"* ]] || false
+  chmod 644 "$HOME/.config/vibe/places/runpod.env"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"others can read it"* ]] || false
+  [ ! -e "$STUB/runpodctl.log" ]
+}
+
+@test "tick past the limit with a bad env file: one delete per tick, the id stays until the pod is gone" {
+  pod_up
+  echo $(($(date +%s) - 1)) >"$WS_STATE/limit"
+  chmod 644 "$HOME/.config/vibe/places/runpod.env"
+  echo 'RUNPOD_API_KEY = spaced' >>"$HOME/.config/vibe/places/runpod.env"
+  touch "$STUB/delete-fail"
+  run "$PLACE" tick
+  [ "$status" -ne 0 ]
+  [ "$(grep -c '^pod delete pod123' "$STUB/runpodctl.log")" -eq 1 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+  [ -e "$STUB/pod" ]
+  rm "$STUB/delete-fail"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ ! -e "$WS_STATE/id" ]
+  [ ! -e "$STUB/pod" ]
 }
 
 @test "down: a failed pull still deletes the pod" {
@@ -152,7 +194,10 @@ pod_up() {
   [ "$status" -eq 7 ]
   [ "$output" = "script ran" ]
   grep -qF "exec /ws/scripts/'steer' 'it'\\''s late'" "$STUB/ssh.log"
+  local t0
+  t0="$(date +%s)"
   run "$PLACE" url
+  [ $(($(date +%s) - t0)) -lt 2 ]
   [ "$status" -eq 0 ]
   [ "$output" = "http://100.64.0.1:20999" ]
   grep -q -- '-L 100.64.0.1:20999:localhost:20999 root@203.0.113.7' "$STUB/ssh.log"
