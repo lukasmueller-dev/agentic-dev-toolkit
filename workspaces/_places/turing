@@ -79,18 +79,31 @@ verb_exec() {
   exec docker exec "$id" sh -c 's="$1"; shift; test -x "/ws/scripts/$s" || exit 3; cd /ws && exec "/ws/scripts/$s" "$@"' sh "$s" "$@"
 }
 
-# Runs as a tested condition too (down): an && chain, so a failed step fails it.
+# pull — each copy goes to its own temp dir; only a complete one replaces data/ and out/.
+# A tick and a down can pull at once: the swap takes a mkdir lock, and one held 10 s is stale.
+# Runs as a tested condition too (down): each failure is handled, not left to errexit.
 verb_pull() {
-  local t="$WS_STATE/.pull"
+  local t n=0 rc=0
   [ -n "$id" ] || return 1
   if ((host)); then
     date +%s >"$WS_STATE/pulled"
     return 0
   fi
-  rm -rf "$t" && mkdir "$t" &&
-    docker cp "$id:/ws/data" "$t/data" && docker cp "$id:/ws/out" "$t/out" &&
-    rm -rf "$WS_STATE/data" "$WS_STATE/out" && mv "$t/data" "$t/out" "$WS_STATE/" && rmdir "$t" &&
-    date +%s >"$WS_STATE/pulled"
+  t="$(mktemp -d "$WS_STATE/.pull.XXXXXX")" || return 1
+  if ! { docker cp "$id:/ws/data" "$t/data" && docker cp "$id:/ws/out" "$t/out"; }; then
+    rm -rf "$t"
+    return 1
+  fi
+  until mkdir "$WS_STATE/.swap" 2>/dev/null; do
+    n=$((n + 1))
+    if [ "$n" -ge 100 ]; then rm -rf "$WS_STATE/.swap" && n=0; fi
+    sleep 0.1
+  done
+  if ! { rm -rf "$WS_STATE/data" "$WS_STATE/out" && mv "$t/data" "$t/out" "$WS_STATE/"; }; then rc=1; fi
+  rmdir "$WS_STATE/.swap" 2>/dev/null || true
+  rm -rf "$t"
+  if [ "$rc" = 0 ]; then date +%s >"$WS_STATE/pulled"; fi
+  return "$rc"
 }
 
 verb_url() {

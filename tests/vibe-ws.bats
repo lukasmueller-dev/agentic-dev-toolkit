@@ -162,7 +162,8 @@ good() {
 }
 
 # stubs — the real turing place with stub docker, tailscale and gpu-queue in $S (logs, containers/).
-# $S/fail-run, fail-secrets: that docker step fails; $S/exit-<script>: its exit; $S/gpu-busy: the lock waits.
+# $S/fail-run, fail-secrets, fail-cp, fail-rm: that docker step fails; $S/slow-cp: a copy out takes 1 s;
+# $S/exit-<script>: its exit; $S/gpu-busy: the lock waits.
 stubs() {
   S="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$S/containers" "$HOME/.config/vibe/workspaces"
@@ -201,9 +202,18 @@ case "$cmd" in
     exit "$(cat "$S/exit-${1%% *}" 2>/dev/null || echo 0)"
     ;;
   cp)
-    case "$1" in *:/ws/*) mkdir -p "$2" && echo "$1" >"$2/from-container" ;; esac
+    case "$1" in
+      *:/ws/*)
+        [ ! -e "$S/slow-cp" ] || sleep 1
+        [ ! -e "$S/fail-cp" ] && [ -e "$S/containers/${1%%:*}" ] || { echo "No such container" >&2; exit 1; }
+        mkdir -p "$2" && echo "$1" >"$2/from-container"
+        ;;
+    esac
     ;;
-  rm) rm -f "$S/containers/$2" ;;
+  rm)
+    [ ! -e "$S/fail-rm" ] || exit 1
+    rm -f "$S/containers/$2"
+    ;;
   inspect) [ -e "$S/containers/$1" ] ;;
 esac
 STUB
@@ -379,6 +389,23 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   run "$VIBE" ws status
   [[ "${lines[0]}" == "new "*" up "* ]] || false
   [[ "${lines[1]}" == "old "*" down "* ]] || false
+}
+
+@test "ws tick and stop at once: each pull finishes, data/ and out/ stay" {
+  stubs
+  good svc service
+  secrets svc
+  "$VIBE" ws start svc
+  touch "$S/slow-cp"
+  "$VIBE" ws tick 3>&- &
+  sleep 0.3
+  run "$VIBE" ws stop svc
+  wait
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^cp ws-svc:/ws/data ' "$S/docker.log")" -eq 2 ]
+  [ -f "$STATES/svc/data/from-container" ]
+  [ -f "$STATES/svc/out/from-container" ]
+  [ -z "$(find "$STATES/svc" -maxdepth 1 -name '.*' ! -name . ! -name ..)" ]
 }
 
 @test "ws tick: the runner pass ticks the instances" {
