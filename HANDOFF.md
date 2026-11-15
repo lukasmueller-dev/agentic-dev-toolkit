@@ -14,7 +14,7 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/_places/vast` and `tests/ws-place-vast.bats` (6 tests, stub `vastai`, `ssh`, `rsync`). The commit body of `feat(workspaces): add the vast place script` holds the reasons.
+Milestone 1 is done: `workspaces/_places/vast` and `tests/ws-place-vast.bats` (7 tests, stub `vastai`, `ssh`, `rsync`). The commit body of `feat(workspaces): add the vast place script` holds the reasons.
 
 ## Next action
 
@@ -37,4 +37,5 @@ Facts for the recipe, read in the `vastai` 1.11.0 source, not run:
 - Only the keys named in `secrets` of `workspace.conf` reach the instance. The `VAST_*` settings stay on turing.
 - `url` binds the tunnel to `tailscale ip -4` on the first port. The same port in use on turing fails the tunnel.
 - `/ws/in` comes from `$WS_STATE/in`. The contract names no source; `ws-surface` must write it there.
+- A killed `up` leaves `$WS_STATE/up.lock`; every later `up` stops with `an up runs`. Fix: `rmdir` the lock after you check `vastai show instances`.
 - Recovery: `vastai show instances` lists a leaked instance by its label, the instance name.
