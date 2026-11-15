@@ -69,6 +69,7 @@ EOF
   [ "$(cat "$WS_STATE/url")" = http://100.64.0.1:8080 ]
   grep -q -- '-L 100.64.0.1:8080:localhost:8080 vast$' "$STUBS/ssh.argv"
   [ ! -e "$WS_STATE/tunnel.sock" ]
+  [ ! -e "$WS_STATE/up.lock" ]
 
   SSH_EXIT=3 run "$PLACE" exec steer "it's late"
   [ "$status" -eq 3 ]
@@ -99,6 +100,7 @@ EOF
   [ "$(grep -c '^show instance 4242' "$STUBS/vastai.argv")" -eq 1 ]
   grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
   [ ! -e "$WS_STATE/id" ]
+  [ ! -e "$WS_STATE/up.lock" ]
 }
 
 @test "up: a host port that is not a number never reaches the ssh config" {
@@ -138,7 +140,14 @@ EOF
   [ ! -e "$WS_STATE/id" ]
 }
 
-@test "up refuses a recorded instance; an unconfirmed destroy keeps the id" {
+@test "up refuses a running up and a recorded instance; an unconfirmed destroy keeps the id" {
+  mkdir -p "$WS_STATE/up.lock"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"an up runs"* ]] || false
+  [ "$(grep -c '^search offers' "$STUBS/vastai.argv")" -eq 0 ]
+  rmdir "$WS_STATE/up.lock"
+
   "$PLACE" up >/dev/null
   run "$PLACE" up
   [ "$status" -ne 0 ]
