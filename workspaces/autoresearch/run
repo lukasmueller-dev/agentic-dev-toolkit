@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# run: AutoResearch on /ws/in/brief.md; the result paths go to /ws/out/files.
+set -euo pipefail
+
+ws="${WS_ROOT:-/ws}"
+rt="${AR_RUNTIME:-/opt/autoresearch/ar-runtime}"
+proj="$ws/data/project"
+pidfile="${TMPDIR:-/tmp}/ar-supervisor.pid"
+hours="${WS_HOURS:?WS_HOURS is unset}"
+out="$ws/out"
+
+if [ -f "$ws/secrets.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$ws/secrets.env"
+  set +a
+fi
+
+# The supervisor changes directory: both paths must be absolute.
+cd "$rt"
+trap 'rm -f "$pidfile"' EXIT
+scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
+pid=$!
+echo "$pid" >"$pidfile"
+
+# WS_HOURS ends the run: TERM lets the supervisor stop its attempt and seal the manifest.
+deadline=$(($(date +%s) + ${AR_LIMIT_SECONDS:-$((hours * 3600))}))
+while kill -0 "$pid" 2>/dev/null; do
+  if [ "$(date +%s)" -ge "$deadline" ]; then
+    kill -TERM "$pid" 2>/dev/null || true
+    break
+  fi
+  sleep 1
+done
+rc=0
+wait "$pid" || rc=$?
+
+mkdir -p "$out/files"
+for p in results review.md critic.md blind_review.md state.md decisions.log; do
+  if [ -e "$proj/$p" ]; then cp -R "$proj/$p" "$out/files/"; fi
+done
+
+if [ "$rc" -eq 0 ]; then
+  echo "done: AutoResearch finished, files/ holds the results" >"$out/result"
+else
+  echo "failed: supervisor exit $rc" >"$out/result"
+fi
+{
+  echo "# AutoResearch"
+  echo
+  cat "$out/result"
+  if [ -f "$proj/results/summary.md" ]; then
+    printf '\n## results/summary.md (the tool'\''s claim, not checked)\n\n'
+    cat "$proj/results/summary.md"
+  fi
+} >"$out/report.md"

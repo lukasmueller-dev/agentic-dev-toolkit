@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# stop: end the supervisor and its attempt; run then writes the result; /ws/data stays.
+set -euo pipefail
+
+pidfile="${TMPDIR:-/tmp}/ar-supervisor.pid"
+pid="$(cat "$pidfile" 2>/dev/null)" || exit 0
+kill -TERM "$pid" 2>/dev/null || exit 0
+# run removes the pid file after it wrote the result.
+for _ in $(seq 1 120); do
+  if [ ! -e "$pidfile" ]; then break; fi
+  sleep 1
+done
