@@ -3,9 +3,10 @@ FROM node:22-bookworm-slim
 # Must equal `commit` in workspace.conf (tests/ws-kapso.bats checks it).
 ARG COMMIT=8b897c7330fdf02bc9080e492a768b70b18fbf0d
 # Kapso commits with no identity of its own, so git needs one. Claude Code 2.1.310 is what Kapso's CI installs at that commit.
+# procps: `kapso build --stop` runs `ps` to find the campaign's processes, and the slim base has none.
 # Docker makes /ws as root for the bind mounts; `up` runs as `node` and writes /ws/data, /ws/out and /ws/secrets.env.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git jq python3 python3-venv \
+ && apt-get install -y --no-install-recommends ca-certificates git jq procps python3 python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && git config --system user.name kapso \
  && git config --system user.email kapso@localhost \

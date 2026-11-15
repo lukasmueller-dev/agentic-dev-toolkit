@@ -131,6 +131,7 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
   grep -qE 'claude-code@[0-9]+\.[0-9]+\.[0-9]+ ' "$WS_SRC/Dockerfile"
   grep -q 'git config --system user.email' "$WS_SRC/Dockerfile"
   grep -qF 'mkdir -p /ws && chown node:node /ws' "$WS_SRC/Dockerfile"
+  grep -qE 'apt-get install .* procps ' "$WS_SRC/Dockerfile"
   # shellcheck disable=SC2016 # the Dockerfile line holds a literal $PATH
   grep -qx 'ENV PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH' "$WS_SRC/Dockerfile"
   grep -qx '  enabled: false' "$WS_SRC/config.yaml"
