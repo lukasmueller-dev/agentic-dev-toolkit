@@ -28,14 +28,14 @@ Decisions for `pr.md`:
 - `run` and `steer` are scripts that `exit 3`: the runpod place maps a missing script to 3, the vast place does not (127).
 - The image build runs `ds init`; `runtime/` lives in `/opt/ds-seed` and each `start` links it into `/ws/data/runtime`.
 - `start` sets `PATH` and `IS_SANDBOX=1` itself, because an ssh exec channel may not carry the image `ENV`.
-- The recipe names `vibe ws start|stop` and the place verbs `exec status` and `url` with `WS_INSTANCE`, `WS_STATE`, `WS_DIR`. Check them against `ws-surface` when it lands: its docs list no `vibe ws start|stop` yet. `WS_DIR` is the workspace folder (the vast place copies it to `/ws/scripts`).
+- The recipe names `vibe ws start|stop` and the place verbs `exec status` and `url` with `WS_INSTANCE`, `WS_STATE`, `WS_DIR`. `ws-surface` `SPEC.md` milestone 2 adds `vibe ws build|start|stop` and `workspaces/_places/turing`; they do not exist yet, and the feature PRs merge together. Check recipe steps 1, 3 and 4 and the stop line against the merged `bin/vibe` before the human test. `WS_DIR` is the workspace folder (the vast place copies it to `/ws/scripts`).
 
 ## Blockers
 
 None. Two open questions for the user, both fixed by `SPEC.md`:
 
 - `ports=20999,21000`: nothing in DeepScientist binds 21000 (help text only), and the place publishes it with no login. A quest agent could serve `/ws` there, secrets included. Drop it (conf, `tests/ws-deepscientist.bats`, last recipe bullet), or keep it?
-- `.ws-token` duplicates `runtime/daemon.json`. `status` could read `daemon.json` and `start` drop the file and its test lines (about 5 lines). Keep the file, or drop it?
+- `.ws-token` duplicates `runtime/daemon.json`. `status` could read `daemon.json` and `start` drop the file and its test lines (about 8 lines). A hand-run `ds` on a running daemon rotates the token (`bin/ds.js:4963`) and leaves `.ws-token` stale: `status` then prints `down`. Keep the file, or drop it?
 
 ## Gotchas (unpromoted)
 
