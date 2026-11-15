@@ -14,11 +14,11 @@
 
 ## State
 
-Nothing is built. `SPEC.md` holds the plan. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
+Milestone 1 is done: `workspaces/kapso/` (conf, `config.yaml`, Dockerfile, `run`, `stop`, `steer`) and `tests/ws-kapso.bats` pass against a stub `kapso`. The feature file ~/.local/state/vibe/features/workspaces.md holds the decisions and the contract.
 
 ## Next action
 
-The first open milestone of `SPEC.md`: Conf, Dockerfile and the three scripts against a stub `kapso` — code — done when `bats tests/ws-kapso.bats` passes: `run` writes `result`, `report.md`, `repo.bundle`, `branch` and `score`; a `solution.json` without `goal_achieved` gives `failed:`; `stop` and `steer` call the commands above.
+The next open milestone of `SPEC.md`: write the recipe `docs/workspaces/kapso.md` with the small test repo for the human test. Done when `grep -c '^## ' docs/workspaces/kapso.md` prints 4 or more. Include: the args keys (`evaluation=<dir in the repo>`, `experiments=<n>`), the uid 1000 mount trap, and the image build and bring-up steps.
 
 ## Blockers
 

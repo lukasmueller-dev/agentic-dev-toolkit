@@ -30,7 +30,7 @@ Feature: ~/.local/state/vibe/features/workspaces.md
 
 ## Milestones
 
-- [ ] Conf, Dockerfile and the three scripts against a stub `kapso` — code — done when `bats tests/ws-kapso.bats` passes: `run` writes `result`, `report.md`, `repo.bundle`, `branch` and `score`; a `solution.json` without `goal_achieved` gives `failed:`; `stop` and `steer` call the commands above.
+- [x] Conf, Dockerfile and the three scripts against a stub `kapso` — code — done when `bats tests/ws-kapso.bats` passes: `run` writes `result`, `report.md`, `repo.bundle`, `branch` and `score`; a `solution.json` without `goal_achieved` gives `failed:`; `stop` and `steer` call the commands above.
 - [ ] The recipe `docs/workspaces/kapso.md`, with the small test repo for the human test — code — done when `grep -c '^## ' docs/workspaces/kapso.md` prints 4 or more.
 - [ ] End action — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
