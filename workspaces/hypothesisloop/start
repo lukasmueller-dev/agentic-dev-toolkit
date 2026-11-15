@@ -12,7 +12,8 @@ sandbox="$(hl_key SANDBOX_PROVIDER | tr '[:lower:]' '[:upper:]')"
 # cloudrun takes no account key (config.SandboxTakesKey).
 [[ "$sandbox" != CLOUDRUN ]] || sandbox=""
 missing=""
-for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHROPIC_OAUTH_TOKEN GIT_HOST_PROVIDER LOCAL_REACHABLE_ADDRESS; do
+# OBJECT_STORE_MINIO_SECRET_ACCESS_KEY: render-settings writes no empty key, and control-service then fails at start.
+for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHROPIC_OAUTH_TOKEN GIT_HOST_PROVIDER LOCAL_REACHABLE_ADDRESS OBJECT_STORE_MINIO_SECRET_ACCESS_KEY; do
   [[ -n "$(hl_key "$key")" ]] || missing="$missing $key"
 done
 [[ -z "$missing" ]] || hl_die "$HLOOP_REPO/.env does not set:$missing"
