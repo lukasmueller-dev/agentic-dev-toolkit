@@ -2655,7 +2655,7 @@ toolwait() {
   [ ! -e "$STUBS/tool.log" ]
 }
 
-@test "tool: no out/result, a bad branch name, a link or agent config fails the job; no closing session, the branch stays" {
+@test "tool: no out/result, a bad branch name, a link, agent config or no close.md fails the job; no closing session" {
   local r o="$BATS_TEST_TMPDIR/proj.git"
   r="$(make_repo proj)"
   tool stub branch
@@ -2687,6 +2687,12 @@ toolwait() {
   drain
   [ "$(cat "$Q/04-d/note")" = "out/repo.bundle changes .claude/settings.json: agent and git config stay out of a tool's commits" ]
   [ "$(git -C "$r/.claude/worktrees/tool-c" log -n 1 --format=%s)" = "$(git -C "$r" log -n 1 --format=%s main)" ]
+  rm "$STUBS/tool-config"
+  tooljob 05-e "$r" tool-e
+  mkdir "$Q/05-e/close.md"
+  drain
+  [ "$(cat "$Q/05-e/status")" = failed ]
+  [ "$(cat "$Q/05-e/note")" = "close.md not written — runner.log" ]
   [ ! -e "$STUBS/claude.log" ]
 }
 

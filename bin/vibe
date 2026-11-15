@@ -1282,7 +1282,7 @@ tool_unsafe() {
 
 # tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
 # fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
-# False once the job has ended: a stop, no out/result, a bad or unsafe branch, no fast-forward.
+# False once the job has ended: a stop, no out/result, a bad or unsafe branch, no fast-forward, no close.md.
 # Runs as a tested condition: each failure is handled, not left to errexit.
 tool_job() {
   local d="$1" wt b x e
@@ -1313,11 +1313,13 @@ tool_job() {
       fi
     fi
   fi
+  # `if ! { … } >f` misses a failed redirect (bash keeps its status unnegated): `||` catches it.
   {
-    cat "$d/prompt.md"
-    echo
-    cat "$SELF_ROOT/skills/fill-queue/references/tool-run.md"
-  } >"$d/close.md"
+    cat "$d/prompt.md" && echo && cat "$SELF_ROOT/skills/fill-queue/references/tool-run.md"
+  } >"$d/close.md" || {
+    job_end "$d" failed "close.md not written — runner.log"
+    return 1
+  }
 }
 
 # job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
