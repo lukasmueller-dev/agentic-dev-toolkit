@@ -9,7 +9,8 @@ PLACE="$REPO_ROOT/workspaces/_places/runpod"
 setup() {
   STUB="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$STUB"
-  # runpodctl: a pod exists while $STUB/pod does; its status is $STUB/status (default running).
+  # runpodctl: a pod exists while $STUB/pod does; its status is $STUB/status (default running);
+  # create-fail-after, create-text, list-fail, delete-fail and get-error change a reply.
   cat >"$STUB/runpodctl" <<'EOF'
 #!/bin/sh
 d="$(dirname "$0")"
@@ -17,8 +18,14 @@ echo "$*" >>"$d/runpodctl.log"
 case "$1 $2" in
   "pod create")
     touch "$d/pod"
+    [ ! -f "$d/create-fail-after" ] || exit 1
+    [ ! -f "$d/create-text" ] || { echo "created pod pod123"; exit 0; }
     echo '{"id":"pod123","desiredStatus":"RUNNING"}' ;;
+  "pod list")
+    [ ! -f "$d/list-fail" ] || exit 1
+    if [ -f "$d/pod" ]; then echo '[{"id":"pod123","name":"ws-tool"}]'; else echo '[]'; fi ;;
   "pod get")
+    [ ! -f "$d/get-error" ] || { cat "$d/get-error" >&2; exit 1; }
     [ -f "$d/pod" ] || { echo '{"error":"failed to get pod: pod not found"}' >&2; exit 1; }
     printf '{"id":"pod123","runtimeStatus":"%s"}\n' "$(cat "$d/status" 2>/dev/null || echo running)" ;;
   "pod delete")
@@ -88,10 +95,37 @@ pod_up() {
   [ ! -e "$WS_STATE/id" ]
 }
 
+@test "up finds and deletes a pod whose create prints no id or fails after the provider made it" {
+  local f
+  for f in create-text create-fail-after; do
+    rm -f "$STUB"/create-* "$STUB/runpodctl.log"
+    touch "$STUB/$f"
+    run "$PLACE" up
+    [ "$status" -ne 0 ]
+    grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+    [ ! -e "$STUB/pod" ]
+    [ ! -e "$WS_STATE/id" ]
+    [ ! -e "$WS_STATE/limit" ]
+  done
+}
+
+@test "tick keeps the id when get fails with an auth error that says not found" {
+  pod_up
+  echo $(($(date +%s) - 1)) >"$WS_STATE/limit"
+  touch "$STUB/delete-fail" "$STUB/list-fail"
+  echo '{"error":"failed to get pod: API key not found"}' >"$STUB/get-error"
+  run "$PLACE" tick
+  [ "$status" -ne 0 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+  [ -e "$STUB/pod" ]
+}
+
 @test "up, exec, pull, down: no secret value is in any stub's argv" {
   mkdir -p "$WS_STATE/in"
   echo brief >"$WS_STATE/in/brief.md"
   echo "[203.0.113.7]:22022 ssh-ed25519 old-key" >"$WS_STATE/known_hosts"
+  mkdir -p "$WS_STATE/data"
+  echo kept >"$WS_STATE/data/project.json"
   WS_CONF_KIND=run run "$PLACE" up
   [ "$status" -eq 0 ]
   [ "$(cat "$WS_STATE/id")" = pod123 ]
@@ -101,6 +135,7 @@ pod_up() {
   grep -q -- '--ports 22/tcp --cloud-type SECURE --docker-args sleep infinity' "$STUB/runpodctl.log"
   grep -q "$WS_DIR/ root@203.0.113.7:/ws/scripts/" "$STUB/rsync.log"
   grep -q "$WS_STATE/in/ root@203.0.113.7:/ws/in/" "$STUB/rsync.log"
+  grep -q "$WS_STATE/data/ root@203.0.113.7:/ws/data/" "$STUB/rsync.log"
   grep -qx CLAUDE_CODE_OAUTH_TOKEN=sk-secret-token "$STUB/ssh.stdin"
   run "$PLACE" exec steer "hello world"
   run "$PLACE" pull

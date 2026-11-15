@@ -64,11 +64,20 @@ ready() {
     addr && rsh true
 }
 
-# gone — the pod is not found; a deleted pod stays visible for a short time.
+# gone — get says not found and a good list lacks the id: get wraps any error as
+# "failed to get pod: …", and "API key not found" matches too. A deleted pod stays visible a short time.
 gone() {
-  local err
+  local err list
   if err="$(rp pod get "$id" 2>&1 >/dev/null)"; then return 1; fi
-  grep -qiE 'not.?found' <<<"$err"
+  grep -qiE 'not.?found' <<<"$err" &&
+    list="$(rp pod list 2>/dev/null)" &&
+    jq -e --arg id "$id" 'type == "array" and all(.[]; .id != $id)' <<<"$list" >/dev/null
+}
+
+# by_name — the id of the pod ws-<instance>: a create can fail after the provider made the pod.
+by_name() {
+  rp pod list 2>/dev/null | jq -r --arg n "ws-$WS_INSTANCE" \
+    'if type == "array" then first(.[] | select(.name == $n) | .id) else empty end' 2>/dev/null || true
 }
 
 # destroy — delete until gone; the id file goes only then, so the next tick tries again.
@@ -91,7 +100,10 @@ destroy() {
 undo_up() {
   local rc=$?
   trap - EXIT INT TERM
-  destroy || true
+  echo 0 >"$WS_STATE/limit" # a pod that survives the delete goes at the next tick
+  [ -n "$id" ] || id="$(by_name)"
+  [ -z "$id" ] || echo "$id" >"$WS_STATE/id"
+  if destroy; then rm -f "$WS_STATE/started" "$WS_STATE/limit"; fi
   exit "$rc"
 }
 
@@ -99,6 +111,7 @@ verb_up() {
   local now out secrets=/dev/null
   case "$hours" in '' | *[!0-9]* | 0) die "hours must be a whole number above 0, not '$hours'" ;; esac
   [ -n "${RUNPOD_GPU_ID:-}" ] || die "set RUNPOD_GPU_ID in $place_env"
+  command -v jq >/dev/null || die "jq is missing: up cannot read the pod id"
   if [ -z "${WS_CONF_IMAGE:-}" ] || [ -z "${WS_CONF_COMMIT:-}" ]; then die "workspace.conf needs image and commit"; fi
   [ -z "$id" ] || die "already up: pod $id"
   if [ "${WS_CONF_KIND:-}" = run ] && [ ! -d "$WS_STATE/in" ]; then die "no input: $WS_STATE/in/ is missing"; fi
@@ -125,6 +138,7 @@ verb_up() {
   rsh 'umask 077 && mkdir -p /ws/in /ws/data /ws/out /ws/scripts && cat >/ws/secrets.env' <"$secrets"
   rcopy "$WS_DIR/" "$host:/ws/scripts/"
   [ ! -d "$WS_STATE/in" ] || rcopy "$WS_STATE/in/" "$host:/ws/in/"
+  [ ! -d "$WS_STATE/data" ] || rcopy "$WS_STATE/data/" "$host:/ws/data/"
   trap - EXIT INT TERM
 }
 
