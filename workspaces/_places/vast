@@ -161,6 +161,7 @@ cmd_url() {
   [ -s "$cfg" ] || die "no instance is up"
   ip="$(tailscale ip -4)" || die "no tailnet address"
   if ! ssh -F "$cfg" -S "$sock" -O check vast 2>/dev/null; then
+    rm -f "$sock" # a dead master's socket makes -M run with no control socket
     ssh -F "$cfg" -f -N -M -S "$sock" -o ExitOnForwardFailure=yes -L "$ip:$port:localhost:$port" vast ||
       die "no ssh tunnel to port $port"
   fi

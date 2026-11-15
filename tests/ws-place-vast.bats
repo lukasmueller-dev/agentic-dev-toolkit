@@ -54,6 +54,8 @@ EOF
 }
 
 @test "up, exec, pull, down: a datacenter on-demand offer; no secret value in any stub's argv" {
+  mkdir -p "$WS_STATE"
+  : >"$WS_STATE/tunnel.sock" # a dead master's socket, left by a reboot
   run "$PLACE" up
   [ "$status" -eq 0 ]
   grep -q '^search offers gpu_name=RTX_4090 verified=true rentable=true datacenter=True -o dph --raw$' "$STUBS/vastai.argv"
@@ -66,6 +68,7 @@ EOF
   [ "$(grep -c VAST_QUERY "$STUBS/ssh.stdin")" -eq 0 ]
   [ "$(cat "$WS_STATE/url")" = http://100.64.0.1:8080 ]
   grep -q -- '-L 100.64.0.1:8080:localhost:8080 vast$' "$STUBS/ssh.argv"
+  [ ! -e "$WS_STATE/tunnel.sock" ]
 
   SSH_EXIT=3 run "$PLACE" exec steer "it's late"
   [ "$status" -eq 3 ]
