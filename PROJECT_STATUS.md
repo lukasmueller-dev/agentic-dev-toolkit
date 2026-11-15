@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-14 · research-job_
+_Last updated: 2026-11-14 · queue-report_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-14: **the report is stdout only**: `vibe queue report` writes no file
+  and has no `--week`; the page's Queue tab shows the held jobs and the triage
+  lines. Design: PR body.
 - 2026-11-14: **the queue runs research jobs**: one job works the backlog of a
   `RESEARCH.md` off through the GPU chain and may add its own experiments;
   `deadline=` is the hard stop. A route of `/enqueue`, no new skill.
@@ -37,9 +40,9 @@ contract and the installer's auto-discovery rules.
   and a usage-limit retry resume the saved session. Design: PR body.
 - 2026-10-28: **triage before dispatch**: at 01:00 `vibe job triage` merges
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
-  review comments as briefing lines; then `vibe job due`. 2026-11-06: your
+  review comments as triage lines; then `vibe job due`. 2026-11-06: your
   `/fix` there starts one fix job and one summary comment; another login stays
-  a briefing line. Design: PR body.
+  a triage line. Design: PR body.
 - 2026-10-29: **the queue has a read-only phone page**: the runner writes
   `web/index.html` each pass, `tailscale serve` delivers it. 2026-11-04: its
   buttons post to the write endpoint `bin/vibe-web` (`/queue/api`, your
@@ -50,7 +53,7 @@ contract and the installer's auto-discovery rules.
 - 2026-10-28: **vibe queue replaces the shifts**: one always-on queue
   (`vibe-queue.service`), 4 slots, no day/night window (2026-10-29);
   `/fill-queue` and `/review-jobs` run any time, `check-in` and `shutdown`
-  call them; a fresh briefing per review, no report timers. Design: PR body.
+  call them; a fresh report per review, no report timers. Design: PR body.
 - 2026-10-27: **recurring jobs**: a job is a catalogue prompt plus a schedule;
   `vibe job due` (01:00 timer) adds due jobs to the vibe queue, one PR per
   run on `jobs/<job>`, cap 2 open job PRs per repo, two failures stop a job.

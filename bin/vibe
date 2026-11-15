@@ -16,8 +16,8 @@
 #   vibe queue new --opt-in <job> <repo>
 #                                   a job that opts <repo> into a recurring job and commits it
 #   vibe queue roadmap [--full] <repo>  open PROJECT_ROADMAP.md items on origin: <line>: <title>, or the whole item
-#   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
-#   vibe queue hold <id> <note>     keep a job for you: first in every briefing
+#   vibe queue report               the report of the jobs to review, on stdout
+#   vibe queue hold <id> <note>     keep a job for you: first in every report
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue page                 write the phone page now (the runner writes it each pass)
@@ -45,7 +45,7 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; briefing lines
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
 set -euo pipefail
@@ -1370,7 +1370,7 @@ queue_job() {
   echo "$d"
 }
 
-# vibe queue hold ID NOTE... — keep a finished job unreviewed, first in every briefing.
+# vibe queue hold ID NOTE... — keep a finished job unreviewed, first in every report.
 cmd_queue_hold() {
   local d
   (($# >= 2)) || die "usage: vibe queue hold <id> <note>"
@@ -2267,11 +2267,10 @@ config_md() {
   printf '| Slots | %s |\n' "$(qconf slots 4)"
   printf '| Paused | %s |\n' "$(if [[ -e "$QROOT/paused" ]]; then echo yes; else echo no; fi)"
   printf '| Usage limit | %s |\n' "$limit"
-  printf '| Briefing copies | %s |\n' "$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || echo none)"
   # shellcheck disable=SC2088  # a literal ~ for display
   case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
   # shellcheck disable=SC2016  # Markdown backticks, not an expansion
-  printf '\nFrom `%s`: `queue.conf`, `repos`, `briefing-dir`.\n\n## Recurring jobs\n\n' "$conf"
+  printf '\nFrom `%s`: `queue.conf`, `repos`.\n\n## Recurring jobs\n\n' "$conf"
   # shellcheck disable=SC2119  # no arguments: every repo
   cmd_job_list | awk '
     NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
@@ -2343,21 +2342,22 @@ new_work() {
 # queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q p o jobs lim
+  local f="$QROOT/web/index.html" r g q p o jobs lim front
   local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
   read -r r g q p o <<<"$(queue_counts)"
   lim="$(limit_line)"
   jobs="$(queue_jobs status_card)"
+  front="$(queue_front_md)"
+  [[ -z "$front" ]] || front="<div class=\"md\">$(md_html <<<"$front")</div>"$'\n'
   mkdir -p "${f%/*}" || return 1
-  # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or the briefing.
+  # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
     '<actions>' "$(page_buttons)" \
-    '<jobs>' "${jobs:-<p>No jobs.</p>}"$'\n'"$(new_work)" \
-    '<briefing>' "$(queue_report_md | md_html)" \
+    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$(new_work)" \
     '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
     mv -f "$f.tmp.$$" "$f"
   else
@@ -2476,7 +2476,7 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# feature_md — the briefing's Features table: per feature its pill, done/members, context,
+# feature_md — the report's Features table: per feature its pill, done/members, context,
 # each member as its PR link (else repo:branch) and its state, the file. No feature, no table.
 feature_md() {
   local f r b p ms rows="" mem ctx
@@ -2494,15 +2494,9 @@ feature_md() {
   printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
-# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", the
-# Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
-# action of every unheld job that did not finish or failed its gate.
-queue_report_md() {
-  local d st g wt repo rows="" lim
-  echo "# Vibe queue — $(date '+%F %H:%M')"
-  echo
-  lim="$(limit_line)"
-  echo "$(queue_header)${lim:+ · $lim}"
+# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report and of the page.
+queue_front_md() {
+  local d rows=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/held" ]] || continue
@@ -2515,6 +2509,18 @@ queue_report_md() {
     echo
     cat "$QROOT/triage.md"
   fi
+}
+
+# queue_report_md — the report: the header (with the 5h limit), queue_front_md, the
+# Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
+# action of every unheld job that did not finish or failed its gate.
+queue_report_md() {
+  local d st g wt repo rows="" lim
+  echo "# Vibe queue — $(date '+%F %H:%M')"
+  echo
+  lim="$(limit_line)"
+  echo "$(queue_header)${lim:+ · $lim}"
+  queue_front_md
   feature_keys
   feature_md
   while IFS= read -r repo; do
@@ -2557,103 +2563,10 @@ queue_report_md() {
   done
 }
 
-# week_jobs SINCE — one line per job, queue and archive: repo, status, ran,
-# open, id, note, tab-separated. ran: ended on or after the date SINCE
-# ("2026-10-22 03:00:00" > "2026-10-22"). open: unarchived and needs a human.
-week_jobs() {
-  local since="$1" d m st ended ran open
-  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
-    d="${d%/}"
-    [[ -f "$d/job" ]] || continue
-    ran=0 open=0
-    case "$d" in
-      "$QDIR"/*) ;;
-      *)
-        m="${d%/*}" m="${m##*/}"
-        if [[ "$m" < "${since:0:7}" ]]; then continue; fi
-        ;;
-    esac
-    st="$(jstate "$d" status)" ended="$(jstate "$d" ended)"
-    if [[ -n "$ended" && "$ended" > "$since" ]]; then ran=1; fi
-    case "$d:$st" in "$QDIR"/*:blocked | "$QDIR"/*:failed | "$QDIR"/*:timeout | "$QDIR"/*:skipped) open=1 ;; esac
-    if ((ran + open)); then
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(jget "$d/job" repo)" "$st" "$ran" "$open" "${d##*/}" "$(jstate "$d" note)"
-    fi
-  done
-}
-
-# week_list LABEL LINES — "- LABEL: N" and the lines; "none" without lines.
-week_list() {
-  if [[ -z "$2" ]]; then
-    echo "- $1: none"
-    return 0
-  fi
-  echo "- $1: $(printf '%s\n' "$2" | awk 'END { print NR }')"
-  echo "$2"
-}
-
-# queue_week_md — the Sunday section: per repo the PRs merged, the jobs run
-# and the blockers open over the last 7 days.
-queue_week_md() {
-  local since rows repo merged
-  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
-  rows="$(week_jobs "$since")"
-  echo "## Week since $since"
-  while IFS= read -r repo; do
-    [[ -n "$repo" ]] || continue
-    echo
-    echo "### ${repo##*/}"
-    echo
-    echo "- Jobs run: $(awk -F'\t' -v r="$repo" '
-      $1 == r && $3 { n[$2]++; t++ }
-      END {
-        if (!t) { print "none"; exit }
-        split("done blocked failed timeout skipped", k, " ")
-        for (i = 1; i <= 5; i++) if (n[k[i]]) s = s (s ? ", " : "") n[k[i]] " " k[i]
-        print t " (" s ")"
-      }' <<<"$rows")"
-    if merged="$(cd "$repo" && gh pr list --state merged --search "merged:>=$since" --json number,title,url \
-      -q '.[] | "  - [#\(.number)](\(.url)) \(.title)"' 2>/dev/null)"; then
-      week_list "PRs merged" "$merged"
-    else
-      echo "- PRs merged: unknown (gh failed)"
-    fi
-    week_list "Blockers open" "$(awk -F'\t' -v r="$repo" '$1 == r && $4 { print "  - " $5 " — " $6 }' <<<"$rows")"
-  done < <(cut -f1 <<<"$rows" | sort -u)
-}
-
-# vibe queue report [--week] — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
-# copied as briefing-<…>.md with note frontmatter to the directory named in
-# ~/.config/vibe/briefing-dir when that file exists. --week ends it with the
-# Sunday section.
+# vibe queue report — the report of the jobs to review, on stdout.
 cmd_queue_report() {
-  local file copy dest week=""
-  if [[ "${1:-}" == --week ]]; then
-    week=1
-    shift
-  fi
-  [[ $# -eq 0 ]] || die "usage: vibe queue report [--week]"
-  file="$QROOT/briefings/$(date +%F-%H%M).md"
-  mkdir -p "${file%/*}"
-  {
-    queue_report_md
-    if [[ -n "$week" ]]; then
-      echo
-      queue_week_md
-    fi
-  } >"$file"
-  echo "briefing: $file"
-  copy="$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || true)"
-  copy="${copy/#\~/$HOME}"
-  if [[ -n "$copy" ]]; then
-    dest="$copy/briefing-${file##*/}"
-    mkdir -p "$copy"
-    {
-      printf -- '---\ncreated: %s\ntouched_by_ai: true\n---\n\n' "$(date +%F)"
-      cat "$file"
-    } >"$dest"
-    echo "copied: $dest"
-  fi
+  [[ $# -eq 0 ]] || die "usage: vibe queue report"
+  queue_report_md
 }
 
 cmd_queue() {
@@ -3186,7 +3099,7 @@ job_args() {
 }
 
 # job_stopped REPO JOB — add a `skipped` entry for a stopped job, unless the
-# queue already holds one, so the briefing shows it under "Needs you".
+# queue already holds one, so the report shows it under "Needs you".
 job_stopped() {
   local repo="$1" job="$2" d tmp
   for d in "$QDIR"/*/; do
@@ -3317,7 +3230,7 @@ triage_fix() {
 # vibe job triage [REPO...] — every open agent PR of every repo under the
 # root: merge the base into a conflicted one and push; a `/fix` or "Request
 # changes" of your login starts one fix job; red CI and unanswered review
-# comments become lines in QROOT/triage.md, which the briefing shows.
+# comments become lines in QROOT/triage.md, which the report and the page show.
 cmd_job_triage() {
   local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
   command -v gh >/dev/null 2>&1 || {

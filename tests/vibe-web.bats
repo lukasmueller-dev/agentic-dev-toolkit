@@ -136,8 +136,9 @@ post() {
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
-  # Raw HTML in a .md or the briefing can repeat any id or class chain: a guard compares nodes.
+  # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
   grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
   [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
