@@ -14,7 +14,7 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/hypothesisloop/` (conf, `start`, `stop`, `status`, `hloop.sh`, `compose.tailnet.yml`) and `tests/ws-hypothesisloop.bats` (6 tests, green). Design reasons: the commit body of `feat(workspaces): hypothesisloop conf, start, stop and status`.
+Milestone 1 is done: `workspaces/hypothesisloop/` (conf, `start`, `stop`, `status`, `hloop.sh`, `compose.tailnet.yml`) and `tests/ws-hypothesisloop.bats` (10 tests, green). Design reasons: the commit bodies of `feat(workspaces): hypothesisloop conf, start, stop and status` and of the review fix after it.
 
 ## Next action
 
@@ -27,7 +27,9 @@ None.
 ## Gotchas (unpromoted)
 
 - The compose stack rents nothing: only `make dev` (`localdev/dev.sh`) renders the sandbox and cloud_compute sections. Hosted agents need `make dev`. The recipe must say so.
-- The UI (port 3000) is `npm run dev` from `localdev/dev.sh ui`, outside compose. `next dev` binds every interface.
-- `start` needs `localdev/.image-tag` and `localdev/.host-address`: one `make local-images` and one `make render-settings` by hand. Both default to podman; docker needs `CONTAINER_ENGINE=docker IMAGE_PLATFORM=linux/amd64` (Makefile comment).
-- `start` binds to `LOCAL_REACHABLE_ADDRESS` of the checkout's `.env`: it must be `tailscale ip -4`.
+- The UI (port 3000) is `npm run dev` from `localdev/dev.sh ui`, outside compose. `next dev` binds every interface. The recipe holds the UI step (review finding 7, open); `status` names a missing UI.
+- `start` needs two images on this host, `$(cat localdev/.host-address):5000/hypothesisloop-{control-service,metrics-service}:$(cat localdev/.image-tag)`. Its refusals point to the recipe for the build.
+- turing has docker and no podman. `make local-images` hard-codes `podman compose` for `registry-up` and pushes to the LAN registry over HTTP, which docker refuses. The recipe needs a docker-only build that writes `.image-tag`; nobody has run one yet.
+- `start` does not start the `registry` service: the images are local, and only remote clusters pull from it.
+- `start` binds to `LOCAL_REACHABLE_ADDRESS` of the checkout's `.env` and refuses anything but an IPv4: it must be `tailscale ip -4`.
 - `compose.tailnet.yml` needs docker compose 2.24.4 or later (`!override`); turing has v5.7.1.
