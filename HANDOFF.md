@@ -14,11 +14,11 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/_places/runpod` and `tests/ws-place-runpod.bats` (10 tests, all pass). The script header lists its config keys.
+Milestones 1 and 2 are done: `workspaces/_places/runpod`, `tests/ws-place-runpod.bats` (10 tests, all pass) and the recipe `docs/workspaces/place-runpod.md`. The recipe holds each gotcha.
 
 ## Next action
 
-The second milestone of `SPEC.md`: the recipe `docs/workspaces/place-runpod.md` (requirements, numbered steps, verify, what breaks it) — code — done when `grep -c '^## ' docs/workspaces/place-runpod.md` prints 4 or more. Put each gotcha below into the recipe.
+The end action of `SPEC.md` (milestone 3) — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`. Move each spec decision and the open question below to `pr.md`, then `git rm SPEC.md HANDOFF.md` in one commit.
 
 ## Blockers
 
@@ -26,11 +26,5 @@ None.
 
 ## Gotchas (unpromoted)
 
-- Config: `~/.config/vibe/places/runpod.env`, mode 600, `RUNPOD_GPU_ID` (needed), `RUNPOD_API_KEY` (else `~/.runpod/config.toml`), `RUNPOD_CLOUD_TYPE`, `RUNPOD_DISK_GB`, `RUNPOD_WAIT`, `RUNPOD_POLL`.
-- The image must start sshd from its entrypoint (key from `PUBLIC_KEY`) and hold rsync: `--docker-args "sleep infinity"` replaces the CMD.
-- `up` copies `$WS_STATE/in/` to `/ws/in/` and fails a `kind=run` without it; the contract names no source for `/ws/in`.
-- `runpodctl` output formats come from its source, not a real run. The recipe's first verify step creates a pod on the cheapest GPU, checks that `.id` is not empty, runs `runpodctl ssh info <id>` (`ip`, `port`, `ssh_key.path`), checks that `runpodctl pod list` is a JSON array with `id` and `name`, then deletes the pod. `gone` and the cleanup after a failed create read that list.
-- `url`: `ControlPath too long` when `$WS_STATE/tunnel.sock` is over 104 characters → keep service instance names short.
-- A dropped ssh ends a long `exec run`: the remote command gets SIGPIPE.
-- Last money stop (spec decision): prepaid credit, auto-pay off.
 - Open for the user (review 2, finding 4): at the limit, `down` pulls with no time bound before the delete. A bound trades the last data for money and frees the runner pass.
+- Open in the contract: no member names the source of `$WS_STATE/in/`; `ws-surface` does not write it yet.
