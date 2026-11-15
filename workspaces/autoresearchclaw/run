@@ -11,6 +11,7 @@ run_dir="$ws/data/artifacts/$inst"
 summary="$run_dir/pipeline_summary.json"
 out="$ws/out"
 pidfile="${TMPDIR:-/tmp}/ws-run.pid"
+pid=
 
 # finish "<result line>" [exit code]: write result and report.md, then exit.
 finish() {
@@ -24,7 +25,24 @@ finish() {
   exit "${2:-0}"
 }
 
+# shellcheck disable=SC2317 # called through trap
+# Any exit without a verdict still leaves a result line. The pid file goes last: stop waits for it.
+on_exit() {
+  local code=$?
+  if [ ! -s "$out/result" ]; then printf 'failed: run script aborted (exit %s)\n' "$code" >"$out/result" || true; fi
+  rm -f "$pidfile"
+}
+# shellcheck disable=SC2317 # called through trap
+# TERM or INT to run reaches the tool; the wait loop below then collects it and writes the verdict.
+on_signal() {
+  if [ -n "$pid" ]; then kill -TERM "$pid" 2>/dev/null || true; fi
+}
+trap on_exit EXIT
+trap on_signal TERM INT
+
 mkdir -p "$out"
+rm -f "$out/result"
+
 if [ -r "$ws/secrets.env" ]; then
   n=0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -46,31 +64,45 @@ resume=()
 if [ -f "$run_dir/checkpoint.json" ]; then resume=(--resume); fi
 
 cd "$ws/data"
-timeout "${hours}h" researchclaw run -c "$here/config.yaml" -t "$topic" -o "$run_dir" \
+# -k 60: the hour limit and a stop end the tool for good, also when it ignores TERM.
+timeout -k 60 "${hours}h" researchclaw run -c "$here/config.yaml" -t "$topic" -o "$run_dir" \
   --auto-approve --skip-noncritical-stage "${resume[@]+"${resume[@]}"}" &
 pid=$!
-echo "$pid" >"$pidfile"
-rc=0
-wait "$pid" || rc=$?
-rm -f "$pidfile"
+echo "$$" >"$pidfile" # exists only while the tool runs, so stop never signals before pid is set
+# A trapped signal ends wait early: loop until the tool is gone, then keep its own exit code.
+while :; do
+  rc=0
+  wait "$pid" || rc=$?
+  kill -0 "$pid" 2>/dev/null || break
+done
 
 last=0
-if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json")"; fi
-if [ -d "$run_dir/deliverables" ]; then
-  mkdir -p "$out/files"
-  cp -R "$run_dir/deliverables/." "$out/files/"
-fi
+if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json" 2>/dev/null)" || last=0; fi
 
+verdict=
 case "$rc" in
   0) ;;
-  124) finish "failed: hour limit of $hours h reached after stage $last" "$rc" ;;
-  143) finish "failed: stopped after stage $last; a new run resumes" "$rc" ;;
-  *) finish "failed: researchclaw exit $rc after stage $last; see tool.log" "$rc" ;;
+  124) verdict="failed: hour limit of $hours h reached after stage $last" ;;
+  137) verdict="failed: killed after stage $last, the tool ignored TERM; a new run resumes" ;;
+  143) verdict="failed: stopped after stage $last; a new run resumes" ;;
+  *) verdict="failed: researchclaw exit $rc after stage $last; see tool.log" ;;
 esac
-
-jq -e . "$summary" >/dev/null 2>&1 || finish "failed: no valid pipeline_summary.json after stage $last"
-if ! jq -e '.final_status == "done" and .final_stage == 23' "$summary" >/dev/null; then
-  finish "failed: $(jq -r '"ended at stage \(.final_stage) (\(.final_status)), \(.stages_failed) stage(s) failed"' "$summary")"
+if [ -n "$verdict" ]; then
+  :
+elif ! jq -e . "$summary" >/dev/null 2>&1; then
+  verdict="failed: no valid pipeline_summary.json after stage $last"
+elif ! jq -e '.final_status == "done" and .final_stage == 23' "$summary" >/dev/null; then
+  verdict="failed: $(jq -r '"ended at stage \(.final_stage) (\(.final_status)), \(.stages_failed) stage(s) failed"' "$summary")"
+elif [ ! -s "$run_dir/deliverables/paper_final.md" ]; then
+  verdict="failed: all 23 stages done, but deliverables/paper_final.md is missing"
+else
+  verdict="done: $(jq -r '"paper in files/, \(.stages_done) stages done, \(.stages_failed) failed, degraded=\(.degraded)"' "$summary")"
 fi
-[ -s "$run_dir/deliverables/paper_final.md" ] || finish "failed: all 23 stages done, but deliverables/paper_final.md is missing"
-finish "done: $(jq -r '"paper in files/, \(.stages_done) stages done, \(.stages_failed) failed, degraded=\(.degraded)"' "$summary")"
+
+# Copy after the verdict: a failed copy (disk full) must not hide why the run ended.
+if [ -d "$run_dir/deliverables" ]; then
+  if ! { mkdir -p "$out/files" && cp -R "$run_dir/deliverables/." "$out/files/"; }; then
+    verdict="failed: copy of deliverables to /ws/out/files failed; the run verdict was: $verdict"
+  fi
+fi
+finish "$verdict" "$rc"
