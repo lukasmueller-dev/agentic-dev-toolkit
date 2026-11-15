@@ -157,10 +157,11 @@ cmd_up() {
 }
 
 cmd_exec() {
-  local cmd a
-  [ $# -gt 0 ] || die "usage: vast exec <script> [arg…]"
+  local cmd a s="${1:-}"
+  case "$s" in '' | */* | .*) die "usage: vast exec <script> [arg…]" ;; esac
   [ -s "$cfg" ] || die "no instance is up"
-  cmd="cd /ws && WS_NAME=$(shq "$name") WS_INSTANCE=$(shq "$WS_INSTANCE") WS_PLACE=vast WS_HOURS=$(shq "$hours") exec $(shq "/ws/scripts/$1")"
+  # Exit 3: the tool has no such script, so the verb is not supported.
+  cmd="test -x $(shq "/ws/scripts/$s") || exit 3; cd /ws && WS_NAME=$(shq "$name") WS_INSTANCE=$(shq "$WS_INSTANCE") WS_PLACE=vast WS_HOURS=$(shq "$hours") exec $(shq "/ws/scripts/$s")"
   shift
   for a in "$@"; do cmd="$cmd $(shq "$a")"; done
   exec ssh -F "$cfg" -n vast "$cmd"

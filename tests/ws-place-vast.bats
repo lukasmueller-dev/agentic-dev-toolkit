@@ -94,7 +94,13 @@ EOF
 
   SSH_EXIT=3 run "$PLACE" exec steer "it's late"
   [ "$status" -eq 3 ]
+  grep -qF "test -x '/ws/scripts/steer' || exit 3; cd /ws && " "$STUBS/ssh.argv"
   grep -qF "WS_PLACE=vast WS_HOURS='8' exec '/ws/scripts/steer' 'it'\\''s late'" "$STUBS/ssh.argv"
+  for s in ../steer .hidden ''; do
+    run "$PLACE" exec "$s"
+    [ "$status" -eq 1 ]
+  done
+  [ "$(grep -c -- 'exec ' "$STUBS/ssh.argv")" -eq 1 ]
 
   run "$PLACE" pull
   [ "$status" -eq 0 ]
