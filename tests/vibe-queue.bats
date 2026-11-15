@@ -2475,7 +2475,8 @@ phase_jobs() {
 # tool NAME RESULT [CONF-LINE...] — a kind=run workspace NAME on the real turing place, runs=host: no docker.
 # Its scripts run in the instance's state dir and log to $STUBS/tool.log. $STUBS/tool-sleep: the run waits
 # 30 s first; tool-fail: it exits 4 with no result; tool-branch: the ref name it writes; tool-config: its commit
-# adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; steer-exit: steer's exit.
+# adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; tool-nobundle: no repo.bundle;
+# steer-exit: steer's exit.
 tool() {
   local w="$BATS_TEST_TMPDIR/workspaces"
   export VIBE_WORKSPACES="$w" VIBE_WS_POLL=0.1
@@ -2499,7 +2500,7 @@ git clone -q in/repo work && cd work && git checkout -q -b tool/try
 echo tool >tool.txt && git add tool.txt
 if [ -e "$STUBS/tool-config" ]; then mkdir -p .claude && echo '{}' >.claude/settings.json && git add .claude; fi
 git commit -q -m "feat: tool change"
-git bundle create ../out/repo.bundle tool/try 2>/dev/null
+[ -e "$STUBS/tool-nobundle" ] || git bundle create ../out/repo.bundle tool/try 2>/dev/null
 cd .. && echo 0.91 >out/score && echo "done: score 0.91" >out/result
 cat "$STUBS/tool-branch" 2>/dev/null >out/branch || echo tool/try >out/branch
 if [ -e "$STUBS/tool-link" ]; then ln -sf "$STUBS/secret" out/branch; fi
@@ -2655,7 +2656,7 @@ toolwait() {
   [ ! -e "$STUBS/tool.log" ]
 }
 
-@test "tool: no out/result, a bad branch name, a link, agent config or no close.md fails the job; no closing session" {
+@test "tool: no out/result, a bad branch name, a link, agent config, no bundle or no close.md fails the job; no closing session" {
   local r o="$BATS_TEST_TMPDIR/proj.git"
   r="$(make_repo proj)"
   tool stub branch
@@ -2688,6 +2689,12 @@ toolwait() {
   [ "$(cat "$Q/04-d/note")" = "out/repo.bundle changes .claude/settings.json: agent and git config stay out of a tool's commits" ]
   [ "$(git -C "$r/.claude/worktrees/tool-c" log -n 1 --format=%s)" = "$(git -C "$r" log -n 1 --format=%s main)" ]
   rm "$STUBS/tool-config"
+  touch "$STUBS/tool-nobundle"
+  tooljob 06-f "$r" tool-n
+  drain
+  [ "$(cat "$Q/06-f/status")" = failed ]
+  [ "$(cat "$Q/06-f/note")" = "out/result is done: but there is no out/repo.bundle — tool.log" ]
+  rm "$STUBS/tool-nobundle"
   tooljob 05-e "$r" tool-e
   mkdir "$Q/05-e/close.md"
   drain

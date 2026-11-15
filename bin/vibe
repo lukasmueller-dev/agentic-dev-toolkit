@@ -1282,7 +1282,8 @@ tool_unsafe() {
 
 # tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
 # fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
-# False once the job has ended: a stop, no out/result, a bad or unsafe branch, no fast-forward, no close.md.
+# False once the job has ended: a stop, no out/result, a done branch result with no bundle, a bad or unsafe
+# branch, no fast-forward, no close.md.
 # Runs as a tested condition: each failure is handled, not left to errexit.
 tool_job() {
   local d="$1" wt b x e
@@ -1297,6 +1298,11 @@ tool_job() {
       return 1
     fi
     b="$(jstate "$d/out" branch)"
+    # tool-run.md tells the closing session that the branch holds the tool's commits.
+    if [[ "$(tool_conf "$d" result)" == branch && ! -f "$d/out/repo.bundle" && "$(jstate "$d/out" result)" == done:* ]]; then
+      job_end "$d" failed "out/result is done: but there is no out/repo.bundle — tool.log"
+      return 1
+    fi
     if [[ "$(tool_conf "$d" result)" == branch && -f "$d/out/repo.bundle" ]]; then
       if ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b"; } >>"$d/tool.log" 2>&1; then
         job_end "$d" failed "out/repo.bundle: no branch '$b' — tool.log"
