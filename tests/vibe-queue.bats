@@ -2707,7 +2707,7 @@ toolwait() {
   [ "$(grep -c '^run' "$STUBS/tool.log")" -eq 2 ]
   "$VIBE" queue fix "$(cat "$Q/$n/pr")" "rename tool.txt" >/dev/null
   GPUQ_EXIT=0 "$VIBE" queue follow "$Q/$n" >/dev/null
-  [ "$(ls "$Q" | wc -l)" -eq 3 ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 3 ]
   [ "$(grep -l '^tool=' "$Q"/*/job)" = "$Q/$n/job" ]
   drain
   [ "$(grep -c '^run' "$STUBS/tool.log")" -eq 2 ]
