@@ -225,15 +225,16 @@ secrets() {
   chmod 600 "$HOME/.config/vibe/workspaces/$1.env"
 }
 
-# gone PID — PID ends within 5 s.
-gone() {
-  local i
-  for i in $(seq 50); do
-    kill -0 "$1" 2>/dev/null || return 0
+# within5 CMD... — CMD succeeds within 5 s.
+within5() {
+  local n=0
+  until "$@"; do
+    n=$((n + 1))
+    [ "$n" -lt 50 ] || return 1
     sleep 0.1
   done
-  return 1
 }
+dead() { ! kill -0 "$1" 2>/dev/null; }
 
 @test "ws start: refuses a missing secret and an env file that others can read; no docker call" {
   stubs
@@ -327,7 +328,7 @@ gone() {
   kill -0 "$pid"
   run "$VIBE" ws stop svc
   [ "$status" -eq 0 ]
-  gone "$pid"
+  within5 dead "$pid"
   [ ! -e "$S/containers/ws-svc" ]
 }
 
@@ -348,15 +349,12 @@ gone() {
   [ ! -e "$S/docker.log" ]
   "$VIBE" ws start svc
   rm "$S/gpu-busy"
-  for i in $(seq 50); do
-    if [ -e "$S/gpu.pid" ] && grep -qx 'vibe: holds the GPU' "$STATES/svc/hold.log"; then break; fi
-    sleep 0.1
-  done
+  within5 grep -qx 'vibe: holds the GPU' "$STATES/svc/hold.log"
   run "$VIBE" ws status svc
   [[ "$output" == "svc "*" up "* ]] || false
   pid="$(cat "$S/gpu.pid")"
   "$VIBE" ws stop svc
-  gone "$pid"
+  within5 dead "$pid"
 }
 
 @test "ws tick: removes a container past its limit; pulls one 10 min after its last pull" {
@@ -389,11 +387,7 @@ gone() {
   "$VIBE" ws start old
   echo $(($(date +%s) - 1)) >"$STATES/old/limit"
   "$VIBE" queue run --claude --drain >/dev/null 2>&1
-  for i in $(seq 50); do
-    if [ ! -e "$S/containers/ws-old" ]; then break; fi
-    sleep 0.1
-  done
-  [ ! -e "$S/containers/ws-old" ]
+  within5 test ! -e "$S/containers/ws-old"
   [ ! -e "$STATES/old/id" ]
 }
 
@@ -430,6 +424,7 @@ gone() {
 @test "ws start and stop: runs=host runs the scripts on the host; no stop script is no error" {
   stubs
   conf h kind=service runs=host places=turing ports=3000
+  # shellcheck disable=SC2016  # the stub expands them
   printf '#!/bin/sh\necho "start $WS_NAME $WS_INSTANCE $WS_PLACE $PWD" >>"%s/host.log"\n' "$S" >"$VIBE_WORKSPACES/h/start"
   chmod +x "$VIBE_WORKSPACES/h/start"
   run "$VIBE" ws start h
