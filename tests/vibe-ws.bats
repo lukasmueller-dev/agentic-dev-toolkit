@@ -564,3 +564,23 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   kill "$other"
   [ ! -e "$STATES/svc/holder" ]
 }
+
+@test "ws status: a gpu=yes start that fails after the wait for the lock shows why; a stop clears it" {
+  stubs
+  good svc service gpu=yes
+  secrets svc
+  touch "$S/gpu-busy"
+  echo 1 >"$S/exit-start"
+  "$VIBE" ws start svc
+  holder="$(cat "$STATES/svc/holder")"
+  rm "$S/gpu-busy"
+  within5 dead "$holder"
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" down "*" turing  vibe: start of svc failed — it is down again" ]] || false
+  rm "$S/exit-start"
+  run "$VIBE" ws start svc
+  [ "$output" = "svc up — http://100.64.0.1:8080" ]
+  "$VIBE" ws stop svc
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" down "*" turing" ]] || false
+}

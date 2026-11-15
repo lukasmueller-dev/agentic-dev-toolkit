@@ -3442,6 +3442,10 @@ cmd_ws_status() {
     if [[ "$s" != down ]]; then
       lim="$(jstate "$d" limit)"
       more="${lim:+until $(at_time "$lim") }$(jstate "$d" url)"
+    elif [[ -s "$d/hold.log" ]] && ! ws_holder "$d" >/dev/null; then
+      # A gpu=yes start that failed after `ws start` returned: its holder's last line is the reason.
+      more="$(tail -n 1 "$d/hold.log")"
+      if [[ "$more" == "vibe: holds the GPU" ]]; then more=""; fi
     fi
     l="$(printf '%-24s %-10s %-7s %s' "${d##*/}" "$s" "$(jstate "$d" place)" "$more")"
     echo "${l%"${l##*[! ]}"}"
@@ -3554,7 +3558,7 @@ cmd_ws_start() {
   place="${place%%,*}"
   mkdir -p "$st"
   echo "$place" >"$st/place"
-  rm -f "$st/waits" "$st/holder" "$st/url"
+  rm -f "$st/waits" "$st/holder" "$st/url" "$st/hold.log"
   if [[ "$place" != turing || "$(jget "$f" gpu)" != yes ]]; then
     ws_up "$1"
     return 0
@@ -3603,7 +3607,7 @@ cmd_ws_stop() {
   pid="$(ws_holder "$st")" || pid=""
   if [[ -e "$st/waits" && -n "$pid" ]]; then
     kill -TERM -- "-$pid" 2>/dev/null || true
-    rm -f "$st/waits" "$st/holder"
+    rm -f "$st/waits" "$st/holder" "$st/hold.log"
     echo "$1 stopped — it waited for the GPU"
     return 0
   fi
@@ -3631,6 +3635,7 @@ ws_down() {
     kill -TERM -- "-$pid" 2>/dev/null || true
     rm -f "$st/holder"
   fi
+  rm -f "$st/hold.log"
   return "$rc"
 }
 
