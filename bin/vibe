@@ -352,7 +352,7 @@ cmd_update_toolkit() {
 
 # --- queue: unattended agent jobs, one worktree each (docs/vibe-queue.md) ---
 
-# role_gate queue|job SUB [ARG...] — on a client (~/.config/vibe/role: `client <host>`),
+# role_gate queue|job|feature|ws SUB [ARG...] — on a client (~/.config/vibe/role: `client <host>`),
 # run a read-only SUB on the server over ssh and stop on any other.
 role_gate() {
   local role="" host="" cmd

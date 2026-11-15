@@ -60,7 +60,7 @@ systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
 Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
-There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
+There `vibe queue status|report`, `vibe job list` and `vibe ws list|status` run on the server; other `queue`, `job` and `ws` commands stop.
 
 ## 3. Phone page
 
