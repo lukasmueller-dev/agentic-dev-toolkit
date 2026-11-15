@@ -4,10 +4,10 @@ set -euo pipefail
 
 pidfile="${TMPDIR:-/tmp}/ar-supervisor.pid"
 stopflag="${TMPDIR:-/tmp}/ar-stop"
+# The pid file holds run's own pid; run removes it after it wrote the result.
 pid="$(cat "$pidfile" 2>/dev/null)" || exit 0
 kill -0 "$pid" 2>/dev/null || exit 0
 touch "$stopflag"
-# run removes the pid file after it wrote the result.
 for _ in $(seq 1 "${AR_STOP_WAIT:-120}"); do
   if [ ! -e "$pidfile" ]; then exit 0; fi
   sleep 1

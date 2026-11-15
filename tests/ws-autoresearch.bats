@@ -18,7 +18,9 @@ setup() {
 import os
 import pathlib
 import sys
+import time
 
+time.sleep(float(os.environ.get("RENDER_SLEEP", "0")))
 if os.environ.get("RENDER_FAIL"):
     sys.exit(2)
 d = pathlib.Path(os.environ["AR_RUNTIME"]) / ".claude"
@@ -108,13 +110,53 @@ EOF
   STUB_MODE=hang "$WSDIR/run" >/dev/null 2>&1 3>&- &
   local rp=$!
   for _ in $(seq 1 50); do
+    if [ -s "$TMPDIR/stub.log" ]; then break; fi
+    sleep 0.2
+  done
+  [ -s "$TMPDIR/stub.log" ]
+  run "$WSDIR/stop"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped, supervisor exit 143" ]
+  wait "$rp"
+}
+
+@test "stop waits for the result when the supervisor ended on its own and run still copies" {
+  local real
+  real="$(command -v cp)"
+  mkdir -p "$TMPDIR/bin"
+  cat >"$TMPDIR/bin/cp" <<EOF2
+#!/bin/sh
+touch "\$TMPDIR/cp-started"
+sleep 1
+exec $real "\$@"
+EOF2
+  chmod +x "$TMPDIR/bin/cp"
+  PATH="$TMPDIR/bin:$PATH" "$WSDIR/run" >/dev/null 2>&1 3>&- &
+  local rp=$!
+  for _ in $(seq 1 50); do
+    if [ -e "$TMPDIR/cp-started" ]; then break; fi
+    sleep 0.2
+  done
+  [ -e "$TMPDIR/cp-started" ]
+  [ ! -s "$WS_ROOT/out/result" ]
+  run "$WSDIR/stop"
+  [ "$status" -eq 0 ]
+  [ "$(cut -c1-5 "$WS_ROOT/out/result")" = "done:" ]
+  wait "$rp"
+}
+
+@test "a stop during the setup ends run before the supervisor starts" {
+  RENDER_SLEEP=2 "$WSDIR/run" >/dev/null 2>&1 3>&- &
+  local rp=$!
+  for _ in $(seq 1 50); do
     if [ -s "$TMPDIR/ar-supervisor.pid" ]; then break; fi
     sleep 0.2
   done
   [ -s "$TMPDIR/ar-supervisor.pid" ]
   run "$WSDIR/stop"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped, supervisor exit 143" ]
+  [ "$(cat "$WS_ROOT/out/result")" = "failed: stopped before the supervisor started" ]
+  [ ! -e "$TMPDIR/stub.log" ]
   wait "$rp"
 }
 

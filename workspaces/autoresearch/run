@@ -19,6 +19,8 @@ finish() {
 }
 trap finish EXIT
 rm -f "$stopflag"
+# stop reads this pid: run's own, so stop waits for the result, not only for the supervisor.
+echo $$ >"$pidfile"
 
 case "$hours" in
   '' | *[!0-9.]* | *.*.* | .)
@@ -44,12 +46,17 @@ if ! (cd "$rt/.." && python3 scripts/render_env.py); then
   exit 0
 fi
 
+# A stop that came during the setup ends the run before the paid start.
+if [ -e "$stopflag" ]; then
+  echo "failed: stopped before the supervisor started" >"$out/result"
+  exit 0
+fi
+
 # The supervisor changes directory: both paths must be absolute.
 cd "$rt"
 deadline=$(($(date +%s) + limit))
 scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
 pid=$!
-echo "$pid" >"$pidfile"
 
 # TERM at WS_HOURS or on `stop` lets the supervisor stop its attempt and seal the manifest.
 # KILL follows after the grace, so run never outlasts the limit by more than that.
