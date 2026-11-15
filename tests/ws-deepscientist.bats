@@ -235,7 +235,7 @@ EOF
 @test "the conf, the Dockerfile and the contract agree" {
   conf="$WSD/workspace.conf"
   grep -q '^kind=service$' "$conf"
-  grep -q '^ports=20999,21000$' "$conf"
+  grep -q '^ports=20999$' "$conf"
   grep -q '^secrets=CLAUDE_CODE_OAUTH_TOKEN$' "$conf"
   commit="$(sed -n 's/^commit=//p' "$conf")"
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || false
