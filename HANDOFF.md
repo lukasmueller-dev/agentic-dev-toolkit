@@ -14,11 +14,11 @@
 
 ## State
 
-Milestone 1 of `SPEC.md` is done: `docs/workspaces.md` (the contract), `workspaces/README.md`, `vibe ws list|status` in `bin/vibe`, `tests/vibe-ws.bats`.
+Milestones 1 and 2 of `SPEC.md` are done. `workspaces/_places/turing` is the Docker place. `bin/vibe` has `ws build|start|stop|tick` and a hidden `ws hold`; the runner pass runs `ws_tick_bg`. `tests/vibe-ws.bats` has 19 tests.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the `turing` place, `vibe ws build|start|stop`, `tick` in the runner pass — code — done when `bats tests/vibe-ws.bats` passes with stub `docker` and `gpu-queue`: start refuses a missing secret and an env file that others can read; a `gpu=yes` service holds the lock until stop; `tick` removes a container past its limit; a failed `up` leaves no container.
+The next open milestone of `SPEC.md`: the queue hook — code — done when `bats tests/vibe-queue.bats -f tool` passes with a stub tool: a branch result ends as commits on the job's branch and a `pr.md`; a folder result ends as a report job; `vibe queue stop` calls `stop`, then `down`; `vibe queue steer` hands its text to `steer`; exit 3 from `steer` prints `not supported`.
 
 ## Blockers
 
@@ -26,7 +26,11 @@ None.
 
 ## Gotchas (unpromoted)
 
-- `vibe ws status` reads an `id` file as up → `stop` and `tick` remove `id` after `down`, else status keeps `up` or `past limit`.
-- `ws_state` has no state for a start that waits on the GPU lock → add one (a state file `vibe ws start` writes) with `waits for the GPU`.
-- `ws_check` in `bin/vibe` is the conf reader → reuse it in `start` and the queue hook; it accepts no unknown key.
+- Reuse `ws_dir` (conf check), `ws_secrets`, `ws_place` (env and place script) and `ws_up` in `bin/vibe` for the queue hook.
+- `ws_place` sets `WS_HOURS` from the conf `hours` → a run needs the job's `hours=` there: add an override.
+- `ws_name` finds the workspace of `<name>-<job id>` by the longest name that exists → write `place` into the state dir before the first `ws_place` call.
+- The turing place mounts `$WS_STATE/in` at `/ws/in`, and runpod copies it → the hook fills `$WS_STATE/in` (`repo/`, `brief.md`, `args`) before `up`.
+- `pull` copies `/ws/out` to `$WS_STATE/out` → the hook copies that to the job's `out/`.
+- A `gpu=yes` run on turing needs the lock for the whole `run` → wrap the run in `gpu-queue lock`; `ws hold` keys on `id` and fits services only.
+- Each place removes `id` in `down` (turing, runpod, vast) → `vibe` never removes `id` itself.
 - `shfmt -f .` in a sandboxed job fails on `.claude/` placeholders (`permission denied`) → lint in a `git clone` under `$TMPDIR`.
