@@ -18,6 +18,10 @@ case "$1 $2" in
   "search offers") echo '[{"id": 111, "dph_total": 0.4}, {"id": 222, "dph_total": 0.9}]' ;;
   "create instance") echo '{"success": true, "new_contract": 4242}' ;;
   "show instance")
+    if [ -n "${VAST_GONE:-}" ]; then
+      echo '{"instances": null}'
+      exit 0
+    fi
     printf '{"id": 4242, "actual_status": "%s", "public_ipaddr": "203.0.113.7", "ports": {"22/tcp": [{"HostPort": "%s"}]}}\n' \
       "${VAST_STATUS:-running}" "${VAST_PORT:-40022}"
     ;;
@@ -39,7 +43,11 @@ printf '%s\n' "$*" >>"$STUBS/rsync.argv"
 exit "${RSYNC_EXIT:-0}"
 EOF
   printf '#!/bin/sh\nexit 0\n' >"$STUBS/bin/sleep"
-  printf '#!/bin/sh\necho 100.64.0.1\n' >"$STUBS/bin/tailscale"
+  cat >"$STUBS/bin/tailscale" <<'EOF'
+#!/bin/sh
+[ -z "$TAILSCALE_FAIL" ] || exit 1
+echo 100.64.0.1
+EOF
   chmod +x "$STUBS/bin/"*
   : >"$STUBS/vastai.argv"
   export STUBS PATH="$STUBS/bin:$PATH"
@@ -108,6 +116,24 @@ EOF
   [ "$status" -ne 0 ]
   [ ! -e "$STUBS/ssh.argv" ]
   grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "up: a failed copy or tunnel ends in a destroy; down drops the id of a gone instance" {
+  RSYNC_EXIT=23 run "$PLACE" up
+  [ "$status" -ne 0 ]
+  grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ ! -e "$WS_STATE/id" ]
+
+  : >"$STUBS/vastai.argv"
+  TAILSCALE_FAIL=1 run "$PLACE" up
+  [ "$status" -ne 0 ]
+  grep -q '^destroy instance 4242 -y' "$STUBS/vastai.argv"
+  [ ! -e "$WS_STATE/id" ]
+
+  "$PLACE" up >/dev/null
+  VAST_DESTROY=false VAST_GONE=1 run "$PLACE" down
+  [ "$status" -eq 0 ]
   [ ! -e "$WS_STATE/id" ]
 }
 
