@@ -123,6 +123,17 @@ result() { cat "$WS_ROOT/out/result"; }
   grep -qxF 'token=sk-a=b$c d' "$STUB_LOG"
 }
 
+@test "run: a secrets.env line that is no KEY=VALUE is skipped with a warning, never exported" {
+  printf 'CLAUDE_CODE_OAUTH_TOKEN\n  # indented comment\n1BAD=x\nCLAUDE_CODE_OAUTH_TOKEN=good\n' >"$WS_ROOT/secrets.env"
+  STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"line 1 skipped"* ]] || false
+  [[ "$output" == *"line 2 skipped"* ]] || false
+  [[ "$output" == *"line 3 skipped"* ]] || false
+  grep -qx 'token=good' "$STUB_LOG"
+  [[ "$(result)" == "done:"* ]] || false
+}
+
 @test "steer: names the next stage from checkpoint.json" {
   mkdir -p "$RUN_DIR"
   echo '{"last_completed_stage": 8}' >"$RUN_DIR/checkpoint.json"
