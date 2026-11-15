@@ -2486,7 +2486,7 @@ phase_jobs() {
 # tool NAME RESULT [CONF-LINE...] — a kind=run workspace NAME on the real turing place, runs=host: no docker.
 # Its scripts run in the instance's state dir and log to $STUBS/tool.log. $STUBS/tool-sleep: the run waits
 # 30 s first; tool-fail: it exits 4 with no result; tool-branch: the ref name it writes; tool-config: its commit
-# adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; tool-nobundle: no repo.bundle;
+# adds .claude/settings.json; tool-link: out/branch links to $STUBS/secret; tool-fifo: out/branch is a FIFO; tool-nobundle: no repo.bundle;
 # steer-exit: steer's exit.
 tool() {
   local w="$BATS_TEST_TMPDIR/workspaces"
@@ -2515,6 +2515,7 @@ git commit -q -m "feat: tool change"
 cd .. && echo 0.91 >out/score && echo "done: score 0.91" >out/result
 cat "$STUBS/tool-branch" 2>/dev/null >out/branch || echo tool/try >out/branch
 if [ -e "$STUBS/tool-link" ]; then ln -sf "$STUBS/secret" out/branch; fi
+if [ -e "$STUBS/tool-fifo" ]; then rm -f out/branch && mkfifo out/branch; fi
 EOF
   cat >"$w/$1/stop" <<EOF
 #!/usr/bin/env bash
@@ -2739,7 +2740,7 @@ toolwait() {
   [ ! -e "$STUBS/tool.log" ]
 }
 
-@test "tool: no out/result, a bad branch name, a link, agent config, no bundle or no close.md fails the job; no closing session" {
+@test "tool: no out/result, a bad branch name, a link, a FIFO, agent config, no bundle or no close.md fails the job; no closing session" {
   local r o="$BATS_TEST_TMPDIR/proj.git"
   r="$(make_repo proj)"
   tool stub branch
@@ -2766,6 +2767,12 @@ toolwait() {
   [ ! -L "$Q/03-c/out/branch" ]
   [ -f "$Q/03-c/out/score" ]
   rm "$STUBS/tool-link"
+  touch "$STUBS/tool-fifo"
+  tooljob 03-f "$r" tool-f
+  drain
+  [ "$(cat "$Q/03-f/note")" = "out/repo.bundle: no branch '' — tool.log" ]
+  [ ! -p "$Q/03-f/out/branch" ]
+  rm "$STUBS/tool-fifo"
   touch "$STUBS/tool-config"
   tooljob 04-d "$r" tool-c
   drain

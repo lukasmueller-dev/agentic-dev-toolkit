@@ -1235,8 +1235,9 @@ tool_check() {
 
 # tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
 # in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
-# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, out/ (no symlinks: the tool's
-# links would read host files), then tool-exit. The instance is the job's alone: once down, its state dir goes.
+# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, out/ (plain files and dirs only:
+# a link would read host files, a FIFO blocks a read), then tool-exit. The instance is the job's alone:
+# once down, its state dir goes.
 tool_run() {
   local d="$1" inst st h f pid rc=0
   inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
@@ -1275,7 +1276,7 @@ tool_run() {
   if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
   if [[ -d "$st/out" ]]; then
     cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
-    find "$d/out" -type l -delete 2>/dev/null || rm -rf "$d/out"
+    find "$d/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$d/out"
   fi
   # Last: a job process that dies before it runs the tool again.
   echo "$rc" >"$d/tool-exit"
