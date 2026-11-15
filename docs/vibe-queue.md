@@ -6,7 +6,7 @@ and refill it whenever you like.
 
 | Skill | Does |
 | --- | --- |
-| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
+| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; up to 3 research proposals; big work grilled into a `RESEARCH.md`, a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
 | [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, a research job, or a feature; your approval; `vibe queue add` |
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | the report of `vibe queue report`; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
@@ -180,7 +180,7 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 ## Research jobs
 
 An open question with a metric, a budget and a backlog of experiments runs as one job. The agent picks each next run from the last result.
-`/enqueue` makes one: route Research.
+`/enqueue` makes one: route Research. `/fill-queue` proposes up to 3 from each repo's open questions and metric items; a picked one goes through that route.
 
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
 - Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.

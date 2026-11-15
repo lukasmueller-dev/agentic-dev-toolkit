@@ -1,6 +1,6 @@
 ---
 name: fill-queue
-description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work and proposes up to 3 items (each grilled into a SPEC.md, or into a feature when it spans several repos), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
+description: "Fills the vibe queue with unattended work across the active repos: shows the queue, asks for big work, proposes up to 3 research jobs and up to 3 other items (each grilled into a RESEARCH.md, a SPEC.md, or a feature when it spans several repos), sweeps roadmap items and handoff next actions, keeps only what can run without a human, ranks it, groups related light items into a lane (one branch, one PR), and after approval adds one headless agent job per item, ending in a draft PR. Use when the user says 'fill the queue', 'queue work', 'what can run unattended', 'plan the night', 'keep the agents busy', or has spare agent or GPU time."
 disable-model-invocation: true
 argument-hint: "[<repo>...]"
 ---
@@ -14,8 +14,8 @@ unattended, get approval, add the jobs. Runner and layout:
 ## Hard boundaries — never do these
 
 - **Never add a job without explicit approval of the list.**
-- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a branch's `SPEC.md` and `HANDOFF.md` and a feature file; the jobs do the work.
-- **Never write a `SPEC.md` without a grilling the user took part in.**
+- **Never change a repo yourself.** You write only job dirs, and in Phase 1 a branch's `SPEC.md` or `RESEARCH.md`, its `HANDOFF.md` and a feature file; the jobs do the work.
+- **Never write a `SPEC.md` or a `RESEARCH.md` without a grilling the user took part in.**
 - **Never list an item that fails the gate.** Show it under "Rejected" with the reason.
 - **Never queue an item whose branch is already queued or running.** The sweep marks it `QUEUED`. The jobs of one new lane share their new branch.
 - **Never add an item to a lane branch that is queued or has an open PR.** A lane closes when its last item finishes.
@@ -29,13 +29,18 @@ queued or running: id, context.
 
 The user says skip → go to Phase 2.
 
-1. Ask for the user's big work items: a feature, a migration, a GPU run.
-2. Propose up to 3 more from the repos' goals, roadmaps and gaps, one line each.
-3. An item on 2 or more branches that merge together, most often in several repos, is a feature:
-   do `references/feature.md` steps 1–3 for it instead of steps 4 and 5.
-4. For each other item the user picks, run the `grilling` skill with the user until every
+1. Ask for the user's big work items: a feature, a migration, a GPU run, an open question.
+2. Propose up to 3 research jobs first, one line each: `question · metric · budget · first 2 experiments · source`.
+   Sources: `## open questions` of `sweep.sh` (Phase 2; run it now), roadmap items about a metric, results under `docs/`.
+   A proposal needs a metric a command computes and a run command that runs as written; without both it goes under "Rejected".
+3. Propose up to 3 more from the repos' goals, roadmaps and gaps, one line each.
+4. A research job the user picks: read `../enqueue/SKILL.md` and do its Phases 3 to 6 with route Research, once per job.
+   It keeps its own approval gate and queues the job; steps 5 to 7 do not apply.
+5. An item on 2 or more branches that merge together, most often in several repos, is a feature:
+   do `references/feature.md` steps 1–3 for it instead of steps 6 and 7.
+6. For each other item the user picks, run the `grilling` skill with the user until every
    section of `templates/SPEC.md` (toolkit) has an answer.
-5. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
+7. Outside the sandbox: `git -C <repo> worktree add -b <slug> <repo>/.claude/worktrees/<slug>`.
    Write `SPEC.md` from the template and `HANDOFF.md` from `templates/HANDOFF.md`;
    its next action is the first milestone with its done-when.
    Commit `docs(spec): <slug>`, push. The sweep then finds it as a handoff.
