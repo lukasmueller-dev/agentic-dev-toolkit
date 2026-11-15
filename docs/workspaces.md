@@ -9,11 +9,18 @@ The sections after Commands are the contract: tools and places obey them as writ
 ```bash
 vibe ws list                 # each tool: name, kind, gpu, places, label: role; a bad conf prints why and exits 1
 vibe ws status [<instance>]  # each instance: state, place, limit, address
+vibe ws build <name>         # docker build -t <image>:<commit> --build-arg COMMIT=<commit> workspaces/<name>
+vibe ws start <name>         # a service: up at the first of its places, then its start script and url
+vibe ws stop <instance>      # its stop script, then down
+vibe ws tick                 # each instance with an id: its place's tick; the runner runs it each pass
 ```
 
 - `VIBE_WORKSPACES` overrides the folder; the default is `workspaces/` in the toolkit checkout.
 - `list` flags a conf with no `kind` or `places`, a line that is not `key=value`, an unknown or doubled key, a value that breaks its row below, `result` on a service, or a run with no `result`. `hours` must be a whole number above 0.
-- `status` reads the state files only and calls no place: `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
+- `status` reads the state files only and calls no place: `waits for the GPU` while a start waits for the lock, `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
+- `start` refuses a secret the env file does not set, and an env file that others can read.
+- `start` on turing with `gpu=yes` runs under `gpu-queue lock`, detached, and prints `up` or `waits for the GPU`. The lock stays held until `stop` or the limit removes the `id` file.
+- The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
 
 ## Layout
 

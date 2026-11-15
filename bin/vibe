@@ -40,7 +40,12 @@
 #   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
-#   vibe ws status [<instance>]     each tool instance: up, past limit or down, from its state files
+#   vibe ws status [<instance>]     each tool instance: up, past limit, waits for the GPU or down, from its state files
+#   vibe ws build <name>            docker build the tool's image at its pinned commit, tagged with it
+#   vibe ws start <name>            a kind=service tool up at the first of its places, then its start script;
+#                                   gpu=yes on turing: under the gpu-queue lock, held until stop
+#   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
+#   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -1301,6 +1306,7 @@ cmd_queue_run() {
   info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
+    ws_tick_bg
     running=0 waiting=0 busy="" queued=()
     for d in "$QDIR"/*/; do
       d="${d%/}"
@@ -3390,11 +3396,20 @@ cmd_ws_list() {
   return "$bad"
 }
 
-# ws_state INSTANCE-DIR — down with no id file, past limit when limit has passed, else up.
+# ws_holder INSTANCE-DIR — the pid of its live `gpu-queue lock` holder; fails when none.
+ws_holder() {
+  local p
+  p="$(jstate "$1" holder)"
+  [[ "$p" =~ ^[1-9][0-9]*$ ]] && kill -0 "$p" 2>/dev/null && echo "$p"
+}
+
+# ws_state INSTANCE-DIR — waits for the GPU, down with no id file, past limit when limit has passed, else up.
 ws_state() {
   local lim
   lim="$(jstate "$1" limit)"
-  if [[ ! -s "$1/id" ]]; then
+  if [[ -e "$1/waits" ]] && ws_holder "$1" >/dev/null; then
+    echo "waits for the GPU"
+  elif [[ ! -s "$1/id" ]]; then
     echo down
   elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
     echo "past limit"
@@ -3403,13 +3418,18 @@ ws_state() {
   fi
 }
 
+# ws_inst INSTANCE — dies unless INSTANCE names a state dir.
+ws_inst() {
+  [[ -n "$1" && "$1" != .* && "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+}
+
 # vibe ws status [INSTANCE] — one line per instance: state, place, limit, address; state files only.
 cmd_ws_status() {
   local d s lim more l
   local -a dirs=()
   (($# <= 1)) || die "usage: vibe ws status [<instance>]"
   if (($#)); then
-    [[ -n "$1" && "$1" != .* && "$(slug "$1")" == "$1" && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+    ws_inst "$1"
     dirs=("$WS_STATES/$1")
   else
     for d in "$WS_STATES"/*/; do
@@ -3427,13 +3447,198 @@ cmd_ws_status() {
   done
 }
 
+# ws_dir NAME — the folder of workspace NAME; dies on no such workspace or a conf that breaks the contract.
+ws_dir() {
+  local c
+  [[ -n "$1" && "$1" != [._]* && "$(slug "$1")" == "$1" && -d "$WS_ROOT/$1" ]] || die "no workspace '$1' — vibe ws list"
+  c="$(ws_check "$WS_ROOT/$1")"
+  [[ "$c" == ok ]] || die "$1: bad conf: $c"
+  echo "$WS_ROOT/$1"
+}
+
+# ws_name INSTANCE — its workspace: INSTANCE is <name> or <name>-<job id>; the longest name wins.
+ws_name() {
+  local n="$1"
+  until [[ "$n" != _* && -d "$WS_ROOT/$n" ]]; do
+    [[ "$n" == *-* ]] || return 1
+    n="${n%-*}"
+  done
+  echo "$n"
+}
+
+# ws_place INSTANCE VERB [ARG...] — the place script of INSTANCE with WS_* and WS_CONF_<KEY> set (docs/workspaces.md).
+# A subshell with errexit off when tested: each lookup has its own `|| die`.
+ws_place() {
+  local inst="$1"
+  shift
+  (
+    n="$(ws_name "$inst")" || die "no workspace for instance $inst"
+    p="$(jstate "$WS_STATES/$inst" place)"
+    [[ -n "$p" && "$(slug "$p")" == "$p" && -f "$WS_ROOT/_places/$p" && -x "$WS_ROOT/_places/$p" ]] ||
+      die "no place script '$p' for $inst"
+    while IFS= read -r l; do export "WS_CONF_$l"; done < <(
+      awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$WS_ROOT/$n/workspace.conf"
+    )
+    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_CONF_HOURS:-}"
+    exec "$WS_ROOT/_places/$p" "$@"
+  )
+}
+
+# ws_secrets NAME CONF — dies unless ~/.config/vibe/workspaces/NAME.env is mode 600 and sets each of CONF's secrets.
+ws_secrets() {
+  local f="$HOME/.config/vibe/workspaces/$1.env" s k miss=""
+  s="$(jget "$2" secrets)"
+  [[ -n "$s" ]] || return 0
+  [[ -f "$f" ]] || die "$1 needs $s: write KEY=VALUE lines to $f, mode 600"
+  case "$(ls -lL "$f")" in
+    -rw-------* | -r--------*) ;;
+    *) die "$f: others can read it — chmod 600 $f" ;;
+  esac
+  for k in $s; do
+    [[ -n "$(jget "$f" "$k")" ]] || miss+=" $k"
+  done
+  [[ -z "$miss" ]] || die "$f does not set:$miss"
+}
+
+# ws_up INSTANCE — place up, the start script, the url; a failed start brings the place down again.
+ws_up() {
+  local st="$WS_STATES/$1" url=""
+  ws_place "$1" up || die "up of $1 failed"
+  if ! ws_place "$1" exec start; then
+    ws_place "$1" down >&2 || true
+    die "start of $1 failed — it is down again"
+  fi
+  if [[ -n "$(jget "$WS_ROOT/$(ws_name "$1")/workspace.conf" ports)" ]]; then
+    url="$(ws_place "$1" url)" || warn "no address for $1"
+    if [[ -n "$url" ]]; then echo "$url" >"$st/url"; fi
+  fi
+  ws_up_line "$1"
+}
+
+ws_up_line() {
+  local u
+  u="$(jstate "$WS_STATES/$1" url)"
+  echo "$1 up${u:+ — $u}"
+}
+
+# vibe ws build NAME — docker build NAME's image at its pinned commit, tagged with it.
+cmd_ws_build() {
+  local d f
+  (($# == 1)) || die "usage: vibe ws build <name>"
+  d="$(ws_dir "$1")"
+  f="$d/workspace.conf"
+  [[ "$(jget "$f" runs)" != host ]] || die "$1 runs on the host: no image to build"
+  [[ -n "$(jget "$f" image)" && -n "$(jget "$f" commit)" ]] || die "$1: workspace.conf needs image and commit"
+  docker build -t "$(jget "$f" image):$(jget "$f" commit)" --build-arg "COMMIT=$(jget "$f" commit)" "$d"
+}
+
+# vibe ws start NAME — a kind=service tool up at the first of its places.
+# gpu=yes on turing: a detached `gpu-queue lock` runs `vibe ws hold`, which keeps the GPU lock until stop.
+cmd_ws_start() {
+  local d f st place pid i
+  (($# == 1)) || die "usage: vibe ws start <name>"
+  d="$(ws_dir "$1")"
+  f="$d/workspace.conf" st="$WS_STATES/$1"
+  [[ "$(jget "$f" kind)" == service ]] || die "$1 is kind=run: the queue runs it as a job"
+  ws_secrets "$1" "$f"
+  [[ "$(ws_state "$st")" == down ]] || die "$1 is $(ws_state "$st") — vibe ws stop $1 first"
+  place="$(jget "$f" places)"
+  place="${place%%,*}"
+  mkdir -p "$st"
+  echo "$place" >"$st/place"
+  rm -f "$st/waits" "$st/holder" "$st/url"
+  if [[ "$place" != turing || "$(jget "$f" gpu)" != yes ]]; then
+    ws_up "$1"
+    return 0
+  fi
+  : >"$st/waits"
+  set -m
+  nohup gpu-queue lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
+  pid=$!
+  set +m
+  echo "$pid" >"$st/holder"
+  for ((i = 0; ; i++)); do
+    if grep -qxF "vibe: holds the GPU" "$st/hold.log"; then
+      ws_up_line "$1"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      cat "$st/hold.log" >&2
+      die "start of $1 failed — $st/hold.log"
+    fi
+    if ((i >= 15)) && [[ -e "$st/waits" ]]; then
+      echo "$1 waits for the GPU — vibe ws status $1"
+      return 0
+    fi
+    sleep 0.2
+  done
+}
+
+# vibe ws hold INSTANCE — start's command under `gpu-queue lock`: the instance up, then wait until its id file goes.
+cmd_ws_hold() {
+  local st
+  (($# == 1)) || die "usage: vibe ws hold <instance>"
+  ws_inst "$1"
+  st="$WS_STATES/$1"
+  rm -f "$st/waits"
+  ws_up "$1"
+  echo "vibe: holds the GPU"
+  while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+}
+
+# vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
+cmd_ws_stop() {
+  local st pid r=0 rc=0
+  (($# == 1)) || die "usage: vibe ws stop <instance>"
+  ws_inst "$1"
+  st="$WS_STATES/$1"
+  pid="$(ws_holder "$st")" || pid=""
+  if [[ -e "$st/waits" && -n "$pid" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    rm -f "$st/waits" "$st/holder"
+    echo "$1 stopped — it waited for the GPU"
+    return 0
+  fi
+  rm -f "$st/waits"
+  [[ -s "$st/id" ]] || die "$1 is down"
+  ws_place "$1" exec stop || r=$?
+  if ((r != 0 && r != 3)); then warn "the stop script of $1 failed (exit $r) — down anyway"; fi
+  ws_place "$1" down || rc=1
+  # The lock follows the id file: a container down failed to remove keeps it.
+  if [[ -n "$pid" && ! -s "$st/id" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    rm -f "$st/holder"
+  fi
+  ((rc == 0)) || die "down of $1 failed — vibe ws status $1"
+  echo "$1 down"
+}
+
+# vibe ws tick — the place's tick for each instance with an id: pull every 10 min, down past the limit.
+cmd_ws_tick() {
+  local d
+  for d in "$WS_STATES"/*/; do
+    d="${d%/}"
+    if [[ -s "$d/id" ]]; then ws_place "${d##*/}" tick || warn "tick of ${d##*/} failed"; fi
+  done
+}
+
+# ws_tick_bg — the runner pass: `vibe ws tick` in the background, never two at once.
+ws_tick_bg() {
+  local p
+  p="$(jstate "$WS_STATES" tick.pid)"
+  if [[ "$p" =~ ^[1-9][0-9]*$ ]] && kill -0 "$p" 2>/dev/null; then return 0; fi
+  if ! compgen -G "$WS_STATES/*/id" >/dev/null; then return 0; fi
+  cmd_ws_tick >>"$WS_STATES/tick.log" 2>&1 &
+  echo "$!" >"$WS_STATES/tick.pid"
+}
+
 cmd_ws() {
   role_gate ws "$@"
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | status) "cmd_ws_$sub" "$@" ;;
-    *) die "usage: vibe ws list|status — see vibe --help" ;;
+    list | status | build | start | stop | tick | hold) "cmd_ws_$sub" "$@" ;;
+    *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
   esac
 }
 
