@@ -94,7 +94,7 @@ EOF
 
   SSH_EXIT=3 run "$PLACE" exec steer "it's late"
   [ "$status" -eq 3 ]
-  grep -qF "WS_PLACE=vast WS_HOURS='08' exec '/ws/scripts/steer' 'it'\\''s late'" "$STUBS/ssh.argv"
+  grep -qF "WS_PLACE=vast WS_HOURS='8' exec '/ws/scripts/steer' 'it'\\''s late'" "$STUBS/ssh.argv"
 
   run "$PLACE" pull
   [ "$status" -eq 0 ]
@@ -106,6 +106,21 @@ EOF
   grep -q '^destroy instance 4242 -y --raw$' "$STUBS/vastai.argv"
   [ ! -e "$WS_STATE/id" ]
   [ "$(cat "$STUBS"/*.argv | grep -c "$SECRET")" -eq 0 ]
+}
+
+@test "up: WS_HOURS wins over the conf; 0 hours is refused" {
+  WS_HOURS=2 run "$PLACE" up
+  [ "$status" -eq 0 ]
+  [ "$(($(cat "$WS_STATE/limit") - $(cat "$WS_STATE/started")))" -eq 7200 ]
+  WS_HOURS=2 run "$PLACE" exec status
+  grep -qF "WS_HOURS='2'" "$STUBS/ssh.argv"
+  "$PLACE" down >/dev/null
+
+  : >"$STUBS/vastai.argv"
+  WS_HOURS=00 run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"above 0"* ]] || false
+  [ "$(grep -c '^create instance' "$STUBS/vastai.argv")" -eq 0 ]
 }
 
 @test "up: a status that never reaches running ends in a destroy" {

@@ -15,6 +15,8 @@ name="${name##*/}"
 env_file="$HOME/.config/vibe/workspaces/$name.env"
 cfg="$WS_STATE/ssh_config"
 rsh="ssh -F '$cfg'"
+hours="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+case "$hours" in '' | *[!0-9]*) ;; *) hours=$((10#$hours)) ;; esac # 08 is not octal
 
 # setting KEY DEFAULT — KEY from the workspace env file, else DEFAULT.
 setting() {
@@ -125,9 +127,8 @@ undo_up() {
 }
 
 cmd_up() {
-  local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" hours="${WS_CONF_HOURS:-}" query offer id t
-  case "$hours" in '' | *[!0-9]*) die "hours is not a whole number: '$hours'" ;; esac
-  hours=$((10#$hours)) # 08 is not octal
+  local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" query offer id t
+  case "$hours" in '' | *[!0-9]* | 0) die "hours must be a whole number above 0, not '$hours'" ;; esac
   mkdir -p "$WS_STATE"
   # One up per instance: a second one would rent a machine that no id records.
   mkdir "$WS_STATE/up.lock" 2>/dev/null || die "an up runs for $WS_INSTANCE; a stale lock: rmdir $WS_STATE/up.lock"
@@ -159,7 +160,7 @@ cmd_exec() {
   local cmd a
   [ $# -gt 0 ] || die "usage: vast exec <script> [arg…]"
   [ -s "$cfg" ] || die "no instance is up"
-  cmd="cd /ws && WS_NAME=$(shq "$name") WS_INSTANCE=$(shq "$WS_INSTANCE") WS_PLACE=vast WS_HOURS=$(shq "${WS_CONF_HOURS:-}") exec $(shq "/ws/scripts/$1")"
+  cmd="cd /ws && WS_NAME=$(shq "$name") WS_INSTANCE=$(shq "$WS_INSTANCE") WS_PLACE=vast WS_HOURS=$(shq "$hours") exec $(shq "/ws/scripts/$1")"
   shift
   for a in "$@"; do cmd="$cmd $(shq "$a")"; done
   exec ssh -F "$cfg" -n vast "$cmd"
