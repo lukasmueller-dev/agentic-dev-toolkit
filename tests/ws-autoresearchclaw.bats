@@ -76,6 +76,21 @@ wait_for() {
   grep -qx "ARG COMMIT=$PINNED" "$WSDIR/Dockerfile"
 }
 
+@test "Dockerfile: base image by digest, npm and pip packages by version" {
+  local pkg npm pip
+  grep -Eq '^FROM [^ ]+@sha256:[0-9a-f]{64}$' "$WSDIR/Dockerfile"
+  read -ra npm <<<"$(sed -n 's/^RUN npm install -g //p' "$WSDIR/Dockerfile")"
+  read -ra pip <<<"$(sed -n 's/.*pip install -e "[^"]*" //p' "$WSDIR/Dockerfile")"
+  [ "${#npm[@]}" -eq 3 ]
+  [ "${#pip[@]}" -eq 5 ]
+  for pkg in "${npm[@]}"; do
+    [[ "$pkg" =~ .@[0-9]+\.[0-9]+\.[0-9]+$ ]] || false
+  done
+  for pkg in "${pip[@]}"; do
+    [[ "$pkg" =~ ==[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || false
+  done
+}
+
 @test "config: real experiments through ACP, never simulated or docker" {
   [ "$(grep -c 'mode: sandbox' "$WSDIR"/*.yaml)" -eq 1 ]
   run grep -Eq 'mode: (simulated|docker)' "$WSDIR"/*.yaml
