@@ -49,7 +49,7 @@ Hosted agents call models on the Claude subscription. `make dev` runs `podman co
 
 ```bash
 cd <checkout>
-cp .env.example .env && chmod 600 .env    # set the keys of Requirements
+cp -n .env.example .env && chmod 600 .env    # -n keeps an existing .env; set the keys of Requirements
 make -s render-settings
 ```
 
