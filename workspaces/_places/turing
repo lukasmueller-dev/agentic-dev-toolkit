@@ -81,9 +81,10 @@ verb_exec() {
 
 # pull — each copy goes to its own temp dir; only a complete one replaces data/ and out/.
 # A tick and a down can pull at once: the swap takes a mkdir lock, and one held 10 s is stale.
+# The swap only renames, so it holds the lock for ms; the old copy goes after. A failed swap keeps $t.
 # Runs as a tested condition too (down): each failure is handled, not left to errexit.
 verb_pull() {
-  local t n=0 rc=0
+  local t x n=0 rc=0
   [ -n "$id" ] || return 1
   if ((host)); then
     date +%s >"$WS_STATE/pulled"
@@ -99,11 +100,18 @@ verb_pull() {
     if [ "$n" -ge 100 ]; then rm -rf "$WS_STATE/.swap" && n=0; fi
     sleep 0.1
   done
-  if ! { rm -rf "$WS_STATE/data" "$WS_STATE/out" && mv "$t/data" "$t/out" "$WS_STATE/"; }; then rc=1; fi
+  mkdir -p "$t/old"
+  for x in data out; do
+    if [ -e "$WS_STATE/$x" ] && ! mv "$WS_STATE/$x" "$t/old/"; then rc=1; fi
+  done
+  if [ "$rc" != 0 ] || ! mv "$t/data" "$t/out" "$WS_STATE/"; then rc=1; fi
   rmdir "$WS_STATE/.swap" 2>/dev/null || true
+  if [ "$rc" != 0 ]; then
+    echo "turing: swap of data/ and out/ failed; both copies stay in $t" >&2
+    return 1
+  fi
   rm -rf "$t"
-  if [ "$rc" = 0 ]; then date +%s >"$WS_STATE/pulled"; fi
-  return "$rc"
+  date +%s >"$WS_STATE/pulled"
 }
 
 verb_url() {
