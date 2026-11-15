@@ -14,28 +14,17 @@
 
 ## State
 
-Milestone 1 is done: `workspaces/_places/vast` and `tests/ws-place-vast.bats` (7 tests, stub `vastai`, `ssh`, `rsync`). The commit body of `feat(workspaces): add the vast place script` holds the reasons.
+Milestones 1 and 2 are done: `workspaces/_places/vast`, `tests/ws-place-vast.bats` (7 tests) and the recipe `docs/workspaces/place-vast.md`. The gotchas of the last handoff are now requirements and traps in the recipe.
 
 ## Next action
 
-The next open milestone of `SPEC.md`: the recipe `docs/workspaces/place-vast.md`. Done when `grep -c '^## ' docs/workspaces/place-vast.md` prints 4 or more.
+The end action of `SPEC.md`: move each decision of `SPEC.md` to the PR body, then `git rm SPEC.md HANDOFF.md`. Done when `test ! -e SPEC.md -a ! -e HANDOFF.md`.
 
 ## Blockers
 
 None.
 
-## Gotchas (unpromoted)
+## For the PR body
 
-Facts for the recipe, read in the `vastai` 1.11.0 source, not run:
-
-- `destroy instance` without `-y` asks, then prints `Aborted.` and exits 0. The script passes `-y`; the recipe pins `vastai` 1.11.0 or newer.
-- `vastai` exits 0 on an HTTP error. The script reads the JSON instead.
-- `pull` uses `rsync --safe-links`. The recipe needs `rsync` 3.4.0, or a distro build with the fixes for CVE-2024-12084 to 12088 and 12747. Turing's `3.2.7-1ubuntu1.5` has them (`zcat /usr/share/doc/rsync/changelog.Debian.gz | grep CVE-2024-12088`).
-- `vastai copy` ignores the exit code of its `rsync`. The script copies with `rsync` over ssh, so the image needs `rsync`.
-- The account needs an ssh key (`vastai create ssh-key`) and an API key (`vastai set api-key`). The script passes neither.
-- Settings in `~/.config/vibe/workspaces/<name>.env`: `VAST_QUERY` (default `num_gpus=1 cpu_arch=amd64`), `VAST_DISK` (GB, default 50), `VAST_WAIT` (seconds to `running`, default 1200).
-- Only the keys named in `secrets` of `workspace.conf` reach the instance. The `VAST_*` settings stay on turing.
-- `url` binds the tunnel to `tailscale ip -4` on the first port. The same port in use on turing fails the tunnel.
-- `/ws/in` comes from `$WS_STATE/in`. The contract names no source; `ws-surface` must write it there.
-- A killed `up` leaves `$WS_STATE/up.lock`; every later `up` stops with `an up runs`. Fix: `rmdir` the lock after you check `vastai show instances`.
-- Recovery: `vastai show instances` lists a leaked instance by its label, the instance name.
+- `/ws/in` comes from `$WS_STATE/in`, in the vast and the turing place alike. The contract names no source, so `ws-surface` must fill it for a queue job.
+- No real Vast instance has run the script. The `vastai` facts come from the 1.11.0 source.
