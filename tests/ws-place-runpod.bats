@@ -120,6 +120,54 @@ pod_up() {
   [ -e "$STUB/pod" ]
 }
 
+@test "up: a create and a pod list that fail leave id=pending and limit=0; the next tick deletes" {
+  touch "$STUB/create-fail-after" "$STUB/list-fail"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [ "$(cat "$WS_STATE/id")" = pending ]
+  [ "$(cat "$WS_STATE/limit")" -eq 0 ]
+  [ -e "$STUB/pod" ]
+  rm "$STUB/list-fail"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "tick: id=pending, as a killed up leaves it, stays while the list fails, then finds the pod" {
+  mkdir -p "$WS_STATE"
+  echo pending >"$WS_STATE/id"
+  echo $(($(date +%s) - 1)) >"$WS_STATE/limit"
+  touch "$STUB/pod" "$STUB/list-fail"
+  run "$PLACE" tick
+  [ "$status" -ne 0 ]
+  [ "$(cat "$WS_STATE/id")" = pending ]
+  [ -e "$STUB/pod" ]
+  rm "$STUB/list-fail"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "down: a failed delete sets limit=0, so the next tick deletes again" {
+  pod_up
+  echo $(($(date +%s) + 3600)) >"$WS_STATE/limit"
+  touch "$STUB/delete-fail"
+  run "$PLACE" down
+  [ "$status" -ne 0 ]
+  [ "$(cat "$WS_STATE/limit")" -eq 0 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+}
+
+@test "pull: each copy back has --safe-links, so a symlink out of the tree stays on the pod" {
+  pod_up
+  run "$PLACE" pull
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- "--safe-links root@203.0.113.7:/ws/" "$STUB/rsync.log")" -eq 2 ]
+}
+
 @test "up, exec, pull, down: no secret value is in any stub's argv" {
   mkdir -p "$WS_STATE/in"
   echo brief >"$WS_STATE/in/brief.md"
