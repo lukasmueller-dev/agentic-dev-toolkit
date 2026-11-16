@@ -573,7 +573,7 @@ fake_repo() {
   local f
   for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
     templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
-    templates/VIBE_JOB.md templates/SPEC.md templates/FEATURE.md; do
+    templates/VIBE_JOB.md templates/SPEC.md templates/RESEARCH.md templates/FEATURE.md; do
     # existence first: grep exits 2 on a missing file, which '-ne 0' accepts as
     # readily as "no match", so a rename would retire the check silently.
     [ -f "$REPO_ROOT/$f" ]
@@ -588,7 +588,7 @@ fake_repo() {
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/job-pr.md \
     "$REPO_ROOT"/templates/job-report.md "$REPO_ROOT"/templates/VIBE_JOB.md \
-    "$REPO_ROOT"/templates/SPEC.md "$REPO_ROOT"/templates/FEATURE.md \
+    "$REPO_ROOT"/templates/SPEC.md "$REPO_ROOT"/templates/RESEARCH.md "$REPO_ROOT"/templates/FEATURE.md \
     "$REPO_ROOT"/templates/codebase \
     "$REPO_ROOT"/templates/research
   [ "$status" -ne 0 ] || {
@@ -667,46 +667,6 @@ EOF
   jq -e '.permissions.allow | index("Bash(git status:*)")' "$HOME/.claude/settings.json"
 }
 
-# Succeeds when a `git push` deny rule in the baseline matches the command.
-# `P:*` is a word-boundary prefix; any other `*` spans anything, spaces too.
-push_denied() {
-  local rule pat rules
-  rules="$(jq -r '.permissions.deny[] | select(startswith("Bash(git push"))' \
-    "$REPO_ROOT/claude/settings.json")"
-  while IFS= read -r rule; do
-    pat="${rule#Bash(}"
-    pat="${pat%)}"
-    case "$pat" in
-      *:\*)
-        pat="${pat%:\*}"
-        if [[ "$1" == "$pat" || "$1" == "$pat "* ]]; then return 0; fi
-        ;;
-      *)
-        # shellcheck disable=SC2053 # the glob is the point
-        if [[ "$1" == $pat ]]; then return 0; fi
-        ;;
-    esac
-  done <<<"$rules"
-  return 1
-}
-
-@test "claude settings: a combined force flag is denied, a plain upstream push is not" {
-  local c
-  for c in "git push -f origin x" "git push -fu origin x" "git push -uf origin x" \
-    "git push origin x -fu" "git push origin x -uf" "git push -uf"; do
-    push_denied "$c" || {
-      echo "not denied: $c"
-      false
-    }
-  done
-  for c in "git push -u origin x" "git push -u origin fix-f" "git push origin feature"; do
-    if push_denied "$c"; then
-      echo "denied: $c"
-      false
-    fi
-  done
-}
-
 @test "claude settings: sandbox baseline lands on create" {
   run "$INSTALL" claude
   [ "$status" -eq 0 ]
@@ -726,6 +686,47 @@ push_denied() {
   jq -e '.permissions.deny | index("Bash(gh pr merge:*)")' "$f"
   # runtime state belongs to the live file, never to a baseline
   jq -e 'has("model") | not' "$f"
+}
+
+# denied CMD — a Bash(...) deny rule in the baseline matches CMD.
+# `*` spans spaces; `:*` ends at a word boundary, so `-f:*` misses `-fu`.
+denied() {
+  local rule pat
+  while IFS= read -r rule; do
+    pat="${rule#Bash(}"
+    pat="${pat%)}"
+    case "$pat" in
+      *:\*)
+        pat="${pat%:\*}"
+        case "$1" in "$pat" | "$pat "*) return 0 ;; esac
+        ;;
+      *)
+        # shellcheck disable=SC2254
+        case "$1" in $pat) return 0 ;; esac
+        ;;
+    esac
+  done < <(jq -r '.permissions.deny[] | select(startswith("Bash("))' "$REPO_ROOT/claude/settings.json")
+  return 1
+}
+
+@test "claude settings: git push with a combined force flag is denied, -u alone is not" {
+  local c
+  for c in \
+    "git push -f origin x" "git push origin x -f" \
+    "git push -fu origin x" "git push -uf origin x" \
+    "git push origin x -fu" "git push origin x -uf" \
+    "git push origin -fu x" "git push origin -uf x"; do
+    denied "$c" || {
+      echo "not denied: $c" >&2
+      return 1
+    }
+  done
+  for c in "git push -u origin x" "git push origin feature" "git push -u origin fix-uf"; do
+    if denied "$c"; then
+      echo "denied by mistake: $c" >&2
+      return 1
+    fi
+  done
 }
 
 @test "claude settings: unions sandbox arrays instead of replacing them" {

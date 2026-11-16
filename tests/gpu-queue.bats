@@ -114,3 +114,19 @@ setup() {
   [ "$status" -ne 0 ]
   [ ! -e "$GPU_QUEUE_DIR/running/x/cancel" ]
 }
+
+@test "run: a bin/gpu-queue edited in place while the run works does not change its exit status" {
+  local gq="$BATS_TEST_TMPDIR/gpu-queue" pid
+  cp "$GQ" "$gq"
+  "$gq" submit --dir "$WORK" -- sleep 1
+  "$gq" run --once 2>/dev/null &
+  pid=$!
+  for _ in $(seq 1 50); do
+    [ -z "$(find "$GPU_QUEUE_DIR/running" -name pid 2>/dev/null)" ] || break
+    sleep 0.1
+  done
+  [ -n "$(find "$GPU_QUEUE_DIR/running" -name pid)" ]
+  { head -n 1 "$gq" && echo '# a line the running gpu-queue never reads, long enough to move its end offset' && tail -n +2 "$gq"; } >"$gq.new"
+  cat "$gq.new" >"$gq"
+  wait "$pid"
+}

@@ -9,6 +9,7 @@ architecture: `~/github/agentic-dev-toolkit/docs/artifact-architecture.md`.
 | Progress notes, end-of-task summary                    | chat (evaporates — nothing lives *only* here) |
 | Current task state, next action, blockers, gotchas     | `HANDOFF.md` — overwrite, never append   |
 | Spec of a big work item: goal, decisions, milestones   | `SPEC.md` at the worktree root — gone before the merge |
+| Work order of a research job: question, budget, ledger | `RESEARCH.md` at the worktree root — gone before the merge |
 | Why a change was made, alternatives rejected           | commit body — one line per reason        |
 | Task intent, what to verify, risks                     | PR description (detail in `<details>`)   |
 | Durable picture: goal, architecture, decisions         | `PROJECT_STATUS.md` (snapshot, not a log) |

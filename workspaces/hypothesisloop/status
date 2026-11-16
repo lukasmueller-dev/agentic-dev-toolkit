@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# status: up while the control service answers the health check make controlplane-up waits on.
+set -euo pipefail
+# shellcheck source=workspaces/hypothesisloop/hloop.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
+
+api="$HL_HEALTH"
+# 3000: the UI, the first port of workspace.conf, on the tailnet address of the recipe's step 4; any HTTP answer counts.
+ui="http://$(hl_key LOCAL_REACHABLE_ADDRESS 2>/dev/null):3000"
+if ! curl -fs -o /dev/null --max-time 5 "$api"; then
+  echo "down — no answer from $api"
+elif curl -s -o /dev/null --max-time 5 "$ui"; then
+  echo "up — the control service answers $api"
+else
+  echo "up — the control service answers; nothing serves the UI on $ui (step 4 of docs/workspaces/hypothesisloop.md)"
+fi

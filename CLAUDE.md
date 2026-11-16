@@ -18,6 +18,7 @@ global memory this repo installs into every agent) and
 | `completions/`| bash (`<cmd>.bash`) and zsh (`_<cmd>`) completion for a `bin/` CLI | No             |
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
+| `workspaces/` | One folder per outside research tool, `_places/` one script per place; read in place by `vibe ws`, not installed ([`docs/workspaces.md`](docs/workspaces.md)) | No |
 | `memory/`     | Global memory installed into every agent            | No             |
 | `claude/`     | Claude Code config: settings, hooks, response style, systemd unit | Yes |
 | `codex/`, `gemini/` | Same idea, other agents (no config yet)       | Yes            |
@@ -51,7 +52,7 @@ came about. If a tool needs to emit a document, it reads `templates/`.
 
 Templates must not name a specific CLI, machine, or agent. CI fails the build
 if `templates/HANDOFF.md`, `templates/PROJECT_STATUS.md`,
-`templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/FEATURE.md`, `templates/job-*.md`,
+`templates/PROJECT_ROADMAP.md`, `templates/VIBE_JOB.md`, `templates/SPEC.md`, `templates/RESEARCH.md`, `templates/FEATURE.md`, `templates/job-*.md`,
 or anything under `templates/codebase/` or `templates/research/` mentions one.
 
 **A rule in a `job-prompt.md` must not name a slot token like `<branch>`**:
@@ -357,8 +358,12 @@ vendored code.
 checks the one skill in *this repo's own* Claude config and reports
 success — green, having linted none of the skills you shipped.
 
-**3 `install.bats` tests fail inside a sandboxed agent job** (`.claude/` placeholder
-files in the worktree root). Run that suite again in a `git clone` under `$TMPDIR`.
+**Inside a sandboxed agent job, `.claude/` placeholder files in the worktree root
+fail 3 `install.bats` tests, `shfmt -f .` and `git add -A`.** Run the lint and that
+suite in a `git clone` under `$TMPDIR`; add files by name.
+
+**`bats -j 8 tests/vibe-queue.bats` fails 5 review and verify tests under load.**
+Run that file without `-j`.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
 It is the sandbox's mount point for its write-deny on `.git/config`; no setting

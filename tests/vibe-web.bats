@@ -136,8 +136,9 @@ post() {
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
-  # Raw HTML in a .md or the briefing can repeat any id or class chain: a guard compares nodes.
+  # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
   grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
   [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
@@ -164,6 +165,28 @@ post() {
   [ "$(grep -c '<script' "$Q/web/index.html")" = 1 ]
   run grep -q "script-src[^;]*unsafe" "$Q/web/index.html"
   [ "$status" -eq 1 ]
+}
+
+@test "vibe queue page: a Tools list of the instances from the state files alone; none with no instance" {
+  local w="$Q/workspaces" lim f="$Q/web/index.html"
+  lim=$(($(date +%s) + 3600))
+  printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
+  printf '#!/bin/sh\ncat\n' >"$STUBS/pandoc"
+  chmod +x "$STUBS/docker" "$STUBS/pandoc"
+  "$REPO_ROOT/bin/vibe" queue page
+  run grep -c '## Tools' "$f"
+  [ "$output" = 0 ]
+  mkdir -p "$w/ds" "$w/old"
+  echo turing >"$w/ds/place"
+  echo c1 >"$w/ds/id"
+  echo http://100.64.0.1:8080 >"$w/ds/url"
+  echo "$lim" >"$w/ds/limit"
+  echo turing >"$w/old/place"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<div class="md">## Tools' "$f"
+  grep -qF -- "- **ds** up · turing · until $(date -d "@$lim" '+%F %H:%M' 2>/dev/null || date -r "$lim" '+%F %H:%M') http://100.64.0.1:8080" "$f"
+  grep -qF -- '- **old** down · turing</div>' "$f"
+  [ ! -e "$STUBS/docker.log" ]
 }
 
 @test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
@@ -438,7 +461,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "${lines[1]}" = 400 ]
 }
 
-@test "vibe queue ready: refuses a failing check and SPEC.md or HANDOFF.md in the diff; then marks no PR ready" {
+@test "vibe queue ready: refuses a failing check and SPEC.md, RESEARCH.md or HANDOFF.md in the diff; then marks no PR ready" {
   printf 'SUCCESS\nFAILURE\n' >"$STUBS/checks"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
@@ -447,7 +470,10 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   printf 'a.txt\nSPEC.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"still holds SPEC.md or HANDOFF.md"* ]] || false
+  [[ "$output" == *"still holds SPEC.md, RESEARCH.md or HANDOFF.md"* ]] || false
+  printf 'RESEARCH.md\n' >"$STUBS/files"
+  run "$REPO_ROOT/bin/vibe" queue ready "$URL"
+  [ "$status" -eq 1 ]
   printf 'HANDOFF.md\n' >"$STUBS/files-8"
   printf 'templates/HANDOFF.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL" https://github.com/o/proj/pull/8

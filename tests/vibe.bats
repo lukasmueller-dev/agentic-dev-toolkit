@@ -265,7 +265,8 @@ setup() {
   "$VIBE" start -C "$r" big
   w="$r/.claude/worktrees/big"
   echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$w/.gitattributes"
-  git -C "$w" add .gitattributes && git -C "$w" commit -q -m "feat: lfs"
+  echo x >"$w/big.bin"
+  git -C "$w" add .gitattributes big.bin && git -C "$w" commit -q -m "feat: lfs"
   mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
   cd "$r"
   PATH="$lfs:$PATH" run "$VIBE" sync
@@ -278,15 +279,36 @@ setup() {
   [ -n "$(git -C "$r" ls-remote origin refs/heads/big)" ]
 }
 
-@test "sync: a git-lfs pre-push hook or .git/info/attributes, with no committed .gitattributes, also stops the push" {
+@test "sync: a git-lfs branch is pushed while its new commits change no LFS path; one that adds an LFS file is refused" {
+  local r w="" lfs="$BATS_TEST_TMPDIR/lfs"
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" big
+  w="$r/.claude/worktrees/big"
+  echo '*.bin filter=lfs diff=lfs merge=lfs -text' >"$w/.gitattributes"
+  echo x >"$w/notes.txt"
+  git -C "$w" add .gitattributes notes.txt && git -C "$w" commit -q -m "feat: lfs"
+  mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
+  cd "$r"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pushed"*"proj/big"* ]] || false
+  [ -n "$(git -C "$r" ls-remote origin refs/heads/big)" ]
+  echo x >"$w/big.bin"
+  git -C "$w" add big.bin && git -C "$w" commit -q -m "feat: add an LFS file"
+  PATH="$lfs:$PATH" run "$VIBE" sync
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"error"*"proj/big"*"git-lfs: push by hand"* ]] || false
+  [ "$(git -C "$r" ls-remote origin refs/heads/big | cut -f1)" != "$(git -C "$w" rev-parse HEAD)" ]
+}
+
+@test "sync: an LFS mapping in .git/info/attributes, with no committed .gitattributes, also stops the push" {
   local r w lfs="$BATS_TEST_TMPDIR/lfs"
   r="$(make_repo proj)"
   "$VIBE" start -C "$r" big
   w="$r/.claude/worktrees/big"
-  git -C "$w" commit -q --allow-empty -m "work"
+  echo x >"$w/big.bin"
+  git -C "$w" add big.bin && git -C "$w" commit -q -m "work"
   printf '*.bin filter=lfs diff=lfs merge=lfs -text\n' >>"$r/.git/info/attributes"
-  printf '#!/bin/sh\ncommand -v git-lfs >/dev/null || exit 2\ngit lfs pre-push "$@"\n' >"$r/.git/hooks/pre-push"
-  chmod +x "$r/.git/hooks/pre-push"
   mkdir -p "$lfs" && printf '#!/bin/sh\n' >"$lfs/git-lfs" && chmod +x "$lfs/git-lfs"
   cd "$r"
   PATH="$lfs:$PATH" run "$VIBE" sync
@@ -530,7 +552,7 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
-  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
+  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop steer " ]
   [ "$(complete_vibe queue r | tr '\n' ' ')" = "roadmap report resume run retry ready " ]
   [ "$(complete_vibe queue m)" = merge-order ]
   [ "$(complete_vibe queue a | tr '\n' ' ')" = "add archive answer " ]
@@ -539,6 +561,8 @@ complete_vibe() {
   [ "$(complete_vibe job l)" = list ]
   [ "$(complete_vibe f)" = feature ]
   [ "$(complete_vibe feature r)" = ready ]
+  [ "$(complete_vibe w)" = ws ]
+  [ "$(complete_vibe ws st | tr '\n' ' ')" = "status start stop " ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task
@@ -573,6 +597,7 @@ zcomplete_vibe() {
   [ "$(zcomplete_vibe start -C '')" = "files -/" ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(zcomplete_vibe status '')" = --claude ]
+  [ "$(zcomplete_vibe ws '' | tr '\n' ' ')" = "list status build start stop tick " ]
   local r
   r="$(make_repo zproj)"
   git -C "$r" branch zsh-task

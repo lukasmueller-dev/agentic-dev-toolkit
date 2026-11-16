@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# workspaces/_places/runpod — the place verbs (docs/workspaces.md) on a rented RunPod pod.
+# Config: ~/.config/vibe/places/runpod.env, mode 600, RUNPOD_* lines:
+#   RUNPOD_GPU_ID (needed by up), RUNPOD_API_KEY, RUNPOD_CLOUD_TYPE (SECURE),
+#   RUNPOD_DISK_GB (50), RUNPOD_WAIT (600 s per wait), RUNPOD_POLL (10 s).
+set -euo pipefail
+
+die() {
+  echo "runpod: $*" >&2
+  exit 1
+}
+
+: "${WS_INSTANCE:?}" "${WS_STATE:?}" "${WS_DIR:?}"
+name="${WS_DIR%/}"
+name="${name##*/}"
+hours="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+id="$(cat "$WS_STATE/id" 2>/dev/null || true)"
+
+place_env="$HOME/.config/vibe/places/runpod.env"
+if [ -f "$place_env" ]; then
+  case "$(ls -lL "$place_env")" in
+    -rw-------* | -r--------*) ;;
+    *)
+      # Fatal in up only: a bad file must never keep tick or down from the delete.
+      [ "${1:-}" != up ] || die "$place_env: others can read it; chmod 600 it"
+      echo "runpod: $place_env: others can read it; chmod 600 it" >&2
+      ;;
+  esac
+  # KEY=VALUE, not sourced: a GPU name holds spaces.
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in RUNPOD_*=*) export "${line%%=*}=${line#*=}" || true ;; esac
+  done <"$place_env"
+fi
+wait_s="${RUNPOD_WAIT:-600}"
+poll="${RUNPOD_POLL:-10}"
+# A bad number falls back to its default: it must never keep tick or down from the delete.
+case "$wait_s" in '' | *[!0-9]* | 0[0-9]*)
+  echo "runpod: RUNPOD_WAIT='$wait_s' is no whole number of seconds; 600 used" >&2
+  wait_s=600
+  ;;
+esac
+case "$poll" in '' | *[!0-9.]*)
+  echo "runpod: RUNPOD_POLL='$poll' is no number of seconds; 10 used" >&2
+  poll=10
+  ;;
+esac
+pull_s=300  # a pull on the tick path, or past the limit, stops after 5 min: each minute bills
+pull_end="" # the epoch that bound ends; empty: no bound (vibe ws stop before the limit)
+
+# The API key reaches runpodctl as RUNPOD_API_KEY, never in argv.
+rp() { runpodctl "$@" --output json; }
+
+# q ARG — ARG in single quotes for the remote shell.
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# addr — host and sshargs for the pod's direct ssh (the proxy ssh has no scp).
+# A new pod reuses old IPs: a known_hosts per instance, never ~/.ssh/known_hosts.
+# shortcut: an hours-long exec run lives on one ssh, which outlasts a 10 min gap (30 s x 20) and no more;
+# a run detached in the pod, with exec polling /ws/out/result, is the upgrade once a longer gap ends a run.
+addr() {
+  local info ip port key
+  info="$(rp ssh info "$id" 2>/dev/null)" &&
+    ip="$(jq -r '.ip // empty' <<<"$info")" &&
+    port="$(jq -r '.port // empty' <<<"$info")" &&
+    key="$(jq -r '.ssh_key.path // empty' <<<"$info")" &&
+    [ -n "$ip" ] && [ -n "$port" ] &&
+    host="root@$ip" &&
+    sshargs=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=20
+      -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$WS_STATE/known_hosts"
+      -p "$port" ${key:+-i "$key"})
+}
+# shellcheck disable=SC2029 # the command is built for the remote shell
+rsh() { ssh "${sshargs[@]}" "$host" "$@"; }
+# shortcut: rsync -e takes no escaped quote, so a path with ' breaks it.
+# --timeout ends a copy over a dead link; --partial-dir keeps a cut file, so the next copy resumes it.
+rcopy() { rsync -a --timeout=60 --partial-dir=.rsync-partial -e "ssh $(printf "'%s' " "${sshargs[@]}")" "$@"; }
+
+ready() {
+  [ "$(rp pod get "$id" 2>/dev/null | jq -r '.runtimeStatus // empty' 2>/dev/null)" = running ] &&
+    addr && rsh true
+}
+
+# gone — get says not found and a good list lacks the id: get wraps any error as
+# "failed to get pod: …", and "API key not found" matches too. A deleted pod stays visible a short time.
+gone() {
+  local err list
+  if err="$(rp pod get "$id" 2>&1 >/dev/null)"; then return 1; fi
+  grep -qiE 'not.?found' <<<"$err" &&
+    list="$(rp pod list 2>/dev/null)" &&
+    jq -e --arg id "$id" 'type == "array" and all(.[]; .id != $id)' <<<"$list" >/dev/null
+}
+
+# by_name — the id of the pod ws-<instance>, empty for none; fails when the list fails.
+by_name() {
+  local list
+  list="$(rp pod list 2>/dev/null)" &&
+    jq -r --arg n "ws-$WS_INSTANCE" 'if type == "array" then first(.[] | select(.name == $n) | .id) // "" else error end' \
+      <<<"$list" 2>/dev/null
+}
+
+# id=pending: up wrote it before the create. Look the pod up by name until a list answers.
+if [ "$id" = pending ]; then
+  if id="$(by_name)"; then
+    if [ -n "$id" ]; then
+      echo "$id" >"$WS_STATE/id"
+    elif [ "$(cat "$WS_STATE/id" 2>/dev/null)" = pending ]; then
+      rm -f "$WS_STATE/id" # an up that runs may have written the real id meanwhile: keep that
+    fi
+  else
+    id=pending
+  fi
+fi
+
+# destroy — delete until gone; the id file goes only then, so the next tick tries again.
+destroy() {
+  [ -n "$id" ] || return 0
+  if [ "$id" = pending ]; then
+    echo "runpod: the pod list fails, so the id of pod ws-$WS_INSTANCE is unknown; check runpodctl pod list" >&2
+    return 1
+  fi
+  local deadline=$(($(date +%s) + wait_s))
+  until
+    rp pod delete "$id" >/dev/null 2>&1 || true
+    gone
+  do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      echo "runpod: pod $id still exists; delete it with: runpodctl pod delete $id" >&2
+      return 1
+    fi
+    sleep "$poll"
+  done
+  rm -f "$WS_STATE/id"
+}
+
+undo_up() {
+  local rc=$?
+  trap - EXIT INT TERM
+  echo 0 >"$WS_STATE/limit" # a pod that survives the delete goes at the next tick
+  if [ -z "$id" ]; then id="$(by_name)" || id=pending; fi
+  if [ -n "$id" ]; then echo "$id" >"$WS_STATE/id"; else rm -f "$WS_STATE/id"; fi
+  if destroy; then rm -f "$WS_STATE/started" "$WS_STATE/limit"; fi
+  exit "$rc"
+}
+
+verb_up() {
+  local now out secrets=/dev/null
+  case "$hours" in '' | *[!0-9]* | 0*) die "hours must be a whole number above 0 with no leading zero, not '$hours'" ;; esac
+  [ -n "${RUNPOD_GPU_ID:-}" ] || die "set RUNPOD_GPU_ID in $place_env"
+  command -v jq >/dev/null || die "jq is missing: up cannot read the pod id"
+  if [ -z "${WS_CONF_IMAGE:-}" ] || [ -z "${WS_CONF_COMMIT:-}" ]; then die "workspace.conf needs image and commit"; fi
+  [ -z "$id" ] || die "already up: pod $id"
+  if [ "${WS_CONF_KIND:-}" = run ] && [ ! -d "$WS_STATE/in" ]; then die "no input: $WS_STATE/in/ is missing"; fi
+  [ ! -f "$HOME/.config/vibe/workspaces/$name.env" ] || secrets="$HOME/.config/vibe/workspaces/$name.env"
+  mkdir -p "$WS_STATE"
+  now="$(date +%s)"
+  echo "$now" >"$WS_STATE/started"
+  echo $((now + hours * 3600)) >"$WS_STATE/limit"
+  echo pending >"$WS_STATE/id" # a killed up leaves a trace for tick
+  trap undo_up EXIT
+  trap 'exit 1' INT TERM
+  out="$(rp pod create --name "ws-$WS_INSTANCE" --gpu-id "$RUNPOD_GPU_ID" \
+    --image "$WS_CONF_IMAGE:$WS_CONF_COMMIT" --container-disk-in-gb "${RUNPOD_DISK_GB:-50}" \
+    --ports 22/tcp --cloud-type "${RUNPOD_CLOUD_TYPE:-SECURE}" --docker-args "sleep infinity")"
+  id="$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true)"
+  [ -n "$id" ] || die "pod create printed no id; check runpodctl pod list: $out"
+  echo "$id" >"$WS_STATE/id"
+  rm -f "$WS_STATE/known_hosts"
+  local deadline=$(($(date +%s) + wait_s))
+  until ready; do
+    [ "$(date +%s)" -lt "$deadline" ] || die "pod $id gives no ssh after ${wait_s}s"
+    sleep "$poll"
+  done
+  # Secrets go over stdin: never in argv, never in pod env (the provider stores that).
+  rsh 'umask 077 && mkdir -p /ws/in /ws/data /ws/out /ws/scripts && cat >/ws/secrets.env' <"$secrets"
+  rcopy "$WS_DIR/" "$host:/ws/scripts/"
+  [ ! -d "$WS_STATE/in" ] || rcopy "$WS_STATE/in/" "$host:/ws/in/"
+  [ ! -d "$WS_STATE/data" ] || rcopy "$WS_STATE/data/" "$host:/ws/data/"
+  trap - EXIT INT TERM
+}
+
+verb_exec() {
+  local s="${1:-}" cmd a
+  case "$s" in '' | */* | .*) die "usage: runpod exec <script> [arg…]" ;; esac
+  shift
+  if [ -z "$id" ] || ! addr; then die "no pod for $WS_INSTANCE"; fi
+  cmd="test -x /ws/scripts/$(q "$s") || exit 3; cd /ws &&"
+  cmd="$cmd export WS_NAME=$(q "$name") WS_INSTANCE=$(q "$WS_INSTANCE") WS_PLACE=runpod WS_HOURS=$(q "$hours") &&"
+  cmd="$cmd exec /ws/scripts/$(q "$s")"
+  for a in "$@"; do cmd="$cmd $(q "$a")"; done
+  rsh "$cmd"
+}
+
+# Runs as a tested condition too (down): each failed step returns 1.
+verb_pull() {
+  local d left stop=()
+  if [ -z "$id" ] || ! addr || ! mkdir -p "$WS_STATE/data" "$WS_STATE/out"; then return 1; fi
+  for d in data out; do
+    if [ -n "$pull_end" ]; then
+      left=$(((pull_end - $(date +%s) + 59) / 60))
+      if [ "$left" -le 0 ]; then
+        echo "runpod: pull ran past its bound of ${pull_s}s" >&2
+        return 1
+      fi
+      stop=("--stop-after=$left")
+    fi
+    rcopy --safe-links "${stop[@]+"${stop[@]}"}" "$host:/ws/$d/" "$WS_STATE/$d/" || return 1
+  done
+  date +%s >"$WS_STATE/pulled"
+}
+
+# url — an ssh tunnel from the tailnet address of this machine: the phone talks to it only.
+verb_url() {
+  local p="${WS_CONF_PORTS:-}" tip sock="$WS_STATE/tunnel.sock"
+  p="${p%%,*}"
+  [ -n "$p" ] || die "workspace.conf has no ports"
+  tip="$(tailscale ip -4)" || die "tailscale gives no address"
+  tip="${tip%%[[:space:]]*}"
+  if ! ssh -S "$sock" -O check pod 2>/dev/null; then
+    if [ -z "$id" ] || ! addr; then die "no pod for $WS_INSTANCE"; fi
+    ssh "${sshargs[@]}" -M -S "$sock" -f -N -o ExitOnForwardFailure=yes -L "$tip:$p:localhost:$p" "$host" \
+      >/dev/null 2>>"$WS_STATE/tunnel.log" || die "no tunnel; see $WS_STATE/tunnel.log"
+  fi
+  echo "http://$tip:$p"
+}
+
+verb_down() {
+  [ -n "$id" ] || return 0
+  local rc=0 now
+  now="$(date +%s)"
+  if [ "$now" -ge "$(cat "$WS_STATE/limit" 2>/dev/null || echo 0)" ]; then pull_end=$((now + pull_s)); fi
+  verb_pull || {
+    echo "runpod: pull failed; deleting pod $id anyway" >&2
+    rc=1
+  }
+  ssh -S "$WS_STATE/tunnel.sock" -O exit pod 2>/dev/null || true # no tunnel: ssh fails, nothing else
+  if ! destroy; then
+    echo 0 >"$WS_STATE/limit" # the next tick deletes again
+    rc=1
+  fi
+  return "$rc"
+}
+
+verb_tick() {
+  [ -n "$id" ] || return 0
+  local now limit pulled
+  now="$(date +%s)"
+  limit="$(cat "$WS_STATE/limit" 2>/dev/null || echo 0)"
+  pulled="$(cat "$WS_STATE/pulled" 2>/dev/null || echo 0)"
+  if [ "$now" -ge "$limit" ]; then
+    wait_s=0 # one delete per tick: a wait here stalls the runner pass
+    verb_down
+    return
+  fi
+  # A tunnel ends after a 10 min network gap, and only url opens one: the phone link stays dead without this.
+  if [ "${WS_CONF_KIND:-}" = service ] && [ -n "${WS_CONF_PORTS:-}" ]; then (verb_url) >/dev/null || true; fi
+  if [ $((now - pulled)) -ge 600 ]; then
+    pull_end=$((now + pull_s))
+    verb_pull
+  fi
+}
+
+verb="${1:-}"
+case "$verb" in
+  up | exec | pull | url | down | tick)
+    shift
+    "verb_$verb" "$@"
+    ;;
+  *)
+    echo "usage: runpod up|exec <script> [arg…]|pull|url|down|tick" >&2
+    exit 3
+    ;;
+esac

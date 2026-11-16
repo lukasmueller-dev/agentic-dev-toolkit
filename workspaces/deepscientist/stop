@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# stop — end the daemon; /ws/data stays.
+set -euo pipefail
+
+exec ds --stop --home "${WS_ROOT:-/ws}/data"

@@ -37,7 +37,7 @@ _vibe_reply() {
 _vibe() {
   local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD - 1]}" line
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start sync status queue job feature update-toolkit help" "$cur"
+    _vibe_reply "start sync status queue job feature ws update-toolkit help" "$cur"
     return
   fi
   case "${COMP_WORDS[1]}" in
@@ -55,9 +55,9 @@ _vibe() {
     status) _vibe_reply "$(_vibe_agents)" "$cur" ;;
     queue)
       if [[ "$COMP_CWORD" -eq 2 ]]; then
-        _vibe_reply "status add new roadmap report hold archive pause resume page run conf unlimit set retry cancel stop answer fix ready merge-order" "$cur"
+        _vibe_reply "status add new roadmap report hold archive pause resume page run conf unlimit set retry cancel stop steer answer fix ready merge-order" "$cur"
       elif [[ "$cur" == -* ]]; then
-        _vibe_reply "$(_vibe_agents) --now --drain --week" "$cur"
+        _vibe_reply "$(_vibe_agents) --now --drain" "$cur"
       else
         COMPREPLY=()
         while IFS= read -r line; do COMPREPLY+=("$line"); done < <(compgen -d -- "$cur")
@@ -78,6 +78,7 @@ _vibe() {
         _vibe_reply "--all --dry --max" "$cur"
       fi
       ;;
+    ws) if [[ "$COMP_CWORD" -eq 2 ]]; then _vibe_reply "list status build start stop tick" "$cur"; else COMPREPLY=(); fi ;;
     *) COMPREPLY=() ;;
   esac
 }

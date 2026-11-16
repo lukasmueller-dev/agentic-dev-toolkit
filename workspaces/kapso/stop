@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# kapso stop: end the running campaign; /ws/data keeps the checkpoint.
+set -euo pipefail
+# A rented place execs over ssh with no image ENV: kapso needs its PATH.
+export PATH=/home/node/venv/bin:/opt/kapso/bin:$PATH
+exec kapso build --output "${KAPSO_WS_ROOT:-/ws}/data/campaign" --stop

@@ -16,28 +16,39 @@
 #   vibe queue new --opt-in <job> <repo>
 #                                   a job that opts <repo> into a recurring job and commits it
 #   vibe queue roadmap [--full] <repo>  open PROJECT_ROADMAP.md items on origin: <line>: <title>, or the whole item
-#   vibe queue report               a fresh briefing of the jobs to review; copied to the briefing dir
-#   vibe queue hold <id> <note>     keep a job for you: first in every briefing
+#   vibe queue report               the report of the jobs to review, on stdout
+#   vibe queue hold <id> <note>     keep a job for you: first in every report
 #   vibe queue archive <id>...      move reviewed jobs out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue page                 write the phone page now (the runner writes it each pass)
-#   vibe queue conf <key>=<value>   set one queue.conf key: slots, after, review_*, memory_max
+#   vibe queue conf <key>=<value>   set one queue.conf key: slots, after, review_*, memory_max, steer
 #   vibe queue unlimit              forget the usage limit: jobs start again
 #   vibe queue set <id> now=1|after=
 #                                   a queued job: start it next, or with no review
 #   vibe queue retry <id>           a failed, timeout or skipped job again as a new job; the old one archived
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
-#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue
+#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue;
+#                                   a tool job's run: its stop script, then down
+#   vibe queue steer <id> <text>    a running job: the text to its session (steer=1 in queue.conf);
+#                                   a tool job's run: to its steer script; exit 3 there: not supported
 #   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
 #   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
 #   vibe queue ready <pr-url>...|--feature <slug>
-#                                   no failing check, no SPEC.md or HANDOFF.md: mark each PR ready
+#                                   no failing check, no SPEC.md, RESEARCH.md or HANDOFF.md: mark each PR ready
 #   vibe queue merge-order <repo>   the repo's ready PRs, smallest first, with the PRs each can conflict with
 #   vibe queue run --<agent> [--drain]
 #                                   the runner (vibe-queue.service); --drain: until nothing can start
 #   vibe feature add <file>         register a feature: branches in several repos that merge together
 #   vibe feature ready <slug>       the human test passed: the batch waits for the merges
 #   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
+#   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
+#                                   a bad workspace.conf prints why, exit 1
+#   vibe ws status [<instance>]     each tool instance: up, past limit, waits for the GPU or down, from its state files
+#   vibe ws build <name>            docker build the tool's image at its pinned commit, tagged with it
+#   vibe ws start <name>            a kind=service tool up at the first of its places, then its start script;
+#                                   gpu=yes on turing: under the gpu-queue lock, held until stop
+#   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
+#   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -45,9 +56,9 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; briefing lines
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines
 #
-# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md.
+# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
 # shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
@@ -268,7 +279,7 @@ sync_wt() {
         if agent_git -C "$dir" merge -q --ff-only '@{u}' 2>/dev/null; then res="pulled"; else res="error" note="fast-forward failed" rc=1; fi
       fi
     fi
-    if [[ "$note" == "push failed" ]] && uses_lfs "$dir"; then note="push failed (git-lfs: push by hand)"; fi
+    if [[ "$note" == "push failed" && -n "$LFS_REFUSED" ]]; then note="push failed (git-lfs: push by hand)"; fi
     [[ -z "$dirty" ]] || note="${note:+$note, }dirty"
     [[ -z "$locked" ]] || note="${note:+$note, }locked"
     [[ "$dir" != "$main" || "$br" == "$def" ]] || note="${note:+$note, }off $def"
@@ -350,7 +361,7 @@ cmd_update_toolkit() {
 
 # --- queue: unattended agent jobs, one worktree each (docs/vibe-queue.md) ---
 
-# role_gate queue|job SUB [ARG...] — on a client (~/.config/vibe/role: `client <host>`),
+# role_gate queue|job|feature|ws SUB [ARG...] — on a client (~/.config/vibe/role: `client <host>`),
 # run a read-only SUB on the server over ssh and stop on any other.
 role_gate() {
   local role="" host="" cmd
@@ -358,7 +369,7 @@ role_gate() {
   [[ "$role" != server ]] || return 0
   [[ -n "$host" ]] || die "no server configured: echo 'client <host>' > ~/.config/vibe/role"
   case "$1 ${2:-}" in
-    "queue status" | "queue report" | "job list") ;;
+    "queue status" | "queue report" | "job list" | "ws list" | "ws status") ;;
     *) die "the queue runs on the server — ssh $host" ;;
   esac
   printf -v cmd ' %q' "$@"
@@ -453,10 +464,20 @@ verify_ok() {
   [[ -n "$v" ]] || return 0
   [[ "$v" == app || "$v" == blast-radius || "$v" == app,blast-radius ]] || die "$1: verify=$v — app, blast-radius or app,blast-radius"
   [[ -z "$(jget "$1/job" lane)" ]] || die "$1: verify= on a lane job"
-  [[ "$(job_after "$1")" == review && "$(jget "$1/job" output)" != report ]] || die "$1: verify= on a job with no review"
+  if ! review_on "$1" || [[ "$(jget "$1/job" output)" == report ]]; then die "$1: verify= on a job with no review"; fi
 }
 
-# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad verify=.
+# deadline_of JOBFILE — epoch of its deadline= (`YYYY-MM-DD HH:MM`, local time); empty with none; dies on a bad one.
+deadline_of() {
+  local v e=""
+  v="$(jget "$1" deadline)"
+  [[ -n "$v" ]] || return 0
+  if [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]]; then e="$(epoch_of "$v:00")"; fi
+  [[ -n "$e" ]] || die "$1: deadline=$v — YYYY-MM-DD HH:MM"
+  echo "$e"
+}
+
+# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify= or deadline=.
 cmd_queue_add() {
   local now=0 dirs=() d
   for d in "$@"; do
@@ -468,7 +489,11 @@ cmd_queue_add() {
     esac
   done
   ((${#dirs[@]})) || die "usage: vibe queue add [--now] <dir>..."
-  for d in "${dirs[@]}"; do verify_ok "$d"; done
+  for d in "${dirs[@]}"; do
+    [[ "$(jget "$d/job" after)" =~ ^(review|code)?$ ]] || die "$d: after=$(jget "$d/job" after) — review, code or empty"
+    verify_ok "$d"
+    deadline_of "$d/job" >/dev/null
+  done
   for d in "${dirs[@]}"; do
     d="$(queue_add "$d" "$now")"
     echo "queued ${d##*/}"
@@ -479,12 +504,23 @@ cmd_queue_add() {
 # JOB/worktree on success, a final status otherwise. A lane job also gets
 # JOB/start (the branch tip) and JOB/lane-pr.md (the lane PR so far). Run it in a subshell.
 job_prepare() {
-  local d="$1" repo branch main def wt
+  local d="$1" repo branch main def wt c
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)"
   [[ -f "$d/prompt.md" ]] || {
     job_end "$d" failed "no prompt.md"
     return 0
   }
+  if [[ -n "$(jget "$d/job" tool)" && -z "$(jget "$d/job" review)" ]]; then
+    c="$(tool_check "$d")"
+    if [[ -n "$c" ]]; then
+      job_end "$d" failed "$c"
+      return 0
+    fi
+    # A folder result makes a report job.
+    if [[ "$(tool_conf "$d" result)" == folder && -z "$(jget "$d/job" output)" ]]; then
+      echo output=report >>"$d/job"
+    fi
+  fi
   cd "$repo" 2>/dev/null || {
     job_end "$d" failed "no directory '$repo'"
     return 0
@@ -777,7 +813,7 @@ job_publish() {
   ((ahead > 0)) || return 0
   clear_config_lock "$wt"
   if ! agent_push "$wt" -q -u origin "$branch"; then
-    if uses_lfs "$wt"; then echo "push failed (git-lfs: push by hand)" >"$d/pr"; else echo "push failed" >"$d/pr"; fi
+    if [[ -n "$LFS_REFUSED" ]]; then echo "push failed (git-lfs: push by hand)" >"$d/pr"; else echo "push failed" >"$d/pr"; fi
     return 0
   fi
   command -v gh >/dev/null 2>&1 || return 0
@@ -883,9 +919,14 @@ agent_exec() {
 
 # job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
 # job's worktree, appended to JOB/log; its exit code. SESSION resumes that session.
+# steer=1 in queue.conf: the FIFO JOB/steer for `vibe queue steer` while the session runs.
 job_agent() {
+  local rc=0
+  if [[ "$(qconf steer "")" == 1 ]]; then rm -f "$1/steer" && mkfifo "$1/steer"; fi
   agent_exec "$1" "$2" vibe-job.sh "$(jstate "$1" worktree)" "$(jstate "$1" name)" "$(jget "$1/job" model)" \
-    "$3" "$(jget "$1/job" effort)" "${4:-}" "${5:-}" >>"$1/log" 2>&1
+    "$3" "$(jget "$1/job" effort)" "${4:-}" "${5:-}" >>"$1/log" 2>&1 || rc=$?
+  rm -f "$1/steer"
+  return "$rc"
 }
 
 # job_handoff JOB — after a timeout: resume the job's session for one turn
@@ -903,7 +944,7 @@ job_handoff() {
 }
 
 # job_after JOB — what runs after the job's commits: `after=` in the job file,
-# else in queue.conf, else `review`. Present but empty means nothing.
+# else in queue.conf, else `review`. `code`: the review without lean-review. Present but empty means nothing.
 job_after() {
   if grep -q '^after=' "$1/job" 2>/dev/null; then
     jget "$1/job" after
@@ -914,10 +955,21 @@ job_after() {
   fi
 }
 
+# review_on JOB — true when the job wants a review: after= is `review` or `code`.
+review_on() {
+  case "$(job_after "$1")" in review | code) return 0 ;; esac
+  return 1
+}
+
+# review_passes JOB — the passes of the job's review rounds, for the page.
+review_passes() {
+  if [[ "$(job_after "$1")" == code ]]; then echo /code-review; else echo "/code-review + lean-review"; fi
+}
+
 # review_due JOB — true when the job wants a review and has commits ahead of its base.
 review_due() {
   local d="$1" ahead
-  [[ "$(job_after "$d")" == review && "$(jget "$d/job" output)" != report ]] || return 1
+  if ! review_on "$d" || [[ "$(jget "$d/job" output)" == report ]]; then return 1; fi
   ahead="$(agent_git -C "$(jstate "$d" worktree)" rev-list --count "origin/$(jstate "$d" base)..HEAD" 2>/dev/null || echo 0)"
   ((ahead > 0))
 }
@@ -953,7 +1005,7 @@ review_agent() {
   model="$(jget "$d/job" review_model)"
   agent_exec "$d" "$2" vibe-review.sh "$(jstate "$d" worktree)" "$(jstate "$d" name)-review$3" \
     "${model:-$(qconf review_model sonnet)}" "$(qconf review_level high)" "$(jstate "$d" base)" \
-    >"$d/review.json" 2>>"$d/log"
+    "$(job_after "$d")" >"$d/review.json" 2>>"$d/log"
 }
 
 # review_findings JOB — JOB/findings from JOB/review.json: one numbered line per
@@ -1020,7 +1072,9 @@ review_pr_md() {
       printf '\n<details>\n<summary>Details</summary>\n\n</details>\n'
     fi
   } >"$d/pr.base"
-  awk -v rounds="**Review:** $(cat "$d/rounds")" -v det="$d/round-details.md" '
+  local only=""
+  if [[ "$(job_after "$d")" == code ]]; then only=" (/code-review only)"; fi
+  awk -v rounds="**Review:** $(cat "$d/rounds")$only" -v det="$d/round-details.md" '
     function cat(f,  l) { while ((getline l < f) > 0) print l; close(f) }
     { line[NR] = $0 }
     /^<details>/ && !first { first = NR }
@@ -1150,12 +1204,174 @@ stopped() {
   job_end "$1" failed stopped
 }
 
+# tool_inst JOB — the workspace instance of a tool= job: <tool>-<job id>.
+tool_inst() { echo "$(jget "$1/job" tool)-${1##*/}"; }
+
+# tool_conf JOB KEY — KEY from the workspace.conf of the job's tool; empty when absent.
+tool_conf() { jget "$WS_ROOT/$(jget "$1/job" tool)/workspace.conf" "$2"; }
+
+# tool_place JOB — place= of a tool= job, else the first of its tool's places.
+tool_place() {
+  local p
+  p="$(jget "$1/job" place)"
+  [[ -n "$p" ]] || p="$(tool_conf "$1" places)"
+  echo "${p%%,*}"
+}
+
+# tool_hours JOB — hours= of a tool= job, else of its tool's workspace.conf.
+tool_hours() {
+  local h
+  h="$(jget "$1/job" hours)"
+  echo "${h:-$(tool_conf "$1" hours)}"
+}
+
+# tool_gpu JOB — true for a tool= job whose run is to come or runs, on turing with gpu=yes: under the GPU lock.
+tool_gpu() {
+  [[ -n "$(jget "$1/job" tool)" && ! -f "$1/tool-exit" && "$(tool_conf "$1" gpu)" == yes && "$(tool_place "$1")" == turing ]]
+}
+
+# tool_check JOB — why a tool= job cannot run (docs/workspaces.md, Queue job); empty when it can.
+tool_check() {
+  local n f p h m
+  n="$(jget "$1/job" tool)" p="$(tool_place "$1")" h="$(tool_hours "$1")"
+  f="$WS_ROOT/$n/workspace.conf"
+  if ! m="$( (ws_dir "$n" >/dev/null && ws_secrets "$n" "$f") 2>&1)"; then
+    echo "${m#vibe: }"
+  elif [[ "$(tool_conf "$1" kind)" != run ]]; then
+    echo "$n is kind=service — vibe ws start $n"
+  elif [[ ",$(tool_conf "$1" places)," != *",$p,"* ]]; then
+    echo "$n has no place '$p' — places=$(tool_conf "$1" places)"
+  elif [[ ! -x "$WS_ROOT/_places/$p" ]]; then
+    echo "no place script '$p' in $WS_ROOT/_places — place= names another"
+  elif ! [[ "$h" =~ ^[1-9][0-9]*$ ]]; then
+    echo "hours=$h: a whole number above 0, in the job or $f"
+  elif ! [[ "$(tool_inst "$1")" =~ $WS_INST_RE ]]; then
+    echo "instance '$(tool_inst "$1")': letters, digits, . _ - only — the repo folder or the branch breaks it"
+  fi
+}
+
+# tool_run JOB — the run of a tool= job in its instance: in/ (a clone of the worktree, the job's
+# in/brief.md and in/args), then `vibe ws run`, under the GPU lock for gpu=yes on turing.
+# A stop TERMs the run, then the stop script and down. Writes JOB/tool.log, out/ (plain files and dirs only:
+# a link would read host files, a FIFO blocks a read), then tool-exit. The instance is the job's alone:
+# once down, its state dir goes.
+tool_run() {
+  local d="$1" inst st h f pid rc=0
+  inst="$(tool_inst "$d")" h="$(tool_hours "$d")"
+  st="$WS_STATES/$inst"
+  local -a runcmd=("$SELF_ROOT/bin/vibe" ws run "$inst")
+  : >"$d/tool.log"
+  mkdir -p "$st"
+  # A job process that died left its instance up: down first; up brings its data/ back.
+  if [[ -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
+  tool_place "$d" >"$st/place"
+  rm -rf "$st/in" "$st/out" "$d/out"
+  mkdir -p "$st/in"
+  for f in brief.md args; do
+    if [[ -f "$d/in/$f" ]]; then cp "$d/in/$f" "$st/in/$f"; fi
+  done
+  if ! agent_git clone -q --single-branch "$(jstate "$d" worktree)" "$st/in/repo" >>"$d/tool.log" 2>&1; then
+    rm -rf "$st"
+    return 0
+  fi
+  if tool_gpu "$d"; then
+    runcmd=("$SELF_ROOT/bin/gpu-queue" lock -- "${runcmd[@]}")
+  fi
+  # Its own process group: a stop TERMs a lock waiter, `vibe ws run` and the place's exec at once.
+  set -m
+  WS_HOURS="$h" "${runcmd[@]}" </dev/null >>"$d/tool.log" 2>&1 &
+  pid=$!
+  set +m
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ -e "$d/stop" ]]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      break
+    fi
+    sleep "${VIBE_WS_POLL:-10}"
+  done
+  wait "$pid" || rc=$?
+  if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
+  if [[ -d "$st/out" ]]; then
+    cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
+    find "$d/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$d/out"
+  fi
+  # Last: a job process that dies before it runs the tool again.
+  echo "$rc" >"$d/tool-exit"
+  if [[ ! -s "$st/id" ]]; then rm -rf "$st"; fi
+}
+
+# tool_unsafe WT — the first path FETCH_HEAD adds, changes or deletes against WT's HEAD in agent or git
+# config (.claude/, CLAUDE.md, .mcp.json, .vibe-jobs/, .github/ …); `?` when the diff fails.
+# The closing session and the review run in WT on the host and load that config.
+tool_unsafe() {
+  local f
+  f="$(agent_git -c core.quotePath=false -C "$1" diff --no-renames --name-only HEAD FETCH_HEAD)" || {
+    echo "?"
+    return 0
+  }
+  printf '%s\n' "$f" | grep -Ei -m 1 '(^"?|/)(\.claude|\.mcp\.json|claude(\.local)?\.md|agents\.md|gemini\.md|\.vibe-jobs|\.gitattributes|\.gitmodules|\.githooks|\.github)(/|"?$)' || true
+}
+
+# tool_job JOB — a tool= job up to its closing session: the run once (tool_run), a result=branch
+# fast-forwarded onto the job's branch, JOB/close.md (prompt.md, tool-run.md at its end).
+# False once the job has ended: a stop, no out/result, a failed: out/result, a done branch result with no bundle, a bad or unsafe
+# branch, no fast-forward, no close.md.
+# Runs as a tested condition: each failure is handled, not left to errexit.
+# A requeue after a crash redoes what is not done: tool-exit marks the run, close.md the check and the merge too.
+tool_job() {
+  local d="$1" wt b x e
+  wt="$(jstate "$d" worktree)"
+  if [[ ! -f "$d/close.md" ]]; then
+    if [[ ! -f "$d/tool-exit" ]]; then tool_run "$d"; fi
+    if stopped "$d"; then return 1; fi
+    if [[ ! -s "$d/out/result" ]]; then
+      x="$(tail -n 1 "$d/tool.log" 2>/dev/null | cut -c 1-160)"
+      e="$(jstate "$d" tool-exit)"
+      job_end "$d" failed "no out/result, tool exit ${e:-none} — tool.log: $x"
+      return 1
+    fi
+    # A failed run has nothing to check: its line is the job's result, no closing session.
+    if [[ "$(jstate "$d/out" result)" == failed:* ]]; then
+      job_end "$d" failed "$(jstate "$d/out" result | cut -c 1-160)"
+      return 1
+    fi
+    b="$(jstate "$d/out" branch)"
+    # tool-run.md tells the closing session that the branch holds the tool's commits.
+    if [[ "$(tool_conf "$d" result)" == branch && ! -f "$d/out/repo.bundle" && "$(jstate "$d/out" result)" == done:* ]]; then
+      job_end "$d" failed "out/result is done: but there is no out/repo.bundle — tool.log"
+      return 1
+    fi
+    if [[ "$(tool_conf "$d" result)" == branch && -f "$d/out/repo.bundle" ]]; then
+      if ! { git check-ref-format --allow-onelevel "$b" && agent_git -C "$wt" fetch -q "$d/out/repo.bundle" -- "$b"; } >>"$d/tool.log" 2>&1; then
+        job_end "$d" failed "out/repo.bundle: no branch '$b' — tool.log"
+        return 1
+      fi
+      x="$(tool_unsafe "$wt")"
+      if [[ -n "$x" ]]; then
+        job_end "$d" failed "out/repo.bundle changes $x: agent and git config stay out of a tool's commits"
+        return 1
+      fi
+      if ! agent_git -C "$wt" merge -q --ff-only FETCH_HEAD >>"$d/tool.log" 2>&1; then
+        job_end "$d" failed "out/repo.bundle: '$b' does not fast-forward $(jget "$d/job" branch) — tool.log"
+        return 1
+      fi
+    fi
+  fi
+  # `if ! { … } >f` misses a failed redirect (bash keeps its status unnegated): `||` catches it.
+  {
+    cat "$d/prompt.md" && echo && cat "$SELF_ROOT/skills/fill-queue/references/tool-run.md"
+  } >"$d/close.md" || {
+    job_end "$d" failed "close.md not written — runner.log"
+    return 1
+  }
+}
+
 # job_run JOB — the agent in the job's worktree, the gate, then publish; a job with a
 # review due queues the review instead, and the review gates and publishes. A retry after a usage
 # limit resumes the saved session. Runs in the background; it writes the final
 # status itself, so it outlives a runner restart.
 job_run() {
-  local d="$1" rc=0 result st note="" t reset r
+  local d="$1" rc=0 result st note="" t reset r p="$1/prompt.md"
   date '+%F %T' >"$d/started"
   r="$(jget "$d/job" review)"
   if [[ "$r" == verify ]]; then
@@ -1167,7 +1383,11 @@ job_run() {
   fi
   t="$(job_timeout "$d")"
   : >"$d/log"
-  job_agent "$d" "$t" "$d/prompt.md" "$(jstate "$d" session)" || rc=$?
+  if [[ -n "$(jget "$d/job" tool)" ]]; then
+    tool_job "$d" || return 0
+    p="$d/close.md"
+  fi
+  job_agent "$d" "$t" "$p" "$(jstate "$d" session)" || rc=$?
   job_session "$d"
   if stopped "$d"; then return 0; fi
   result="$(jstate "$d" result)"
@@ -1257,7 +1477,7 @@ mem_setup() {
 # starts jobs in free slots (config slots, 4). --drain stops
 # once nothing runs, waits on the GPU or may start.
 cmd_queue_run() {
-  local drain=0 d pid apid running waiting slots busy started queued=() order
+  local drain=0 d pid apid running waiting slots busy started queued=() order gpu_tool
   AGENT=""
   while (($#)); do
     case "$1" in
@@ -1286,7 +1506,8 @@ cmd_queue_run() {
   info "queue $QDIR: $(qconf slots 4) slots"
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
-    running=0 waiting=0 busy="" queued=()
+    ws_tick_bg
+    running=0 waiting=0 busy="" queued=() gpu_tool=0
     for d in "$QDIR"/*/; do
       d="${d%/}"
       [[ -f "$d/job" ]] || continue
@@ -1295,6 +1516,7 @@ cmd_queue_run() {
           pid="$(jstate "$d" pid)"
           if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
             running=$((running + 1)) busy+=" $(branch_key "$d")"
+            if tool_gpu "$d"; then gpu_tool=1; fi
             # vibe queue stop: TERM the agent; job_run then ends the job.
             # agent-pid is agent-writable: only a positive pid, else `kill 0` TERMs the runner's own group.
             apid="$(jstate "$d" agent-pid)"
@@ -1332,6 +1554,9 @@ cmd_queue_run() {
       [[ -n "$d" ]] || continue
       ((running < slots)) || break
       [[ " $busy " != *" $(branch_key "$d") "* ]] || continue
+      # One GPU tool run at a time: the next waits queued, not in a slot inside `gpu-queue lock`.
+      # shortcut: a GPU run outside the queue still makes that one wait in its slot; cap it if that bites.
+      if ((gpu_tool)) && tool_gpu "$d"; then continue; fi
       echo running >"$d/status"
       (job_prepare "$d") >>"$d/runner.log" 2>&1 || true
       if [[ "$(jstate "$d" status)" != running || ! -s "$d/worktree" ]]; then
@@ -1341,6 +1566,7 @@ cmd_queue_run() {
       job_run "$d" >>"$d/runner.log" 2>&1 &
       echo "$!" >"$d/pid"
       running=$((running + 1)) busy+=" $(branch_key "$d")" started=1
+      if tool_gpu "$d"; then gpu_tool=1; fi
       info "started ${d##*/}"
     done <<<"$order"
     # A drain whose only startable jobs wait on a busy branch must not spin.
@@ -1358,7 +1584,7 @@ queue_job() {
   echo "$d"
 }
 
-# vibe queue hold ID NOTE... — keep a finished job unreviewed, first in every briefing.
+# vibe queue hold ID NOTE... — keep a finished job unreviewed, first in every report.
 cmd_queue_hold() {
   local d
   (($# >= 2)) || die "usage: vibe queue hold <id> <note>"
@@ -1404,14 +1630,15 @@ cmd_queue_conf() {
   k="${1%%=*}" v="${1#*=}"
   case "$k" in
     slots) re='^[1-9][0-9]?$' ;;
-    after) re='^(review)?$' ;;
+    after) re='^(review|code)?$' ;;
     review_rounds) re='^[0-9]$' ;;
     review_trivial) re='^[0-9]{1,5}$' ;;
     review_model) re='^[a-z][a-z0-9.-]*$' ;;
     review_level) re='^(low|medium|high|xhigh|max)$' ;;
     review_timeout) re='^[1-9][0-9]*[smhd]?$' ;;
     memory_max) re='^([1-9][0-9]*[KMGT%]?|infinity)$' ;;
-    *) die "unknown key '$k' — slots after review_rounds review_trivial review_model review_level review_timeout memory_max" ;;
+    steer) re='^[01]?$' ;;
+    *) die "unknown key '$k' — slots after review_rounds review_trivial review_model review_level review_timeout memory_max steer" ;;
   esac
   [[ "$v" =~ $re ]] || die "bad value for $k: '$v'"
   mkdir -p "$QCONF"
@@ -1472,7 +1699,7 @@ cmd_queue_cancel() {
 }
 
 # vibe queue stop ID — the runner stops a running job on its next pass: failed, note
-# stopped; no requeue, no publish.
+# stopped; no requeue, no publish. A tool job's run: the job's process stops it (tool_run).
 cmd_queue_stop() {
   local d
   [[ $# == 1 ]] || die "usage: vibe queue stop <id>"
@@ -1480,6 +1707,28 @@ cmd_queue_stop() {
   [[ "$(jstate "$d" status)" == running ]] || die "${d##*/} is $(jstate "$d" status), not running — cancel takes a queued job"
   date '+%F %T' >"$d/stop"
   echo "stop asked: the runner ends ${d##*/} on its next pass"
+}
+
+# vibe queue steer ID TEXT... — TEXT to a running job's session (its FIFO, steer=1), else to the
+# steer script of a tool job whose run is up; each takes it at its next boundary.
+cmd_queue_steer() {
+  local d inst r=0
+  (($# >= 2)) || die "usage: vibe queue steer <id> <text>"
+  d="$(queue_job "$1")"
+  shift
+  [[ -n "$*" ]] || die "usage: vibe queue steer <id> <text>" # an empty text ends the session's input
+  if [[ "$(jstate "$d" status)" == running && -p "$d/steer" ]]; then
+    printf '%s\0' "$*" 1<>"$d/steer" # read-write: no wait for a reader
+    echo "steered ${d##*/}"
+    return 0
+  fi
+  [[ -n "$(jget "$d/job" tool)" ]] || die "${d##*/} takes no steer now — its session needs steer=1 in queue.conf at start"
+  inst="$(tool_inst "$d")"
+  [[ "$(jstate "$d" status)" == running && -s "$WS_STATES/$inst/id" ]] || die "the tool of ${d##*/} does not run now"
+  WS_HOURS="$(tool_hours "$d")" ws_place "$inst" exec steer "$*" || r=$?
+  if ((r == 3)); then die "$(jget "$d/job" tool): steer not supported"; fi
+  ((r == 0)) || die "steer of $inst failed (exit $r)"
+  echo "steered $inst"
 }
 
 # branch_idle JOB — dies while a job on JOB's repo and branch is queued or running.
@@ -1491,7 +1740,7 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=) and prompt.md; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=), prompt.md and in/; echoes it.
 # A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
@@ -1506,25 +1755,26 @@ follow_dir() {
     if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
+  if [[ -d "$1/in" ]]; then cp -R "$1/in" "$tmp/in"; fi
   echo "$tmp"
 }
 
 # task_append PROMPT LINE... — the lines end the `## Task` section of PROMPT.
 task_append() {
-  local f="$1"
+  local f="$1" t
   shift
-  ADD="$(printf '%s\n' "$@")" awk '
+  t="$(mktemp "$f.XXXXXX")" && ADD="$(printf '%s\n' "$@")" awk '
     function put() { if (!t) { print ENVIRON["ADD"]; print ""; t = 1 } }
     s && /^## / { put() }
     { print }
     $0 == "## Task" { s = 1 }
-    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$f.tmp.$$" && mv -f "$f.tmp.$$" "$f"
+    END { if (s) put(); else { print ""; print ENVIRON["ADD"] } }' "$f" | awk 'NF || !b { print } { b = !NF }' >"$t" && mv -f "$t" "$f"
 }
 
 # vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in place of Next action and Blockers of the job's HANDOFF.md (commit,
 # push) or, for a lane side job, in a retry prompt; a follow-up job is queued, the original archived.
 cmd_queue_answer() {
-  local d tmp side item n st text wt branch
+  local d tmp side item n st text wt branch t
   (($# >= 2)) || die "usage: vibe queue answer <id> <answer>"
   d="$(queue_job "$1")"
   shift
@@ -1535,11 +1785,12 @@ cmd_queue_answer() {
     branch_idle "$d"
     wt="$(jstate "$d" worktree)"
     [[ -f "$wt/HANDOFF.md" ]] || die "no HANDOFF.md in the worktree ${wt:-of the job} — retry takes a job without one"
+    t="$(mktemp "$wt/HANDOFF.md.XXXXXX")"
     ANS="Answer: $text" awk '
       /^## / { s = ($0 == "## Next action" || $0 == "## Blockers"); if (s) { print; print ""; print ENVIRON["ANS"]; print ""; f = 1; next } }
       !s { print }
-      END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$wt/HANDOFF.md.tmp"
-    mv -f "$wt/HANDOFF.md.tmp" "$wt/HANDOFF.md"
+      END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$t"
+    mv -f "$t" "$wt/HANDOFF.md"
     if ! git -C "$wt" diff --quiet -- HANDOFF.md; then
       git -C "$wt" commit -q -m "docs(handoff): ${d##*/} unblocked" -- HANDOFF.md || die "commit in $wt failed"
     fi
@@ -1560,6 +1811,9 @@ cmd_queue_answer() {
     fi
     task_append "$tmp/prompt.md" "Earlier try: git diff $(jstate "$d" start)..$side. Do not merge it." "Answer: $text"
   fi
+  # A tool run with a result: the follow-up closes that run again (tool_job), no new run; close.md: no new merge.
+  if [[ -s "$d/out/result" ]]; then cp -R "$d/out" "$d/tool-exit" "$d/tool.log" "$tmp/"; fi
+  if [[ -f "$d/close.md" ]]; then cp "$d/close.md" "$tmp/"; fi
   n="$(queue_add "$tmp")"
   cmd_queue_archive "$d" >/dev/null
   echo "queued ${n##*/}; archived ${d##*/}"
@@ -1577,7 +1831,8 @@ cmd_queue_fix() {
   d="${d%/pr}"
   branch_idle "$d"
   tmp="$(follow_dir "$d")"
-  grep -Ev '^(item|event)=' "$tmp/job" >"$tmp/job.new" || true
+  # A fix on a tool job's PR is agent work on its branch: no tool run.
+  grep -Ev '^(item|event|tool)=' "$tmp/job" >"$tmp/job.new" || true
   if [[ -n "${VIBE_EVENT:-}" ]]; then echo "event=$VIBE_EVENT" >>"$tmp/job.new"; fi
   mv -f "$tmp/job.new" "$tmp/job"
   task_append "$tmp/prompt.md" "Fix on $url (the task above is done; do only this): $*"
@@ -1585,13 +1840,13 @@ cmd_queue_fix() {
   echo "queued ${n##*/}"
 }
 
-# pr_check URL — dies when the PR at URL has a failing check or SPEC.md or HANDOFF.md in its diff.
+# pr_check URL — dies when the PR at URL has a failing check or SPEC.md, RESEARCH.md or HANDOFF.md in its diff.
 pr_check() {
   local c f
   c="$(gh pr view "$1" --json statusCheckRollup -q '.statusCheckRollup[] | if (.conclusion // "") != "" then .conclusion else (.state // .status // "") end')" || die "gh pr view $1 failed"
   if grep -qxE 'FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STARTUP_FAILURE' <<<"$c"; then die "$1 has a failing check"; fi
   f="$(gh pr diff "$1" --name-only)" || die "gh pr diff $1 failed"
-  if grep -qxE 'SPEC\.md|HANDOFF\.md' <<<"$f"; then die "$1 still holds SPEC.md or HANDOFF.md"; fi
+  if grep -qxE 'SPEC\.md|RESEARCH\.md|HANDOFF\.md' <<<"$f"; then die "$1 still holds SPEC.md, RESEARCH.md or HANDOFF.md"; fi
 }
 
 # vibe queue ready URL...|--feature SLUG — check every PR first, then mark each ready.
@@ -1773,8 +2028,9 @@ cmd_queue_page() {
 
 # vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
+# Past the job's deadline= it queues nothing: the hard stop of a research job's budget.
 cmd_queue_gpu() {
-  local d="${VIBE_JOB_DIR:-}" id
+  local d="${VIBE_JOB_DIR:-}" id dl
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
   case "${1:-}" in
     -h | --help) usage ;;
@@ -1782,6 +2038,10 @@ cmd_queue_gpu() {
     -*) die "usage: vibe queue gpu -- CMD..." ;;
   esac
   (($#)) || die "usage: vibe queue gpu -- CMD..."
+  dl="$(deadline_of "$d/job")" || exit 1
+  if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
+    die "past this job's deadline ($(jget "$d/job" deadline)): queue no run, finish the task"
+  fi
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
     --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
   echo "$id" >"$d/gpu-job"
@@ -1789,9 +2049,10 @@ cmd_queue_gpu() {
 }
 
 # follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
-# KEY=value lines (they replace FROM's). Last, so the runner skips TO until it is whole.
+# KEY=value lines (they replace FROM's), no tool=: a review round or a GPU follow-up runs no tool.
+# Last, so the runner skips TO until it is whole.
 follow_job() {
-  local from="$1" to="$2" l keys="follow|parent"
+  local from="$1" to="$2" l keys="follow|parent|tool"
   shift 2
   for l in "$@"; do keys+="|${l%%=*}"; done
   {
@@ -1843,7 +2104,85 @@ follow_ready() {
   [[ -z "$p" || ! -d "$QDIR/$p" || -e "$QDIR/$p/ended" ]]
 }
 
+# gpu_state_dir — the state dir of bin/gpu-queue.
+gpu_state_dir() { echo "${GPU_QUEUE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/gpu-queue}"; }
+
+# gpu_outside STATE... — `STATE<TAB>ID` per gpu-queue run in the STATE dirs (running queued held parked finished)
+# that no job's `gpu-job` names (a live or an archived job), in the order given; finished: the last 3 (ids start with the submit time).
+# Files only; a missing dir (held/, parked/) gives no row.
+gpu_outside() {
+  local own=$'\n' d s id list
+  # Live and archived jobs (as job_limit_pct does); read, not jstate: no fork per archived job.
+  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
+    [[ -f "${d}gpu-job" ]] || continue
+    read -r id <"${d}gpu-job" || true
+    own+="$id"$'\n'
+  done
+  for s in "$@"; do
+    list=""
+    for d in "$(gpu_state_dir)/$s"/*/; do
+      [[ -d "$d" ]] || continue
+      d="${d%/}" id="${d##*/}"
+      [[ "$id" != *.tmp ]] || continue # shortcut: a submit under way is <id>.tmp, and so is a run named *.tmp; no run has been
+      if [[ "$own" != *$'\n'"$id"$'\n'* ]]; then list+="$id"$'\n'; fi
+    done
+    if [[ "$s" == finished ]]; then list="$(printf '%s' "$list" | tail -n 3)"; fi
+    while IFS= read -r id; do
+      if [[ -n "$id" ]]; then printf '%s\t%s\n' "$s" "$id"; fi
+    done <<<"$list"
+  done
+}
+
+# short TEXT — TEXT cut to 80 characters, `…` last when cut; iconv -c drops a half character at the cut or the start.
+# shortcut: under the C locale (the runner unit sets none) the cut counts bytes, so non-ASCII text shows shorter; upgrade: set a UTF-8 locale in the unit.
+short() {
+  local t="$1" c="" u
+  if ((${#t} > 80)); then t="${t:0:79}" c="…"; fi
+  u="$(printf '%s' "$t" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)" || true # exit 1 when it drops a byte; no iconv: keep the text
+  printf '%s%s' "${u:-$t}" "$c"
+}
+
+# log_tail FILE — the last non-blank line of the last 4 KB of FILE, one line: ANSI codes and control
+# characters gone, a `\r` a line break (the last frame of a progress bar).
+log_tail() {
+  local esc=$'\033' t
+  t="$(tail -c 4096 "$1" 2>/dev/null | tr '\r' '\n' | sed -E "s/$esc\[[0-9;?]*[A-Za-z]//g" | tr '\001-\011\013-\037\177' ' ' |
+    awk 'NF { l = $0 } END { gsub(/^ +| +$/, "", l); print l }')" || true
+  short "$t"
+}
+
+# span_text SECONDS — `45s`, `12m`, `3h05m`.
+span_text() {
+  if (($1 < 60)); then
+    echo "$1s"
+  elif (($1 < 3600)); then
+    echo "$(($1 / 60))m"
+  else
+    printf '%dh%02dm\n' $(($1 / 3600)) $(($1 % 3600 / 60))
+  fi
+}
+
+# gpu_row STATE ID — the fields of one gpu_outside run, joined by US (a tab would merge empty ones):
+# DIR ELAPSED CMD THEN LOG WANDB EXIT ENDED. A finished run has only EXIT and ENDED; ELAPSED: running only.
+# The wandb link: the first run URL in the log (grep -m1 on the file, no pipe: SIGPIPE under pipefail).
+gpu_row() {
+  local d dir="" el="" cmd="" hook="" log="" w="" ex="" en="" t now
+  local re='https://[A-Za-z0-9.-]*wandb[A-Za-z0-9.-]*/[A-Za-z0-9_./-]+/runs/[A-Za-z0-9_-]+'
+  d="$(gpu_state_dir)/$1/$2"
+  if [[ "$1" == finished ]]; then
+    ex="$(jstate "$d" exit)" en="$(jstate "$d" ended)" en="${en%:*}"
+  else
+    dir="$(jstate "$d" dir)" cmd="$(jstate "$d" cmd)" hook="$(jstate "$d" "then")"
+    log="$(log_tail "$d/log")"
+    w="$(grep -m1 -o -E "$re" "$d/log" 2>/dev/null)" || true
+    t="$(epoch_of "$(jstate "$d" started)")" now="$(date +%s)"
+    if [[ "$1" == running && -n "$t" ]]; then el="$(span_text $((now > t ? now - t : 0)))"; fi
+  fi
+  printf '%s\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n' "$dir" "$el" "$(short "${cmd% }")" "$(short "$hook")" "$log" "${w%%$'\n'*}" "$ex" "$en"
+}
+
 # queue_counts — running, on the GPU, queued, PRs to review, ended jobs with no PR.
+# On the GPU: jobs with status `gpu`, plus the running and queued gpu-queue runs no job started (gpu_outside).
 # A PR counts once by the URL in a job's `pr` file. A `done` job with no URL is covered by a URL on
 # its repo and branch (a review round, a lane item) and waits while a job there is live (its review
 # round is queued). A failed or blocked job with no URL always counts. Files only: no gh, every 30 s.
@@ -1865,6 +2204,7 @@ queue_counts() {
     esac
     rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
   done
+  g=$((g + $(gpu_outside running queued | wc -l)))
   echo "$r $g $q $(printf '%s' "$rows" | awk -F'\t' '
     { k = $1 "\t" $2 }
     $4 == "live" { live[k] = 1; next }
@@ -1936,7 +2276,7 @@ job_phases() {
     echo "$m R$n${v:+ $v}"
     n=$((n + 1))
   done
-  if ((n == 1)) && [[ "$(job_after "$b")" == review ]] && ! job_final "$b"; then echo "○ R1"; fi
+  if ((n == 1)) && review_on "$b" && ! job_final "$b"; then echo "○ R1"; fi
   k="$(jget "$b/job" verify)"
   if [[ -f "$b-verify/job" ]]; then
     last="$b-verify" m="$(phase_mark "$b-verify")" v="$(jstate "$b-verify" verify)"
@@ -1960,12 +2300,23 @@ job_phases() {
   esac
 }
 
-# queue_jobs PRINTER — the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
+# queue_jobs PRINTER — the GPU group (`PRINTER repo GPU`, `PRINTER gpu ID STATE ELAPSED DIR CMD THEN LOG WANDB EXIT ENDED`
+# per outside run (gpu_row's fields), `PRINTER end`),
+# the Features group (`PRINTER repo Features`, `PRINTER feature NAME PILL
 # PROGRESS CONTEXT ITEMS MEMBERS` per feature, `PRINTER end`), then per repo with a job outside every
 # feature `PRINTER repo NAME`, a card per job or branch (branch_card), `PRINTER end`.
 # ITEMS, MEMBERS: feature_row's F_ITEMS and F_MEMBERS.
 queue_jobs() {
-  local repo d b f seen head
+  local repo d b f seen head s id rows el cmd hook log w ex en
+  rows="$(gpu_outside running queued held parked finished)"
+  if [[ -n "$rows" ]]; then
+    "$1" repo GPU
+    while IFS=$'\t' read -r s id; do
+      IFS=$'\037' read -r d el cmd hook log w ex en <<<"$(gpu_row "$s" "$id")"
+      "$1" gpu "$id" "$s" "$el" "$d" "$cmd" "$hook" "$log" "$w" "$ex" "$en"
+    done <<<"$rows"
+    "$1" end
+  fi
   feature_keys
   if [[ -n "$(feature_files)" ]]; then
     "$1" repo Features
@@ -2037,11 +2388,19 @@ job_card() {
   "$1" job "$3" "${st:-queued}" "$txt$(side_suffix "$2")" "$(jstate "$2" pr)" "$2" "${4:-}"
 }
 
-# status_line repo|feature|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
+# status_line repo|feature|gpu|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
 status_line() {
   local r b p ms note
   case "$1" in
     repo) printf '\n%s\n' "$2" ;;
+    gpu)
+      if [[ "$3" == finished ]]; then
+        printf '  %s  exit %s%s\n' "$2" "${10}" "${11:+ · ${11}}"
+      else
+        printf '  %s  %s%s\n' "$2" "$3" "${4:+ $4}"
+        printf '%s\n' "$5" "${8:+log: $8}" "${6:+cmd: $6}" "${7:+then: $7}" "${9:+wandb: $9}" | sed -e '/^$/d' -e 's/^/    /'
+      fi
+      ;;
     job)
       printf '  %s  %s\n' "$2" "$3"
       if [[ -n "$4$5" ]]; then printf '    %s\n' "$4${5:+ $5}"; fi
@@ -2090,7 +2449,7 @@ job_buttons() {
   case "$(jstate "$1" status)" in
     "" | queued)
       if [[ "$(jget "$1/job" now)" != 1 ]]; then b+='<button data-act="now">Start next</button>'; fi
-      if [[ "$(job_after "$1")" == review ]]; then b+='<button data-act="noreview">No review</button>'; fi
+      if review_on "$1"; then b+='<button data-act="noreview">No review</button>'; fi
       c+='<button data-act="cancel" data-confirm>Cancel</button>'
       ;;
     running) c+='<button data-act="stop" data-confirm>Stop</button>' ;;
@@ -2115,7 +2474,7 @@ job_buttons() {
   printf '<div class="jacts" data-id="%s"%s%s>%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$(btn_rows "$b" "$c")" "${links:+<div class=\"files\">$links</div>}"
 }
 
-# status_card repo|feature|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
+# status_card repo|feature|gpu|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
 # a lane unpacks into a job card per job, a feature into a card per member. The phase line opens to name the review passes.
 status_card() {
   local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
@@ -2129,6 +2488,13 @@ status_card() {
       fi
       ;;
     end) echo '</div>' ;;
+    gpu)
+      # An outside gpu-queue run: the pill is its state and elapsed time, or its exit code; the text its dir, or its end time.
+      pill="$3${4:+ $4}" txt="$5" pr=""
+      if [[ "$3" == finished ]]; then pill="exit ${10}" txt="${11}"; fi
+      extra="$(esc "$(printf '%s\n' "${8:+log: $8}" "${6:+cmd: $6}" "${7:+then: $7}" | sed '/^$/d')" | sed 's#.*#<p class="stats">&</p>#')"
+      if [[ -n "${9:-}" ]]; then extra+="<p class=\"stats\"><a href=\"$(esc "$9")\">wandb run</a></p>"; fi
+      ;;
     job) pill="$3" txt="$4" pr="$5" dir="$6" ph="${7:-}" ;;
     lane) pill="$4" txt="$7" pr="$6" dir="$8" items="$9" all="${10}" cls=" lane" ph="${11:-}" ;;
     feature)
@@ -2140,12 +2506,12 @@ status_card() {
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
   esac
-  if [[ "$1" != job && "$1" != lane && "$1" != feature ]]; then return 0; fi
-  # A feature or member state takes the look of a job status.
+  if [[ "$1" != job && "$1" != lane && "$1" != feature && "$1" != gpu ]]; then return 0; fi
+  # A feature, member or outside GPU run state takes the look of a job status.
   case "$st" in
     "needs you" | "no PR") st=blocked ;;
-    "your test") st=held ;;
-    merge | "no job") st="done" ;;
+    "your test" | parked) st=held ;;
+    merge | "no job" | finished) st="done" ;;
   esac
   case "$pr" in
     http*) link=" <a href=\"$(esc "$pr")\">PR</a>" ;;
@@ -2160,7 +2526,7 @@ status_card() {
       case "$l" in R[0-9]*) rs+="${rs:+, }$l" ;; esac
     done <<<"$ph"
     if [[ -n "$rs" ]]; then
-      ph="<details class=\"phases\"><summary>$t</summary><p>$rs: /code-review + lean-review</p></details>"
+      ph="<details class=\"phases\"><summary>$t</summary><p>$rs: $(review_passes "$dir")</p></details>"
     else
       ph="<p class=\"phases\">$t</p>"
     fi
@@ -2226,11 +2592,10 @@ config_md() {
   printf '| Slots | %s |\n' "$(qconf slots 4)"
   printf '| Paused | %s |\n' "$(if [[ -e "$QROOT/paused" ]]; then echo yes; else echo no; fi)"
   printf '| Usage limit | %s |\n' "$limit"
-  printf '| Briefing copies | %s |\n' "$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || echo none)"
   # shellcheck disable=SC2088  # a literal ~ for display
   case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
   # shellcheck disable=SC2016  # Markdown backticks, not an expansion
-  printf '\nFrom `%s`: `queue.conf`, `repos`, `briefing-dir`.\n\n## Recurring jobs\n\n' "$conf"
+  printf '\nFrom `%s`: `queue.conf`, `repos`.\n\n## Recurring jobs\n\n' "$conf"
   # shellcheck disable=SC2119  # no arguments: every repo
   cmd_job_list | awk '
     NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
@@ -2302,21 +2667,23 @@ new_work() {
 # queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q p o jobs lim
+  local f="$QROOT/web/index.html" r g q p o jobs lim front tools
   local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
   read -r r g q p o <<<"$(queue_counts)"
   lim="$(limit_line)"
   jobs="$(queue_jobs status_card)"
+  front="$(queue_front_md)" tools="$(ws_md)"
+  [[ -z "$front" ]] || front="<div class=\"md\">$(md_html <<<"$front")</div>"$'\n'
+  [[ -z "$tools" ]] || tools="<div class=\"md\">$(md_html <<<"$tools")</div>"$'\n'
   mkdir -p "${f%/*}" || return 1
-  # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or the briefing.
+  # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<updated>' "$(date '+%F %H:%M:%S')" \
     '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
     '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
     '<actions>' "$(page_buttons)" \
-    '<jobs>' "${jobs:-<p>No jobs.</p>}"$'\n'"$(new_work)" \
-    '<briefing>' "$(queue_report_md | md_html)" \
+    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$tools$(new_work)" \
     '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
     mv -f "$f.tmp.$$" "$f"
   else
@@ -2384,38 +2751,47 @@ verify_failed() {
   return 1
 }
 
+# pr_missed TEXT — true when a job's `pr` text says that no PR carries its commits.
+pr_missed() { [[ "$1" == "push failed"* || "$1" == "PR not created"* ]]; }
+
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
-# the classes: a status, `gate` (done with a failing gate or verify step), or `pr` (done with a PR URL;
-# `done` is then done without one). A branch with 2+ jobs is one row (group_of) in the `pr` or `done`
-# table; a job of it that needs the user keeps its own row. No rows, no table.
+# the classes: a status, `gate` (done with a failing gate or verify step), `nopr` (done, `pr` holds
+# `push failed…` or `PR not created`), or `pr` (done with a PR URL; `done` is then done without one).
+# That `pr` note leads the row in every class. A branch with 2+ jobs is one row (group_of) in the `pr`
+# or `done` table; a job of it that needs the user keeps its own row. No rows, no table.
 report_rows() {
-  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links nx
+  local repo="$1" title="$2" d b cls rows="" seen=$'\n' links nx note pr grp
   shift 2
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && ! -f "$d/held" && "$(jget "$d/job" repo)" == "$repo" ]] || continue
     job_settled "$d" || continue
-    cls="$(jstate "$d" status)"
+    cls="$(jstate "$d" status)" note=""
     if [[ "$cls" == "done" ]] && checks_failed "$d"; then cls=gate; fi
     # A done member job is in its feature's row.
     if [[ "$cls" == "done" ]] && is_member "$d"; then continue; fi
     group_of "$d"
-    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then
-      case "$G_PR" in http*) cls="pr" ;; esac
-      in_list "$cls" "$@" || continue
+    pr="$(jstate "$d" pr)" grp=0
+    if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then pr="$G_PR" grp=1; fi
+    if pr_missed "$pr"; then
+      note="**$pr** · "
+      if [[ "$cls" == "done" ]]; then cls="nopr"; fi
+    elif [[ "$pr" == http* && "$cls" == "done" ]]; then
+      cls="pr"
+    fi
+    in_list "$cls" "$@" || continue
+    if ((grp)); then
       b="$(jget "$d/job" branch)"
       [[ "$seen" != *$'\n'"$b"$'\n'* ]] || continue
       seen+="$b"$'\n'
       links=""
-      case "$G_PR" in http*) links="[PR]($G_PR)" ;; esac
+      case "$pr" in http*) links="[PR]($pr)" ;; esac
       nx="$G_NEXT"
       if [[ "$nx" == - && "${G_PROGRESS%/*}" == "${G_PROGRESS#*/}" ]]; then nx="$(report_tldr "$(printf '%s\n' "${GROUP[@]}" | LC_ALL=C sort | tail -n 1)")"; fi
-      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | ${nx//|//} | $links |"$'\n'
+      rows+="| $b | $G_PROGRESS | ${G_CTX//|//} | ${note//|//}${nx//|//} | $links |"$'\n'
       continue
     fi
-    case "$(jstate "$d" pr)" in http*) [[ "$cls" != "done" ]] || cls="pr" ;; esac
-    in_list "$cls" "$@" || continue
-    rows+="$(report_row "$d" "$(report_tldr "$d")$(side_suffix "$d")")"$'\n'
+    rows+="$(report_row "$d" "$note$(report_tldr "$d")$(side_suffix "$d")")"$'\n'
   done
   [[ -n "$rows" ]] || return 0
   echo
@@ -2426,7 +2802,7 @@ report_rows() {
   printf '%s' "$rows"
 }
 
-# feature_md — the briefing's Features table: per feature its pill, done/members, context,
+# feature_md — the report's Features table: per feature its pill, done/members, context,
 # each member as its PR link (else repo:branch) and its state, the file. No feature, no table.
 feature_md() {
   local f r b p ms rows="" mem ctx
@@ -2444,15 +2820,9 @@ feature_md() {
   printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
-# queue_report_md — the briefing: the header (with the 5h limit), held jobs under "Yours", the
-# Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
-# action of every unheld job that did not finish or failed its gate.
-queue_report_md() {
-  local d st g wt repo rows="" lim
-  echo "# Vibe queue — $(date '+%F %H:%M')"
-  echo
-  lim="$(limit_line)"
-  echo "$(queue_header)${lim:+ · $lim}"
+# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report and of the page.
+queue_front_md() {
+  local d rows=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/held" ]] || continue
@@ -2465,12 +2835,24 @@ queue_report_md() {
     echo
     cat "$QROOT/triage.md"
   fi
+}
+
+# queue_report_md — the report: the header (with the 5h limit), queue_front_md, the
+# Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
+# action of every unheld job that did not finish or failed its gate.
+queue_report_md() {
+  local d st g wt repo rows="" lim
+  echo "# Vibe queue — $(date '+%F %H:%M')"
+  echo
+  lim="$(limit_line)"
+  echo "$(queue_header)${lim:+ · $lim}"
+  queue_front_md
   feature_keys
   feature_md
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
-      report_rows "$repo" "Needs you" blocked failed timeout skipped gate
+      report_rows "$repo" "Needs you" blocked failed timeout skipped gate nopr
       report_rows "$repo" "PR ready" pr
       report_rows "$repo" "Done, nothing to read" "done"
     )"
@@ -2507,103 +2889,10 @@ queue_report_md() {
   done
 }
 
-# week_jobs SINCE — one line per job, queue and archive: repo, status, ran,
-# open, id, note, tab-separated. ran: ended on or after the date SINCE
-# ("2026-10-22 03:00:00" > "2026-10-22"). open: unarchived and needs a human.
-week_jobs() {
-  local since="$1" d m st ended ran open
-  for d in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
-    d="${d%/}"
-    [[ -f "$d/job" ]] || continue
-    ran=0 open=0
-    case "$d" in
-      "$QDIR"/*) ;;
-      *)
-        m="${d%/*}" m="${m##*/}"
-        if [[ "$m" < "${since:0:7}" ]]; then continue; fi
-        ;;
-    esac
-    st="$(jstate "$d" status)" ended="$(jstate "$d" ended)"
-    if [[ -n "$ended" && "$ended" > "$since" ]]; then ran=1; fi
-    case "$d:$st" in "$QDIR"/*:blocked | "$QDIR"/*:failed | "$QDIR"/*:timeout | "$QDIR"/*:skipped) open=1 ;; esac
-    if ((ran + open)); then
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(jget "$d/job" repo)" "$st" "$ran" "$open" "${d##*/}" "$(jstate "$d" note)"
-    fi
-  done
-}
-
-# week_list LABEL LINES — "- LABEL: N" and the lines; "none" without lines.
-week_list() {
-  if [[ -z "$2" ]]; then
-    echo "- $1: none"
-    return 0
-  fi
-  echo "- $1: $(printf '%s\n' "$2" | awk 'END { print NR }')"
-  echo "$2"
-}
-
-# queue_week_md — the Sunday section: per repo the PRs merged, the jobs run
-# and the blockers open over the last 7 days.
-queue_week_md() {
-  local since rows repo merged
-  since="$(date -d '7 days ago' +%F 2>/dev/null || date -v-7d +%F)"
-  rows="$(week_jobs "$since")"
-  echo "## Week since $since"
-  while IFS= read -r repo; do
-    [[ -n "$repo" ]] || continue
-    echo
-    echo "### ${repo##*/}"
-    echo
-    echo "- Jobs run: $(awk -F'\t' -v r="$repo" '
-      $1 == r && $3 { n[$2]++; t++ }
-      END {
-        if (!t) { print "none"; exit }
-        split("done blocked failed timeout skipped", k, " ")
-        for (i = 1; i <= 5; i++) if (n[k[i]]) s = s (s ? ", " : "") n[k[i]] " " k[i]
-        print t " (" s ")"
-      }' <<<"$rows")"
-    if merged="$(cd "$repo" && gh pr list --state merged --search "merged:>=$since" --json number,title,url \
-      -q '.[] | "  - [#\(.number)](\(.url)) \(.title)"' 2>/dev/null)"; then
-      week_list "PRs merged" "$merged"
-    else
-      echo "- PRs merged: unknown (gh failed)"
-    fi
-    week_list "Blockers open" "$(awk -F'\t' -v r="$repo" '$1 == r && $4 { print "  - " $5 " — " $6 }' <<<"$rows")"
-  done < <(cut -f1 <<<"$rows" | sort -u)
-}
-
-# vibe queue report [--week] — a fresh briefing to QROOT/briefings/<date>-<HHMM>.md,
-# copied as briefing-<…>.md with note frontmatter to the directory named in
-# ~/.config/vibe/briefing-dir when that file exists. --week ends it with the
-# Sunday section.
+# vibe queue report — the report of the jobs to review, on stdout.
 cmd_queue_report() {
-  local file copy dest week=""
-  if [[ "${1:-}" == --week ]]; then
-    week=1
-    shift
-  fi
-  [[ $# -eq 0 ]] || die "usage: vibe queue report [--week]"
-  file="$QROOT/briefings/$(date +%F-%H%M).md"
-  mkdir -p "${file%/*}"
-  {
-    queue_report_md
-    if [[ -n "$week" ]]; then
-      echo
-      queue_week_md
-    fi
-  } >"$file"
-  echo "briefing: $file"
-  copy="$(head -n 1 "$QCONF/briefing-dir" 2>/dev/null || true)"
-  copy="${copy/#\~/$HOME}"
-  if [[ -n "$copy" ]]; then
-    dest="$copy/briefing-${file##*/}"
-    mkdir -p "$copy"
-    {
-      printf -- '---\ncreated: %s\ntouched_by_ai: true\n---\n\n' "$(date +%F)"
-      cat "$file"
-    } >"$dest"
-    echo "copied: $dest"
-  fi
+  [[ $# -eq 0 ]] || die "usage: vibe queue report"
+  queue_report_md
 }
 
 cmd_queue() {
@@ -2611,9 +2900,9 @@ cmd_queue() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop | answer | fix | ready | new | roadmap) "cmd_queue_$sub" "$@" ;;
+    add | run | status | report | hold | archive | pause | resume | page | gpu | follow | conf | unlimit | set | retry | cancel | stop | steer | answer | fix | ready | new | roadmap) "cmd_queue_$sub" "$@" ;;
     merge-order) cmd_queue_merge_order "$@" ;;
-    *) die "usage: vibe queue add|new|roadmap|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop|answer|fix|ready|merge-order — see vibe --help" ;;
+    *) die "usage: vibe queue add|new|roadmap|run|status|report|hold|archive|pause|resume|page|conf|unlimit|set|retry|cancel|stop|steer|answer|fix|ready|merge-order — see vibe --help" ;;
   esac
 }
 
@@ -2667,12 +2956,12 @@ is_member() {
 # feature_row FILE — F_PILL, F_PROGRESS (done/members), F_ITEMS (a `<repo> · <branch>  <status>  <note>`
 # line per member that needs you) and F_MEMBERS (`repo|branch|pr|state|note` per member).
 # A member is done with a PR and no job queued, running or in need of you (a done job with a
-# failed gate does); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
+# failed gate does, and so does a last `pr` note of pr_missed); without either PR or job, it needs you. Pill: needs you, running, queued, `your test`, `merge` (ready marker).
 feature_row() {
-  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any
+  local f="$1" r b p j st jn ms note n=0 ok=0 you=0 run=0 wait=0 mrun mwait any c lastpr
   F_ITEMS="" F_MEMBERS=""
   while IFS=$'\t' read -r r b p; do
-    n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0
+    n=$((n + 1)) ms="" note="" mrun=0 mwait=0 any=0 lastpr=""
     while IFS= read -r j; do
       [[ -n "$j" ]] || continue
       any=1 st="$(jstate "$j" status)" jn="$(jstate "$j" note)$(side_suffix "$j")"
@@ -2687,13 +2976,18 @@ feature_row() {
           F_ITEMS+="${r##*/} · $b  $st  $jn"$'\n'
           ;;
       esac
-      if [[ -z "$p" && "$(jstate "$j" pr)" == http* ]]; then p="$(jstate "$j" pr)"; fi
+      c="$(jstate "$j" pr)"
+      if [[ -n "$c" ]]; then lastpr="$c"; fi
+      if [[ -z "$p" && "$c" == http* ]]; then p="$c"; fi
     done < <(branch_jobs "$r" "$b")
     if [[ -z "$ms" ]]; then
       if ((mrun)); then
         ms=running
       elif ((mwait)); then
         ms=queued
+      elif pr_missed "$lastpr"; then
+        ms="$lastpr"
+        F_ITEMS+="${r##*/} · $b  no PR  $lastpr"$'\n'
       elif [[ "$p" != http* ]]; then
         ms="no PR"
         F_ITEMS+="${r##*/} · $b  no PR  no job runs and no PR is open"$'\n'
@@ -2725,17 +3019,28 @@ feature_row() {
 }
 
 # feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
-# shortcut: a mkdir lock stops two runners losing each other's URL; taken over after 5 s, so a holder slower than that loses its URL.
+# Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
 feature_set_pr() {
-  local t lk="$1.lock" i=0 rc=0
-  t="$(mktemp "$1.XXXXXX")" || return 1
-  until mkdir "$lk" 2>/dev/null || ((++i > 50)); do sleep 0.1; done
-  awk -v r="${2%/}" -v b="$3" -v u="$4" '
+  local t rc=0 tries=0
+  # shortcut: a lock over 1 min old is a killed job's; the waiter that gets FILE.reap removes it. A reaper killed
+  # inside that step leaves FILE.reap and blocks the removal; a waiter fails after 3 min. flock is not on macOS.
+  until mkdir "$1.lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    if ((tries > 1800)); then
+      echo "vibe: no lock on $1 after 3 min — remove $1.lock and $1.reap if no job runs, or check the directory is writable" >&2
+      return 1
+    fi
+    if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]] && mkdir "$1.reap" 2>/dev/null; then
+      if [[ -n "$(find "$1.lock" -prune -mmin +1 2>/dev/null)" ]]; then rmdir "$1.lock" 2>/dev/null || true; fi
+      rmdir "$1.reap" 2>/dev/null || true
+    fi
+    sleep 0.1
+  done
+  t="$(mktemp "$1.XXXXXX")" && awk -v r="${2%/}" -v b="$3" -v u="$4" '
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
     { print }' "$1" >"$t" && mv -f "$t" "$1" || rc=1
-  rmdir "$lk" 2>/dev/null || true
-  if ((rc)); then rm -f "$t"; fi
+  rmdir "$1.lock" 2>/dev/null || true
   return "$rc"
 }
 
@@ -2757,7 +3062,7 @@ feature_prompt() {
 # feature_body JOB FILE — JOB/pr-body.md gets the `**Feature:**` line below its TL;DR (siblings as
 # repo#pr, else repo:branch) and the feature's decisions and contract in a <details> above its footer.
 feature_body() {
-  local d="$1" f="$2" b="$1/pr-body.md" r m p repo branch name sib="" det
+  local d="$1" f="$2" b="$1/pr-body.md" r m p repo branch name sib="" det t
   repo="$(jget "$d/job" repo)" branch="$(jget "$d/job" branch)" name="$(basename "$f" .md)"
   while IFS=$'\t' read -r r m p; do
     if [[ "$r" == "${repo%/}" && "$m" == "$branch" ]]; then continue; fi
@@ -2770,13 +3075,14 @@ feature_body() {
     md_section "$f" Contract
     printf '\n</details>\n'
   )"
+  t="$(mktemp "$b.XXXXXX")" || return 1
   FLINE="**Feature:** $name — merges together with $sib" FDET="$det" awk '
     FNR == NR { if ($0 == "---") n = FNR; if (/^\*\*Decisions\/risks:\*\*/) r = 1; next }
     !r && !t && NF { print ENVIRON["FLINE"]; print ""; t = 1 }
     FNR == n { print ENVIRON["FDET"]; print "" }
     { print }
     r && !t && /^\*\*Decisions\/risks:\*\*/ { print ENVIRON["FLINE"]; t = 1 }
-    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$b.tmp.$$" && mv -f "$b.tmp.$$" "$b"
+    END { if (!n) { print ""; print ENVIRON["FDET"] } }' "$b" "$b" >"$t" && mv -f "$t" "$b"
 }
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
@@ -2802,7 +3108,7 @@ cmd_feature_add() {
   done < <(feature_members "$src")
   ((n >= 2)) || die "a feature needs 2 or more '- <repo> <branch>' lines under ## Members"
   mkdir -p "$FROOT"
-  t="$(mktemp "$dst.XXXXXX")" || die "no temp file in $FROOT"
+  t="$(mktemp "$dst.XXXXXX")"
   cp "$src" "$t"
   while IFS=$'\t' read -r r b p; do
     if [[ -z "$p" ]]; then p="$(pr_of "$(open_prs "$r")" "$b")"; fi
@@ -3142,7 +3448,7 @@ job_args() {
 }
 
 # job_stopped REPO JOB — add a `skipped` entry for a stopped job, unless the
-# queue already holds one, so the briefing shows it under "Needs you".
+# queue already holds one, so the report shows it under "Needs you".
 job_stopped() {
   local repo="$1" job="$2" d tmp
   for d in "$QDIR"/*/; do
@@ -3273,7 +3579,7 @@ triage_fix() {
 # vibe job triage [REPO...] — every open agent PR of every repo under the
 # root: merge the base into a conflicted one and push; a `/fix` or "Request
 # changes" of your login starts one fix job; red CI and unanswered review
-# comments become lines in QROOT/triage.md, which the briefing shows.
+# comments become lines in QROOT/triage.md, which the report and the page show.
 cmd_job_triage() {
   local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
   command -v gh >/dev/null 2>&1 || {
@@ -3361,6 +3667,380 @@ cmd_job() {
   esac
 }
 
+# --- ws: outside research tools, one folder each under workspaces/ (docs/workspaces.md) ---
+
+WS_ROOT="${VIBE_WORKSPACES:-$SELF_ROOT/workspaces}"
+WS_STATES="$QROOT/workspaces"
+WS_INST_RE='^[A-Za-z0-9][A-Za-z0-9._-]*$' # docker's container-name rule
+
+# ws_check DIR — "ok", or the first reason DIR/workspace.conf breaks the contract.
+ws_check() {
+  [[ -f "$1/workspace.conf" && -r "$1/workspace.conf" ]] || {
+    echo "no readable workspace.conf"
+    return 0
+  }
+  awk '
+    function bad(m) { print m; done = 1; exit }
+    function each(v, sep, re, what,  a, n, j) {
+      n = split(v, a, sep)
+      for (j = 1; j <= n; j++) if (a[j] !~ re) bad(what " " a[j])
+    }
+    /^[ \t]*(#|$)/ { next }
+    {
+      i = index($0, "=")
+      if (i < 2) bad("not key=value: " $0)
+      k = substr($0, 1, i - 1)
+      v = substr($0, i + 1)
+      if (k in seen) bad("twice: " k)
+      seen[k] = v
+      if (k == "kind") { if (v != "service" && v != "run") bad("kind=" v ": service or run") }
+      else if (k == "runs") { if (v != "container" && v != "host") bad("runs=" v ": container or host") }
+      else if (k == "gpu") { if (v != "yes" && v != "no") bad("gpu=" v ": yes or no") }
+      else if (k == "places") each(v, ",", "^(turing|runpod|vast)$", "unknown place")
+      else if (k == "hours") { if (v !~ /^[1-9][0-9]*$/) bad("hours=" v ": a whole number above 0") }
+      else if (k == "commit") { if (length(v) != 40 || v ~ /[^0-9a-f]/) bad("commit=" v ": 40 hex") }
+      else if (k == "secrets") each(v, " ", "^[A-Z_][A-Z0-9_]*$", "bad env name")
+      else if (k == "ports") each(v, ",", "^[0-9]+$", "bad port")
+      else if (k == "result") { if (v != "branch" && v != "folder") bad("result=" v ": branch or folder") }
+      else if (k != "label" && k != "role" && k != "image") bad("unknown key " k)
+    }
+    END {
+      if (done) exit
+      if (seen["kind"] == "") bad("no kind")
+      if (seen["places"] == "") bad("no places")
+      if (seen["kind"] == "service" && "result" in seen) bad("result on a service")
+      if (seen["kind"] == "run" && seen["result"] == "") bad("kind=run needs result")
+      print "ok"
+    }' "$1/workspace.conf"
+}
+
+# vibe ws list — one line per workspace (a directory not named _*): name, kind, gpu, places,
+# label: role; a bad conf prints why, exit 1.
+cmd_ws_list() {
+  local d n c f l g bad=0
+  (($# == 0)) || die "usage: vibe ws list"
+  [[ -d "$WS_ROOT" ]] || die "no folder $WS_ROOT"
+  for d in "$WS_ROOT"/*/; do
+    n="${d%/}" n="${n##*/}"
+    if [[ ! -d "$d" || "$n" == _* ]]; then continue; fi
+    c="$(ws_check "$WS_ROOT/$n")"
+    [[ "$(slug "$n")" == "$n" ]] || c="bad name: lower case, digits, . _ -"
+    if [[ "$c" != ok ]]; then
+      printf '%-16s bad conf: %s\n' "$n" "$c"
+      bad=1
+      continue
+    fi
+    f="$WS_ROOT/$n/workspace.conf"
+    l="$(jget "$f" label)" g="$(jget "$f" gpu)"
+    printf '%-16s %-7s gpu=%-3s %-18s %s\n' "$n" "$(jget "$f" kind)" "${g:-no}" "$(jget "$f" places)" "${l:+$l: }$(jget "$f" role)"
+  done
+  return "$bad"
+}
+
+# ws_holder INSTANCE-DIR — the pid of its live `gpu-queue lock` holder; fails when none.
+# After a reboot the pid can name another process: its command must end in `ws hold <instance>`.
+ws_holder() {
+  local p
+  p="$(jstate "$1" holder)"
+  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws hold ${1##*/}" ]] && echo "$p"
+}
+
+# ws_state INSTANCE-DIR — waits for the GPU, down with no id file, past limit when limit has passed, else up.
+ws_state() {
+  local lim
+  lim="$(jstate "$1" limit)"
+  if [[ -e "$1/waits" ]] && ws_holder "$1" >/dev/null; then
+    echo "waits for the GPU"
+  elif [[ ! -s "$1/id" ]]; then
+    echo down
+  elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
+    echo "past limit"
+  else
+    echo up
+  fi
+}
+
+# ws_inst INSTANCE — dies unless INSTANCE names a state dir; docker's container-name rule, a job id can hold upper case.
+ws_inst() {
+  [[ "$1" =~ $WS_INST_RE && -d "$WS_STATES/$1" ]] || die "no instance '$1' — vibe ws status"
+}
+
+# ws_line INSTANCE-DIR — instance, state, place, then limit and address, tab-separated; state files only.
+ws_line() {
+  local s lim more=""
+  s="$(ws_state "$1")"
+  if [[ "$s" != down ]]; then
+    lim="$(jstate "$1" limit)"
+    more="${lim:+until $(at_time "$lim") }$(jstate "$1" url)"
+  elif [[ -s "$1/hold.log" ]] && ! ws_holder "$1" >/dev/null; then
+    # A gpu=yes start that failed after `ws start` returned: its holder's last line is the reason.
+    more="$(tail -n 1 "$1/hold.log")"
+    if [[ "$more" == "vibe: holds the GPU" ]]; then more=""; fi
+  fi
+  printf '%s\t%s\t%s\t%s\n' "${1##*/}" "$s" "$(jstate "$1" place)" "$more"
+}
+
+# ws_lines — ws_line of each instance.
+ws_lines() {
+  local d
+  for d in "$WS_STATES"/*/; do
+    if [[ -d "$d" ]]; then ws_line "${d%/}"; fi
+  done
+}
+
+# vibe ws status [INSTANCE] — one line per instance: state, place, limit, address; state files only.
+cmd_ws_status() {
+  (($# <= 1)) || die "usage: vibe ws status [<instance>]"
+  if (($#)); then
+    ws_inst "$1"
+    ws_line "$WS_STATES/$1"
+  else
+    ws_lines
+  fi | awk -F'\t' '{ l = sprintf("%-24s %-10s %-7s %s", $1, $2, $3, $4); sub(/ +$/, "", l); print l }'
+}
+
+# ws_md — the page's tool list: the lines of `vibe ws status` as Markdown; empty with no instance.
+ws_md() {
+  ws_lines | awk -F'\t' 'NR == 1 { print "## Tools\n" } { printf "- **%s** %s · %s%s\n", $1, $2, $3, ($4 == "" ? "" : " · " $4) }'
+}
+
+# ws_dir NAME — the folder of workspace NAME; dies on no such workspace or a conf that breaks the contract.
+ws_dir() {
+  local c
+  [[ -n "$1" && "$1" != [._]* && "$(slug "$1")" == "$1" && -d "$WS_ROOT/$1" ]] || die "no workspace '$1' — vibe ws list"
+  c="$(ws_check "$WS_ROOT/$1")"
+  [[ "$c" == ok ]] || die "$1: bad conf: $c"
+  echo "$WS_ROOT/$1"
+}
+
+# ws_name INSTANCE — its workspace: INSTANCE is <name> or <name>-<job id>; the longest name wins.
+ws_name() {
+  local n="$1"
+  until [[ "$n" != _* && -d "$WS_ROOT/$n" ]]; do
+    [[ "$n" == *-* ]] || return 1
+    n="${n%-*}"
+  done
+  echo "$n"
+}
+
+# ws_place INSTANCE VERB [ARG...] — the place script of INSTANCE with WS_* and WS_CONF_<KEY> set (docs/workspaces.md).
+# A subshell with errexit off when tested: each lookup has its own `|| die`.
+ws_place() {
+  local inst="$1"
+  shift
+  (
+    n="$(ws_name "$inst")" || die "no workspace for instance $inst"
+    p="$(jstate "$WS_STATES/$inst" place)"
+    [[ -n "$p" && "$(slug "$p")" == "$p" && -f "$WS_ROOT/_places/$p" && -x "$WS_ROOT/_places/$p" ]] ||
+      die "no place script '$p' for $inst"
+    while IFS= read -r l; do export "WS_CONF_$l"; done < <(
+      awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$WS_ROOT/$n/workspace.conf"
+    )
+    # A WS_HOURS the caller set (a tool job's hours=) wins over the conf's.
+    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+    # WS_SECS set: timeout(1) ends the call after WS_SECS, exit 124; no timeout(1) means no bound.
+    if [[ -n "${WS_SECS:-}" ]] && t="$(command -v timeout || command -v gtimeout)"; then
+      exec "$t" -k 10 "$WS_SECS" "$WS_ROOT/_places/$p" "$@"
+    fi
+    exec "$WS_ROOT/_places/$p" "$@"
+  )
+}
+
+# ws_secrets NAME CONF — dies unless ~/.config/vibe/workspaces/NAME.env is mode 600 and sets each of CONF's secrets.
+ws_secrets() {
+  local f="$HOME/.config/vibe/workspaces/$1.env" s k miss=""
+  s="$(jget "$2" secrets)"
+  [[ -n "$s" ]] || return 0
+  [[ -f "$f" ]] || die "$1 needs $s: write KEY=VALUE lines to $f, mode 600"
+  case "$(ls -lL "$f")" in
+    -rw-------* | -r--------*) ;;
+    *) die "$f: others can read it — chmod 600 $f" ;;
+  esac
+  for k in $s; do
+    [[ -n "$(jget "$f" "$k")" ]] || miss+=" $k"
+  done
+  [[ -z "$miss" ]] || die "$f does not set:$miss"
+}
+
+# ws_up INSTANCE — place up, the start script (120 s at most, VIBE_WS_START_SECS), the url;
+# a failed start brings the place down again.
+ws_up() {
+  local st="$WS_STATES/$1" url="" secs="${VIBE_WS_START_SECS:-120}" r=0
+  ws_place "$1" up || die "up of $1 failed"
+  WS_SECS="$secs" ws_place "$1" exec start || r=$?
+  if ((r)); then
+    ws_place "$1" down >&2 || true
+    if ((r == 124)); then die "start of $1 ran past $secs s — it is down again"; fi
+    die "start of $1 failed — it is down again"
+  fi
+  if [[ -n "$(jget "$WS_ROOT/$(ws_name "$1")/workspace.conf" ports)" ]]; then
+    url="$(ws_place "$1" url)" || warn "no address for $1"
+    if [[ -n "$url" ]]; then echo "$url" >"$st/url"; fi
+  fi
+  ws_up_line "$1"
+}
+
+ws_up_line() {
+  local u
+  u="$(jstate "$WS_STATES/$1" url)"
+  echo "$1 up${u:+ — $u}"
+}
+
+# vibe ws build NAME — docker build NAME's image at its pinned commit, tagged with it.
+cmd_ws_build() {
+  local d f
+  (($# == 1)) || die "usage: vibe ws build <name>"
+  d="$(ws_dir "$1")"
+  f="$d/workspace.conf"
+  [[ "$(jget "$f" runs)" != host ]] || die "$1 runs on the host: no image to build"
+  [[ -n "$(jget "$f" image)" && -n "$(jget "$f" commit)" ]] || die "$1: workspace.conf needs image and commit"
+  docker build -t "$(jget "$f" image):$(jget "$f" commit)" --build-arg "COMMIT=$(jget "$f" commit)" "$d"
+}
+
+# vibe ws start NAME — a kind=service tool up at the first of its places.
+# gpu=yes on turing: a detached `gpu-queue lock` runs `vibe ws hold`, which keeps the GPU lock until stop.
+cmd_ws_start() {
+  local d f st place pid i
+  (($# == 1)) || die "usage: vibe ws start <name>"
+  d="$(ws_dir "$1")"
+  f="$d/workspace.conf" st="$WS_STATES/$1"
+  [[ "$(jget "$f" kind)" == service ]] || die "$1 is kind=run: the queue runs it as a job"
+  ws_secrets "$1" "$f"
+  [[ "$(ws_state "$st")" == down ]] || die "$1 is $(ws_state "$st") — vibe ws stop $1 first"
+  place="$(jget "$f" places)"
+  place="${place%%,*}"
+  [[ -x "$WS_ROOT/_places/$place" ]] || die "no place script '$place' in $WS_ROOT/_places"
+  mkdir -p "$st"
+  echo "$place" >"$st/place"
+  rm -f "$st/waits" "$st/holder" "$st/url" "$st/hold.log"
+  if [[ "$place" != turing || "$(jget "$f" gpu)" != yes ]]; then
+    ws_up "$1"
+    return 0
+  fi
+  : >"$st/waits"
+  set -m
+  nohup "$SELF_ROOT/bin/gpu-queue" lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
+  pid=$!
+  set +m
+  echo "$pid" >"$st/holder"
+  for ((i = 0; ; i++)); do
+    if grep -qxF "vibe: holds the GPU" "$st/hold.log"; then
+      ws_up_line "$1"
+      return 0
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      cat "$st/hold.log" >&2
+      die "start of $1 failed — $st/hold.log"
+    fi
+    if ((i >= 15)) && [[ -e "$st/waits" ]]; then
+      echo "$1 waits for the GPU — vibe ws status $1"
+      return 0
+    fi
+    sleep 0.2
+  done
+}
+
+# vibe ws hold INSTANCE — start's command under `gpu-queue lock`: the instance up, then wait until its id file goes.
+cmd_ws_hold() {
+  local st
+  (($# == 1)) || die "usage: vibe ws hold <instance>"
+  ws_inst "$1"
+  st="$WS_STATES/$1"
+  rm -f "$st/waits"
+  ws_up "$1"
+  echo "vibe: holds the GPU"
+  while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+}
+
+# vibe ws run INSTANCE — a tool job's run (tool_run): up, the run script, down; exit: the run script's.
+cmd_ws_run() {
+  local r=0
+  (($# == 1)) || die "usage: vibe ws run <instance>"
+  ws_inst "$1"
+  ws_place "$1" up || die "up of $1 failed"
+  ws_place "$1" exec run || r=$?
+  ws_place "$1" down || warn "down of $1 failed — vibe ws status $1"
+  return "$r"
+}
+
+# vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
+cmd_ws_stop() {
+  local st pid
+  (($# == 1)) || die "usage: vibe ws stop <instance>"
+  ws_inst "$1"
+  st="$WS_STATES/$1"
+  pid="$(ws_holder "$st")" || pid=""
+  if [[ -e "$st/waits" && -n "$pid" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    rm -f "$st/waits" "$st/holder" "$st/hold.log"
+    echo "$1 stopped — it waited for the GPU"
+    return 0
+  fi
+  rm -f "$st/waits"
+  [[ -s "$st/id" ]] || die "$1 is down"
+  ws_down "$1" || die "down of $1 failed — vibe ws status $1"
+  echo "$1 down"
+}
+
+# ws_down INSTANCE — its stop script (300 s at most, VIBE_WS_STOP_SECS), then place down;
+# then a GPU holder ends and the lock is free. down has no bound: a cut pull loses data.
+ws_down() {
+  local st="$WS_STATES/$1" pid secs="${VIBE_WS_STOP_SECS:-300}" r=0 rc=0
+  pid="$(ws_holder "$st")" || pid=""
+  if [[ -z "$pid" ]]; then rm -f "$st/holder"; fi
+  WS_SECS="$secs" ws_place "$1" exec stop || r=$?
+  if ((r == 124)); then
+    warn "the stop script of $1 ran past $secs s — down anyway"
+  elif ((r != 0 && r != 3)); then
+    warn "the stop script of $1 failed (exit $r) — down anyway"
+  fi
+  ws_place "$1" down || rc=1
+  # The lock follows the id file: a container down failed to remove keeps it.
+  if [[ -n "$pid" && ! -s "$st/id" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    rm -f "$st/holder"
+  fi
+  rm -f "$st/hold.log"
+  return "$rc"
+}
+
+# vibe ws tick — for each instance with an id: past its limit the stop script and down, else the place's tick,
+# 600 s at most (VIBE_WS_TICK_SECS): one hung pull must not keep the next instance from its limit.
+cmd_ws_tick() {
+  local d i secs="${VIBE_WS_TICK_SECS:-600}"
+  for d in "$WS_STATES"/*/; do
+    d="${d%/}" i="${d##*/}"
+    if [[ ! -s "$d/id" ]]; then
+      continue
+    elif [[ "$(ws_state "$d")" == "past limit" ]]; then
+      ws_down "$i" || warn "down of $i past its limit failed"
+    else
+      WS_SECS="$secs" ws_place "$i" tick || warn "tick of $i failed or ran past $secs s"
+    fi
+  done
+}
+
+# ws_tick_bg — the runner pass: `vibe ws tick` in the background, never two at once.
+ws_tick_bg() {
+  local p
+  p="$(jstate "$WS_STATES" tick.pid)"
+  # The command, not only a live pid: tick.pid outlives a reboot, and its pid then names another process.
+  if [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws tick" ]]; then return 0; fi
+  if ! compgen -G "$WS_STATES/*/id" >/dev/null; then return 0; fi
+  "$SELF_ROOT/bin/vibe" ws tick </dev/null >>"$WS_STATES/tick.log" 2>&1 &
+  echo "$!" >"$WS_STATES/tick.pid"
+}
+
+cmd_ws() {
+  role_gate ws "$@"
+  local sub="${1:-}"
+  shift || true
+  case "$sub" in
+    list | status | build | start | stop | tick | hold | run) "cmd_ws_$sub" "$@" ;;
+    *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
+  esac
+}
+
 # One group ending in exit: bash never reads this file again after the command (an edit mid-run made vibe exit 2).
 {
   case "${1:-}" in
@@ -3375,6 +4055,10 @@ cmd_job() {
     feature)
       shift
       cmd_feature "$@"
+      ;;
+    ws)
+      shift
+      cmd_ws "$@"
       ;;
     update-toolkit)
       shift
