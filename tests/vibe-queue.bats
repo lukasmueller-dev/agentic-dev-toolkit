@@ -1073,6 +1073,86 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
+# epoch_at 'YYYY-MM-DD HH:MM' — epoch seconds, GNU or BSD date.
+epoch_at() { date -d "$1:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1:00" +%s; }
+
+# mkprep DIR REPO BRANCH — a prepared job dir for `vibe queue add`.
+mkprep() {
+  mkdir -p "$1"
+  printf 'repo=%s\nbranch=%s\nmodel=sonnet\ncontext=night work\n' "$2" "$3" >"$1/job"
+  printf 'Do the task.\nMODE=ok\n' >"$1/prompt.md"
+}
+
+@test "add --at: writes the next HH:MM as at=; a bad time, a missing time or --now with it queues nothing" {
+  local r a now at e t
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  for t in 25:00 24:00 23:60 9:5 noon; do
+    run "$VIBE" queue add --at "$t" "$a"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad time '$t'"* ]] || false
+  done
+  run "$VIBE" queue add --at
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue add --now --at 03:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--now and --at"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # The current minute has passed: the next one is tomorrow.
+  now="$(date +%s)"
+  run "$VIBE" queue add --at "$(date +%H:%M)" "$a"
+  [ "$status" -eq 0 ]
+  [ ! -e "$a" ]
+  at="$(sed -n 's/^at=//p' "$Q"/*-proj-x/job)"
+  [[ "$at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]] || false
+  e="$(epoch_at "$at")"
+  [ "$e" -gt $((now + 80000)) ]
+  [ "$e" -le $((now + 90000)) ]
+  [[ "$output" == *"starts $at"* ]] || false
+}
+
+@test "run: a job added with --at does not start before its time, starts after it; status shows the start" {
+  local r a j pid at
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  at="$(sed -n 's/^at=//p' "$j/job")"
+  [[ "$at" == *" 03:30" ]] || false
+  run "$VIBE" queue status
+  [[ "$output" == *"starts $at · night work"* ]] || false
+  # A job with no at= is the clock: once it is done, the runner has scanned the waiting one.
+  mkjob 01-ctl "$r" ctl ok
+  timeout 60 "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 1 150); do
+    [ "$(cat "$Q/01-ctl/status" 2>/dev/null)" != "done" ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-ctl/status")" = "done" ]
+  sleep 1
+  [ ! -e "$j/status" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 0 ]
+  # The time has come: at= is in the past.
+  sed 's/^at=.*/at=2000-01-01 03:30/' "$j/job" >"$j/job.tmp" && mv "$j/job.tmp" "$j/job"
+  wait "$pid"
+  [ "$(cat "$j/status")" = "done" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 1 ]
+  run "$VIBE" queue status
+  [[ "$output" != *"starts "* ]] || false
+}
+
+@test "run: a job with now=1 starts although its at= is ahead" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok "at=2999-01-01 03:30" now=1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
 @test "milestones: a SPEC.md job that ticks one queues the next; the last one ends the chain" {
   local r
   r="$(make_repo proj)"
