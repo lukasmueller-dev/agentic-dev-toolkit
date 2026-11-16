@@ -24,6 +24,7 @@ STUB
   cat >"$BATS_TEST_TMPDIR/bin/researchclaw" <<'STUB'
 #!/usr/bin/env bash
 echo "researchclaw $*" >>"$STUB_LOG"
+printf 'arg=%s\n' "$@" >>"$STUB_LOG" # one line per argument: a lost quote splits one
 echo "token=${CLAUDE_CODE_OAUTH_TOKEN:-}" >>"$STUB_LOG"
 [ "$1" = run ] || exit 0
 [ -z "${STUB_SLEEP:-}" ] || exec sleep "$STUB_SLEEP"
@@ -103,6 +104,7 @@ wait_for() {
   [ "$status" -eq 0 ]
   grep -qx 'timeout -k 60 2h' "$STUB_LOG"
   grep -qxF "researchclaw run -c $WSDIR/config.yaml -t Sparse attention for small vision models -o $RUN_DIR --auto-approve --skip-noncritical-stage" "$STUB_LOG"
+  grep -qxF "arg=Sparse attention for small vision models" "$STUB_LOG"
 }
 
 @test "run: a finished pipeline gives done: and copies deliverables to files/" {
@@ -244,6 +246,7 @@ wait_for() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"stage 9"* ]] || false
   grep -qxF "researchclaw guide $RUN_DIR --stage 9 --message use fewer datasets" "$STUB_LOG"
+  grep -qxF "arg=use fewer datasets" "$STUB_LOG"
 }
 
 @test "steer: before any checkpoint the next stage is 1, and a stage that reads no guidance is warned about" {
