@@ -8,10 +8,8 @@
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
-cmd="$(jq -r '.tool_input.command // empty' 2>/dev/null)" || exit 0
-# Drop quoted text, so a commit message or PR body that names the flag passes.
-cmd="${cmd//\"[^\"]*\"/_}"
-cmd="${cmd//\'[^\']*\'/_}"
+# jq drops quoted text, so a commit message or PR body that names the flag passes.
+cmd="$(jq -r --arg q "'" '(.tool_input.command // "") | gsub("\"[^\"]*\""; "_") | gsub($q + "[^" + $q + "]*" + $q; "_")' 2>/dev/null)" || exit 0
 b='[[:blank:]]'
 # git [global opts] push [words] -<letters>f — words and flag stay inside one command (no ; & |).
 re="(^|[^[:alnum:]_.-])git(${b}+(-[cC]|--git-dir|--work-tree)${b}+[^[:space:]]+|${b}+-[^[:space:]]+)*${b}+push(${b}+[^;&|[:space:]]+)*${b}+-[[:alnum:]]*f"

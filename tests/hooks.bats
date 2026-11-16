@@ -131,7 +131,10 @@ push_hook() { jq -cn --arg c "$1" '{tool_input:{command:$c}}' | "$HOOKS/deny-pus
 @test "push-force: denies a flag cluster that holds f" {
   local c out
   for c in "git push -vf" "git push -fuv origin x" "git push -qf origin x" "git push origin x -vf" \
-    "git -C /r push -vf" "cd r && git push -fuv origin x"; do
+    "git -C /r push -vf" "cd r && git push -fuv origin x" \
+    "git commit -m \"a\" && git push -vf && echo \"b\"" \
+    "echo 'a' && git push -fuv origin x && echo 'b'" \
+    "echo \"a\"; git push -vf origin x; git log --format=\"%h\""; do
     out="$(push_hook "$c")"
     [ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" = deny ] || {
       echo "not denied: $c" >&2
