@@ -2802,8 +2802,10 @@ ws_page() {
               opts+="<option>$(esc "$t")</option>"
             fi
           done < <(tr , '\n' <<<"$p")
-          t="$(jget "$f" hours)"
-          b="<div class=\"jacts\" data-name=\"$e\"><span class=\"ask\"><label>Place<select name=\"place\">$opts</select></label><label>Hours<input name=\"hours\" type=\"number\" min=\"1\" value=\"$(esc "$t")\"></label><button data-act=\"ws-start\">Start</button></span></div>"
+          # No hours= in the conf: the field may stay empty (data-opt), and the start has no limit, as from the CLI.
+          t="$(jget "$f" hours)" x=" data-opt placeholder=\"no limit\""
+          if [[ -n "$t" ]]; then x=" value=\"$(esc "$t")\""; fi
+          b="<div class=\"jacts\" data-name=\"$e\"><span class=\"ask\"><label>Place<select name=\"place\">$opts</select></label><label>Hours<input name=\"hours\" type=\"number\" min=\"1\"$x></label><button data-act=\"ws-start\">Start</button></span></div>"
         else
           b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-start\">Start</button></span>"
         fi

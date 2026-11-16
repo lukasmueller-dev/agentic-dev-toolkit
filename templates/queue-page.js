@@ -1,7 +1,7 @@
 /* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or a changed value; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask; ⌘↵ in a field sends, Esc clears it.
+   Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
    Output: .pout under the block; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
@@ -180,6 +180,7 @@
     const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};
     for (const x of fields) {
       const v = x.value.trim().replace(/\s*\n\s*/g, ' '); /* one line: a route refuses control characters */
+      if (!v && 'opt' in x.dataset) continue; /* an optional field left empty: its arg is not sent */
       if (!v) { x.focus(); return; }
       vals[x.name] = v;
     }

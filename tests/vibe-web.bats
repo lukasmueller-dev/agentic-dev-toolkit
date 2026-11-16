@@ -182,6 +182,7 @@ post() {
   grep -qF "else if (e.key === 'Escape' && f.value && f.tagName !== 'SELECT') { e.preventDefault(); f.value = ''; }" "$js"
   # Args: each named field of the button's .ask after the card's data; an empty field sends nothing.
   grep -qF "const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};" "$js"
+  grep -qF "if (!v && 'opt' in x.dataset) continue;" "$js"
   grep -qF "if (!v) { x.focus(); return; }" "$js"
   grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
   # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
@@ -238,6 +239,12 @@ post() {
   grep -qF '<div class="wrow" id="ws-svc"><i class="lamp l-off"></i><div class="t"><b>Svc <span class="role">· Serves one thing.</span></b><span class="why">Off · places: turing, runpod · default 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
   grep -qF '<span class="why">Off · places: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
   grep -qF '<p class="note">Loop run as queue jobs.</p>' "$f"
+  # No hours= in the conf: an optional Hours field; page.js sends no hours, the start has no limit.
+  sed -i.bak '/^hours=/d' "$w/svc/workspace.conf"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<span class="why">Off · places: turing, runpod</span>' "$f"
+  grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
+  printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
   grep -qF '<h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1>' "$f"
   now="$(date +%s)"
   mkdir -p "$st/svc" "$st/one"
