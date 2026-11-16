@@ -14,18 +14,16 @@
 
 ## State
 
-Milestone 1 (Shell) is done and ticked in `SPEC.md`. `vibe queue page` renders the rail, the header and six sections of rows (`page_row`, `page_sections`, `page_status` in `bin/vibe`); fonts copy to `web/fonts/`.
+Milestones 1 (Shell) and 2 (Panel and Config) are done and ticked in `SPEC.md`.
 
-- Each row folds open to its old card (`status_card`): every button and file link still lives there.
-- The page buttons sit on `#config`; the New work cards on `#new` (header link New job).
-- Outside GPU runs are already rows in Running, Queued, Held and Done.
+- A row links to `#job-<key>`; `page_row` prints the row, then `blk<TAB><block>`; `queue_web` puts the blocks in `#panel > .pblocks`.
+- Fields (`ask` in `bin/vibe`) replace every `prompt()`; New job is the block `#new`; Config is `config_page`.
 
 ## Next action
 
-Milestone 2, Panel and Config: hidden blocks, always-open panel and bottom sheet, `#job-<id>`, input fields, keys, swap guard, New job panel, Config page. Done when `node --check templates/queue-page.js` passes, no `prompt(` is left in it, and the bats suites pass with tests for the panel blocks and the Config parts.
+Milestone 3, Workspaces and tools: `vibe ws start --place --hours`, routes `ws-start`, `ws-stop`, `steer`, `tool.log` served, tool panel, Workspaces page and rail, GPU holder, outside GPU rows. Done when `bats tests/vibe-ws.bats tests/vibe-web.bats tests/vibe-queue.bats` passes with tests for each new route, flag and holder case.
 
-- Turn each row's fold (`<details class="row">` + `status_card`) into a row plus one hidden block; the panel shows the block.
-- Move `#new` (New work) and the Config buttons into the New job panel and the Config page.
+- The tool panel goes in the job's block: `status_card` job, or a `pre` part in `page_row` as the lane Fix field does.
 
 ## Blockers
 
@@ -34,5 +32,7 @@ None.
 ## Gotchas (unpromoted)
 
 - The boards are `.dc.html` design files: they load `./support.js` and Google Fonts, so they do not render alone. Read them for layout, sizes and colors.
-- A screenshot of the page needs it served under `/queue/` (fonts and `page.js` load from there): `python3 -m http.server` on a dir with a `queue` symlink to `web/`, then `chrome-headless-shell --screenshot` in the same Bash call.
+- Screenshot → serve a dir with a `queue` copy of `web/` (`python3 -m http.server`), same Bash call. The headless shell: `~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`.
+- Clicks and keys → drive that shell with `--remote-debugging-pipe` from Python (no WebSocket library here); keep fds 3 and 4 in `pass_fds`.
 - In a fetched page, page.js finds a node only by a path from `body` (`body > main > #queue`): a `.md` can hold any class.
+- A phase span has class `x`: the panel's Close button is `.close`.
