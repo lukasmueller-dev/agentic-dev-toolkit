@@ -266,6 +266,7 @@ par_set_pr() {
 }
 
 # locked_out ARGS — feature_set_pr where mkdir always fails (a read-only directory, a stuck FILE.reap), in a subshell.
+# shellcheck disable=SC2317 # the stubs run inside the eval'd feature_set_pr
 locked_out() (
   eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
   mkdir() { return 1; }
