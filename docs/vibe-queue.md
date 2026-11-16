@@ -36,7 +36,7 @@ review_trivial=20
 review_model=sonnet
 review_level=high
 review_timeout=1h
-after=review
+after=review       # code: /code-review only, no lean-review; empty: no review
 memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
 web_login=         # your tailnet login; empty: every page write gets 403
@@ -75,7 +75,7 @@ A feature card is a stack too: it unpacks into a lane, job or `no job` card per 
 Each job and lane card has one phase line, also in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
 ✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
 Gate and PR drop once the chain's last job ended without them. A lane card shows its running job's chain, else the latest one.
-A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`.
+A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`, or `/code-review` with `after=code`.
 The header and the chips count `to review` as PRs (one per URL in a `pr` file; a lane or a review chain is one) and `no PR` as ended jobs without a URL (a report-only job too). A `done` job is covered by a URL on its branch, and waits while a job there is queued or running; a failed or blocked job always counts. The `to review` chip links your open `agent` PRs on GitHub.
 Serve it on the tailnet once:
 
@@ -130,11 +130,11 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - A failed push writes `push failed` (git-lfs: `push failed (git-lfs: push by hand)`) to `pr`; a failed `gh pr create` writes `PR not created`. The `done` job shows under "Needs you" with that note, not under "Done". A failing gate keeps its row and gains the note. A feature member whose last `pr` holds either note shows it as its state, and the feature `needs you`.
 - Each runner git call on a job's tree, the checkout of a resumed branch and `vibe sync` run with `core.hooksPath=/dev/null` (`agent_git` in `skills/_lib/lib.sh`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed. `agent_push` refuses a push when `git-lfs` is installed and a commit to push adds or changes a path that `filter=lfs` maps (any `.gitattributes`, `.git/info/attributes`): the pre-push hook that uploads the LFS objects is off. A push that changes no LFS path goes through.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
-- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes.
+- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes. `after=code`: `/code-review` only, no `lean-review`; the `**Review:**` line ends `(/code-review only)`.
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
 - The last review round, or the verify step after it, pushes and opens the PR. Its body carries a `**Review:**` line above `<details>`: one `R<n>:` per round, then `V:`. Findings, verdicts and verify checks sit inside.
 - No `structured_output` → `R<n>: review failed`. A round past `review_timeout` → `R<n>: timeout`. The PR opens either way.
-- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off.
+- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off. `vibe queue add` refuses an `after=` other than `review`, `code` or empty.
 - Verify: `verify=app`, `blast-radius` or `app,blast-radius` (`/enqueue`, `/fill-queue` on request) queues `<id>-verify` after the last review round. A fresh read-only session runs `claude/vibe-verify.sh` with `review_model` and `review_timeout`.
 - `app` follows the repo's `.claude/skills/verify-*/SKILL.md` (a human writes it: `/create-verification-skill`); none → `V: no verify skill`. `blast-radius` follows the vendored skill.
 - Verify reports only: a moved HEAD or a changed tracked file → `V: dirty`: no gate, no push, no PR, and the worktree stays as it is. `V: fail`, `dirty`, `timeout` or `verify failed` put a `done` job under "Needs you", like a non-zero gate.

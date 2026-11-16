@@ -1109,7 +1109,9 @@ died_job() {
   done
   run "$VIBE" queue conf review_level=max
   [ "$status" -eq 0 ]
-  [ "$(cat "$CONF")" = "$(printf 'after=\nslots=3\nreview_level=max')" ]
+  run "$VIBE" queue conf after=code
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CONF")" = "$(printf 'slots=3\nreview_level=max\nafter=code')" ]
 }
 
 @test "unlimit: the usage limit goes and a queued job starts" {
@@ -2195,6 +2197,27 @@ two_findings() {
   grep -qF -- "--settings $REPO_ROOT/claude/vibe-job-settings.json " "$STUBS/claude.log"
 }
 
+@test "review: PASSES=code runs /code-review only, with no rubric" {
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$REPO_ROOT/claude/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main code
+  [ "$status" -eq 0 ]
+  grep -qx 'Run /code-review high origin/main\.\.\.HEAD\. Then return its findings through the structured output\.' "$STUBS/claude.log"
+  run grep -c 'lean-review\|^# Lean review$' "$STUBS/claude.log"
+  [ "$output" = 0 ]
+}
+
+@test "review: after=code reaches the reviewer; the PR body says /code-review only" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=code
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-md"
+  drain
+  grep -q '^after=code$' "$Q/01-a-review1/job"
+  grep -q '^Run /code-review high origin/main\.\.\.HEAD\. Then return its findings ' "$STUBS/claude.log"
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open (/code-review only)$' "$Q/01-a-review1/pr-body.md"
+}
+
 @test "review: a missing rubric stops the round before the reviewer starts" {
   local copy="$BATS_TEST_TMPDIR/copy"
   mkdir -p "$copy/claude"
@@ -2459,7 +2482,7 @@ verify_skill() {
   [[ "$output" == *"### Needs you"*"| 01-a-verify | done |"*"V: dirty · "* ]] || false
 }
 
-@test "add: refuses verify= on a lane job, on a job with no review, and a bad value; queues none of the dirs" {
+@test "add: refuses verify= on a lane job, on a job with no review, a bad value, a bad after=; queues none of the dirs" {
   local r a b
   r="$(make_repo proj)"
   a="$BATS_TEST_TMPDIR/a" b="$BATS_TEST_TMPDIR/b"
@@ -2481,8 +2504,14 @@ verify_skill() {
   printf 'repo=%s\nbranch=y\nafter=review\nverify=all\n' "$r" >"$b/job"
   run "$VIBE" queue add "$b"
   [[ "$output" == *"verify=all — app, blast-radius or app,blast-radius"* ]] || false
+  printf 'repo=%s\nbranch=y\nafter=cod\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
+  [[ "$output" == *"after=cod — review, code or empty"* ]] || false
   [ -z "$(ls "$Q")" ]
   run "$VIBE" queue add "$a"
+  [ "$status" -eq 0 ]
+  printf 'repo=%s\nbranch=y\nafter=code\nverify=app\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
   [ "$status" -eq 0 ]
 }
 
@@ -2630,6 +2659,14 @@ phase_jobs() {
   grep -qF '<p class="phases"><span>○ Agent</span> · <span>○ Report</span></p>' "$f"
   grep -qE '^\.phases \.x \{ color: var\(--red\); \}' "$f"
   grep -qE '^\.phases \.r \{ color: var\(--ink\); \}' "$f"
+}
+
+@test "phases: an after=code job shows R1 and names only /code-review on the page" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=code
+  "$VIBE" queue page >/dev/null
+  grep -qF '<summary><span>○ Agent</span> · <span>○ R1</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1: /code-review</p></details>' "$f"
 }
 
 @test "phases: a lane card gets one phase line, of its running item; each feature member card keeps its own" {
