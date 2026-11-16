@@ -50,7 +50,8 @@ Check `vibe queue status` and the gate. Then fill the draft:
 - Task, verbatim for the job. Context: the problem and the idea, ≤25 words.
 - Done-when: a check a command can make. Kind: `code` or `gpu`.
 - Branch slug, model, timeout. Defaults and the Opus rule: `fill-queue` Phase 4. `effort=` only when the user names one.
-- Verify: `-`, unless the user asks for it. Values and limits: `fill-queue` Phase 4 step 8.
+- Review: `full`, `code` or `-`. The rule: `fill-queue` Phase 4 step 8.
+- Verify: `-`, unless the user asks for it. Values and limits: `fill-queue` Phase 4 step 9.
 - Small: add the harvest (decisions, rejected options, files, first step) to the Task section of the prompt.
 - Big: the full `SPEC.md` from `templates/SPEC.md`. Take each section from the conversation. Run the `grilling` skill on the sections it left open, and on those only. The gate applies to each milestone.
 - Research: the full `RESEARCH.md` from `templates/RESEARCH.md`. Take each section from the conversation; grill only the open sections.
@@ -79,7 +80,7 @@ commit `docs(research): <slug>`. Feature: the reference's steps 2 and 3.
 
 Write one job dir (`mktemp -d`) as `fill-queue` Phase 6 describes: `job` and
 `prompt.md` from `skills/fill-queue/references/job-prompt.md`, every `<…>`
-filled; `verify=` only when the draft sets it. Tool run: add `tool=<name>`, `place=<place>` and `hours=<n>`
+filled; `after=` and `verify=` as `fill-queue` Phase 6 says for the draft's review and verify. Tool run: add `tool=<name>`, `place=<place>` and `hours=<n>`
 to `job`; write the brief to `in/brief.md` and the args to `in/args` in the job dir. Research: append
 `skills/fill-queue/references/research.md` to `prompt.md`, and add `deadline=YYYY-MM-DD HH:MM` to `job`. A feature: one job dir per member with a `SPEC.md`. Then, outside the
 sandbox: `vibe queue add <dir>...`. Add `--now` only when the user asked for it.
