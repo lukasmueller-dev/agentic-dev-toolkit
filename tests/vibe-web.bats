@@ -149,6 +149,10 @@ post() {
   grep -qF "const main = \$('body > main'), parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #new', 'body > main > #config']" "$Q/web/page.js"
   [ "$(grep -oE '[$][(][^)]*, n[)]' "$Q/web/page.js" | grep -vcF -e "\$(s, n)" -e "\$('body > ")" = 0 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
+  # The page's age comes from the server's clock alone (Date header minus data-t): a skewed browser clock cannot fake it.
+  grep -qF "base = Date.now() - (d - \$('.updated', parts[1][1]).dataset.t * 1000);" "$Q/web/page.js"
+  run grep -c 'Date.now() / 1000' "$Q/web/page.js"
+  [ "$output" = 0 ]
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
   grep -q '<dialog id="panel">' "$Q/web/index.html"

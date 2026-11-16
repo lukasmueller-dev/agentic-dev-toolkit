@@ -1788,7 +1788,7 @@ pandoc_stub() {
   grep -qF '<div class="job s-queued"><div class="top"><b>gamma</b><span class="pill">queued</span></div><p></p><div class="jacts" data-id="03-c"><button data-act="now">Start next</button><hr><button data-act="cancel" data-confirm>Cancel</button></div></div></details></div>' "$f"
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
-  grep -qF '<details class="row" data-k="proj/lane-x"><summary><i class="lamp l-bad"></i><span class="t"><b>lane-x <span class="n">1/3</span></b><span class="why">Fix health</span></span><code class="repo">proj</code></summary><div class="job lane s-blocked">' "$f"
+  grep -qF '<details class="row" data-k="proj/lane-x"><summary><i class="lamp l-bad"></i><span class="t"><b>lane-x <span class="n">1/3</span></b><span class="why">02-b blocked: beta needs a decision → lane-x-beta</span></span><code class="repo">proj</code></summary><div class="job lane s-blocked">' "$f"
 }
 
 # acts_of LINE — the buttons, empty rows, labels and file lines of one button group, in page order.
@@ -1945,6 +1945,29 @@ prim() {
   [ "$(prim proj/b14)" = "Open PR" ]
   x="$(grep -o '<details class="row" data-k="proj/b14">.*' "$f" | sed 's#</details><details class="row".*##')"
   [[ "$x" == *"<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">Merge order</button></div>"* ]] || false
+}
+
+@test "page: a lane or feature that needs you names the item that blocks it; a done lane job with a failed gate needs you, with Fix" {
+  local r r2 f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)" r2="$(make_repo cmdr)"
+  # A done job with a failed gate and a PR, then its done review round: one lane row with no running job.
+  endjob 15-gat "$r" b15 https://example.com/pull/15
+  echo 2 >"$Q/15-gat/gate"
+  endjob 15-gat-review1 "$r" b15
+  # A lane item that failed: its id, status and note are the reason, not the lane's context.
+  endjob 16-a "$r" b16 "" "lane=Fix health" item=alpha
+  endjob 16-b "$r" b16 "" "lane=Fix health" item=beta
+  echo failed >"$Q/16-b/status"
+  echo "tests red" >"$Q/16-b/note"
+  mkjob 17-c "$r2" b17 ok
+  echo blocked >"$Q/17-c/status"
+  echo "blocked: which port?" >"$Q/17-c/note"
+  putfeature fx "$r2 b17"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<details class="row" data-k="proj/b15"><summary><i class="lamp l-bad"></i><span class="t"><b>b15 <span class="n">2/2</span></b><span class="why">15-gat: gate exit 2</span></span><code class="repo">proj</code><span class="jacts p" data-id="15-gat" data-pr="https://example.com/pull/15"><button data-act="fix"' "$f"
+  [[ "$(sec you)" == *'data-k="proj/b15"'* ]] || false
+  grep -qF '<details class="row" data-k="proj/b16"><summary><i class="lamp l-bad"></i><span class="t"><b>b16 <span class="n">1/2</span></b><span class="why">16-b failed: tests red</span>' "$f"
+  grep -qF '<details class="row" data-k="feature/fx"><summary><i class="lamp l-bad"></i><span class="t"><b>fx <span class="n">0/1</span></b><span class="why">cmdr · b17 blocked: which port?</span>' "$f"
 }
 
 @test "page: a running row shows a phase bar segment per phase, the running step's name, its run time and a tool's chip" {

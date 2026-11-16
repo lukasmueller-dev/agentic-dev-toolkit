@@ -1,4 +1,4 @@
-/* Every 10 s: fetch this page (8 s limit) and swap what changed. Open folds stay. The header counts the render's age; over 2 min: stale.
+/* Every 10 s: fetch this page (8 s limit) and swap what changed. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow; data-ask="<arg> …" prompts for each (title: the questions, split by |).
    Output: #panel; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
@@ -10,9 +10,10 @@
   const queue = $('body > main > #queue');
   /* A fold's key: its own or nearest data-k (a row, a section), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k]') || queue; return k.dataset.k + '#' + [...k.querySelectorAll('details')].indexOf(d); };
-  let last = '', jobs = queue.innerHTML, busy = false, again = false;
+  /* base: the browser time at which the render was 0 s old; the browser clock only ever measures a span. */
+  let last = '', jobs = queue.innerHTML, busy = false, again = false, base = Date.now();
   setInterval(() => {
-    const u = $('.updated', parts[1][1]), s = Math.max(0, Math.round(Date.now() / 1000 - u.dataset.t));
+    const u = $('.updated', parts[1][1]), s = Math.max(0, Math.round((Date.now() - base) / 1000));
     u.textContent = `updated ${s} s ago`; u.classList.toggle('stale', s > 120);
   }, 1000);
   const api = '/queue/api/';
@@ -33,8 +34,12 @@
           queue.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
           jobs = h;
         }
-        last = t;
       }
+      /* The age at fetch: the Date header minus data-t, both the server's clock; no header: a new render is 0 s old. */
+      const d = Date.parse(r.headers.get('Date'));
+      if (r.ok && d) base = Date.now() - (d - $('.updated', parts[1][1]).dataset.t * 1000);
+      else if (r.ok && t !== last) base = Date.now();
+      if (r.ok) last = t;
     } catch (e) { /* keep the old content; the next poll tries again */ } finally {
       busy = false;
       if (again) { again = false; poll(); } /* a write came in mid-fetch: that fetch may hold the old page */
