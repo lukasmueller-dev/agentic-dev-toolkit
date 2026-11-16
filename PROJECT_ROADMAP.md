@@ -54,12 +54,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
 
-- [ ] **Kapso recipe names the real branch** — the 2026-11-16 run produced
-      `generic_exp_0`, not `kapso/exp-<n>`; the recipe and the test fixture
-      still say the old pattern.
-      Done when `grep -n 'kapso/exp-' docs/workspaces/kapso.md` prints
-      nothing and the recipe names `generic_exp_<n>`.
-
 - [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
       step 3 on turing (`tool=autoresearchclaw`, `hours=4`). The image and
       `autoresearchclaw.env` exist; step 2 passed on 2026-11-16. Revoke the
