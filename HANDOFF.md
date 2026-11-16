@@ -18,13 +18,10 @@ Milestones 1 and 2 are done: `workspaces/_places/runpod`, `tests/ws-place-runpod
 
 ## Next action
 
-The end action of `SPEC.md` (milestone 3) — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`. Move each spec decision and the open question below to `pr.md`, then `git rm SPEC.md HANDOFF.md` in one commit.
+1. `c722f9d` holds the review-1 fixes for findings 1–3 (the session hit the spend limit before its commit). Add bats tests: create plus list failing leaves `id=pending` and `limit=0`; a killed `up` leaves `id=pending` for `tick`; a failed `down` sets `limit=0`; `pull` drops a symlink that points out of the tree.
+2. The user's answer to finding 4: bound the pull on the `tick` path at 5 min, plus `rsync --timeout` for a dead link. `vibe ws stop` keeps the full pull. Add a test; update the recipe.
+3. The end action of `SPEC.md` (milestone 3) — code — done when `test ! -e SPEC.md -a ! -e HANDOFF.md`. Move each spec decision to `pr.md`, then `git rm SPEC.md HANDOFF.md` in one commit.
 
 ## Blockers
 
-None.
-
-## Gotchas (unpromoted)
-
-- Open for the user (review 2, finding 4): at the limit, `down` pulls with no time bound before the delete. A bound trades the last data for money and frees the runner pass.
-- Open in the contract: no member names the source of `$WS_STATE/in/`; `ws-surface` does not write it yet.
+None. The `$WS_STATE/in/` source is `ws-surface`'s `tool_run` (`bin/vibe` on `origin/ws-surface`): it copies `in/brief.md`, `in/args` and clones the worktree into `in/repo`.
