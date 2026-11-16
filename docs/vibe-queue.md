@@ -134,6 +134,7 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
 - The last review round, or the verify step after it, pushes and opens the PR. Its body carries a `**Review:**` line above `<details>`: one `R<n>:` per round, then `V:`. Findings, verdicts and verify checks sit inside.
 - No `structured_output` → `R<n>: review failed`. A round past `review_timeout` → `R<n>: timeout`. The PR opens either way.
+- A fix session that exits non-zero or ends in an error result (a 429 spend limit) → `failed`, note `R<n>: … → fix failed: API error 429; <worktree> has uncommitted changes`. No PR; `vibe queue retry <id>` adopts the worktree.
 - No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off. `vibe queue add` refuses an `after=` other than `review`, `code` or empty.
 - Verify: `verify=app`, `blast-radius` or `app,blast-radius` (`/enqueue`, `/fill-queue` on request) queues `<id>-verify` after the last review round. A fresh read-only session runs `claude/vibe-verify.sh` with `review_model` and `review_timeout`.
 - `app` follows the repo's `.claude/skills/verify-*/SKILL.md` (a human writes it: `/create-verification-skill`); none → `V: no verify skill`. `blast-radius` follows the vendored skill.

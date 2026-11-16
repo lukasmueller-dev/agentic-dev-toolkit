@@ -141,6 +141,11 @@ case "\$mode" in
   sleep) sleep 30 ;;
   slow) echo half >wip.txt && sleep 30 ;;
   fix)
+    if [ -f "$STUBS/fix-api-error" ]; then
+      echo half >>work.txt
+      echo '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error","result":"You have hit your monthly spend limit"}'
+      exit 0
+    fi
     if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
     if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
     sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
@@ -2280,6 +2285,28 @@ two_findings() {
   grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open$' "$Q/01-a-review1/pr-body.md"
   grep -q -- '-p --model opus --name proj-task-a-review1 ' "$STUBS/claude.log"
   grep -q '^Run /code-review low origin/main\.\.\.HEAD\. ' "$STUBS/claude.log"
+}
+
+@test "review: a fix session that ends in an API error → the round fails, names the dirty worktree, no PR; a clean round is done" {
+  local r w
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-api-error"
+  drain
+  [ "$status" -eq 0 ]
+  w="$(cat "$Q/01-a/worktree")"
+  [ "$(cat "$Q/01-a-review1/status")" = failed ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → fix failed: API error 429; $w has uncommitted changes" ]
+  [ ! -e "$Q/01-a-review1/pr" ]
+  [ ! -e "$Q/01-a-review2" ]
+  rm -f "$STUBS/fix-api-error" "$STUBS/review-count"
+  mkjob 02-b "$r" task-b ok after=review
+  drain
+  [ "$(cat "$Q/02-b-review1/status")" = "done" ]
+  [ "$(cat "$Q/02-b-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
+  [ "$(cat "$Q/02-b-review1/pr")" = "https://example.com/pull/1" ]
 }
 
 @test "review: review_rounds caps the rounds; review_trivial sets the bar" {
