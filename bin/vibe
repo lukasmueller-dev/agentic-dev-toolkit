@@ -1115,8 +1115,15 @@ job_review() {
       elif ((rc != 0)) || [[ "$ev" == *'"is_error":true'* ]]; then
         # A fix cut off (API error, crash) may leave half a fix: fail, no publish; `vibe queue retry` adopts the worktree.
         e="$(ev_num "$ev" api_error_status)"
-        if [[ -n "$e" ]]; then e="API error $e"; else e="agent exit $rc"; fi
-        if [[ -n "$(agent_git -C "$wt" status --porcelain)" ]]; then e+="; $wt has uncommitted changes"; fi
+        if [[ -n "$e" ]]; then
+          e="API error $e"
+        elif ((rc)); then
+          e="agent exit $rc"
+        else
+          e="error result"
+        fi
+        # shortcut: untracked files do not count (sandbox placeholders); count them once a leftover skips a job.
+        if [[ -n "$(agent_git -C "$wt" status --porcelain -uno)" ]]; then e+="; $wt has uncommitted changes"; fi
         job_end "$d" failed "$line → fix failed: $e"
         return 0
       else

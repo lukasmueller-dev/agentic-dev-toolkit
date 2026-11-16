@@ -146,6 +146,7 @@ case "\$mode" in
       echo '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error","result":"You have hit your monthly spend limit"}'
       exit 0
     fi
+    [ ! -f "$STUBS/fix-crash" ] || { : >.mcp.json && exit 3; }
     if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
     if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
     sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
@@ -2287,7 +2288,7 @@ two_findings() {
   grep -q '^Run /code-review low origin/main\.\.\.HEAD\. ' "$STUBS/claude.log"
 }
 
-@test "review: a fix session that ends in an API error → the round fails, names the dirty worktree, no PR; a clean round is done" {
+@test "review: a fix session that ends in an API error or a crash → the round fails, names the dirty worktree, no PR; a clean round is done" {
   local r w
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok after=review
@@ -2302,6 +2303,13 @@ two_findings() {
   [ ! -e "$Q/01-a-review1/pr" ]
   [ ! -e "$Q/01-a-review2" ]
   rm -f "$STUBS/fix-api-error" "$STUBS/review-count"
+  touch "$STUBS/fix-crash"
+  mkjob 03-c "$r" task-c ok after=review
+  drain
+  [ "$(cat "$Q/03-c-review1/status")" = failed ]
+  [ -f "$(cat "$Q/03-c/worktree")/.mcp.json" ]
+  [ "$(cat "$Q/03-c-review1/note")" = "R1: 2 findings → fix failed: agent exit 3" ]
+  rm -f "$STUBS/fix-crash" "$STUBS/review-count"
   mkjob 02-b "$r" task-b ok after=review
   drain
   [ "$(cat "$Q/02-b-review1/status")" = "done" ]
