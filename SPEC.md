@@ -53,7 +53,7 @@ that is always open, and the workspaces, per the boards in `design/queue-a/`.
 
 ## Milestones
 
-- [ ] Shell: tokens, fonts, rail, header, the six sections, rows with label, lamp, phase bar and primary button; tab title; no zoom — code — done when `bats tests/vibe-queue.bats tests/vibe-web.bats` passes with new tests for the sections, the Needs-you rules and the copied fonts
+- [x] Shell: tokens, fonts, rail, header, the six sections, rows with label, lamp, phase bar and primary button; tab title; no zoom — code — done when `bats tests/vibe-queue.bats tests/vibe-web.bats` passes with new tests for the sections, the Needs-you rules and the copied fonts
 - [ ] Panel and Config: hidden blocks, always-open panel and bottom sheet, `#job-<id>`, input fields, keys, swap guard, New job panel, Config page — code — done when `node --check templates/queue-page.js` passes, no `prompt(` is left in it, and the bats suites pass with tests for the panel blocks and the Config parts
 - [ ] Workspaces and tools: `vibe ws start --place --hours`, routes `ws-start`, `ws-stop`, `steer`, `tool.log` served, tool panel, Workspaces page and rail, GPU holder, outside GPU rows — code — done when `bats tests/vibe-ws.bats tests/vibe-web.bats tests/vibe-queue.bats` passes with tests for each new route, flag and holder case
 - [ ] Docs: `docs/vibe-queue.md` (Phone page → Page, Page actions table) and `docs/workspaces.md` match the code — code — done when `grep -c "Sessions ↗\|chips" docs/vibe-queue.md` prints 0 and the full lint, format and bats gate of `CLAUDE.md` passes
