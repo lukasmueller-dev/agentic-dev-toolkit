@@ -80,7 +80,7 @@ cd ~/github/agentic-dev-toolkit
 vibe ws start hypothesisloop    # hypothesisloop up — http://<tailnet ip>:3000
 ```
 
-`start` checks `.env`, renders the settings and brings up the compose stack detached. The address is the UI of step 4.
+`start` checks `.env`, renders the settings, brings up the compose stack detached and waits 45 s for the API health check. The address is the UI of step 4.
 
 ## 4. Start the UI
 
@@ -138,6 +138,7 @@ Open `http://<tailnet ip>:3000` on the phone. The sign-in page loads, and GitHub
 ## What breaks it
 
 - `start of hypothesisloop ran past 120 s` → docker pulled the store images, or Go compiled `localdev/envfiles`, inside `start`. Run step 1 and the pull of step 2 first.
+- `start` prints `the control service did not answer` → the 20 log lines above it name the cause. `start` has taken the stack down. Fix the cause, then start again.
 - `start` prints `does not set UI_ORIGIN` or another key → `make render-settings` checks keys that `start` does not. Set the key in `.env`.
 - `start` fails on `!override` → docker compose is older than 2.24.4. Update it.
 - `start` refuses `LOCAL_REACHABLE_ADDRESS=<value>` → compose publishes on an IP only, and `start` binds to the tailnet (100.64.0.0/10) only. Set the output of `tailscale ip -4`.

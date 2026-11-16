@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start: checks the checkout's .env, renders its settings and brings the compose stack up detached.
+# start: checks the checkout's .env, renders its settings, brings the compose stack up detached and waits on its health check.
 set -euo pipefail
 # shellcheck source=workspaces/hypothesisloop/hloop.sh
 . "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
@@ -41,4 +41,9 @@ trap 'hl_compose down >/dev/null 2>&1 || echo "error — compose down failed: ru
 trap 'exit 1' TERM INT
 # Not the registry: this host already holds the images, and the registry serves remote clusters only.
 hl_compose up -d postgres greptimedb memgraph minio control-service metrics-service
+# 45 s: up -d already waited on the stores, and start must return in 120 s.
+if ! curl -fs -o /dev/null --max-time 5 --retry 45 --retry-delay 1 --retry-max-time 45 --retry-all-errors "$HL_HEALTH"; then
+  hl_compose logs --tail 20 control-service || true
+  hl_die "the control service did not answer $HL_HEALTH within 45 s: its last log lines are above"
+fi
 trap - EXIT

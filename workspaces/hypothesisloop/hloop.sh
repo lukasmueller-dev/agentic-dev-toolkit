@@ -22,6 +22,9 @@ hl_settings="$HLOOP_REPO/controlplane/settings/hypothesisloop.yaml"
 HL_API_PORT="$(sed -n 's/^  api_port: *\([^ #]*\).*$/\1/p' "$hl_settings" 2>/dev/null || true)"
 HL_METRICS_PORT="$(sed -n 's/^  metric_controller_port: *\([^ #]*\).*$/\1/p' "$hl_settings" 2>/dev/null || true)"
 [[ -n "$HL_API_PORT" && -n "$HL_METRICS_PORT" ]] || hl_die "$hl_settings names no api_port or metric_controller_port"
+# The health check make controlplane-up waits on.
+# shellcheck disable=SC2034  # start and status read it
+HL_HEALTH="http://127.0.0.1:$HL_API_PORT/health"
 
 # hl_key KEY: KEY as the checkout's .env sets it, read the way the tool reads it (lib_env_value).
 # set +e: a .env whose last command fails still yields its keys.

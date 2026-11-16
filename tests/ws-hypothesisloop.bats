@@ -191,6 +191,18 @@ write_env() {
   [ "$(grep -c "docker compose .* GOOGLE=$google " "$LOG")" -eq 1 ]
 }
 
+@test "start waits on the health check, and with no answer shows the control service log and takes the stack down" {
+  run "$WS/start"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^curl .*http://127.0.0.1:8081/health' "$LOG")" -eq 1 ]
+  : >"$LOG"
+  CURL_FAIL=/health run "$WS/start"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"error — the control service did not answer http://127.0.0.1:8081/health"* ]] || false
+  [ "$(grep 'docker compose' "$LOG" | tail -n 2 | head -n 1 | grep -c ' logs --tail 20 control-service ')" -eq 1 ]
+  [ "$(grep 'docker compose' "$LOG" | tail -n 1 | grep -c ' down TAG=')" -eq 1 ]
+}
+
 @test "start takes the stack down when compose up fails" {
   DOCKER_UP_FAIL=1 run "$WS/start"
   [ "$status" -ne 0 ]
