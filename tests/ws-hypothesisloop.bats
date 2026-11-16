@@ -21,7 +21,7 @@ setup() {
   # docker logs its argv and the compose values; `image inspect` fails under DOCKER_NO_IMAGE.
   cat >"$BATS_TEST_TMPDIR/bin/docker" <<'EOF'
 #!/bin/sh
-echo "docker $* TAG=$TAG REGISTRY=$REGISTRY BIND=$HLOOP_BIND PUBLISH=$REGISTRY_PUBLISH_IP API=$HL_API_PORT METRICS=$HL_METRICS_PORT" >>"$LOG"
+echo "docker $* TAG=$TAG REGISTRY=$REGISTRY BIND=$HLOOP_BIND PUBLISH=$REGISTRY_PUBLISH_IP GOOGLE=$HL_GOOGLE_CREDENTIALS_FILE API=$HL_API_PORT METRICS=$HL_METRICS_PORT" >>"$LOG"
 if [ "$1 $2" = "image inspect" ] && [ -n "${DOCKER_NO_IMAGE:-}" ]; then exit 1; fi
 # compose up fails under DOCKER_UP_FAIL and hangs under DOCKER_UP_SLEEP.
 case " $* " in *" up "*)
@@ -176,7 +176,19 @@ write_env() {
   run "$WS/start"
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings TAG=abc123" ]
-  [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 API=8081 METRICS=8084" ]
+  [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 GOOGLE=/dev/null API=8081 METRICS=8084" ]
+}
+
+@test "start mounts the Google identity for the gcp registry only" {
+  local google="$HOME/.config/gcloud/application_default_credentials.json"
+  mkdir -p "${google%/*}" && echo '{}' >"$google"
+  run "$WS/start"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'docker compose .* GOOGLE=/dev/null ' "$LOG")" -eq 1 ]
+  echo "CONTAINER_REGISTRY_PROVIDER='gcp'" >>"$HL/.env"
+  run "$WS/start"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c "docker compose .* GOOGLE=$google " "$LOG")" -eq 1 ]
 }
 
 @test "start takes the stack down when compose up fails" {
