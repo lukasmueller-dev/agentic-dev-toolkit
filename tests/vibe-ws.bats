@@ -498,8 +498,8 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   echo "$p" >"$STATES/tick.pid"
   "$VIBE" queue run --claude --drain >/dev/null 2>&1
   within5 test ! -e "$S/containers/ws-old"
+  within5 test ! -e "$STATES/old/id" # verb_down removes id after the container
   kill "$p"
-  [ ! -e "$STATES/old/id" ]
 }
 
 @test "ws build: the image at its pinned commit, tagged with it; runs=host has none" {
