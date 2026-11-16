@@ -137,6 +137,18 @@ wait_for() {
   [[ "$(result)" == "failed: researchclaw exit 7 after stage 0"* ]] || false
 }
 
+@test "run: the hour limit (timeout exit 124) gives failed: hour limit, also next to a done summary" {
+  STUB_RC=124 STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [ "$status" -eq 124 ]
+  [[ "$(result)" == "failed: hour limit of 2 h reached after stage 0"* ]] || false
+}
+
+@test "run: a tool killed after it ignored TERM (timeout exit 137) gives failed: killed" {
+  STUB_RC=137 STUB_SUMMARY="$DONE" run "$WSDIR/run"
+  [ "$status" -eq 137 ]
+  [[ "$(result)" == "failed: killed after stage 0"* ]] || false
+}
+
 @test "run: no brief gives failed: and no tool call" {
   rm "$WS_ROOT/in/brief.md"
   run "$WSDIR/run"
