@@ -133,7 +133,7 @@ Every deck: LaTeX beamer in the TU Darmstadt template (`tudabeamer`).
 - 30 min ≈ 12–15 slides; one topic per slide, at most 6 bullets.
 - A frame that starts with a table: `\par\normalcolor` first; end each table with `\par`.
 - Before handing over: zero `Overfull` in the log; render the pages (`pdftoppm -r 50`) and look at them.
-- Commit the PDF and the `.tex`; the template stays in the thesis repo.
+- Commit the PDF and the `.tex` only; the template stays in the thesis repo. Before the first commit, add `texmf/ img/ preamble.tex build/` to `.gitignore`. Then `git add -A` cannot take them.
 
 # Least new code, whole task
 
