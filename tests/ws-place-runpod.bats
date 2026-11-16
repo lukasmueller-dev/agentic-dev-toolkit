@@ -376,6 +376,27 @@ pod_up() {
   [ "$(grep -c -- ' -M ' "$STUB/ssh.log")" -eq 1 ]
 }
 
+@test "pull: the out copy never starts once the 5 min bound is used up" {
+  pod_up
+  # date: a fixed clock that jumps 6 min once rsync has run.
+  cat >"$STUB/date" <<'EOF'
+#!/bin/sh
+d="$(dirname "$0")"
+t=1000000
+[ ! -f "$d/rsync.log" ] || t=$((t + 360))
+echo "$t"
+EOF
+  chmod +x "$STUB/date"
+  echo 1003600 >"$WS_STATE/limit"
+  echo 999400 >"$WS_STATE/pulled"
+  run "$PLACE" tick
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"pull ran past its bound of 300s"* ]] || false
+  [ "$(grep -c '' "$STUB/rsync.log")" -eq 1 ]
+  grep -q -- '--stop-after=5 root@203.0.113.7:/ws/data/' "$STUB/rsync.log"
+  [ "$(cat "$WS_STATE/pulled")" -eq 999400 ]
+}
+
 @test "exec passes stdout and the exit code; url tunnels the first port to the tailnet address" {
   pod_up
   run "$PLACE" exec steer "it's late"
