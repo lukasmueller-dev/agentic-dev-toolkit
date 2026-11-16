@@ -3,6 +3,8 @@
 # Exit code = researchclaw's, but 0 for a finished paper (the tool exits 1 after any failed stage).
 # /ws/out/result holds the verdict (exit 0 is no proof of a paper).
 set -euo pipefail
+# A rented place starts run over ssh, which may not carry the image ENV: researchclaw lives in the venv.
+export PATH="/opt/venv/bin:$PATH"
 
 ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
 inst="${WS_INSTANCE:?WS_INSTANCE unset}"

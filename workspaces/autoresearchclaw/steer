@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # steer "<text>": hand the text to the next stage that has not finished.
 set -euo pipefail
+# A rented place starts steer over ssh, which may not carry the image ENV: researchclaw lives in the venv.
+export PATH="/opt/venv/bin:$PATH"
 
 ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
 run_dir="$ws/data/artifacts/${WS_INSTANCE:?WS_INSTANCE unset}"

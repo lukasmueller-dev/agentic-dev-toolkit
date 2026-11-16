@@ -92,6 +92,14 @@ wait_for() {
   done
 }
 
+# shellcheck disable=SC2016
+@test "run and steer put the venv on PATH: a rented place starts them over ssh with no image ENV" {
+  local s
+  for s in run steer; do
+    grep -qx 'export PATH="/opt/venv/bin:$PATH"' "$WSDIR/$s"
+  done
+}
+
 @test "config: real experiments through ACP, never simulated or docker" {
   [ "$(grep -c 'mode: sandbox' "$WSDIR"/*.yaml)" -eq 1 ]
   run grep -Eq 'mode: (simulated|docker)' "$WSDIR"/*.yaml
