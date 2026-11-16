@@ -74,15 +74,30 @@ gone() {
     jq -e --arg id "$id" 'type == "array" and all(.[]; .id != $id)' <<<"$list" >/dev/null
 }
 
-# by_name — the id of the pod ws-<instance>: a create can fail after the provider made the pod.
+# by_name — the id of the pod ws-<instance>, empty for none; fails when the list fails.
 by_name() {
-  rp pod list 2>/dev/null | jq -r --arg n "ws-$WS_INSTANCE" \
-    'if type == "array" then first(.[] | select(.name == $n) | .id) else empty end' 2>/dev/null || true
+  local list
+  list="$(rp pod list 2>/dev/null)" &&
+    jq -r --arg n "ws-$WS_INSTANCE" 'if type == "array" then first(.[] | select(.name == $n) | .id) // "" else error end' \
+      <<<"$list" 2>/dev/null
 }
+
+# id=pending: up wrote it before the create. Look the pod up by name until a list answers.
+if [ "$id" = pending ]; then
+  if id="$(by_name)"; then
+    if [ -n "$id" ]; then echo "$id" >"$WS_STATE/id"; else rm -f "$WS_STATE/id"; fi
+  else
+    id=pending
+  fi
+fi
 
 # destroy — delete until gone; the id file goes only then, so the next tick tries again.
 destroy() {
   [ -n "$id" ] || return 0
+  if [ "$id" = pending ]; then
+    echo "runpod: the pod list fails, so the id of pod ws-$WS_INSTANCE is unknown; check runpodctl pod list" >&2
+    return 1
+  fi
   local deadline=$(($(date +%s) + wait_s))
   until
     rp pod delete "$id" >/dev/null 2>&1 || true
@@ -101,8 +116,8 @@ undo_up() {
   local rc=$?
   trap - EXIT INT TERM
   echo 0 >"$WS_STATE/limit" # a pod that survives the delete goes at the next tick
-  [ -n "$id" ] || id="$(by_name)"
-  [ -z "$id" ] || echo "$id" >"$WS_STATE/id"
+  if [ -z "$id" ]; then id="$(by_name)" || id=pending; fi
+  if [ -n "$id" ]; then echo "$id" >"$WS_STATE/id"; else rm -f "$WS_STATE/id"; fi
   if destroy; then rm -f "$WS_STATE/started" "$WS_STATE/limit"; fi
   exit "$rc"
 }
@@ -120,6 +135,7 @@ verb_up() {
   now="$(date +%s)"
   echo "$now" >"$WS_STATE/started"
   echo $((now + hours * 3600)) >"$WS_STATE/limit"
+  echo pending >"$WS_STATE/id" # a killed up leaves a trace for tick
   trap undo_up EXIT
   trap 'exit 1' INT TERM
   out="$(rp pod create --name "ws-$WS_INSTANCE" --gpu-id "$RUNPOD_GPU_ID" \
@@ -158,8 +174,8 @@ verb_exec() {
 verb_pull() {
   [ -n "$id" ] && addr &&
     mkdir -p "$WS_STATE/data" "$WS_STATE/out" &&
-    rcopy "$host:/ws/data/" "$WS_STATE/data/" &&
-    rcopy "$host:/ws/out/" "$WS_STATE/out/" &&
+    rcopy --safe-links "$host:/ws/data/" "$WS_STATE/data/" &&
+    rcopy --safe-links "$host:/ws/out/" "$WS_STATE/out/" &&
     date +%s >"$WS_STATE/pulled"
 }
 
@@ -186,7 +202,10 @@ verb_down() {
     rc=1
   }
   [ ! -S "$WS_STATE/tunnel.sock" ] || ssh -S "$WS_STATE/tunnel.sock" -O exit pod 2>/dev/null || true
-  destroy || rc=1
+  if ! destroy; then
+    echo 0 >"$WS_STATE/limit" # the next tick deletes again
+    rc=1
+  fi
   return "$rc"
 }
 
