@@ -1426,7 +1426,7 @@ gpuq_end() {
   [ "$(sed -n 5p <<<"$output")" = "    $(cd "$dir" && pwd)" ]
   run "$VIBE" queue page
   [ "$status" -eq 0 ]
-  grep -qF "<section class=\"sec\" data-k=\"run\"><h2>Running <span class=\"n\">1</span></h2><details class=\"row\" data-k=\"$id\"><summary><i class=\"lamp l-ok\"></i><span class=\"t\"><b>$id</b><span class=\"why\">$(cd "$dir" && pwd)</span></span><span class=\"chip\">GPU</span><code class=\"repo\">sc-962d4a2</code></summary>" "$XDG_STATE_HOME/vibe/web/index.html"
+  grep -qF "<section class=\"sec\" data-k=\"run\"><h2>Running <span class=\"n\">1</span></h2><div class=\"row\" data-k=\"$id\"><i class=\"lamp l-ok\"></i><a class=\"t\" href=\"#job-$id\"><b>$id</b><span class=\"why\">$(cd "$dir" && pwd)</span></a><span class=\"chip\">GPU</span><code class=\"repo\">sc-962d4a2</code></div>" "$XDG_STATE_HOME/vibe/web/index.html"
 }
 
 @test "status: a gpu-queue run a vibe job's gpu-job names counts once; an outside queued run is added" {
@@ -1552,8 +1552,8 @@ gpuq_end() {
   [ "$(grep -cE "$id1|$own|$arch" <<<"$output")" -eq 0 ]
   run "$VIBE" queue page
   [ "$status" -eq 0 ]
-  [ "$(sec "done" | grep -o '<details class="row"' | wc -l)" -eq 3 ]
-  grep -qF "<details class=\"row\" data-k=\"$id3\"><summary><i class=\"lamp l-done\"></i><span class=\"t\"><b>$id3</b><span class=\"why\">exit 1 · 2026-11-13 12:03</span></span><span class=\"chip\">GPU</span></summary>" "$html"
+  [ "$(sec "done" | grep -o '<div class="row"' | wc -l)" -eq 3 ]
+  grep -qF "<div class=\"row\" data-k=\"$id3\"><i class=\"lamp l-done\"></i><a class=\"t\" href=\"#job-$id3\"><b>$id3</b><span class=\"why\">exit 1 · 2026-11-13 12:03</span></a><span class=\"chip\">GPU</span></div>" "$html"
   grep -qF '<span class="pill">exit 1</span></div><p>2026-11-13 12:03</p>' "$html"
   grep -qF '<span class="pill">exit cancelled</span></div><p>2026-11-14 12:04</p>' "$html"
   [ "$(grep -cE "$id1|$own|$arch" "$html")" -eq 0 ]
