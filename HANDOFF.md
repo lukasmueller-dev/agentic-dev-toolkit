@@ -14,16 +14,22 @@
 
 ## State
 
-Milestones 1 (Shell) and 2 (Panel and Config) are done and ticked in `SPEC.md`.
+Milestones 1 (Shell), 2 (Panel and Config) and 3 (Workspaces and tools) are done and ticked in `SPEC.md`.
 
 - A row links to `#job-<key>`; `page_row` prints the row, then `blk<TAB><block>`; `queue_web` puts the blocks in `#panel > .pblocks`.
 - Fields (`ask` in `bin/vibe`) replace every `prompt()`; New job is the block `#new`; Config is `config_page`.
+- Workspaces page `#workspaces` and rail `.wsl`: `ws_page`. GPU holder: `gpu_holder`, shown only while the lock is held.
+- `vibe ws start --place --hours`; under `VIBE_WEB` it detaches as `ws hold`; new state `starts`.
+- Routes `ws-start`, `ws-stop`, `steer`; `GET job/<id>/tool.log`, `out/report.md`, `out/files` (a file list).
 
 ## Next action
 
-Milestone 3, Workspaces and tools: `vibe ws start --place --hours`, routes `ws-start`, `ws-stop`, `steer`, `tool.log` served, tool panel, Workspaces page and rail, GPU holder, outside GPU rows. Done when `bats tests/vibe-ws.bats tests/vibe-web.bats tests/vibe-queue.bats` passes with tests for each new route, flag and holder case.
+Milestone 4, Docs: `docs/vibe-queue.md` (Phone page → Page, Page actions table) and `docs/workspaces.md` match the code. Done when `grep -c "Sessions ↗\|chips" docs/vibe-queue.md` prints 0 and the full lint, format and bats gate of `CLAUDE.md` passes.
 
-- The tool panel goes in the job's block: `status_card` job, or a `pre` part in `page_row` as the lane Fix field does.
+- `docs/workspaces.md` still says "The queue page lists the lines of `status` under `Tools`": the Workspaces page replaces it.
+- Its Commands block needs `--place P --hours N`, the `starts` state, and the detached page start.
+- `docs/vibe-queue.md` line 70 names `Tools` and repo groups; Page actions needs `ws-start`, `ws-stop`, `steer` and the served files.
+- `docs/workspaces/place-vast.md` and `place-runpod.md` show `vibe ws start <name>`: add `--place`.
 
 ## Blockers
 
@@ -36,3 +42,5 @@ None.
 - Clicks and keys → `tests/page_check.py` drives page.js over `--remote-debugging-pipe`. Full Chrome does not start in the agent sandbox (the test skips): set `VIBE_TEST_BROWSER` to the headless shell.
 - In a fetched page, page.js finds a node only by a path from `body` (`body > main > #queue`): a `.md` can hold any class.
 - A phase span has class `x`: the panel's Close button is `.close`.
+- A block is one line (`page_row` drops newlines): a `<pre>` in it needs `&#10;` (see the `tool.log` tail).
+- `bats` hangs on a bare `wait` in `tests/vibe-web.bats`: setup's vibe-web is a background job too. Wait on a pid.
