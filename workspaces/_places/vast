@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# workspaces/_places/vast up|exec|pull|url|down|tick — the place contract on a Vast.ai datacenter host.
+# Env: WS_INSTANCE, WS_STATE, WS_DIR, WS_CONF_<KEY>. VAST_QUERY, VAST_DISK, VAST_WAIT: the workspace env file.
+# Trap: vastai exits 0 on an HTTP error, so every call is judged by its JSON.
+set -euo pipefail
+
+die() {
+  printf 'vast: %s\n' "$*" >&2
+  exit 1
+}
+
+: "${WS_INSTANCE:?}" "${WS_STATE:?}" "${WS_DIR:?}"
+name="${WS_DIR%/}"
+name="${name##*/}"
+env_file="$HOME/.config/vibe/workspaces/$name.env"
+cfg="$WS_STATE/ssh_config"
+rsh="ssh -F '$cfg'"
+hours="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+case "$hours" in '' | *[!0-9]*) ;; *) hours=$((10#$hours)) ;; esac # 08 is not octal
+
+# setting KEY DEFAULT — KEY from the workspace env file, else DEFAULT.
+setting() {
+  local v=""
+  if [ -r "$env_file" ]; then v="$(sed -n "s/^$1=//p" "$env_file" | tail -n 1)"; fi
+  printf '%s' "${v:-$2}"
+}
+
+# epoch FILE — the number in FILE; 0 when it is missing or not a number.
+epoch() {
+  local v
+  v="$(cat "$1" 2>/dev/null)" || v=0
+  case "$v" in '' | *[!0-9]*) v=0 ;; esac
+  printf '%s' "$v"
+}
+
+# shq ARG — ARG single-quoted for the remote shell.
+shq() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+gone() {
+  vastai show instance "$1" --raw | jq -e 'has("instances") and .instances == null' >/dev/null 2>&1
+}
+
+# destroy — destroy the recorded instance; the id stays until Vast confirms.
+destroy() {
+  local id
+  [ -s "$WS_STATE/id" ] || return 0
+  id="$(cat "$WS_STATE/id")"
+  for _ in 1 2 3; do
+    if vastai destroy instance "$id" -y --raw | jq -e '.success == true' >/dev/null 2>&1 || gone "$id"; then
+      rm -f "$WS_STATE/id" "$WS_STATE/url" "$WS_STATE/known_hosts" "$cfg"
+      echo "vast: destroyed instance $id"
+      return 0
+    fi
+    sleep 10
+  done
+  echo 0 >"$WS_STATE/limit" # the next tick tries again, not the old limit's
+  printf 'vast: instance %s is still alive: destroy it at https://cloud.vast.ai/instances/\n' "$id" >&2
+  return 1
+}
+
+# tunnel ARG… — ssh on the tunnel socket, from WS_STATE: a long instance name passes the 108-byte socket path limit.
+tunnel() {
+  (cd "$WS_STATE" && ssh -F "$cfg" -S tunnel.sock "$@")
+}
+
+# ssh_config JSON — point host "vast" at the instance: direct port 22, else the Vast proxy.
+ssh_config() {
+  local hp host port
+  hp="$(printf '%s' "$1" | jq -r 'if .ports["22/tcp"] then "\(.public_ipaddr | gsub("\\s"; "")) \(.ports["22/tcp"][0].HostPort)" else "\(.ssh_host) \(.ssh_port)" end')" || return 1
+  host="${hp% *}" port="${hp##* }"
+  # The rented host reports these: a newline in them would add an ssh option.
+  # ServerAliveCountMax 20: ssh ends after 10 min of silence, not 90 s; exec run is one ssh for hours.
+  case "$host" in '' | *[!A-Za-z0-9.:-]*) return 1 ;; esac
+  case "$port" in '' | *[!0-9]*) return 1 ;; esac
+  printf 'Host vast\n  HostName %s\n  Port %s\n  User root\n  BatchMode yes\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile "%s"\n  ConnectTimeout 20\n  ServerAliveInterval 30\n  ServerAliveCountMax 20\n' \
+    "$host" "$port" "$WS_STATE/known_hosts" >"$cfg"
+}
+
+# wait_ready ID — wait VAST_WAIT s for `running` and an ssh answer; fail at once on a state that never runs.
+wait_ready() {
+  local json st wait end
+  wait="$(setting VAST_WAIT 1200)"
+  case "$wait" in '' | *[!0-9]*) wait=1200 ;; esac
+  end=$(($(date +%s) + 10#$wait))
+  while :; do
+    json="$(vastai show instance "$1" --raw)" || json=""
+    st="$(printf '%s' "$json" | jq -r '.actual_status // .status // empty' 2>/dev/null)" || st=""
+    case "$st" in
+      running) if ssh_config "$json" && ssh -F "$cfg" -n vast true; then return 0; fi ;;
+      exited | unknown | offline)
+        echo "vast: instance $1 is $st" >&2
+        return 1
+        ;;
+    esac
+    if [ "$(date +%s)" -ge "$end" ]; then break; fi
+    sleep 10
+  done
+  echo "vast: instance $1 is not running after $wait s" >&2
+  return 1
+}
+
+# provision — /ws/scripts, /ws/in, /ws/data and the secrets file, over ssh only.
+provision() {
+  # Only the keys named in WS_CONF_SECRETS leave turing.
+  if [ -f "$env_file" ]; then awk -F= -v keys=" ${WS_CONF_SECRETS:-} " 'index(keys, " " $1 " ")' "$env_file"; fi |
+    ssh -F "$cfg" vast 'mkdir -p /ws/scripts /ws/in /ws/data /ws/out && umask 077 && cat >/ws/secrets.env' || return 1
+  rsync -a -e "$rsh" "$WS_DIR/" vast:/ws/scripts/ || return 1
+  if [ -d "$WS_STATE/in" ]; then rsync -a -e "$rsh" "$WS_STATE/in/" vast:/ws/in/ || return 1; fi
+  if [ -d "$WS_STATE/data" ]; then rsync -a -e "$rsh" "$WS_STATE/data/" vast:/ws/data/ || return 1; fi
+  ssh -F "$cfg" -n vast 'chmod -R a-w /ws/scripts /ws/in' || return 1
+}
+
+# undo_up — the EXIT trap of up: a signal or an error after the create can come before the id write.
+# The lock goes last: a second up in the cleanup would rent a machine with the same label.
+undo_up() {
+  local id
+  if [ ! -s "$WS_STATE/id" ]; then
+    id="$(vastai show instances --raw | jq -r --arg l "$WS_INSTANCE" 'first(.[]? | objects | select(.label == $l) | .id) // empty' 2>/dev/null)" || id=""
+    if [ -n "$id" ]; then printf '%s\n' "$id" >"$WS_STATE/id"; fi
+  fi
+  destroy || true # errexit in a trap would skip the rmdir
+  rmdir "$WS_STATE/up.lock" || true
+}
+
+cmd_up() {
+  local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" query offer id t
+  case "$hours" in '' | *[!0-9]* | 0) die "hours must be a whole number above 0, not '$hours'" ;; esac
+  mkdir -p "$WS_STATE"
+  # One up per instance: a second one would rent a machine that no id records.
+  mkdir "$WS_STATE/up.lock" 2>/dev/null || die "an up runs for $WS_INSTANCE; a stale lock: rmdir $WS_STATE/up.lock"
+  trap 'rmdir "$WS_STATE/up.lock" || true' EXIT
+  trap 'exit 1' INT TERM
+  if [ -s "$WS_STATE/id" ]; then die "instance $(cat "$WS_STATE/id") is recorded in $WS_STATE: run down first"; fi
+  query="$(setting VAST_QUERY 'num_gpus=1 cpu_arch=amd64') verified=true rentable=true datacenter=True"
+  offer="$(vastai search offers "$query" -o dph --raw | jq -r '.[0].id // empty')" || offer=""
+  [ -n "$offer" ] || die "no offer for: $query"
+  trap undo_up EXIT # a failed up leaves nothing behind
+  # No --bid_price: on-demand, so no bid can interrupt the run.
+  id="$(vastai create instance "$offer" --image "$image:$commit" --disk "$(setting VAST_DISK 50)" \
+    --label "$WS_INSTANCE" --ssh --direct --cancel-unavail --raw | jq -r '.new_contract // empty')" || id=""
+  [ -n "$id" ] || die "create failed for offer $offer"
+  t="$(date +%s)"
+  printf '%s\n' "$id" >"$WS_STATE/id"
+  printf '%s\n' "$t" >"$WS_STATE/started"
+  printf '%s\n' "$((t + hours * 3600))" >"$WS_STATE/limit"
+  wait_ready "$id" || exit 1
+  provision || exit 1
+  if [ -n "${WS_CONF_PORTS:-}" ]; then cmd_url >"$WS_STATE/url" || exit 1; fi
+  trap - EXIT INT TERM
+  rmdir "$WS_STATE/up.lock"
+  echo "vast: instance $id is up; limit $(cat "$WS_STATE/limit") (epoch)"
+}
+
+cmd_exec() {
+  local cmd a s="${1:-}"
+  case "$s" in '' | */* | .*) die "usage: vast exec <script> [arg…]" ;; esac
+  [ -s "$cfg" ] || die "no instance is up"
+  # Exit 3: the tool has no such script, so the verb is not supported.
+  cmd="test -x $(shq "/ws/scripts/$s") || exit 3; cd /ws && WS_NAME=$(shq "$name") WS_INSTANCE=$(shq "$WS_INSTANCE") WS_PLACE=vast WS_HOURS=$(shq "$hours") exec $(shq "/ws/scripts/$s")"
+  shift
+  for a in "$@"; do cmd="$cmd $(shq "$a")"; done
+  exec ssh -F "$cfg" -n vast "$cmd"
+}
+
+# cmd_pull — returns, never exits: down destroys after a failed pull.
+cmd_pull() {
+  if [ ! -s "$cfg" ]; then
+    echo "vast: no instance is up" >&2
+    return 1
+  fi
+  # --safe-links: a link the container plants to a turing file must not arrive.
+  rsync -a --safe-links -e "$rsh" vast:/ws/data vast:/ws/out "$WS_STATE/" || return 1
+  date +%s >"$WS_STATE/pulled"
+}
+
+cmd_url() {
+  local ports="${WS_CONF_PORTS:-}" port ip sock="$WS_STATE/tunnel.sock"
+  port="${ports%%,*}"
+  [ -n "$port" ] || die "workspace.conf has no ports"
+  [ -s "$cfg" ] || die "no instance is up"
+  ip="$(tailscale ip -4)" || die "no tailnet address"
+  if ! tunnel -O check vast 2>/dev/null; then
+    rm -f "$sock" # a dead master's socket makes -M run with no control socket
+    tunnel -f -N -M -o ExitOnForwardFailure=yes -L "$ip:$port:localhost:$port" vast ||
+      die "no ssh tunnel to port $port"
+  fi
+  printf 'http://%s:%s\n' "$ip" "$port"
+}
+
+cmd_down() {
+  local pulled=0
+  [ -s "$WS_STATE/id" ] || return 0
+  if cmd_pull; then pulled=1; fi
+  tunnel -O exit vast 2>/dev/null || true
+  destroy || exit 1
+  [ "$pulled" = 1 ] || die "pull failed before the destroy: $WS_STATE/data may be old"
+}
+
+cmd_tick() {
+  local t
+  [ -s "$WS_STATE/id" ] || return 0
+  t="$(date +%s)"
+  if [ "$t" -ge "$(epoch "$WS_STATE/limit")" ]; then
+    cmd_down
+    return
+  fi
+  # An up still provisions: its own url and the first pull come after. A stale lock still ends at the limit.
+  if [ -d "$WS_STATE/up.lock" ]; then return 0; fi
+  # A network drop or a reboot ends the tunnel master: url starts a new one, up only once.
+  if [ -n "${WS_CONF_PORTS:-}" ] && [ -s "$cfg" ]; then (cmd_url >/dev/null) || true; fi
+  if [ $((t - $(epoch "$WS_STATE/pulled"))) -ge 600 ]; then cmd_pull; fi
+}
+
+verb="${1:-}"
+[ $# -eq 0 ] || shift
+case "$verb" in
+  up) cmd_up ;;
+  exec) cmd_exec "$@" ;;
+  pull) cmd_pull ;;
+  url) cmd_url ;;
+  down) cmd_down ;;
+  tick) cmd_tick ;;
+  *)
+    echo "usage: vast up|exec <script> [arg…]|pull|url|down|tick" >&2
+    exit 3
+    ;;
+esac
