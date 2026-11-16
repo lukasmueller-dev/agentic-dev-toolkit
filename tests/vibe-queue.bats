@@ -141,12 +141,12 @@ case "\$mode" in
   sleep) sleep 30 ;;
   slow) echo half >wip.txt && sleep 30 ;;
   fix)
-    if [ -f "$STUBS/fix-api-error" ]; then
-      echo half >>work.txt
-      echo '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error","result":"You have hit your monthly spend limit"}'
+    if [ -f "$STUBS/fix-error" ]; then
+      echo half >>work.txt && cat "$STUBS/fix-error"
       exit 0
     fi
     [ ! -f "$STUBS/fix-crash" ] || { : >.mcp.json && exit 3; }
+    [ ! -f "$STUBS/fix-sleep" ] || { echo half >>work.txt && sleep 30; }
     if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
     if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
     sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
@@ -2288,13 +2288,13 @@ two_findings() {
   grep -q '^Run /code-review low origin/main\.\.\.HEAD\. ' "$STUBS/claude.log"
 }
 
-@test "review: a fix session that ends in an API error or a crash → the round fails, names the dirty worktree, no PR; a clean round is done" {
+@test "review: a fix session that ends in an API error, an error result or a crash → the round fails, names the dirty worktree, no PR; a clean round is done" {
   local r w
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok after=review
   two_findings
   printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
-  touch "$STUBS/fix-api-error"
+  echo '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error"}' >"$STUBS/fix-error"
   drain
   [ "$status" -eq 0 ]
   w="$(cat "$Q/01-a/worktree")"
@@ -2302,7 +2302,14 @@ two_findings() {
   [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → fix failed: API error 429; $w has uncommitted changes" ]
   [ ! -e "$Q/01-a-review1/pr" ]
   [ ! -e "$Q/01-a-review2" ]
-  rm -f "$STUBS/fix-api-error" "$STUBS/review-count"
+  rm -f "$STUBS/review-count"
+  echo '{"type":"result","subtype":"error_during_execution","is_error":true,"api_error_status":null}' >"$STUBS/fix-error"
+  mkjob 04-d "$r" task-d ok after=review
+  drain
+  w="$(cat "$Q/04-d/worktree")"
+  [ "$(cat "$Q/04-d-review1/status")" = failed ]
+  [ "$(cat "$Q/04-d-review1/note")" = "R1: 2 findings → fix failed: error result; $w has uncommitted changes" ]
+  rm -f "$STUBS/fix-error" "$STUBS/review-count"
   touch "$STUBS/fix-crash"
   mkjob 03-c "$r" task-c ok after=review
   drain
@@ -2315,6 +2322,21 @@ two_findings() {
   [ "$(cat "$Q/02-b-review1/status")" = "done" ]
   [ "$(cat "$Q/02-b-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
   [ "$(cat "$Q/02-b-review1/pr")" = "https://example.com/pull/1" ]
+}
+
+@test "review: a fix session past review_timeout → the round fails, names the dirty worktree, no PR" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r w
+  r="$(make_repo proj)"
+  printf 'review_timeout=3s\n' >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  touch "$STUBS/fix-sleep"
+  drain
+  w="$(cat "$Q/01-a/worktree")"
+  [ "$(cat "$Q/01-a-review1/status")" = failed ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → fix failed: timeout; $w has uncommitted changes" ]
+  [ ! -e "$Q/01-a-review1/pr" ]
 }
 
 @test "review: review_rounds caps the rounds; review_trivial sets the bar" {

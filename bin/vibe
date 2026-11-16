@@ -1110,12 +1110,12 @@ job_review() {
       review_fix "$d" "$t" || rc=$?
       if stopped "$d"; then return 0; fi
       ev="$(job_result "$d")"
-      if ((rc == 124)); then
-        line+=" → timeout"
-      elif ((rc != 0)) || [[ "$ev" == *'"is_error":true'* ]]; then
-        # A fix cut off (API error, crash) may leave half a fix: fail, no publish; `vibe queue retry` adopts the worktree.
+      if ((rc != 0)) || [[ "$ev" == *'"is_error":true'* ]]; then
+        # A fix cut off (timeout, API error, crash) may leave half a fix: fail, no publish; `vibe queue retry` adopts the worktree.
         e="$(ev_num "$ev" api_error_status)"
-        if [[ -n "$e" ]]; then
+        if ((rc == 124)); then
+          e="timeout"
+        elif [[ -n "$e" ]]; then
           e="API error $e"
         elif ((rc)); then
           e="agent exit $rc"
