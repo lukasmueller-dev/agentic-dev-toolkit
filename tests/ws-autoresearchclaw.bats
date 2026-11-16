@@ -69,12 +69,17 @@ wait_for() {
   return 1
 }
 
-@test "conf: a run tool with a GPU and a folder result, pinned to one commit in conf and Dockerfile" {
+@test "conf: a run tool with a GPU and a folder result, pinned to one commit" {
   grep -qx 'kind=run' "$WSDIR/workspace.conf"
   grep -qx 'gpu=yes' "$WSDIR/workspace.conf"
   grep -qx 'result=folder' "$WSDIR/workspace.conf"
   grep -qx "commit=$PINNED" "$WSDIR/workspace.conf"
-  grep -qx "ARG COMMIT=$PINNED" "$WSDIR/Dockerfile"
+}
+
+# shellcheck disable=SC2016
+@test "Dockerfile: the commit comes only from the build arg, and an empty one fails the build" {
+  grep -qx 'ARG COMMIT' "$WSDIR/Dockerfile"
+  grep -q '"${COMMIT:?' "$WSDIR/Dockerfile"
 }
 
 @test "Dockerfile: base image by digest, npm and pip packages by version" {
