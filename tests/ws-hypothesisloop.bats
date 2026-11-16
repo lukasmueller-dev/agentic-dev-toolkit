@@ -135,12 +135,18 @@ write_env() {
   [ "$status" -eq 0 ]
 }
 
-@test "start refuses a host name in LOCAL_REACHABLE_ADDRESS and calls nothing" {
-  sed -i.bak "s/^LOCAL_REACHABLE_ADDRESS=.*/LOCAL_REACHABLE_ADDRESS='turing.example'/" "$HL/.env"
-  run "$WS/start"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"LOCAL_REACHABLE_ADDRESS=turing.example"*"IPv4"* ]] || false
+@test "start refuses a LOCAL_REACHABLE_ADDRESS outside the tailnet and calls nothing" {
+  local addr
+  for addr in turing.example 0.0.0.0 192.168.1.5 100.128.0.1; do
+    sed -i.bak "s/^LOCAL_REACHABLE_ADDRESS=.*/LOCAL_REACHABLE_ADDRESS='$addr'/" "$HL/.env"
+    run "$WS/start"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"LOCAL_REACHABLE_ADDRESS=$addr"*"IPv4"* ]] || false
+  done
   [ ! -e "$LOG" ]
+  sed -i.bak "s/^LOCAL_REACHABLE_ADDRESS=.*/LOCAL_REACHABLE_ADDRESS='100.127.255.254'/" "$HL/.env"
+  run "$WS/start"
+  [ "$status" -eq 0 ]
 }
 
 @test "start refuses no .env, no .image-tag and no HLOOP_REPO, and calls nothing" {

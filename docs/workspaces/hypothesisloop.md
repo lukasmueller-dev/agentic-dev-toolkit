@@ -140,6 +140,6 @@ Open `http://<tailnet ip>:3000` on the phone. The sign-in page loads, and GitHub
 - `start of hypothesisloop ran past 120 s` → docker pulled the store images, or Go compiled `localdev/envfiles`, inside `start`. Run step 1 and the pull of step 2 first.
 - `start` prints `does not set UI_ORIGIN` or another key → `make render-settings` checks keys that `start` does not. Set the key in `.env`.
 - `start` fails on `!override` → docker compose is older than 2.24.4. Update it.
-- `start` refuses `LOCAL_REACHABLE_ADDRESS=<name>` → compose publishes on an IP only. Set the output of `tailscale ip -4`.
+- `start` refuses `LOCAL_REACHABLE_ADDRESS=<value>` → compose publishes on an IP only, and `start` binds to the tailnet (100.64.0.0/10) only. Set the output of `tailscale ip -4`.
 - `status` prints `nothing serves the UI on http://<tailnet ip>:3000` → the step-4 session ended. Run its command in the foreground to see the error. The UI names each key it misses.
 - Sign-in returns an error page → the Supabase site URL or redirect allow-list does not hold the tailnet origin. Unchecked: Supabase and GitHub can refuse an `http://` IP origin.

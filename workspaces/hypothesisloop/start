@@ -22,10 +22,10 @@ for key in GIT_HOST_PROVIDER CONTAINER_REGISTRY_PROVIDER; do
   [[ "$(hl_key "$key")" != plain ]] ||
     hl_die "$HLOOP_REPO/.env sets $key=plain, whose server runs under make dev only: see docs/workspaces/hypothesisloop.md"
 done
-# Compose publishes on an IP only; the tool also takes a host name here.
+# Compose publishes on an IP only; 100.64.0.0/10 (the tailnet) keeps out a host name, 0.0.0.0 and a LAN address.
 HLOOP_BIND="$(hl_key LOCAL_REACHABLE_ADDRESS)"
-[[ "$HLOOP_BIND" =~ ^[0-9]+(\.[0-9]+){3}$ ]] ||
-  hl_die "$HLOOP_REPO/.env sets LOCAL_REACHABLE_ADDRESS=$HLOOP_BIND: start needs the tailnet IPv4 (tailscale ip -4)"
+[[ "$HLOOP_BIND" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ||
+  hl_die "$HLOOP_REPO/.env sets LOCAL_REACHABLE_ADDRESS=$HLOOP_BIND: start needs the tailnet IPv4 in 100.64.0.0/10 (tailscale ip -4)"
 TAG="$(cat "$HLOOP_REPO/localdev/.image-tag" 2>/dev/null || true)"
 [[ -n "$TAG" ]] || hl_die "no $HLOOP_REPO/localdev/.image-tag: build the images by docs/workspaces/hypothesisloop.md"
 
