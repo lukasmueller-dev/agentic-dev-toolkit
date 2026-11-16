@@ -135,18 +135,18 @@ post() {
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
-  grep -qF "if (busy || \$('.armed', main)) return;" "$Q/web/page.js"
+  grep -qF "if (busy || \$('button.armed')) return;" "$Q/web/page.js"
   # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
-  grep -qF "main.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "main.contains(b) || blocks.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
   grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
-  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<div id="queue" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The panel after main: the column right of the list.
+  [ "$(grep -n '<dialog id="panel"' "$Q/web/index.html" | cut -d: -f1)" -gt "$(grep -n '<div id="queue" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
   # The poll writes only to nodes held at load, found in the fetched page by a path from body: a .md can hold any class.
-  grep -qF "for (const [s, live] of parts)" "$Q/web/page.js"
-  grep -qF "queue.innerHTML = h;" "$Q/web/page.js"
-  grep -qF "\$('body > main > #queue', n)" "$Q/web/page.js"
-  grep -qF "const main = \$('body > main'), parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #new', 'body > main > #config']" "$Q/web/page.js"
+  grep -qF "const [s, live, was] = p, h = \$(s, n).innerHTML;" "$Q/web/page.js"
+  grep -qF "live.innerHTML = h; p[2] = h;" "$Q/web/page.js"
+  grep -qF "const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks']" "$Q/web/page.js"
   [ "$(grep -oE '[$][(][^)]*, n[)]' "$Q/web/page.js" | grep -vcF -e "\$(s, n)" -e "\$('body > ")" = 0 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   # The page's age comes from the server's clock alone (Date header minus data-t): a skewed browser clock cannot fake it.
@@ -155,8 +155,46 @@ post() {
   [ "$output" = 0 ]
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
-  grep -q '<dialog id="panel">' "$Q/web/index.html"
-  grep -q 'body.can .acts' "$Q/web/index.html"
+  grep -q '<dialog id="panel"' "$Q/web/index.html"
+  grep -q 'body.can .jacts' "$Q/web/index.html"
+}
+
+@test "vibe queue page: the panel shows the block the hash names; j/k move it; fields replace prompt(); the swap skips a part in use" {
+  local js="$Q/web/page.js"
+  run "$REPO_ROOT/bin/vibe" queue page
+  [ "$status" -eq 0 ]
+  if command -v node >/dev/null; then node --check "$js"; fi
+  run grep -c 'prompt(' "$js"
+  [ "$output" = 0 ]
+  # The hash names the block; its row is marked; another block drops the output.
+  grep -qF "for (const b of blocks.children) { b.hidden = b.id !== id; if (!b.hidden) blk = b; }" "$js"
+  grep -qF "r.classList.toggle('sel', 'job-' + r.dataset.k === id)" "$js"
+  grep -qF "addEventListener('hashchange', show);" "$js"
+  # Wide: a CSS column, never show(), which would take the focus; narrow: a modal only for a block or an output.
+  grep -qF "wide = matchMedia('(min-width: 1200px)')" "$js"
+  grep -qF "else if (!panel.open) panel.showModal();" "$js"
+  run grep -c 'panel.show()' "$js"
+  [ "$output" = 0 ]
+  # j/k only select; the one key that sends needs ⌘ or Ctrl.
+  grep -qF "(e.key !== 'j' && e.key !== 'k')) return;" "$js"
+  [ "$(grep -c '\.click()' "$js")" = 1 ]
+  grep -qF "if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); \$('button[data-act]', f.closest('.ask') || f)?.click(); }" "$js"
+  grep -qF "else if (e.key === 'Escape' && f.value && f.tagName !== 'SELECT') { e.preventDefault(); f.value = ''; }" "$js"
+  # Args: each named field of the button's .ask after the card's data; an empty field sends nothing.
+  grep -qF "const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};" "$js"
+  grep -qF "if (!v) { x.focus(); return; }" "$js"
+  grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
+  # The swap leaves a part alone while a field in it has focus or text, and tries again next poll.
+  grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value));" "$js"
+  grep -qF "if (held(live)) { kept = true; continue; }" "$js"
+  grep -qF "if (r.ok && !kept) last = t;" "$js"
+  # The roadmap rows get a Branch slug field, not a prompt.
+  grep -qF "ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {}))" "$js"
+  # The panel: Close, the empty note, the blocks with New job last, the output.
+  grep -qF '<dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">' "$Q/web/index.html"
+  grep -qF '<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>' "$Q/web/index.html"
+  grep -qF '</div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>' "$Q/web/index.html"
+  grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
 }
 
 @test "vibe queue page: CSP allows only page.js, so HTML in a note runs no script" {
@@ -376,7 +414,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   qjob "$ID" blocked
   echo "$wt" >"$Q/queue/$ID/worktree"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="answer" data-ask="text" data-confirm' "$Q/web/index.html"
+  grep -qF '<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button>' "$Q/web/index.html"
   run act answer "{\"id\": \"$ID\", \"text\": \"Plan B.\"}"
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
@@ -445,7 +483,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   qjob "$ID" "done"
   echo "$URL" >"$Q/queue/$ID/pr"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q "data-pr=\"$URL\"><button data-act=\"fix\" data-ask=\"text\"" "$Q/web/index.html"
+  grep -qF "data-pr=\"$URL\"><span class=\"ask\"><label>Fix job: what to change on the PR<textarea name=\"text\" rows=\"3\"></textarea></label><button data-act=\"fix\">" "$Q/web/index.html"
   "$REPO_ROOT/bin/vibe" queue archive "$ID" >/dev/null
   run act fix "{\"pr\": \"$URL\", \"text\": \"Rename foo to bar.\"}"
   [ "${lines[1]}" = 200 ]
@@ -732,9 +770,10 @@ optin() {
   run act opt-in "{\"repo\": \"$r\", \"job\": \"repo-review\"}"
   [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"roadmap\">Roadmap</button><button data-act=\"worktrees\">Worktrees</button><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
-  grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
-  run grep -q 'opt in: [^"]*repo-review' "$Q/web/index.html"
+  grep -qF "<option value=\"$r\">proj</option></select></label><label>Task<textarea name=\"task\" rows=\"3\"></textarea></label><label>Done when: a command that checks it<input name=\"done\"></label><label>Branch slug<input name=\"branch\"></label><button data-act=\"new\">Queue job</button>" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><span class=\"lbl\">proj</span><button data-act=\"roadmap\">Roadmap</button><span class=\"ask\"><label>Recurring job<select name=\"job\">" "$Q/web/index.html"
+  grep -qF '<option>stale-state</option>' "$Q/web/index.html"
+  run grep -qF '<option>repo-review</option>' "$Q/web/index.html"
   [ "$status" -eq 1 ]
 }
 
@@ -836,7 +875,7 @@ optin() {
   done
   [ "$(grep -c restart "$STUBS/systemctl.log")" = 1 ]
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="server-restart" data-ask="server" data-confirm' "$Q/web/index.html"
+  grep -qF '<span class="ask"><label>Server to restart (Servers lists them)<input name="server"></label><button data-act="server-restart" data-confirm>Restart server</button></span>' "$Q/web/index.html"
 }
 
 @test "routes worktrees and worktree-remove: a merged one goes; dirty, unpushed and locked stay" {
@@ -865,7 +904,8 @@ optin() {
   [ "${lines[1]}" = 400 ]
   echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "action('Remove', 'worktree-remove', { data: { confirm: '' } })" "$Q/web/page.js"
+  grep -qF "action('Remove', 'worktree-remove', { confirm: '' })" "$Q/web/page.js"
+  grep -qF "<label>Repo<select name=\"repo\"><option value=\"$r\">proj</option></select></label><button data-act=\"worktrees\">Worktrees</button>" "$Q/web/index.html"
 }
 
 @test "route sync: vibe sync --all pushes a worktree's new branch" {
