@@ -65,6 +65,6 @@ The paper, its numbers and its citation counts are the tool's claim. Check them 
 - `steer` prints `only stages 8 and 9 read guidance` → by design. Any other stage ignores the text.
 - `steer` exits 1 → no run folder yet, or all 23 stages are done.
 - No PDF in `files/` → the image has no LaTeX. `paper.tex` and `paper_final.md` are there; compile elsewhere.
-- Resume: `run` adds `--resume` when `checkpoint.json` exists. That needs an instance that is still up, such as after a runner crash. After a normal end `down` removes `data/`, so a retry starts at stage 1.
+- Resume: `run` adds `--resume` when `checkpoint.json` exists. The queue removes an instance's state, `data/` included, when its job ends. A stop, the hour limit or a retry then starts at stage 1. Only a crash of the job process leaves the instance up, and its redo resumes.
 - Counts after a resume → the tool counts only the stages of its own call. The result line says `(resumed run: counts cover the last part only)`.
 - A checkpoint at stage 23 → `run` does not start the tool again. It gives the verdict and the copy only.

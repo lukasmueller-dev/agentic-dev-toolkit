@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stop: TERM run and wait until it has written result and files/. /ws/data stays; a later run resumes.
+# stop: TERM run and wait until it has written result and files/. /ws/data stays.
 set -euo pipefail
 
 pidfile="${TMPDIR:-/tmp}/ws-run.pid"

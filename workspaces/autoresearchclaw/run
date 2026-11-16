@@ -105,8 +105,8 @@ verdict=
 case "$rc" in
   0 | 1) ;; # exit 1 follows any failed stage, also a skipped stage 21: the summary decides
   124) verdict="failed: hour limit of $hours h reached after stage $last" ;;
-  137) verdict="failed: killed after stage $last, the tool ignored TERM; a new run resumes" ;;
-  143) verdict="failed: stopped after stage $last; a new run resumes" ;;
+  137) verdict="failed: killed after stage $last, the tool ignored TERM" ;;
+  143) verdict="failed: stopped after stage $last" ;;
   *) verdict="failed: researchclaw exit $rc after stage $last; see tool.log" ;;
 esac
 if [ -n "$verdict" ]; then
