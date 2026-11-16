@@ -438,7 +438,7 @@ EOF
   web_start
 }
 
-@test "routes ws-start and ws-stop: place and hours when given, else the conf's; a bad name, place or hours is 400" {
+@test "routes ws-start and ws-stop: place and hours when given, else the conf's; the stop detaches; a bad name, place or hours is 400" {
   wsfold
   run act ws-start '{"name": "svc", "place": "runpod", "hours": "2"}'
   [ "${lines[1]}" = 200 ]
@@ -448,7 +448,13 @@ EOF
   grep -q $'\tvibe ws start svc --place=runpod --hours=2\t0$' "$Q/actions.log"
   run act ws-stop '{"name": "svc"}'
   [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *"svc down"* ]] || false
+  [[ "${lines[0]}" == *"svc stops"* ]] || false
+  for _ in $(seq 50); do
+    if [ ! -e "$Q/workspaces/svc/stops" ]; then break; fi
+    sleep 0.1
+  done
+  [ ! -e "$Q/workspaces/svc/stops" ]
+  grep -q "^down " "$STUBS/place.log"
   run act ws-start '{"name": "svc"}'
   [ "${lines[1]}" = 200 ]
   [ "$(cat "$Q/workspaces/svc/place")" = turing ]
