@@ -101,7 +101,11 @@ by_name() {
 # id=pending: up wrote it before the create. Look the pod up by name until a list answers.
 if [ "$id" = pending ]; then
   if id="$(by_name)"; then
-    if [ -n "$id" ]; then echo "$id" >"$WS_STATE/id"; else rm -f "$WS_STATE/id"; fi
+    if [ -n "$id" ]; then
+      echo "$id" >"$WS_STATE/id"
+    elif [ "$(cat "$WS_STATE/id" 2>/dev/null)" = pending ]; then
+      rm -f "$WS_STATE/id" # an up that runs may have written the real id meanwhile: keep that
+    fi
   else
     id=pending
   fi

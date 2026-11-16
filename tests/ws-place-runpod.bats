@@ -10,7 +10,8 @@ setup() {
   STUB="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$STUB"
   # runpodctl: a pod exists while $STUB/pod does; its status is $STUB/status (default running);
-  # create-fail-after, create-text, list-fail, delete-fail and get-error change a reply.
+  # create-fail-after, create-text, list-fail, delete-fail and get-error change a reply;
+  # list-hook runs before a list reply.
   cat >"$STUB/runpodctl" <<'EOF'
 #!/bin/sh
 d="$(dirname "$0")"
@@ -22,6 +23,7 @@ case "$1 $2" in
     [ ! -f "$d/create-text" ] || { echo "created pod pod123"; exit 0; }
     echo '{"id":"pod123","desiredStatus":"RUNNING"}' ;;
   "pod list")
+    [ ! -f "$d/list-hook" ] || . "$d/list-hook"
     [ ! -f "$d/list-fail" ] || exit 1
     if [ -f "$d/pod" ]; then echo '[{"id":"pod123","name":"ws-tool"}]'; else echo '[]'; fi ;;
   "pod get")
@@ -148,6 +150,21 @@ pod_up() {
   run "$PLACE" tick
   [ "$status" -eq 0 ]
   [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "tick: an empty list never removes the id that a running up wrote meanwhile" {
+  mkdir -p "$WS_STATE"
+  echo pending >"$WS_STATE/id"
+  echo $(($(date +%s) + 3600)) >"$WS_STATE/limit"
+  echo "echo pod123 >'$WS_STATE/id'" >"$STUB/list-hook"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+  rm "$STUB/list-hook"
+  echo pending >"$WS_STATE/id"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
   [ ! -e "$WS_STATE/id" ]
 }
 
