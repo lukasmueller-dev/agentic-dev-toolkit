@@ -127,7 +127,7 @@ undo_up() {
 
 verb_up() {
   local now out secrets=/dev/null
-  case "$hours" in '' | *[!0-9]* | 0) die "hours must be a whole number above 0, not '$hours'" ;; esac
+  case "$hours" in '' | *[!0-9]* | 0*) die "hours must be a whole number above 0 with no leading zero, not '$hours'" ;; esac
   [ -n "${RUNPOD_GPU_ID:-}" ] || die "set RUNPOD_GPU_ID in $place_env"
   command -v jq >/dev/null || die "jq is missing: up cannot read the pod id"
   if [ -z "${WS_CONF_IMAGE:-}" ] || [ -z "${WS_CONF_COMMIT:-}" ]; then die "workspace.conf needs image and commit"; fi

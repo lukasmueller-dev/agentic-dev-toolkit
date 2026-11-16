@@ -201,9 +201,13 @@ pod_up() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"already up: pod pod123"* ]] || false
   rm "$WS_STATE/id"
-  WS_CONF_HOURS=0 run "$PLACE" up
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"hours must be"* ]] || false
+  local h
+  for h in 0 00 08; do
+    WS_CONF_HOURS="$h" run "$PLACE" up
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"hours must be"* ]] || false
+    [ ! -e "$WS_STATE/started" ]
+  done
   WS_CONF_KIND=run run "$PLACE" up
   [ "$status" -ne 0 ]
   [[ "$output" == *"no input"* ]] || false
