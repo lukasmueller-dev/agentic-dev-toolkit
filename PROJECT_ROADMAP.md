@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-09 · queue-verify-skills_
+_Last updated: 2026-11-16 · workspace bring-up_
 
 ## Items
 
@@ -51,3 +51,17 @@ staged straight from it. Order matters within a track; tracks are independent.
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
       Done when a smoke job's Write outside its worktree and job dir is
       refused, and its `result` and `report.md` still land.
+
+### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
+
+- [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
+      step 3 on turing (`tool=autoresearchclaw`, `hours=4`). The image and
+      `autoresearchclaw.env` exist; step 2 passed on 2026-11-16. Revoke the
+      token after the run.
+      Done when `out/result` starts with `done:` and the recipe holds what
+      the run proved wrong.
+- [ ] **First AutoResearch run** — at the first real use, queue recipe
+      step 5 on turing (`tool=autoresearch`). The image and `autoresearch.env`
+      (OpenRouter route) exist; `ar-preflight-mcp.sh` passed on 2026-11-16.
+      Done when `out/result` starts with `done:`, `out/files` holds the six
+      paths, and the recipe holds what the run proved wrong.
