@@ -33,6 +33,17 @@ if [ -f "$place_env" ]; then
 fi
 wait_s="${RUNPOD_WAIT:-600}"
 poll="${RUNPOD_POLL:-10}"
+# A bad number falls back to its default: it must never keep tick or down from the delete.
+case "$wait_s" in '' | *[!0-9]* | 0[0-9]*)
+  echo "runpod: RUNPOD_WAIT='$wait_s' is no whole number of seconds; 600 used" >&2
+  wait_s=600
+  ;;
+esac
+case "$poll" in '' | *[!0-9.]*)
+  echo "runpod: RUNPOD_POLL='$poll' is no number of seconds; 10 used" >&2
+  poll=10
+  ;;
+esac
 pull_s=300  # a pull on the tick path, or past the limit, stops after 5 min: each minute bills
 pull_end="" # the epoch that bound ends; empty: no bound (vibe ws stop before the limit)
 

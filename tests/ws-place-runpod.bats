@@ -236,6 +236,18 @@ pod_up() {
   [ ! -e "$STUB/pod" ]
 }
 
+@test "down: a RUNPOD_WAIT or RUNPOD_POLL that is no number falls back to its default and deletes" {
+  pod_up
+  printf '%s\n' RUNPOD_WAIT=10m RUNPOD_POLL=1s >>"$HOME/.config/vibe/places/runpod.env"
+  run "$PLACE" down
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RUNPOD_WAIT='10m' is no whole number"* ]] || false
+  [[ "$output" == *"RUNPOD_POLL='1s' is no number"* ]] || false
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
 @test "down: a failed pull still deletes the pod" {
   pod_up
   touch "$STUB/rsync-fail"
