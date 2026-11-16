@@ -76,9 +76,8 @@ The header of `workspaces/_places/runpod` lists the other `RUNPOD_*` keys and th
 ## 6. Start
 
 ```bash
-grep '^places=runpod' workspaces/<name>/workspace.conf   # a service starts at the first place in places
-grep '^hours=[1-9]' workspaces/<name>/workspace.conf     # one line: a pod always has a limit
-vibe ws start <name>
+grep '^places=.*runpod' workspaces/<name>/workspace.conf   # one line: runpod is one of its places
+vibe ws start <name> --place runpod --hours <n>            # a pod always has a limit; no --hours: the conf's hours
 ```
 
 A queue job names `place=runpod` and `hours=<n>` instead. At the limit, `vibe ws tick` copies the data back and deletes the pod.
