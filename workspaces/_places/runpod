@@ -217,7 +217,7 @@ verb_down() {
     echo "runpod: pull failed; deleting pod $id anyway" >&2
     rc=1
   }
-  [ ! -S "$WS_STATE/tunnel.sock" ] || ssh -S "$WS_STATE/tunnel.sock" -O exit pod 2>/dev/null || true
+  ssh -S "$WS_STATE/tunnel.sock" -O exit pod 2>/dev/null || true # no tunnel: ssh fails, nothing else
   if ! destroy; then
     echo 0 >"$WS_STATE/limit" # the next tick deletes again
     rc=1

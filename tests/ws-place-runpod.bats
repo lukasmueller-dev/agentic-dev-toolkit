@@ -37,13 +37,13 @@ case "$1 $2" in
   *) exit 2 ;;
 esac
 EOF
-  # ssh: keeps what it gets on stdin for `cat >`; a /ws/scripts/ command prints and exits 7;
+  # ssh: -O check answers 0 while $STUB/tunnel-up exists; keeps what it gets on stdin for `cat >`; a /ws/scripts/ command prints and exits 7;
   # -N leaves a child on its stdout and stderr, as `ssh -f` does.
   cat >"$STUB/ssh" <<'EOF'
 #!/bin/sh
 d="$(dirname "$0")"
 echo "$*" >>"$d/ssh.log"
-case "$*" in *"-O check"*) exit 255 ;; esac
+case "$*" in *"-O check"*) [ -f "$d/tunnel-up" ] || exit 255; exit 0 ;; esac
 case "$*" in *" -N "*) sleep 3 3>&- & ;; esac
 case "$*" in *"cat >"*) cat >>"$d/ssh.stdin" ;; esac
 case "$*" in *"/ws/scripts/"*) echo "script ran"; exit 7 ;; esac
@@ -297,6 +297,37 @@ pod_up() {
   run "$PLACE" down
   [ "$status" -eq 0 ]
   [ "$(grep -c -- '--stop-after=5 root@' "$STUB/rsync.log")" -eq 2 ]
+}
+
+@test "up: a TERM in the wait for ssh deletes the pod" {
+  local pid rc=0
+  echo initializing >"$STUB/status"
+  printf '%s\n' RUNPOD_GPU_ID=gpu RUNPOD_WAIT=30 RUNPOD_POLL=0.1 >"$HOME/.config/vibe/places/runpod.env"
+  "$PLACE" up >/dev/null 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 100); do
+    if grep -q '^pod get' "$STUB/runpodctl.log" 2>/dev/null; then break; fi
+    sleep 0.1
+  done
+  kill -TERM "$pid"
+  wait "$pid" || rc=$?
+  [ "$rc" -eq 1 ]
+  grep -qx 'pod delete pod123 --output json' "$STUB/runpodctl.log"
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "url reuses a live tunnel; down closes it" {
+  pod_up
+  touch "$STUB/tunnel-up"
+  run "$PLACE" url
+  [ "$status" -eq 0 ]
+  [ "$output" = "http://100.64.0.1:20999" ]
+  run grep -q -- ' -M ' "$STUB/ssh.log"
+  [ "$status" -eq 1 ]
+  run "$PLACE" down
+  [ "$status" -eq 0 ]
+  grep -q -- "-S $WS_STATE/tunnel.sock -O exit pod" "$STUB/ssh.log"
 }
 
 @test "exec passes stdout and the exit code; url tunnels the first port to the tailnet address" {
