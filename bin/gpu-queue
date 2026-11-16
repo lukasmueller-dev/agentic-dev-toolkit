@@ -12,6 +12,7 @@
 #                                   (a stop of gpu-queue run cancels its running job too)
 #
 # --then gets GPUQ_EXIT, GPUQ_LOG and GPUQ_JOB. Docs: docs/vibe-queue.md.
+# shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
 usage() {
@@ -182,12 +183,16 @@ cmd_status() {
   done
 }
 
-case "${1:-}" in
-  submit | run | lock | status | cancel)
-    cmd="$1"
-    shift
-    "cmd_$cmd" "$@"
-    ;;
-  -h | --help | help) usage ;;
-  *) usage 1 ;;
-esac
+# One group ending in exit: bash never reads this file again after the command (an edit mid-run made gpu-queue exit 2).
+{
+  case "${1:-}" in
+    submit | run | lock | status | cancel)
+      cmd="$1"
+      shift
+      "cmd_$cmd" "$@"
+      ;;
+    -h | --help | help) usage ;;
+    *) usage 1 ;;
+  esac
+  exit
+}

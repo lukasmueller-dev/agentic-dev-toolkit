@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# stop: TERM run and wait until it has written result and files/. /ws/data stays.
+set -euo pipefail
+
+pidfile="${TMPDIR:-/tmp}/ws-run.pid"
+[ -f "$pidfile" ] || exit 0
+pid="$(cat "$pidfile")"
+kill -TERM "$pid" 2>/dev/null || exit 0
+# run forwards TERM to the tool; timeout -k 60 in run kills it for good after 60 s. No KILL from here.
+for _ in $(seq 150); do
+  if [ ! -e "$pidfile" ] || ! kill -0 "$pid" 2>/dev/null; then exit 0; fi
+  sleep 1
+done
+echo "stop: run $pid is still alive after 150 s" >&2
+exit 1

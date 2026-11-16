@@ -64,3 +64,7 @@ Each looks like a real failure and is not. Symptom → fix.
 - `git stash push` writes the commit but not `refs/stash` → compare against `git show HEAD:<path>` instead of stashing.
 - `git worktree prune` fails on placeholder files → run it unsandboxed.
 - Docker `permission denied` on `/var/run/docker.sock` in an interactive session → run the repo's Docker gate alone (no `cd`, redirect or `$(...)`); no gate entry in the repo → ask for the unsandboxed retry. In a vibe job both fail → skip Docker; the runner runs `.vibe-jobs/gate` after you.
+
+# Vendored pstack skills
+
+When a skill links `../../docs/harness/claude-code.md`, read `$(dirname "$(readlink ~/.claude/CLAUDE.md)")/../docs/pstack-adapter.md` instead. Read it for `blast-radius` too.

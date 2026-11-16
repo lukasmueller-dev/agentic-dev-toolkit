@@ -135,10 +135,21 @@ post() {
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
-  grep -qF "if (busy || \$('#queue .armed')) return;" "$Q/web/page.js"
-  grep -qF "closest('#queue button[data-act]')" "$Q/web/page.js"
+  grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
+  # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
+  grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "b.closest('.md') ||" "$Q/web/page.js"
+  run grep -F "'#queue " "$Q/web/page.js"
+  [ "$status" -eq 1 ]
+  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The poll writes only to nodes held at load: a code fence alone gives <pre class="filter"> in a .md.
+  grep -qF "for (const [s, live] of parts)" "$Q/web/page.js"
+  grep -qF "filter.after(...g);" "$Q/web/page.js"
+  [ "$(grep -c "\$('.filter'" "$Q/web/page.js")" = 2 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
-  grep -qF "out.scrollIntoView({ block: 'nearest' });" "$Q/web/page.js"
+  grep -qF "if (v !== view) return;" "$Q/web/page.js"
+  grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
+  grep -q '<dialog id="panel">' "$Q/web/index.html"
   grep -q 'body.can .acts' "$Q/web/index.html"
 }
 
@@ -146,10 +157,36 @@ post() {
   run "$REPO_ROOT/bin/vibe" queue page
   [ "$status" -eq 0 ]
   grep -q "Content-Security-Policy\" content=\"default-src 'self'; script-src 'self';" "$Q/web/index.html"
+  # A panel .md keeps raw tags: no frame of the live page; only listed attributes, so no refresh and no style.
+  grep -q "frame-src 'none'; object-src 'none';" "$Q/web/index.html"
+  grep -qF "d.querySelectorAll('style')" "$Q/web/page.js"
+  grep -qF "/^(href|src|alt|title|type|checked|start)\$/" "$Q/web/page.js"
   grep -q '<script src="/queue/page.js"></script>' "$Q/web/index.html"
   [ "$(grep -c '<script' "$Q/web/index.html")" = 1 ]
   run grep -q "script-src[^;]*unsafe" "$Q/web/index.html"
   [ "$status" -eq 1 ]
+}
+
+@test "vibe queue page: a Tools list of the instances from the state files alone; none with no instance" {
+  local w="$Q/workspaces" lim f="$Q/web/index.html"
+  lim=$(($(date +%s) + 3600))
+  printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
+  printf '#!/bin/sh\ncat\n' >"$STUBS/pandoc"
+  chmod +x "$STUBS/docker" "$STUBS/pandoc"
+  "$REPO_ROOT/bin/vibe" queue page
+  run grep -c '## Tools' "$f"
+  [ "$output" = 0 ]
+  mkdir -p "$w/ds" "$w/old"
+  echo turing >"$w/ds/place"
+  echo c1 >"$w/ds/id"
+  echo http://100.64.0.1:8080 >"$w/ds/url"
+  echo "$lim" >"$w/ds/limit"
+  echo turing >"$w/old/place"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<div class="md">## Tools' "$f"
+  grep -qF -- "- **ds** up · turing · until $(date -d "@$lim" '+%F %H:%M' 2>/dev/null || date -r "$lim" '+%F %H:%M') http://100.64.0.1:8080" "$f"
+  grep -qF -- '- **old** down · turing</div>' "$f"
+  [ ! -e "$STUBS/docker.log" ]
 }
 
 @test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
@@ -424,7 +461,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "${lines[1]}" = 400 ]
 }
 
-@test "vibe queue ready: refuses a failing check and SPEC.md or HANDOFF.md in the diff; then marks no PR ready" {
+@test "vibe queue ready: refuses a failing check and SPEC.md, RESEARCH.md or HANDOFF.md in the diff; then marks no PR ready" {
   printf 'SUCCESS\nFAILURE\n' >"$STUBS/checks"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
@@ -433,7 +470,10 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   printf 'a.txt\nSPEC.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"still holds SPEC.md or HANDOFF.md"* ]] || false
+  [[ "$output" == *"still holds SPEC.md, RESEARCH.md or HANDOFF.md"* ]] || false
+  printf 'RESEARCH.md\n' >"$STUBS/files"
+  run "$REPO_ROOT/bin/vibe" queue ready "$URL"
+  [ "$status" -eq 1 ]
   printf 'HANDOFF.md\n' >"$STUBS/files-8"
   printf 'templates/HANDOFF.md\n' >"$STUBS/files"
   run "$REPO_ROOT/bin/vibe" queue ready "$URL" https://github.com/o/proj/pull/8
@@ -579,6 +619,21 @@ no_slot() {
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
+@test "vibe queue roadmap: without --full each item is its title, a long one cut at 80; a bad flag is refused" {
+  local r long
+  r="$(make_repo proj)"
+  long="$(printf 'x%.0s' {1..90})"
+  printf -- '- [ ] **Item one** — do it.\n      Done when `make check` passes.\n- [ ] %s\n' "$long" >"$r/PROJECT_ROADMAP.md"
+  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
+  run "$REPO_ROOT/bin/vibe" queue roadmap "$r"
+  [ "$status" -eq 0 ]
+  [ "$output" = "1: Item one"$'\n'"3: ${long:0:80}…" ]
+  run "$REPO_ROOT/bin/vibe" queue roadmap --all "$r"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'usage: vibe queue roadmap [--full] <repo>'* ]] || false
+}
+
+# shellcheck disable=SC2016  # Markdown backticks, not expansions
 @test "route roadmap: the open items of origin's PROJECT_ROADMAP.md with their line; roadmap-new queues one" {
   local r n
   r="$(make_repo proj)"
@@ -588,7 +643,7 @@ no_slot() {
   git -C "$r" commit -q -am local
   run act roadmap "{\"repo\": \"$r\"}"
   [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'5: Item one\n8: Item two has no done-when.'* ]] || false
+  [[ "${lines[0]}" == *'5: **Item one** '*'Done when `make check` passes.\n8: Item two has no done-when.'* ]] || false
   [[ "${lines[0]}" != *'Local only'* ]] || false
   run act roadmap-new "{\"repo\": \"$r\", \"line\": \"8\", \"branch\": \"item-two\"}"
   [[ "${lines[0]}" == *'"code": 1'*'no done-when'* ]] || false
@@ -615,7 +670,7 @@ optin() {
   r="$(make_repo proj)"
   optin "$r" codebase-health
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">Run codebase-health</button></div>" "$Q/web/index.html"
+  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">codebase-health</button></div>" "$Q/web/index.html"
   mkdir -p "${f%/*}" && echo 2 >"$f"
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF '<button data-act="reset">Reset codebase-health</button>' "$Q/web/index.html"
@@ -670,7 +725,7 @@ optin() {
   run act opt-in "{\"repo\": \"$r\", \"job\": \"repo-review\"}"
   [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"roadmap\">Roadmap</button><button data-act=\"worktrees\">Worktrees</button><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
   grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
   run grep -q 'opt in: [^"]*repo-review' "$Q/web/index.html"
   [ "$status" -eq 1 ]
@@ -687,7 +742,7 @@ optin() {
   printf -- '- [ ] **A** — a. Done when `a` passes.\n- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
   run act roadmap "{\"repo\": \"$r\"}"
-  [[ "${lines[0]}" == *'1: A\n2: B'* ]] || false
+  [[ "${lines[0]}" == *'1: **A** '*'2: **B** '* ]] || false
   # A merged PR deletes the finished item A: B moves up to line 1.
   printf -- '- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" commit -q -am "drop A" && git -C "$r" push -q origin main
@@ -807,7 +862,7 @@ optin() {
   [ "${lines[1]}" = 400 ]
   echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="worktree-remove" data-ask="path" data-confirm' "$Q/web/index.html"
+  grep -qF "action('Remove', 'worktree-remove', { data: { confirm: '' } })" "$Q/web/page.js"
 }
 
 @test "route sync: vibe sync --all pushes a worktree's new branch" {
@@ -876,6 +931,28 @@ get() {
   run "$REPO_ROOT/bin/vibe" queue page
   grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
   grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
+}
+
+@test "route job/<id>/<file>?html: a .md through pandoc under the API's CSP; without pandoc escaped; other files stay text" {
+  local d="$Q/queue/$ID" bin="$BATS_TEST_TMPDIR/nopandoc"
+  qjob "$ID" "done"
+  printf '# the report\n\n<i>raw</i> **bold**\n' >"$d/report.md"
+  echo "gate ok" >"$d/gate.log"
+  run get "/queue/api/job/$ID/report.md?html"
+  [[ "$output" == *'<h1>the report</h1>'*'<strong>bold</strong>'*$'\n200' ]] || false
+  run curl -s -D - -o /dev/null -H 'Tailscale-User-Login: me@example.com' "http://127.0.0.1:$PORT/job/$ID/report.md?html"
+  [[ "$output" == *"Content-Type: text/html; charset=utf-8"*"nosniff"*"Content-Security-Policy: default-src 'none'"* ]] || false
+  run get "/job/$ID/gate.log?html"
+  [ "${lines[0]}" = "gate ok" ]
+  run req GET "/job/$ID/report.md?html"
+  [ "${lines[1]}" = 403 ]
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\nexit 1\n' >"$bin/pandoc"
+  chmod +x "$bin/pandoc"
+  PATH="$bin:$PATH" web_start
+  run get "/job/$ID/report.md?html"
+  [[ "$output" == '<pre># the report'*'&lt;i&gt;raw&lt;/i&gt; **bold**'*'</pre>'$'\n200' ]] || false
 }
 
 @test "routes: output that is not UTF-8 still gets a reply and a log line" {

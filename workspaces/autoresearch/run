@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# run: AutoResearch on /ws/in/brief.md; the result paths go to /ws/out/files.
+set -euo pipefail
+
+# A rented place starts run over ssh, which may not carry the image ENV: claude needs IS_SANDBOX as root, python3 needs the venv.
+export IS_SANDBOX=1 PATH="/opt/venv/bin:$PATH"
+
+ws="${WS_ROOT:-/ws}"
+rt="${AR_RUNTIME:-/opt/autoresearch/ar-runtime}"
+proj="$ws/data/project"
+pidfile="${TMPDIR:-/tmp}/ar-supervisor.pid"
+stopflag="${TMPDIR:-/tmp}/ar-stop"
+hours="${WS_HOURS:-}"
+out="$ws/out"
+
+mkdir -p "$out"
+# Any abort leaves a result line, so the queue never sees only an exit code.
+finish() {
+  local st=$?
+  if [ ! -s "$out/result" ]; then echo "failed: run aborted, exit $st" >"$out/result"; fi
+  rm -f "$pidfile" "$stopflag"
+}
+trap finish EXIT
+rm -f "$stopflag"
+# stop reads this pid: run's own, so stop waits for the result, not only for the supervisor.
+echo $$ >"$pidfile"
+
+# The secrets file is KEY=VALUE data: read it, never source it.
+if [ -f "$ws/secrets.env" ]; then
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *=*) ;; *) continue ;; esac
+    key="${line%%=*}"
+    case "$key" in '' | [0-9]* | *[!A-Za-z0-9_]*) continue ;; esac
+    export "$key=${line#*=}"
+  done <"$ws/secrets.env"
+fi
+
+# The tool's MCP preflight needs the Claude Code settings that render_env.py writes from these env values.
+if ! (cd "$rt/.." && python3 scripts/render_env.py); then
+  echo "failed: scripts/render_env.py did not write the Claude Code settings" >"$out/result"
+  exit 0
+fi
+
+# A stop that came during the setup ends the run before the paid start.
+if [ -e "$stopflag" ]; then
+  echo "failed: stopped before the supervisor started" >"$out/result"
+  exit 0
+fi
+
+# The supervisor changes directory: both paths must be absolute.
+cd "$rt"
+# The place counts hours from the start of up (a rented place waits for ssh) and its down pulls at the limit.
+# shortcut: fixed margin, the container gets no limit epoch; use the epoch when ws-surface passes one.
+deadline=$(($(date +%s) + hours * 3600 - ${AR_LIMIT_MARGIN:-1800}))
+scripts/ar-supervisor.sh "$ws/in/brief.md" "$proj" 8 "${hours}h" &
+pid=$!
+
+# TERM at WS_HOURS or on `stop` lets the supervisor stop its attempt and seal the manifest.
+# KILL follows after the grace, so run never outlasts the limit by more than that.
+cut=""
+kill_at=0
+while kill -0 "$pid" 2>/dev/null; do
+  now="$(date +%s)"
+  if [ -z "$cut" ]; then
+    if [ "$now" -ge "$deadline" ]; then
+      cut="stopped at the limit"
+    elif [ -e "$stopflag" ]; then
+      cut="stopped"
+    fi
+    if [ -n "$cut" ]; then
+      kill -TERM "$pid" 2>/dev/null || true
+      kill_at=$((now + ${AR_KILL_GRACE:-60}))
+    fi
+  elif [ "$now" -ge "$kill_at" ]; then
+    kill -KILL "$pid" 2>/dev/null || true
+    break
+  fi
+  sleep 1
+done
+rc=0
+wait "$pid" || rc=$?
+
+mkdir -p "$out/files"
+for p in results review.md critic.md blind_review.md state.md decisions.log; do
+  if [ -e "$proj/$p" ]; then cp -R "$proj/$p" "$out/files/"; fi
+done
+
+# A run that was cut is never done:, whatever exit code the supervisor returns.
+if [ -n "$cut" ]; then
+  echo "failed: $cut, supervisor exit $rc" >"$out/result"
+elif [ "$rc" -eq 0 ]; then
+  echo "done: AutoResearch finished, files/ holds the results" >"$out/result"
+else
+  echo "failed: supervisor exit $rc" >"$out/result"
+fi
+{
+  echo "# AutoResearch"
+  echo
+  cat "$out/result"
+  if [ -f "$proj/results/summary.md" ]; then
+    printf '\n## results/summary.md (the tool'\''s claim, not checked)\n\n'
+    cat "$proj/results/summary.md"
+  fi
+} >"$out/report.md"

@@ -6,9 +6,9 @@ and refill it whenever you like.
 
 | Skill | Does |
 | --- | --- |
-| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; big work grilled into a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
-| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, or a feature; your approval; `vibe queue add` |
-| [`/review-jobs`](../skills/review-jobs/SKILL.md) | a fresh briefing; features first; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
+| [`/fill-queue`](../skills/fill-queue/SKILL.md) | shows the queue; up to 3 research proposals; big work grilled into a `RESEARCH.md`, a `SPEC.md` or a feature; sweep, gate, lanes, your approval; `vibe queue add` |
+| [`/enqueue`](../skills/enqueue/SKILL.md) | the one item just discussed: a prompt, a `SPEC.md` branch for big work, a research job, or a feature; your approval; `vibe queue add` |
+| [`/review-jobs`](../skills/review-jobs/SKILL.md) | the report of `vibe queue report`; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
 | 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |
@@ -25,7 +25,6 @@ and refill it whenever you like.
 ```bash
 mkdir -p ~/.config/vibe
 printf '%s\n' thesis pncbf humanoid_bridge >~/.config/vibe/repos   # the sweep, highest rank first
-echo ~/knowledge-lab/_inbox/agent-briefings >~/.config/vibe/briefing-dir   # optional: briefing copies
 ```
 
 `~/.config/vibe/queue.conf`, optional — the defaults:
@@ -37,10 +36,12 @@ review_trivial=20
 review_model=sonnet
 review_level=high
 review_timeout=1h
-after=review
+after=review       # code: /code-review only, no lean-review; empty: no review
 memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
 web_login=         # your tailnet login; empty: every page write gets 403
+pr_login=          # the GitHub login whose /fix starts a fix job; empty: gh's login
+steer=             # 1: vibe queue steer reaches a running session; read at each session start
 ```
 
 Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
@@ -60,16 +61,21 @@ systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
 Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
-There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
+There `vibe queue status|report`, `vibe job list` and `vibe ws list|status` run on the server; other `queue`, `job` and `ws` commands stop.
 
 ## 3. Phone page
 
-The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue, Briefing and Config (settings, `vibe job list`), `pandoc` if present.
+The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
-At 1024 px and wider, the page is 15% larger and shows Queue and Briefing side by side.
+The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups, then `Tools`: the lines of `vibe ws status`, from state files only.
+At 1024 px and wider, the page is 15% larger and an open panel is a right column.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
 A feature card is a stack too: it unpacks into a lane, job or `no job` card per member.
+Each job and lane card has one phase line, also in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
+✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
+Gate and PR drop once the chain's last job ended without them. A lane card shows its running job's chain, else the latest one.
+A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`, or `/code-review` with `after=code`.
 The header and the chips count `to review` as PRs (one per URL in a `pr` file; a lane or a review chain is one) and `no PR` as ended jobs without a URL (a report-only job too). A `done` job is covered by a URL on its branch, and waits while a job there is queued or running; a failed or blocked job always counts. The `to review` chip links your open `agent` PRs on GitHub.
 Serve it on the tailnet once:
 
@@ -90,40 +96,49 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
 - Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config tab shows the last 20.
 - Buttons, routes and commands: [Page actions](#page-actions).
+- Output and file links open in one panel: a bottom sheet on the phone, a right column from 1024 px.
+- A `.md` in the panel keeps raw tags: `style` elements go, and every attribute except `href`, `src`, `alt`, `title`, `type`, `checked`, `start`. Its buttons do nothing; CSP blocks scripts and frames.
 - The nav links `claude.ai/code` for a new session.
 - Body args are checked against a fixed pattern (`ARGS` in `bin/vibe-web`); an absent or bad one → 400, nothing runs.
 
 ## 4. Verify
 
 ```bash
-vibe queue status                                   # header, then per repo each job on two lines; a branch with 2+ jobs is one row: done/total, running or next item, PR
-vibe queue report --week                            # the briefing + a Sunday section: per repo PRs merged, jobs run, blockers open (7 days)
+vibe queue status                                   # header, then per repo each job on two lines, then its phases; a branch with 2+ jobs is one row: done/total, running or next item, PR
+vibe queue report                                   # on stdout: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done, next actions
 journalctl --user -u vibe-queue -f                 # the runner's log
 vibe queue run --claude --drain                     # by hand, without the service: until nothing can start
 ```
 
 ## Rules the runner keeps
 
-- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job.
+- FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the report skip a final job that has a `pid` file and no `ended` file: its process still writes.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
-- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`; other keys and bad values are refused.
+- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
 - `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
+- `vibe queue steer <id> <text>` with `steer=1`: each session starts with `--input-format stream-json` and reads the FIFO `<job>/steer`. The running session gets the text as a user message at its next boundary. Its first result event ends the input; `vibe queue steer` refuses a text after it. A tool job's run: [Tool jobs](#tool-jobs).
 - `vibe queue unlimit` removes `limit`: jobs start again.
 - `vibe queue new <repo> <branch> <done-when> <task>`: a job from [`job-prompt.md`](../skills/fill-queue/references/job-prompt.md), source `new`. No done-when, or a job on the branch queued or running: refused.
 - `--line <n> <repo> <branch>`: the item at line `n` of the last `vibe queue roadmap <repo>` listing (its origin commit in `roadmap/`); refused when that item changed or left `origin/<default>` since. Its done-when is the text after `Done when`.
 - `--opt-in <job> <repo>`: branch `opt-in-<job>`; the agent runs `vibe job add` in its worktree and commits. The main checkout stays on the default branch.
 - Usage limit (a `rejected` `rate_limit_event` in the log): the job goes back to `queued` in its own worktree, nothing pushed; no job starts until the reset. The retry resumes the saved session.
-- Gate: after the agent (after the last review round when one is due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
+- Gate: after the agent (after the last review round and the verify step when due), before the PR, `bash -c` of `.vibe-jobs/gate` from a fresh fetch of `origin/<default>` — never from the job's branch — in the job's worktree, bounded by the job's `timeout`. Exit code and last 20 lines go to the PR body; a non-zero exit puts a `done` job under "Needs you". No gate file: no step.
 - A job pushes nothing itself; the runner pushes and opens a draft PR (label `agent`) when it committed, or replaces the body of the PR open on the branch.
+- A failed push writes `push failed` (git-lfs: `push failed (git-lfs: push by hand)`) to `pr`; a failed `gh pr create` writes `PR not created`. The `done` job shows under "Needs you" with that note, not under "Done". A failing gate keeps its row and gains the note. A feature member whose last `pr` holds either note shows it as its state, and the feature `needs you`.
+- Each runner git call on a job's tree, the checkout of a resumed branch and `vibe sync` run with `core.hooksPath=/dev/null` (`agent_git` in `skills/_lib/lib.sh`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed. `agent_push` refuses a push when `git-lfs` is installed and a commit to push adds or changes a path that `filter=lfs` maps (any `.gitattributes`, `.git/info/attributes`): the pre-push hook that uploads the LFS objects is off. A push that changes no LFS path goes through.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
-- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings); the job's own session fixes or rejects each finding.
+- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes. `after=code`: `/code-review` only, no `lean-review`; the `**Review:**` line ends `(/code-review only)`.
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
-- The last review round pushes and opens the PR. Its body carries one `R<n>:` line per round above `<details>`; findings and verdicts sit inside.
+- The last review round, or the verify step after it, pushes and opens the PR. Its body carries a `**Review:**` line above `<details>`: one `R<n>:` per round, then `V:`. Findings, verdicts and verify checks sit inside.
 - No `structured_output` → `R<n>: review failed`. A round past `review_timeout` → `R<n>: timeout`. The PR opens either way.
-- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off.
+- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off. `vibe queue add` refuses an `after=` other than `review`, `code` or empty.
+- Verify: `verify=app`, `blast-radius` or `app,blast-radius` (`/enqueue`, `/fill-queue` on request) queues `<id>-verify` after the last review round. A fresh read-only session runs `claude/vibe-verify.sh` with `review_model` and `review_timeout`.
+- `app` follows the repo's `.claude/skills/verify-*/SKILL.md` (a human writes it: `/create-verification-skill`); none → `V: no verify skill`. `blast-radius` follows the vendored skill.
+- Verify reports only: a moved HEAD or a changed tracked file → `V: dirty`: no gate, no push, no PR, and the worktree stays as it is. `V: fail`, `dirty`, `timeout` or `verify failed` put a `done` job under "Needs you", like a non-zero gate.
+- `vibe queue add` refuses `verify=` on a lane job, a job with no review, or another value.
 - A `SPEC.md` job that ticks a milestone and leaves one open queues the next, with the same prompt.
 - A restart of the service stops only the runner (`KillMode=process`); running jobs finish and write their own status.
 - Memory: each agent, and the gate, runs in its own systemd scope with `MemoryMax=<memory_max>`, no swap. Past it the kernel kills the biggest process in that scope; oomd picks one scope too. The agent killed: `failed`, `agent killed (SIGKILL)`; a test it ran: the agent sees the kill and goes on. Other jobs and the runner keep running. `memory_max` is read at runner start.
@@ -141,7 +156,7 @@ Related light items run as one lane: one branch, one PR, one row, one review.
 - `/review-jobs` retries an item out of the lane from the current tip: the lane branch while its PR is open, else `<branch>-<item>-retry` from the default branch. Its prompt names `git diff <start>..<side-branch>`.
 - After each item the runner writes the lane PR again: title and TL;DR from the latest done item's `pr.md`, a `<item> → <side-branch>` line per item out of the lane, one `<details>` per item.
 - The agent of each item gets `lane-pr.md` (the PR so far) and writes the title and TL;DR for the whole lane.
-- `vibe queue status` and the briefing show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you. A finished branch shows its newest job's TL;DR in the briefing (a GPU run's metric).
+- `vibe queue status` and the report show one row per branch with 2+ jobs (`3/5`); a job row only for a job that needs you. A finished branch shows its newest job's TL;DR in the report (a GPU run's metric).
 
 ## Features
 
@@ -149,20 +164,52 @@ Branches in several repos that merge together run as one feature: one file, one 
 A job still changes only its own repo. `/fill-queue` and `/enqueue` make features: [`references/feature.md`](../skills/fill-queue/references/feature.md).
 
 ```bash
-vibe feature add <dir>/<slug>.md   # checks each member branch, fills in the open PRs
+vibe feature add <dir>/<slug>.md   # checks each member path and branch, fills in the open PRs
 vibe feature ready <slug>          # the human test passed: the pill shows merge
 vibe feature archive <slug>        # all member PRs merged; refuses an open one
 vibe queue ready --feature <slug>  # each member PR checked, then ready, then feature ready
 ```
 
-- A member is a `- <repo> <branch>` line under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
+- A member is a `- <repo> <branch>` line (absolute repo path; `feature add` refuses a relative one) under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
 - A member is one job, a lane, a `SPEC.md` chain, or a PR with no job. Its `SPEC.md` holds only its milestones and a pointer to the feature file.
 - At job start the runner adds a `## Feature` block to a member's prompt, once: the file path and the contract rule. A contract change ends the job `blocked: contract …`.
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
-- Status, the briefing and the page show a `Features` group first. Member jobs leave their repo groups; in the briefing a member job keeps its row only when it needs you.
+- Status, the report and the page show a `Features` group first. Member jobs leave their repo groups; in the report a member job keeps its row only when it needs you.
 - Count: done members / members. Done: a PR, and no job queued, running or in need of you.
-- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
+- Pill, first match: `needs you` (a member job held, blocked, failed, timed out or skipped, or done with a failed gate; a member whose last `pr` is `push failed` or `PR not created`; a member with no job and no PR), `running`, `queued`, `your test`, `merge` (`<slug>.ready`).
 - No cross-repo gate: the human test in the file is the integration check.
+
+## Research jobs
+
+An open question with a metric, a budget and a backlog of experiments runs as one job. The agent picks each next run from the last result.
+`/enqueue` makes one: route Research. `/fill-queue` proposes up to 3 from each repo's open questions and metric items; a picked one goes through that route.
+
+- Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
+- Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.
+- The loop is the GPU chain: each session ends `queued:` after `vibe queue gpu`; the follow-up session closes that run and queues the next one.
+- The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
+- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
+- The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
+- Kind `gpu` only; no lane, no `SPEC.md` chain.
+- shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
+
+## Tool jobs
+
+An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
+`/enqueue` makes one: route Tool run. Contract: [`docs/workspaces.md`](workspaces.md).
+
+- Keys, input and output files: [Queue job](workspaces.md#queue-job). `place=` defaults to the first of its `places`, `hours=` to its `hours`.
+- At start the runner checks the tool's conf, its secrets, `kind=run`, the place and `hours`. A fail ends the job `failed` with the reason, before the worktree.
+- The run: instance `<tool>-<id>`, `/ws/in/repo` a clone of the job's worktree. `hours=` limits it; `timeout=` limits the closing session. `gpu=yes` on turing: under the `gpu-queue` lock.
+- One `gpu=yes` tool job on turing runs its tool at a time. The next one stays `queued` and takes no slot.
+- After the run the runner removes each link from `out/`. No `out/result` → `failed`. An `out/result` of `failed: …` → `failed` with that line, no closing session.
+- `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
+- `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
+- The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command; a tool commit that changes the metric fails the job. Review, gate and PR as for any job.
+- `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
+- `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
+- Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
+- shortcut: the run has no memory limit (`MEM_CMD` covers sessions and gates only); add one at the place when a tool runs the machine out of RAM.
 
 ## Page actions
 
@@ -189,17 +236,17 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Done job with a PR: Fix | `fix` | `vibe queue fix <pr> <text>` |
 | Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
 | Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
-| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (last 64 KB) as text |
+| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `log` (last 64 KB) as text, in the panel; `.md` with `?html` rendered |
 | Repo header: Merge order | `merge-order` | `vibe queue merge-order <repo>` |
 | Feature in `your test`: Test passed: ready ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
 | New work: New job | `new` | `vibe queue new <repo> <branch> <done> <task>` |
-| New work: Roadmap | `roadmap` | `vibe queue roadmap <repo>` |
-| New work: From roadmap | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
+| New work: Roadmap | `roadmap` | `vibe queue roadmap --full <repo>` |
+| Roadmap row in the panel: Queue | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
 | New work: Opt in | `opt-in` | `vibe queue new --opt-in <job> <repo>` |
 | New work: Worktrees | `worktrees` | `cleanup.sh scan <repo>` |
-| New work: Remove worktree ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
-| Recurring job: Run `<job>` | `run` | `vibe job run <repo> <job>` |
+| Merged or prunable row in the panel: Remove ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
+| Run recurring: `<job>` | `run` | `vibe job run <repo> <job>` |
 | Stopped recurring job: Reset `<job>` | `reset` | `vibe job reset <repo> <job>` |
 
 Not on the page: merge, single-PR ready or close, the `run-ci` label, prompt edits.
@@ -208,6 +255,7 @@ Add a route or a button:
 
 - Route: one line in `ROUTES` (`bin/vibe-web`). A body arg is a `"{name}"` slot at an arg's end (`claude-rc@{server}`) plus a pattern in `ARGS`. `TOOLS` maps argv[0] to an argv prefix (`cleanup.sh` runs with `bash`).
 - Button: `<button data-act="<route>" [data-confirm] [data-ask="<arg> …" title="<question>|…"]>` in a `<div class="jacts" data-<arg>="…">` inside `#queue`. page.js sends each `data-*` of the nearest `.jacts`, plus one prompt per asked arg.
+- Order in a group: read-only buttons, write buttons, then `<hr>` and the `data-confirm` buttons (`btn_rows` in `bin/vibe`). A group is a grid of equal cells.
 - The CSP runs only `page.js`: no inline `<script>` or `onclick`.
 - A `<details>` inside `#queue` needs a `.repo h2` and a `.job b` above it: page.js keys its open state on them.
 - vibe-web runs each command with `VIBE_WEB=1` and kills it after 120 s (`VIBE_WEB_TIMEOUT`).
@@ -218,7 +266,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `context=` `lane=` `item=` `now=` `follow=` `after=` `review=` `review_model=`; the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
@@ -228,10 +276,12 @@ Add a route or a button:
 | `queue/<id>/agent-pid`, `stop` | the running agent's pid; `vibe queue stop` asked to stop it |
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
+| `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
+| `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
+| `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
 | `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |
-| `briefings/<date>-<HHMM>.md` | `vibe queue report`: header (ends with `limit 5h: …`), "Yours", triage lines, per repo Needs you → PR ready → Done (a branch with 2+ jobs is one row), next actions, `--week`: "Week since" section |
 | `web/index.html`, `page.js` | the phone page, rewritten each runner pass (`templates/queue-page.*`); its CSP runs only `page.js` |
 | `paused` | `vibe queue pause` |
 | `roadmap/<repo path, / as %>` | the origin commit `vibe queue roadmap` listed; `new --line` reads it |
@@ -247,6 +297,8 @@ unsandboxed retry, no push to `main`/`master`, no `gh pr merge`. File tools
 GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
 [`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, job
 `<id>-gpu` continues on the same branch with the exit code and log.
+A `gpu-queue` run that no job's `gpu-job` names (a manual `submit`) shows in a `GPU` block of `vibe queue status` and the page: elapsed time, dir, last log line, command, `then`, wandb link.
+The block adds the 3 latest `finished/` runs (exit code, end time) and the `held/` and `parked/` runs (`gpu-queue` does not write those dirs yet); only running and queued runs count in "on the GPU".
 
 ```bash
 gpu-queue status                      # queued, running, finished (exit code)
@@ -256,7 +308,7 @@ gpu-queue cancel <id>                 # drop a queued run, TERM a running one; t
 
 ## Cost per job
 
-The PR footer line and the briefing row end with the job's size, from the last `result` event of `queue/<id>/log`:
+The PR footer line and the report row end with the job's size, from the last `result` event of `queue/<id>/log`:
 
 ```text
 ≈$1.04 API · ≈2% 5h est. · 40 turns · 11m
@@ -270,8 +322,8 @@ The PR footer line and the briefing row end with the job's size, from the last `
 
 - Interactive sessions are not in the sum, so the share is too high.
 - No share when `resetsAt` changes during the job, the log has under two events, or a job that overlaps has no `result` event.
-- The footer is written at publish: a job still running then has no `result` event, so the briefing row can show a share the footer lacks.
-- The briefing header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
+- The footer is written at publish: a job still running then has no `result` event, so the report row can show a share the footer lacks.
+- The report header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
 
 ## What breaks it
 
@@ -279,12 +331,15 @@ The PR footer line and the briefing row end with the job's size, from the last `
 - Every job `failed`, log says the sandbox cannot start → AppArmor blocks bwrap; add its profile (code.claude.com/docs/en/sandboxing).
 - A job `failed`, note `agent killed (SIGKILL)` → past its memory cap, or oomd under memory pressure; raise `memory_max=` or lower `slots=`, then restart the runner.
 - `no systemd user manager` in the runner log → `systemd-run --user --scope true` fails there; jobs run uncapped in the service's cgroup, where one oomd kill takes them all.
+- A research job ended `failed` or `timeout` between two runs → `vibe queue retry <id>`; the new session reads `RESEARCH.md` and `HANDOFF.md` and goes on.
 - A job `failed`, note `job process died twice` → the process died on both runs (reboot, oomd); read `runner.log` and `log`, then queue it again.
 - A job `skipped`, note `uncommitted changes` → that worktree is dirty; commit or clean it.
+- Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A push that adds or changes an LFS-tracked file: the runner and `vibe sync` refuse it (`git-lfs: push by hand`) → push the branch yourself.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
 - Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
 - `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
 - No buttons on the page → `vibe-web.service` down, no `/queue/api` serve path, or `web_login` is not your login: `journalctl --user -u vibe-web`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
+- `vibe queue steer` prints `takes no steer now` → the session started before `steer=1`, or its first turn ended; `steer=1` acts from the next session on.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

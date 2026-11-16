@@ -6,9 +6,16 @@ source jt-proofreading cf2f0d716e7b98434609d2621af4e3b6acd690e2 2026-10-06
 source jt-writing-simple-style 886d9dee45fad6045a23366b4a3a3a5fa3ed4f6d 2026-10-06
 source jt-writing-assistance fcf7efe4e6b627bfb40d066bba06095373eab74b 2026-10-06
 source jt-literature-review 1d5a1b8ac43ec1879ffcfc037b290dfd5bd463e7 2026-10-06
+source cursor-plugins 6b0300214a09fd6029cfb7077043125758cd1fd2 2026-11-07
 skill mattpocock skills/productivity/grilling grilling 28aceb4c9567b985cb47f7db88cf23c9f33af8b8
 skill mattpocock skills/productivity/grill-me grill-me 3df14e2d3a89459bf300614be9247e3ce74798f8
 skill jt-proofreading . proofread 23562a566f47751dbab0a334ce0a1679a796e8ba
 skill jt-writing-simple-style . writing-simple-style 654a6590e600907ea7f48de55d1f53e9c197e1b9
 skill jt-writing-assistance . writing-assistance 08f85a025b0d80f207b245a785c10c58ee73ec4e
 skill jt-literature-review . literature-review 2b6c35a10bb2c759d46578468487f5d50b35071d
+skill cursor-plugins harness/pstack/claude-code/skills/create-verification-skill create-verification-skill 1ccf2d6f2f4c1bec790ed3105a55d8a5fce5b173
+skill cursor-plugins harness/pstack/claude-code/skills/maintain-verification-skill maintain-verification-skill 958fcc735f9f15e18907cf00831160bbcde0b534
+skill cursor-plugins harness/pstack/claude-code/skills/blast-radius blast-radius 9437b18aef01b61d24b57d0fd3de24386398b643
+skill cursor-plugins harness/pstack/claude-code/skills/unslop unslop 4e572dd70e5557f490e3991c52ea58f0dcee8936
+skill cursor-plugins harness/pstack/claude-code/skills/correct correct 5ebee6f7fe9cd7f97b1c698dbbf4f19ed8c4c5f4
+skill cursor-plugins thermos/skills/thermo-nuclear-code-quality-review thermo-nuclear-code-quality-review d9c8935dd560b3b6f5941247d04a1843f8c7cc35

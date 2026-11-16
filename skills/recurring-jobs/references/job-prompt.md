@@ -30,6 +30,7 @@ You run unattended, on a schedule. Nobody reads a question until a human reviews
 9. Obey the repo's instruction file (`CLAUDE.md`, `AGENTS.md`).
 10. Prefer the cut: the smallest change that does the job; delete before you add.
 11. Kind gpu: queue the run from this worktree: `vibe queue gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
+12. Prose: `Read` `~/.claude/skills/unslop/SKILL.md` (the `Skill` tool refuses it). Apply it to the lines you write in `pr.md`, `report.md` and docs, not to lines you leave unchanged. The repo's writing rules win over unslop: keep label lines (unslop rule 16), table rows and `symptom → fix` traps (unslop rule 33).
 
 ## Before you exit
 

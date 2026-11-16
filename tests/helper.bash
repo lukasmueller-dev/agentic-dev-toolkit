@@ -64,6 +64,19 @@ make_repo() {
   printf '%s' "$work"
 }
 
+# hook_files REPO MARKER HOOK... — commit and push .githooks/HOOK in REPO's main; each hook appends
+# its name to MARKER. The test sets `core.hooksPath .githooks` (relative) itself, after its own git calls.
+hook_files() {
+  local repo="$1" marker="$2" h
+  shift 2
+  mkdir -p "$repo/.githooks"
+  for h in "$@"; do
+    printf '#!/bin/sh\necho %s >>"%s"\n' "$h" "$marker" >"$repo/.githooks/$h"
+    chmod +x "$repo/.githooks/$h"
+  done
+  git -C "$repo" add .githooks && git -C "$repo" commit -q -m "chore: hooks" && git -C "$repo" push -q origin main
+}
+
 # A second clone of the same remote, to create divergence between two copies.
 clone_repo() {
   local name="$1" as="$2"

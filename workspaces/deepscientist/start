@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# start — run the DeepScientist daemon detached; the login token stays in $DATA/runtime/daemon.json.
+set -euo pipefail
+
+# A place's exec channel (ssh) may not carry the image ENV: claude needs the PATH, and root needs IS_SANDBOX.
+export PATH="/opt/ds/node_modules/.bin:$PATH" IS_SANDBOX=1
+
+ROOT="${WS_ROOT:-/ws}"
+DATA="$ROOT/data"
+SEED="${DS_SEED:-/opt/ds-seed}"
+PORT="${DS_PORT:-20999}"
+
+mkdir -p "$DATA/runtime"
+# The image's first-launch download sits in $SEED/runtime; a mounted $DATA hides it. Link it in on every start.
+# A real directory already there stays: the launcher rebuilt the env, or a pull followed the links.
+for e in "$SEED"/runtime/*; do
+  if [ ! -e "$e" ]; then
+    echo "start: no seed in $SEED/runtime" >&2
+    exit 1
+  fi
+  n="$DATA/runtime/${e##*/}"
+  if [ -L "$n" ] || [ ! -e "$n" ]; then
+    ln -sfn "$e" "$n"
+  fi
+done
+
+# The daemon prints the login token into $DATA/logs/daemon.log: link that one file out of /ws/data, which `pull` copies.
+# The rest of logs/ is connector state (offsets, cursors) and stays. `ln -f` drops a real daemon.log from an older start, with its token.
+mkdir -p "$DATA/logs"
+ln -sfn "${TMPDIR:-/tmp}/ds-daemon.log" "$DATA/logs/daemon.log"
+
+if [ ! -r "$ROOT/secrets.env" ]; then
+  echo "start: $ROOT/secrets.env is missing" >&2
+  exit 1
+fi
+set -a
+# shellcheck source=/dev/null
+. "$ROOT/secrets.env"
+set +a
+
+# The launch card prints the login token: keep its log out of /ws/data, which `pull` copies.
+log="$(mktemp "${TMPDIR:-/tmp}/ds-start.XXXXXX")"
+# --auth true stays: without it the API takes shell input from anyone who reaches the port.
+if ! ds --daemon-only --no-browser --host 0.0.0.0 --port "$PORT" --auth true \
+  --runner claude --skip-update-check --home "$DATA" >"$log" 2>&1; then
+  ds --stop --home "$DATA" || true
+  # The token is 16 hex digits: redact them.
+  tail -n 20 "$log" | sed -E 's/[0-9a-fA-F]{16,}/<redacted>/g' >&2
+  rm -f "$log"
+  exit 1
+fi
+rm -f "$log"
+
+tok="$(jq -r '.auth_token // empty' "$DATA/runtime/daemon.json" || true)"
+if [ -z "$tok" ]; then
+  echo "start: daemon has no auth token; stopping it" >&2
+  ds --stop --home "$DATA" || true
+  exit 1
+fi
+chmod 600 "$DATA/runtime/daemon.json"

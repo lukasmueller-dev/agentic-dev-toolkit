@@ -52,11 +52,17 @@ script_dir() {
   cd -P "$(dirname "$s")" && pwd
 }
 
-memory="$(script_dir)/../../memory/GLOBAL.md"
+root="$(cd -P "$(script_dir)/../.." && pwd)"
+memory="$root/memory/GLOBAL.md"
 [[ -f "$memory" ]] || exit 0
 
 content="$(cat "$memory" 2>/dev/null || true)"
 [[ -n "$content" ]] || exit 0
+
+# claude/CLAUDE.md holds this pointer in the symlink install; it is not loaded here.
+content+="
+
+When a skill links \`../../docs/harness/claude-code.md\`, read \`$root/docs/pstack-adapter.md\` instead. Read it for \`blast-radius\` too."
 
 jq -n --arg ctx "$content" \
   '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# start: checks the checkout's .env, renders its settings, brings the compose stack up detached and waits on its health check.
+set -euo pipefail
+# shellcheck source=workspaces/hypothesisloop/hloop.sh
+. "$(dirname "${BASH_SOURCE[0]}")/hloop.sh"
+
+[[ -f "$HLOOP_REPO/.env" ]] || hl_die "no $HLOOP_REPO/.env: copy .env.example there and fill it in"
+# Unset or empty, the tool rents on vast and runpod (lib_cloud_providers): a listed entry is the consent.
+[[ -n "$(hl_key CLOUD_COMPUTE_PROVIDERS)$(hl_key CLOUD_COMPUTE_PROVIDER)" ]] ||
+  hl_die "$HLOOP_REPO/.env does not set CLOUD_COMPUTE_PROVIDERS: unset, the tool rents on vast and runpod; list the providers you agree to rent on"
+sandbox="$(hl_key SANDBOX_PROVIDER | tr '[:lower:]' '[:upper:]')"
+# cloudrun takes no account key (config.SandboxTakesKey).
+[[ "$sandbox" != CLOUDRUN ]] || sandbox=""
+missing=""
+# OBJECT_STORE_MINIO_SECRET_ACCESS_KEY: render-settings writes no empty key, and control-service then fails at start.
+for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHROPIC_OAUTH_TOKEN GIT_HOST_PROVIDER LOCAL_REACHABLE_ADDRESS OBJECT_STORE_MINIO_SECRET_ACCESS_KEY; do
+  [[ -n "$(hl_key "$key")" ]] || missing="$missing $key"
+done
+[[ -z "$missing" ]] || hl_die "$HLOOP_REPO/.env does not set:$missing"
+# plain: the git server and the registry run under make dev only (localdev/dev.sh, local.mk controlplane-up).
+for key in GIT_HOST_PROVIDER CONTAINER_REGISTRY_PROVIDER; do
+  [[ "$(hl_key "$key")" != plain ]] ||
+    hl_die "$HLOOP_REPO/.env sets $key=plain, whose server runs under make dev only: see docs/workspaces/hypothesisloop.md"
+done
+# Compose publishes on an IP only; 100.64.0.0/10 (the tailnet) keeps out a host name, 0.0.0.0 and a LAN address.
+HLOOP_BIND="$(hl_key LOCAL_REACHABLE_ADDRESS)"
+[[ "$HLOOP_BIND" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}$ ]] ||
+  hl_die "$HLOOP_REPO/.env sets LOCAL_REACHABLE_ADDRESS=$HLOOP_BIND: start needs the tailnet IPv4 in 100.64.0.0/10 (tailscale ip -4)"
+TAG="$(cat "$HLOOP_REPO/localdev/.image-tag" 2>/dev/null || true)"
+[[ -n "$TAG" ]] || hl_die "no $HLOOP_REPO/localdev/.image-tag: build the images by docs/workspaces/hypothesisloop.md"
+# The compose file at the commit of workspace.conf: compose.tailnet.yml binds the ports of that file only.
+HL_COMPOSE_SHA256=4905c446dcad210db4241e02bcac6a75d165d8c9aefd8126bc82ace7e79bd742
+sum="$(if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi <"$hl_compose_file" || true)"
+[[ "${sum%% *}" == "$HL_COMPOSE_SHA256" ]] ||
+  hl_die "$hl_compose_file differs from the commit in workspace.conf, and compose.tailnet.yml binds the ports of that file only: check out that commit"
+
+# TAG: the settings name the tag compose runs, not the tag of the working tree.
+make -C "$HLOOP_REPO" -s render-settings TAG="$TAG"
+for image in control-service metrics-service; do
+  docker image inspect "$HL_REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
+    hl_die "no image $HL_REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
+done
+# A failed start, or one the 120 s limit ends (TERM, then KILL 10 s later), takes its containers down:
+# for runs=host the place's down does not touch compose, and vibe calls no stop then.
+trap 'hl_compose down >/dev/null 2>&1 || echo "error — compose down failed: run $hl_dir/stop"' EXIT
+trap 'exit 1' TERM INT
+# Not the registry: this host already holds the images, and the registry serves remote clusters only.
+hl_compose up -d postgres greptimedb memgraph minio control-service metrics-service
+# 45 s: up -d already waited on the stores, and start must return in 120 s.
+if ! curl -fs -o /dev/null --max-time 5 --retry 45 --retry-delay 1 --retry-max-time 45 --retry-all-errors "$HL_HEALTH"; then
+  hl_compose logs --tail 20 control-service || true
+  hl_die "the control service did not answer $HL_HEALTH within 45 s: its last log lines are above"
+fi
+trap - EXIT

@@ -514,6 +514,14 @@ fake_repo() {
   [ "$status" -eq 0 ]
 }
 
+@test "memory: the pstack adapter pointer resolves from the installed link" {
+  "$INSTALL" claude >/dev/null
+  # The pointer derives the checkout from this link, so it holds wherever the repo lives.
+  run grep -qF 'readlink ~/.claude/CLAUDE.md' "$HOME/.claude/CLAUDE.md"
+  [ "$status" -eq 0 ]
+  [ -f "$(dirname "$(readlink "$HOME/.claude/CLAUDE.md")")/../docs/pstack-adapter.md" ]
+}
+
 @test "memory: doctor FAILs when the import is gone" {
   "$INSTALL" claude >/dev/null
   # stand a real file at the managed path, without the import line
@@ -565,7 +573,7 @@ fake_repo() {
   local f
   for f in templates/HANDOFF.md templates/PROJECT_STATUS.md \
     templates/PROJECT_ROADMAP.md templates/job-pr.md templates/job-report.md \
-    templates/VIBE_JOB.md templates/SPEC.md templates/FEATURE.md; do
+    templates/VIBE_JOB.md templates/SPEC.md templates/RESEARCH.md templates/FEATURE.md; do
     # existence first: grep exits 2 on a missing file, which '-ne 0' accepts as
     # readily as "no match", so a rename would retire the check silently.
     [ -f "$REPO_ROOT/$f" ]
@@ -580,7 +588,7 @@ fake_repo() {
     "$REPO_ROOT"/templates/HANDOFF.md "$REPO_ROOT"/templates/PROJECT_STATUS.md \
     "$REPO_ROOT"/templates/PROJECT_ROADMAP.md "$REPO_ROOT"/templates/job-pr.md \
     "$REPO_ROOT"/templates/job-report.md "$REPO_ROOT"/templates/VIBE_JOB.md \
-    "$REPO_ROOT"/templates/SPEC.md "$REPO_ROOT"/templates/FEATURE.md \
+    "$REPO_ROOT"/templates/SPEC.md "$REPO_ROOT"/templates/RESEARCH.md "$REPO_ROOT"/templates/FEATURE.md \
     "$REPO_ROOT"/templates/codebase \
     "$REPO_ROOT"/templates/research
   [ "$status" -ne 0 ] || {
@@ -680,6 +688,47 @@ EOF
   jq -e 'has("model") | not' "$f"
 }
 
+# denied CMD — a Bash(...) deny rule in the baseline matches CMD.
+# `*` spans spaces; `:*` ends at a word boundary, so `-f:*` misses `-fu`.
+denied() {
+  local rule pat
+  while IFS= read -r rule; do
+    pat="${rule#Bash(}"
+    pat="${pat%)}"
+    case "$pat" in
+      *:\*)
+        pat="${pat%:\*}"
+        case "$1" in "$pat" | "$pat "*) return 0 ;; esac
+        ;;
+      *)
+        # shellcheck disable=SC2254
+        case "$1" in $pat) return 0 ;; esac
+        ;;
+    esac
+  done < <(jq -r '.permissions.deny[] | select(startswith("Bash("))' "$REPO_ROOT/claude/settings.json")
+  return 1
+}
+
+@test "claude settings: git push with a combined force flag is denied, -u alone is not" {
+  local c
+  for c in \
+    "git push -f origin x" "git push origin x -f" \
+    "git push -fu origin x" "git push -uf origin x" \
+    "git push origin x -fu" "git push origin x -uf" \
+    "git push origin -fu x" "git push origin -uf x"; do
+    denied "$c" || {
+      echo "not denied: $c" >&2
+      return 1
+    }
+  done
+  for c in "git push -u origin x" "git push origin feature" "git push -u origin fix-uf"; do
+    if denied "$c"; then
+      echo "denied by mistake: $c" >&2
+      return 1
+    fi
+  done
+}
+
 @test "claude settings: unions sandbox arrays instead of replacing them" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'
@@ -693,6 +742,24 @@ EOF
   jq -e '.sandbox.network.allowedDomains | index("github.com")' "$HOME/.claude/settings.json"
   jq -e '.sandbox.excludedCommands | index("docker *")' "$HOME/.claude/settings.json"
   jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: a retired entry is deleted from a live file that held it" {
+  mkdir -p "$HOME/.claude"
+  cat >"$HOME/.claude/settings.json" <<'EOF'
+{ "sandbox": { "excludedCommands": ["git fetch *", "docker *"] } }
+EOF
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  # `git fetch --upload-pack=<cmd> .` would run <cmd> outside the sandbox
+  jq -e '.sandbox.excludedCommands | index("git fetch *") | not' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("docker *")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
+  # fetch still runs without a prompt, now inside the sandbox
+  jq -e '.permissions.allow | index("Bash(git fetch:*)")' "$HOME/.claude/settings.json"
+  jq -e '.sandbox.excludedCommands | index("git fetch *") | not' "$REPO_ROOT/claude/settings.json"
+  run "$INSTALL" claude
+  [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
 }
 
 @test "claude settings: a sandbox array only in the live file is left alone" {

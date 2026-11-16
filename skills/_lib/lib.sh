@@ -96,8 +96,8 @@ worktree_dir() { echo "$(main_repo_root)/.claude/worktrees/$1"; }
 
 # ff_main_quiet MAIN — best-effort fast-forward of MAIN's checked-out branch
 # to its upstream, right before a new task branch is cut from MAIN's HEAD.
-# Never refuses: a dirty tree, no upstream, or a failed fetch/merge is
-# skipped. Untracked files are ignored — .claude/worktrees/ is one.
+# A dirty tree, no upstream or a failed fetch is skipped. A failed merge stops
+# the caller with git's error. Untracked files are ignored — .claude/worktrees/ is one.
 ff_main_quiet() {
   local main="$1"
   [[ -z "$(git -C "$main" status --porcelain --untracked-files=no 2>/dev/null)" ]] || return 0
@@ -107,10 +107,40 @@ ff_main_quiet() {
   base="$(git -C "$main" merge-base @ '@{u}' 2>/dev/null)" || return 0
   [[ "$base" == "$(git -C "$main" rev-parse @)" ]] || return 0
   [[ "$base" != "$(git -C "$main" rev-parse '@{u}')" ]] || return 0
-  local branch
+  local branch err
   branch="$(git -C "$main" rev-parse --abbrev-ref HEAD 2>/dev/null)" || return 0
-  git -C "$main" merge -q --ff-only '@{u}' 2>/dev/null &&
-    info "fast-forwarded $branch before branching"
+  err="$(git -C "$main" merge -q --ff-only '@{u}' 2>&1)" ||
+    die "cannot fast-forward $branch; a new branch would start from a stale HEAD: $err"
+  info "fast-forwarded $branch before branching"
+}
+
+# agent_git ARGS — git with hooks off, for each unsandboxed call on a tree an agent wrote:
+# a relative core.hooksPath would run the agent's hook with the user's credentials.
+agent_git() { git -c core.hooksPath=/dev/null "$@"; }
+
+# lfs_push_paths DIR REMOTE REF — the paths filter=lfs maps that REF adds or changes and
+# REMOTE lacks. shortcut: attributes come from DIR's work tree, so a .gitattributes REF changes is missed.
+lfs_push_paths() {
+  agent_git -C "$1" log --cc --name-only --format= --diff-filter=d "$3" --not "--remotes=$2" -- 2>/dev/null |
+    agent_git -C "$1" check-attr --stdin filter 2>/dev/null | grep ': filter: lfs$' || true
+}
+
+# agent_push DIR ARGS REMOTE REFSPEC — `git push` from DIR with hooks off. Refused when git-lfs
+# is installed and the commits to push add or change an LFS path: the pre-push hook that uploads
+# the LFS objects is off, so only pointers would land. A refusal sets LFS_REFUSED=1.
+agent_push() {
+  local dir="$1" remote="" ref="" a
+  shift
+  for a in "$@"; do remote="$ref" ref="$a"; done
+  ref="${ref#+}"
+  LFS_REFUSED=""
+  if command -v git-lfs >/dev/null 2>&1 && [[ -n "$(lfs_push_paths "$dir" "$remote" "${ref%%:*}")" ]]; then
+    # shellcheck disable=SC2034 # read by bin/vibe
+    LFS_REFUSED=1
+    echo "git-lfs: not pushed from $dir (hooks off) — push it by hand" >&2
+    return 1
+  fi
+  agent_git -C "$dir" push "$@"
 }
 
 # ensure_worktree MAIN BRANCH DIR [BASE] — create DIR as a worktree for BRANCH.
@@ -119,16 +149,17 @@ ff_main_quiet() {
 # instead of shadowed by a fresh branch off HEAD); new branch off BASE when it
 # resolves (untracked, so it never pushes to BASE); new branch off HEAD. Only
 # the last case calls ff_main_quiet: the others do not depend on MAIN's HEAD.
+# The first two check out a branch an agent may have written: hooks off.
 ensure_worktree() {
   local main="$1" branch="$2" dir="$3" base="${4:-}"
   mkdir -p "$(dirname "$dir")"
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
-    git -C "$main" worktree add "$dir" "$branch"
+    agent_git -C "$main" worktree add "$dir" "$branch"
   else
     git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch" ||
       git -C "$main" fetch -q origin "$branch" >/dev/null 2>&1 || true
     if git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-      git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
+      agent_git -C "$main" worktree add --track -b "$branch" "$dir" "origin/$branch"
     elif [[ -n "$base" ]] && git -C "$main" rev-parse -q --verify "$base^{commit}" >/dev/null; then
       git -C "$main" worktree add --no-track -b "$branch" "$dir" "$base"
     else
@@ -219,12 +250,12 @@ publish_handoff() {
     fi
   done
 
-  git -C "$dir" add HANDOFF.md
-  if [[ -n "$(git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
-    git -C "$dir" commit -q -m "$msg"
+  agent_git -C "$dir" add HANDOFF.md
+  if [[ -n "$(agent_git -C "$dir" status --porcelain -- HANDOFF.md)" ]]; then
+    agent_git -C "$dir" commit -q -m "$msg"
     info "committed the handoff"
   fi
-  git -C "$dir" push -q -u origin "$branch" || die "$push_hint"
+  agent_push "$dir" -q -u origin "$branch" || die "$push_hint"
   info "pushed '$branch' to origin"
   if git -C "$(main_repo_root)" worktree remove "$dir" 2>/dev/null; then
     info "removed the staging worktree — '$branch' is free to check out"

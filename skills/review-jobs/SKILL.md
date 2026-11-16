@@ -1,27 +1,27 @@
 ---
 name: review-jobs
-description: "Reviews the finished agent jobs in the queue: writes a fresh briefing, proposes one action per job that needs a human or has a PR ready — mark ready, answer and requeue, hold for the user, close, archive — one decision for a lane of jobs on one branch or a feature across repos, shows the features first and then the table grouped by repo, then walks the repos one at a time, carries out only the actions the user approves and gives the merge order; the user merges. Use when the user says 'review the jobs', 'what did the agents do', 'go through the briefing', 'merge the agent PRs', or wants the queue's results triaged."
+description: "Reviews the finished agent jobs in the queue: reads the report of `vibe queue report`, proposes one action per job that needs a human or has a PR ready — mark ready, answer and requeue, hold for the user, close, archive — one decision for a lane of jobs on one branch or a feature across repos, shows the features first and then the table grouped by repo, then walks the repos one at a time, carries out only the actions the user approves and gives the merge order; the user merges. Use when the user says 'review the jobs', 'what did the agents do', 'merge the agent PRs', or wants the queue's results triaged."
 disable-model-invocation: true
 ---
 
 # Review jobs
 
 Turn the finished jobs into decisions and carry them out. Queue layout and
-briefing: `docs/vibe-queue.md` in the toolkit.
+report: `docs/vibe-queue.md` in the toolkit.
 
 ## Hard boundaries — never do these
 
 - **Never merge a PR.** You mark it ready and give the merge order; the user merges.
 - **Never mark ready, close, comment, push or archive without approval of that repo's rows.**
 - **Never mark ready a PR whose checks fail**, or one the user has not seen the TL;DR of.
-- **Never mark ready a PR whose diff still holds `SPEC.md` or `HANDOFF.md`.**
+- **Never mark ready a PR whose diff still holds `SPEC.md`, `RESEARCH.md` or `HANDOFF.md`.**
 - **Never mark ready one PR of a feature alone.** All its PRs go ready together, after the user says the human test passed.
 - **Never change code.** You edit only a job's `HANDOFF.md`, with the user's words.
 - **Never archive a row you did not carry out.** A skipped row stays for the next review.
 
 ## Phase 1 — Read
 
-1. Run `vibe queue report` outside the sandbox. Read the briefing it printed.
+1. Run `vibe queue report` outside the sandbox. Read the report it printed.
 2. For each row under "Yours", "Needs you" and "PR ready", read what the row links:
    the job's `report.md`, the `## <job>` block (next action, blockers),
    and for a PR `gh pr view <url> --json title,body,isDraft,statusCheckRollup`.
@@ -37,12 +37,12 @@ One action per row:
 | --- | --- | --- |
 | `ready` | PR ready, checks pass or none, Verify line is a quick look | `gh pr ready`; the PR goes into the repo's merge order |
 | `requeue` | blocked on a decision the user can give now | writes the answer into the job's `HANDOFF.md`, commits, pushes, queues a follow-up job |
-| `hold` | needs the user: a big diff, hardware, judgment | `vibe queue hold <id> <note>`; the row leads every briefing under "Yours" |
+| `hold` | needs the user: a big diff, hardware, judgment | `vibe queue hold <id> <note>`; the row leads every report under "Yours" |
 | `close` | wrong direction or superseded | `gh pr close` with a one-line reason |
 | `ack` | a report to read, or nothing left to do | nothing; the row is archived |
 | `log` | `failed`, `timeout` | read the log tail; propose one of the actions above with the cause |
 
-Show the whole action table first, grouped by repo like the briefing: one
+Show the whole action table first, grouped by repo like the report: one
 `### <repo>` heading per repo, "Yours" rows first, then its rows as
 `# · job · status · context · TL;DR · action · why`. Do not ask for approval yet.
 
@@ -85,6 +85,9 @@ Take the features first. For each feature:
 3. After `ready`, give one merge order across repos, one line each:
    `<n>. <repo>#<pr> — <who merges> — <why here>`. A repo that owns a contract row merges before the repos with its copies.
    Who merges: the user, or the repo's owner when `gh repo view --json owner` names another account than `gh api user`.
+4. **Stop and wait before the next feature or repo.** Ask as in repo step 7:
+   "Next: `<feature>` (`<n>` members)?" After the last feature, ask for the first repo.
+   After yes, start at step 1 of the list for that feature or repo.
 
 Then take the repos one at a time, in table order. For each repo:
 
@@ -100,8 +103,9 @@ Then take the repos one at a time, in table order. For each repo:
    `<n>. #<pr> — <why here>`. Put a PR before the ones whose files it shares,
    smallest first, and name the PRs that can conflict after it. Give the
    merge method of the repo's last merges.
-
-Then go to the next repo.
+7. **Stop and wait before the next repo.** Ask only: "Next: `<repo>` (`<n>` rows)?"
+   That message holds no row, context, TL;DR or action of that repo. After the
+   user says yes, start at its step 1. On no, skip it; its rows stay for the next review.
 
 For `requeue` of a job without `side`: under `## Next action` and `## Blockers` of the job's
 `HANDOFF.md`, put the user's answer in place of the block. Commit
@@ -126,7 +130,7 @@ walked. It keeps its own approval gate. The user declines → stop.
 
 ## Done
 
-Done when every feature and repo is walked, its approved rows are carried out and
+Done when every feature and repo the user said yes to is walked, its approved rows are carried out and
 archived, and the cleanup is done or declined. Report in at most 6 lines:
 marked ready, requeued, held, closed, archived, worktrees removed, and
 `Decisions/risks:`.

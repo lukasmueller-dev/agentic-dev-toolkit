@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# run — not supported: DeepScientist is a service. Exit 3 is the contract's "verb not supported".
+exit 3

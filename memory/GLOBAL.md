@@ -9,6 +9,7 @@ architecture: `~/github/agentic-dev-toolkit/docs/artifact-architecture.md`.
 | Progress notes, end-of-task summary                    | chat (evaporates — nothing lives *only* here) |
 | Current task state, next action, blockers, gotchas     | `HANDOFF.md` — overwrite, never append   |
 | Spec of a big work item: goal, decisions, milestones   | `SPEC.md` at the worktree root — gone before the merge |
+| Work order of a research job: question, budget, ledger | `RESEARCH.md` at the worktree root — gone before the merge |
 | Why a change was made, alternatives rejected           | commit body — one line per reason        |
 | Task intent, what to verify, risks                     | PR description (detail in `<details>`)   |
 | Durable picture: goal, architecture, decisions         | `PROJECT_STATUS.md` (snapshot, not a log) |
@@ -128,16 +129,38 @@ Every deck: LaTeX beamer in the TU Darmstadt template (`tudabeamer`).
 - Before handing over: zero `Overfull` in the log; render the pages (`pdftoppm -r 50`) and look at them.
 - Commit the PDF and the `.tex`; the template stays in the thesis repo.
 
-# Prefer the cut
+# Least new code, whole task
 
-The smallest change that does the job wins. Before you add, ask what you can
-remove.
+Solve the whole task with the least new code. Stop at the first step that
+fully works:
 
+1. Not needed: skip the feature, option or flexibility nobody asked for, and
+   name it in one line.
+2. In the repo: reuse the helper, component or pattern, the way nearby code
+   does.
+3. In the standard library or the platform: use it, unless the repo has its
+   own.
+4. In an installed dependency: use it. Never add a dependency for a few lines.
+5. One line a reader gets at a glance.
+6. The minimum code that works.
+
+- Cut the solution, never the scope: fix every caller, test, fixture and
+  config the change breaks.
 - No layer, option, flag, fallback or abstraction for a case nobody has hit.
 - A fix that deletes code beats one that adds code.
 - Three similar lines beat a helper used once.
+- Bug fix: grep every caller first, then fix the root cause once, in the
+  shared code.
+- New non-trivial logic (a branch, a parser, money, security) gets one small
+  test.
+- A shortcut with a known limit gets a one-line comment:
+  `shortcut: <limit>, <when to upgrade>`.
 - When the ask is bigger than the problem, say so and propose the smaller
   version.
+
+Never cut: input checks at a trust boundary, error handling that stops data
+loss, security, accessibility, hardware calibration, anything the user asked
+for.
 
 # Working on the toolkit itself
 

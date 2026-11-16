@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# steer: not supported; idea.md is hash-bound and state.md is checked by the engine.
+echo "steer: AutoResearch reads no file that takes a note" >&2
+exit 3

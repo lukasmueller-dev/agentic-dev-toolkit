@@ -16,12 +16,13 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 
 | Component | What it is |
 | --- | --- |
-| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `queue` runs unattended agent jobs; `job` queues recurring ones. [Docs](docs/remote-sessions.md), [queue](docs/vibe-queue.md), [jobs](docs/vibe-jobs.md) |
+| [`bin/vibe`](bin/vibe) | One worktree per task in VS Code; `sync` carries it between machines; `queue` runs unattended agent jobs; `job` queues recurring ones; `ws` launches outside research tools. [Docs](docs/remote-sessions.md), [queue](docs/vibe-queue.md), [jobs](docs/vibe-jobs.md), [workspaces](docs/workspaces.md) |
 | [`bin/gpu-queue`](bin/gpu-queue) | One GPU job at a time across all repos; the vibe queue queues its runs here. [Docs](docs/vibe-queue.md) |
 | [`bin/plug`](bin/plug) | Vendors external skills into `vendor/skills/`, pinned in `plugins.lock`. [Docs](docs/vendoring-external-skills.md) |
 | [`bin/skill-lint`](bin/skill-lint) | Lints `SKILL.md` files. [Docs](docs/skill-lint.md) |
 | [`skills/`](skills/) | Agent Skills (open `SKILL.md` format, not agent-specific) |
 | [`templates/`](templates/) | The documents the tools emit — one copy each |
+| [`workspaces/`](workspaces/) | One folder per outside research tool, one script per place. [Docs](docs/workspaces.md) |
 | [`memory/GLOBAL.md`](memory/GLOBAL.md) | Global memory for every agent: where information goes, handoff discipline. [README](memory/README.md) |
 | [`claude/`](claude/) | Claude Code config: settings baseline (merged, not symlinked), `CLAUDE.md`, hooks, the Remote Control server unit |
 | [`.claude-plugin/`](.claude-plugin/) | The same skills and hooks as a Claude Code plugin, for sessions with no `$HOME`. [Docs](docs/plugin.md) |
@@ -38,6 +39,8 @@ cd ~/github/agentic-dev-toolkit && ./install.sh
 | [`research-experiment-setup`](skills/research-experiment-setup/) | Makes every run of a research project recorded, comparable and reported: 10 decision cards |
 | [`research-hardware-trial`](skills/research-hardware-trial/) | First hardware runs of a trained policy, through fixed safety gates |
 | [`implement-test-suite`](skills/implement-test-suite/) | Stands up or extends a test suite, plan-first |
+| [`lean-review`](skills/lean-review/) | Reviews one change: correct, safe, holds under load, tested, fast, lean; second pass of every queue review round |
+| [`lean-audit`](skills/lean-audit/) | The same rubric over a whole repo: ranked findings, no code changed |
 | [`commit-push-pr`](skills/commit-push-pr/) | Stage, commit, push, open a PR |
 | [`sync-with-main`](skills/sync-with-main/) | Rebases a topic branch onto a default branch that moved |
 | [`fill-queue`](skills/fill-queue/) | Sweeps the active repos for unattended work and adds it to the vibe queue after you approve |
@@ -65,7 +68,7 @@ claude --plugin-dir ~/github/agentic-dev-toolkit   # no $HOME: load as a plugin
 - Never deletes a real file: it moves to `~/.agentic-dev-toolkit-backups/<timestamp>/`.
 - Prunes its own dangling symlinks (a renamed skill) on every run.
 - Merges `claude/settings.json` with `jq`; your `model`, `effortLevel` and
-  permission rules stay.
+  permission rules stay. Entries on its `CLAUDE_SETTINGS_RETIRED` list are deleted.
 
 After installing:
 
@@ -82,7 +85,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
   · [research skills](docs/research-skills.md) · [vibe queue](docs/vibe-queue.md)
-  · [recurring jobs](docs/vibe-jobs.md)
+  · [recurring jobs](docs/vibe-jobs.md) · [workspaces](docs/workspaces.md) · [pstack adapter](docs/pstack-adapter.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

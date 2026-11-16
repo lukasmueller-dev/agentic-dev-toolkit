@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # sweep.sh [<repo>...] — the fill-queue planner's input, per repo in rank
-# order: goal, open roadmap items, handoff next actions, open PRs. Read-only.
+# order: goal, open questions, open roadmap items, handoff next actions, open PRs. Read-only.
 # A worktree whose branch has a job in the vibe queue is marked QUEUED.
 # Goal and roadmap come from origin's default branch after a fetch, not from
 # the checkout, so items a merged PR deleted do not come back.
@@ -84,6 +84,8 @@ sweep_repo() {
   if at_origin "$dir" "$ref" PROJECT_STATUS.md; then
     echo "## goal"
     md_section "$TMP/PROJECT_STATUS.md" Goal "    "
+    echo "## open questions"
+    md_section "$TMP/PROJECT_STATUS.md" "Open questions" "    "
   fi
   echo "## roadmap"
   if at_origin "$dir" "$ref" PROJECT_ROADMAP.md; then roadmap "$TMP/PROJECT_ROADMAP.md"; else echo "  no PROJECT_ROADMAP.md"; fi

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# steer "<text>": hand the text to the next stage that has not finished.
+set -euo pipefail
+# A rented place starts steer over ssh, which may not carry the image ENV: researchclaw lives in the venv.
+export PATH="/opt/venv/bin:$PATH"
+
+ws="${WS_ROOT:-/ws}" # shortcut: WS_ROOT is a test seam, the container has /ws
+run_dir="$ws/data/artifacts/${WS_INSTANCE:?WS_INSTANCE unset}"
+
+if [ $# -lt 1 ]; then
+  echo "usage: steer <text>" >&2
+  exit 2
+fi
+if [ ! -d "$run_dir" ]; then
+  echo "no run folder yet: $run_dir" >&2
+  exit 1
+fi
+
+last=0
+if [ -f "$run_dir/checkpoint.json" ]; then last="$(jq -r '.last_completed_stage // 0' "$run_dir/checkpoint.json")"; fi
+next=$((last + 1))
+if [ "$next" -gt 23 ]; then
+  echo "all 23 stages are done: nothing left to steer" >&2
+  exit 1
+fi
+# Stages 8, 9 and 17 read their own file. Stages 9, 14, 16, 17 and 21 quote every stage's file as context.
+case "$next" in
+  8 | 9 | 17) ;;
+  22 | 23) echo "warning: no stage after $((next - 1)) reads guidance; stage $next ignores the text" >&2 ;;
+  *) echo "warning: stage $next does not read the text itself; the stages among 9, 14, 16, 17 and 21 that run after it quote it, 1000 characters at most" >&2 ;;
+esac
+
+researchclaw guide "$run_dir" --stage "$next" --message "$1"
+echo "guidance handed to stage $next"
