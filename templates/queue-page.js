@@ -13,8 +13,10 @@
   const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces'].map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
+  /* A select's default: the option marked selected, else the first. */
+  const dflt = s => [...s.options].find(o => o.defaultSelected) || s.options[0];
   /* A field the user is in or changed from its default: the swap leaves its part, or its block, alone. */
-  const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value !== f.defaultValue));
+  const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));
   /* The panel block by block: one with a field in use stays, a changed one swaps, a gone one goes. True when one stayed. */
   const src = new WeakMap(); /* a live block -> the fetched HTML it came from */
   for (const b of blocks.children) src.set(b, b.outerHTML);
@@ -200,7 +202,7 @@
     try {
       const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
       done = r.ok && j.code === 0;
-      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; }); /* a field at its default frees its part for the swap */
+      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; }); /* a field at its default frees its part for the swap */
       if (v !== view) { /* a newer view is open */ }
       else if (!r.ok) say(`refused: ${j.error}`, true);
       else if (inner) say((done ? '' : `exit ${j.code}\n`) + j.out, !done);

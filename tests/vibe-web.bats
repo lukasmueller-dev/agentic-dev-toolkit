@@ -187,7 +187,9 @@ post() {
   grep -qF "if (!v) { x.focus(); return; }" "$js"
   grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
   # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
-  grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value !== f.defaultValue));" "$js"
+  grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));" "$js"
+  # A send resets a select to its default option too, so its part swaps again.
+  grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
   grep -qF "if (held(live)) { kept = true; continue; }" "$js"
   grep -qF "if (r.ok && !kept) last = t;" "$js"
   # The roadmap rows get a Branch slug field, not a prompt.
