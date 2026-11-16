@@ -107,7 +107,7 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
 - `pod <id> still exists; delete it with: …` → RunPod did not confirm the delete. The `id` file stays, so the next `vibe ws tick` tries again.
 - `pull failed; deleting pod <id> anyway` → the image has no `rsync`, or the pod died. `data/` holds the last good `pull`, at most 10 min old.
 - `stopping at requested limit` (rsync exit 30) or `pull ran past its bound of 300s` → a pull in `tick`, or in `down` past the limit, stops after 5 min.
-  The files it copied stay. `pulled` keeps the time of the last full pull.
+  A cut file stays in `.rsync-partial/`, and the next pull resumes it. `pulled` keeps the time of the last full pull.
 - `vibe ws stop` waits a long time → before the limit, `down` copies all of `/ws/data` with no time bound. `--timeout=60` ends only a dead link.
 - `no tunnel` and `ControlPath too long` in `tunnel.log` → `$WS_STATE/tunnel.sock` is over 104 characters. Use a short instance name.
 - A long `exec run` ends with no result → a dropped ssh ends the remote command with SIGPIPE. `tick` still pulls `/ws/data` until the limit.

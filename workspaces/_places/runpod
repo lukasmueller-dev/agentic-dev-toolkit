@@ -59,8 +59,8 @@ addr() {
 # shellcheck disable=SC2029 # the command is built for the remote shell
 rsh() { ssh "${sshargs[@]}" "$host" "$@"; }
 # shortcut: rsync -e takes no escaped quote, so a path with ' breaks it.
-# --timeout ends a copy over a dead link.
-rcopy() { rsync -a --timeout=60 -e "ssh $(printf "'%s' " "${sshargs[@]}")" "$@"; }
+# --timeout ends a copy over a dead link; --partial-dir keeps a cut file, so the next copy resumes it.
+rcopy() { rsync -a --timeout=60 --partial-dir=.rsync-partial -e "ssh $(printf "'%s' " "${sshargs[@]}")" "$@"; }
 
 ready() {
   [ "$(rp pod get "$id" 2>/dev/null | jq -r '.runtimeStatus // empty' 2>/dev/null)" = running ] &&

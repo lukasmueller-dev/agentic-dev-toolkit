@@ -291,6 +291,7 @@ pod_up() {
   run "$PLACE" tick
   [ "$status" -eq 0 ]
   [ "$(grep -c -- '--stop-after=5 root@' "$STUB/rsync.log")" -eq 2 ]
+  [ "$(grep -c -- '--partial-dir=.rsync-partial ' "$STUB/rsync.log")" -eq 2 ]
   rm "$STUB/rsync.log"
   echo $((now - 1)) >"$WS_STATE/limit"
   run "$PLACE" down
