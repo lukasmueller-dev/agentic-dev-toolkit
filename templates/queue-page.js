@@ -1,4 +1,4 @@
-/* Every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or text. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
+/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or text; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask; ⌘↵ in a field sends, Esc clears it.
@@ -13,8 +13,26 @@
   const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks'].map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
-  /* A field the user is in or typed into: the swap leaves its part alone. */
+  /* A field the user is in or typed into: the swap leaves its part, or its block, alone. */
   const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value));
+  /* The panel block by block: one with a field in use stays, a changed one swaps, a gone one goes. True when one stayed. */
+  const src = new WeakMap(); /* a live block -> the fetched HTML it came from */
+  for (const b of blocks.children) src.set(b, b.outerHTML);
+  const swapBlocks = part => {
+    let kept = false;
+    const got = [...part.children], ids = new Set(got.map(f => f.id));
+    for (const b of [...blocks.children]) if (!ids.has(b.id) && !held(b)) b.remove();
+    for (const f of got) {
+      const b = [...blocks.children].find(x => x.id === f.id), h = f.outerHTML;
+      if (b && held(b)) { kept = true; continue; }
+      if (b && src.get(b) === h) continue;
+      const open = b ? [...b.querySelectorAll('details[open]')].map(key) : [];
+      src.set(f, h);
+      if (b) b.replaceWith(f); else blocks.append(f);
+      f.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
+    }
+    return kept;
+  };
   /* base: the browser time at which the render was 0 s old; the browser clock only ever measures a span. */
   let last = '', busy = false, again = false, base = Date.now(), cur = '', view = 0;
   setInterval(() => {
@@ -48,6 +66,7 @@
         for (const p of parts) {
           const [s, live, was] = p, h = $(s, n).innerHTML;
           if (h === was) continue;
+          if (live === blocks) { if (swapBlocks($(s, n))) kept = true; else p[2] = h; continue; }
           if (held(live)) { kept = true; continue; } /* the next poll tries again */
           const open = [...live.querySelectorAll('details[open]')].map(key);
           live.innerHTML = h; p[2] = h;
@@ -67,7 +86,7 @@
     }
   };
   setInterval(poll, 10000);
-  who();
+  poll(); /* now too: until a fetch gives the server's Date, a page the runner stopped writing would read fresh */
   /* The output under the block: a button's answer or a file. */
   const out = (title, sub) => {
     $('strong', pout).textContent = title; $('.ph span', pout).textContent = sub;
