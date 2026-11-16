@@ -2034,6 +2034,32 @@ prim() {
   grep -qF '<div class="row" data-k="feature/fx"><i class="lamp l-bad"></i><a class="t" href="#job-feature/fx"><b>fx <span class="n">0/1</span></b><span class="why">cmdr · b17 blocked: which port?</span>' "$f"
 }
 
+@test "page: a running lane needs you while an item is blocked or a done item's gate failed; a held item leaves it in Running" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  endjob 18-a "$r" b18 "" "lane=Ports" item=alpha
+  echo blocked >"$Q/18-a/status"
+  echo "blocked: which port?" >"$Q/18-a/note"
+  mkjob 18-b "$r" b18 ok "lane=Ports" item=beta
+  echo running >"$Q/18-b/status"
+  "$VIBE" queue page >/dev/null
+  [[ "$(sec you)" == *'<div class="row" data-k="proj/b18"><i class="lamp l-bad"></i><a class="t" href="#job-proj/b18"><b>b18 <span class="n">'*'</span></b><span class="why">18-a blocked: which port?</span></a>'* ]] || false
+  [[ "$(sec run)" != *'data-k="proj/b18"'* ]] || false
+  grep -qF '<title>(1) vibe</title>' "$f"
+  # A done item whose gate failed, while the next item runs.
+  echo "done" >"$Q/18-a/status"
+  echo 2 >"$Q/18-a/gate"
+  "$VIBE" queue page >/dev/null
+  [[ "$(sec you)" == *'data-k="proj/b18"'*'<span class="why">18-a: gate exit 2</span>'* ]] || false
+  # A held item is yours already: the lane stays in Running.
+  rm "$Q/18-a/gate"
+  echo blocked >"$Q/18-a/status"
+  "$VIBE" queue hold 18-a "ask the robot team" >/dev/null
+  "$VIBE" queue page >/dev/null
+  [[ "$(sec run)" == *'<div class="row" data-k="proj/b18"><i class="lamp l-ok"></i>'* ]] || false
+  grep -qF '<h2>Needs you <span class="n">0</span></h2>' "$f"
+}
+
 @test "page: a running row shows a phase bar segment per phase, the running step's name, its run time and a tool's chip" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html" t
   r="$(make_repo proj)"

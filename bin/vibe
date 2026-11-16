@@ -2706,7 +2706,7 @@ item_why() {
 # The block (hidden; the panel shows it): lamp, state, title, meta line, then the item's status_card.
 page_row() {
   local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" bar="" el="" nm="" l c s e j fj="" body
-  local st="${3:-}" meta="" pre=""
+  local st="${3:-}" meta="" pre="" x
   case "$1" in
     repo)
       P_REPO="$2" P_PATH="${3:-}"
@@ -2731,16 +2731,26 @@ page_row() {
     *) sec="done" lamp="done" ;;
   esac
   if [[ "$1" == job && "$3" == held ]]; then why="$(jstate "$dir" held)"; fi
-  # A blocked lane or feature: its first blocking item is the reason, not the context.
-  if [[ "$sec/$lamp" == you/bad && ("$1" == lane || "$1" == feature) ]]; then
-    l="${9:-}"
-    if [[ "$1" == feature ]]; then l="$6"; fi
-    if [[ -n "$l" ]]; then why="$(item_why "${l%%$'\n'*}")"; fi
+  # A lane needs you while an item is blocked, failed, timed out or skipped, also while another item runs
+  # (report_rows lists that item on its own); a held item is in Held already. Its first such item is the reason.
+  if [[ "$1" == lane ]]; then
+    l=""
+    while IFS= read -r x; do
+      c="${x#*  }" && c="${c%% *}"
+      if [[ -n "$x" && "$c" != held ]]; then l="$x" && break; fi
+    done <<<"${9:-}"
+    if [[ -n "$l" ]]; then
+      sec=you lamp=bad why="$(item_why "$l")"
+    elif [[ "$3" == blocked ]]; then
+      sec=held lamp=held
+    fi
   fi
-  # A done job whose gate or verify failed needs you, in a lane too (report_rows lists it on its own).
+  # A feature that needs you: its first blocking member is the reason, not the context.
+  if [[ "$sec/$lamp/$1" == you/bad/feature && -n "$6" ]]; then why="$(item_why "${6%%$'\n'*}")"; fi
+  # A done job whose gate or verify failed needs you, in a lane too, also while it runs (report_rows lists it on its own).
   case "$1/$sec" in
     job/done) if checks_failed "$dir"; then fj="$dir"; fi ;;
-    lane/done | lane/queued)
+    lane/*)
       while IFS= read -r j; do
         if [[ -n "$j" && "$(jstate "$j" status)" == "done" && ! -f "$j/held" ]] && checks_failed "$j"; then fj="$j"; fi
       done <<<"${10}"
