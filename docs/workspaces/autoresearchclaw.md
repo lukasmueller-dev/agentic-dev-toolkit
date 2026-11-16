@@ -40,7 +40,10 @@ Queue a job on any repo (`/enqueue`, route Tool run) with `tool=autoresearchclaw
 Effect of L2 regularization strength on the test accuracy of a small MLP on the scikit-learn digits dataset
 ```
 
-While the run goes, `vibe queue steer <job id> "<text>"` reaches stages 8 and 9 only. `vibe queue stop <job id>` ends the pipeline.
+While the run goes, `vibe queue steer <job id> "<text>"` hands the text to the next stage.
+Stages 8, 9 and 17 read it as guidance. Stages 9, 14, 16, 17 and 21 also quote it as context, 1000 characters at most.
+A late text shapes the analysis and the paper, not the experiments that ran: check the paper against `code/`.
+`vibe queue stop <job id>` ends the pipeline.
 
 ## 4. Verify
 
@@ -62,7 +65,7 @@ The paper, its numbers and its citation counts are the tool's claim. Check them 
 - `failed: ended at stage <s> (<status>) …` → a stage failed. `files/` holds `deliverables/` only if the tool wrote it; the same holds after a stop or a kill.
 - `done:` with `1 failed` → `--skip-noncritical-stage` skipped a stage. The paper exists. The tool exits 1 after any failed stage, so `run` reads the summary instead.
 - `degraded=true` → a stage accepted a weaker result. Read `report.md` and the paper with care.
-- `steer` prints `only stages 8 and 9 read guidance` → by design. Any other stage ignores the text.
+- `steer` prints `stage <n> does not read the text itself` → by design. The later stages among 9, 14, 16, 17 and 21 quote it as context. Stages 22 and 23 ignore it.
 - `steer` exits 1 → no run folder yet, or all 23 stages are done.
 - No PDF in `files/` → the image has no LaTeX. `paper.tex` and `paper_final.md` are there; compile elsewhere.
 - Resume: `run` adds `--resume` when `checkpoint.json` exists. The queue removes an instance's state, `data/` included, when its job ends. A stop, the hour limit or a retry then starts at stage 1. Only a crash of the job process leaves the instance up, and its redo resumes.

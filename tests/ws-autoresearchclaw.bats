@@ -249,12 +249,26 @@ wait_for() {
   grep -qxF "arg=use fewer datasets" "$STUB_LOG"
 }
 
-@test "steer: before any checkpoint the next stage is 1, and a stage that reads no guidance is warned about" {
+@test "steer: before any checkpoint the next stage is 1; a stage that only quotes the text is warned, with the quoting stages" {
   mkdir -p "$RUN_DIR"
   run "$WSDIR/steer" "x"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"warning: only stages 8 and 9"* ]] || false
+  [[ "$output" == *"warning: stage 1 does not read the text itself"*"9, 14, 16, 17 and 21"* ]] || false
   grep -q -- '--stage 1 ' "$STUB_LOG"
+}
+
+@test "steer: stages 8, 9 and 17 read the text with no warning; stage 22 ignores it" {
+  mkdir -p "$RUN_DIR"
+  for n in 7 8 16; do
+    echo "{\"last_completed_stage\": $n}" >"$RUN_DIR/checkpoint.json"
+    run "$WSDIR/steer" "x"
+    [ "$status" -eq 0 ]
+    [[ "$output" != *warning* ]] || false
+  done
+  echo '{"last_completed_stage": 21}' >"$RUN_DIR/checkpoint.json"
+  run "$WSDIR/steer" "x"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"warning: no stage after 21 reads guidance; stage 22 ignores the text"* ]] || false
 }
 
 @test "steer: refuses when all stages are done, without text, and without a run folder" {

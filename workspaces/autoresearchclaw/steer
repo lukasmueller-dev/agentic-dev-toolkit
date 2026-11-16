@@ -21,9 +21,11 @@ if [ "$next" -gt 23 ]; then
   echo "all 23 stages are done: nothing left to steer" >&2
   exit 1
 fi
+# Stages 8, 9 and 17 read their own file. Stages 9, 14, 16, 17 and 21 quote every stage's file as context.
 case "$next" in
-  8 | 9) ;;
-  *) echo "warning: only stages 8 and 9 read guidance; stage $next ignores the text" >&2 ;;
+  8 | 9 | 17) ;;
+  22 | 23) echo "warning: no stage after $((next - 1)) reads guidance; stage $next ignores the text" >&2 ;;
+  *) echo "warning: stage $next does not read the text itself; the stages among 9, 14, 16, 17 and 21 that run after it quote it, 1000 characters at most" >&2 ;;
 esac
 
 researchclaw guide "$run_dir" --stage "$next" --message "$1"
