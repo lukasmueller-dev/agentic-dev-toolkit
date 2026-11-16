@@ -437,6 +437,17 @@ make_kit() {
   [ "$status" -eq 0 ]
   grep -qx -- "--user daemon-reload" "$STUBS/systemctl.log"
   [[ "$output" == *"restart 'claude-rc@*'"* ]] || false
+  # Another unit changes with its program: the reload comes before the restart, so the restart uses the new unit.
+  rm "$STUBS/systemctl.log"
+  echo "[Service] KillMode=process" >"$o/claude/systemd/vibe-web.service"
+  mkdir -p "$o/bin"
+  echo two >"$o/bin/vibe-web"
+  git -C "$o" add claude bin
+  git -C "$o" commit -q -m "endpoint and its unit"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "$(printf -- '--user daemon-reload\n--user try-restart vibe-web.service')" ]
 }
 
 @test "update-toolkit: a changed runner or endpoint restarts its unit on a server only" {

@@ -321,18 +321,18 @@ cmd_status() {
 }
 
 cmd_update_toolkit() {
-  local t="$TOOLKIT" def unit before after rbefore rafter wbefore wafter
+  local t="$TOOLKIT" def units before after rbefore rafter wbefore wafter
   [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
   def="$(default_branch "$t")"
   [[ "$(git -C "$t" rev-parse --abbrev-ref HEAD)" == "$def" ]] || die "$t is not on $def"
   [[ -z "$(git -C "$t" status --porcelain --untracked-files=no)" ]] || die "$t has uncommitted changes"
-  unit="claude/systemd/claude-rc@.service"
-  before="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  units="claude/systemd" # each unit is linked: a changed one needs daemon-reload
+  before="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   wbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
-  after="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  after="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rafter="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   wafter="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
@@ -340,7 +340,7 @@ cmd_update_toolkit() {
   "$t/install.sh" doctor || die "doctor reports problems"
   if [[ "$before" != "$after" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     systemctl --user daemon-reload
-    echo "unit changed; restart stops running sessions: systemctl --user restart 'claude-rc@*'"
+    echo "units reloaded; a changed claude-rc@ unit takes effect after: systemctl --user restart 'claude-rc@*' (stops running sessions)"
   fi
   # The runner holds bin/vibe and the lib in memory; running jobs survive (KillMode=process).
   if [[ "$rbefore" != "$rafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
