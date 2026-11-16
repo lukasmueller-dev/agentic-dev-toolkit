@@ -61,7 +61,7 @@ The paper, its numbers and its citation counts are the tool's claim. Check them 
 - `failed: no valid pipeline_summary.json …` → the tool died early. `tool.log` has the error. A bad token ends here too: repeat step 2.
 - `failed: ended at stage <s> (<status>) …` → a stage failed. `files/` holds `deliverables/` only if the tool wrote it; the same holds after a stop or a kill.
 - `done:` with `1 failed` → `--skip-noncritical-stage` skipped a stage. The paper exists. The tool exits 1 after any failed stage, so `run` reads the summary instead.
-- `degraded=True` → a stage accepted a weaker result. Read `report.md` and the paper with care.
+- `degraded=true` → a stage accepted a weaker result. Read `report.md` and the paper with care.
 - `steer` prints `only stages 8 and 9 read guidance` → by design. Any other stage ignores the text.
 - `steer` exits 1 → no run folder yet, or all 23 stages are done.
 - No PDF in `files/` → the image has no LaTeX. `paper.tex` and `paper_final.md` are there; compile elsewhere.
