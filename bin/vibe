@@ -43,10 +43,11 @@
 #   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
-#   vibe ws status [<instance>]     each tool instance: up, past limit, waits for the GPU or down, from its state files
+#   vibe ws status [<instance>]     each tool instance: up, past limit, starts, waits for the GPU or down, from its state files
 #   vibe ws build <name>            docker build the tool's image at its pinned commit, tagged with it
-#   vibe ws start <name>            a kind=service tool up at the first of its places, then its start script;
-#                                   gpu=yes on turing: under the gpu-queue lock, held until stop
+#   vibe ws start <name> [--place P] [--hours N]
+#                                   a kind=service tool up at P (the first of its places) for N hours (its hours),
+#                                   then its start script; gpu=yes on turing: under the gpu-queue lock, held until stop
 #   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
 #   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
 #   vibe job list [--all] [<repo>...]
@@ -3946,12 +3947,22 @@ ws_holder() {
   [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws hold ${1##*/}" ]] && echo "$p"
 }
 
-# ws_state INSTANCE-DIR — waits for the GPU, down with no id file, past limit when limit has passed, else up.
+# ws_gpu INSTANCE-DIR — true when its place is turing and its tool has gpu=yes: it runs under the GPU lock.
+ws_gpu() {
+  local n
+  n="$(ws_name "${1##*/}")" || return 1
+  [[ "$(jstate "$1" place)" == turing && "$(jget "$WS_ROOT/$n/workspace.conf" gpu)" == yes ]]
+}
+
+# ws_state INSTANCE-DIR — waits for the GPU, starts while its holder runs ws_up, down with no id file,
+# past limit when limit has passed, else up.
 ws_state() {
   local lim
   lim="$(jstate "$1" limit)"
   if [[ -e "$1/waits" ]] && ws_holder "$1" >/dev/null; then
     echo "waits for the GPU"
+  elif [[ -e "$1/starts" ]] && ws_holder "$1" >/dev/null; then
+    echo starts
   elif [[ ! -s "$1/id" ]]; then
     echo down
   elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
@@ -4098,59 +4109,84 @@ cmd_ws_build() {
   docker build -t "$(jget "$f" image):$(jget "$f" commit)" --build-arg "COMMIT=$(jget "$f" commit)" "$d"
 }
 
-# vibe ws start NAME — a kind=service tool up at the first of its places.
-# gpu=yes on turing: a detached `gpu-queue lock` runs `vibe ws hold`, which keeps the GPU lock until stop.
+# vibe ws start NAME [--place P] [--hours N] — a kind=service tool up at P (the first of its places) for N hours
+# (its hours=). gpu=yes on turing, or a start from the page (VIBE_WEB: a rented place takes minutes): a detached
+# `vibe ws hold` starts it, under `gpu-queue lock` for the GPU, and keeps the lock until stop.
 cmd_ws_start() {
-  local d f st place pid i
-  (($# == 1)) || die "usage: vibe ws start <name>"
-  d="$(ws_dir "$1")"
-  f="$d/workspace.conf" st="$WS_STATES/$1"
-  [[ "$(jget "$f" kind)" == service ]] || die "$1 is kind=run: the queue runs it as a job"
-  ws_secrets "$1" "$f"
-  [[ "$(ws_state "$st")" == down ]] || die "$1 is $(ws_state "$st") — vibe ws stop $1 first"
-  place="$(jget "$f" places)"
-  place="${place%%,*}"
+  local d f st n="${1:-}" place="" hours="" pid i u="usage: vibe ws start <name> [--place P] [--hours N]"
+  local -a lock=()
+  (($#)) || die "$u"
+  shift
+  while (($#)); do
+    case "$1" in --place=* | --hours=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
+    (($# >= 2)) || die "$u"
+    case "$1" in
+      --place) place="$2" ;;
+      --hours) hours="$2" ;;
+      *) die "$u" ;;
+    esac
+    shift 2
+  done
+  d="$(ws_dir "$n")"
+  f="$d/workspace.conf" st="$WS_STATES/$n"
+  [[ "$(jget "$f" kind)" == service ]] || die "$n is kind=run: the queue runs it as a job"
+  ws_secrets "$n" "$f"
+  [[ "$(ws_state "$st")" == down ]] || die "$n is $(ws_state "$st") — vibe ws stop $n first"
+  if [[ -z "$place" ]]; then place="$(jget "$f" places)" place="${place%%,*}"; fi
+  [[ "$place" =~ ^[a-z]+$ && ",$(jget "$f" places)," == *",$place,"* ]] || die "$n has no place '$place' — places=$(jget "$f" places)"
+  [[ -z "$hours" || "$hours" =~ ^[1-9][0-9]*$ ]] || die "--hours $hours: a whole number above 0"
   [[ -x "$WS_ROOT/_places/$place" ]] || die "no place script '$place' in $WS_ROOT/_places"
   mkdir -p "$st"
   echo "$place" >"$st/place"
-  rm -f "$st/waits" "$st/holder" "$st/url" "$st/hold.log"
-  if [[ "$place" != turing || "$(jget "$f" gpu)" != yes ]]; then
-    ws_up "$1"
+  rm -f "$st/waits" "$st/starts" "$st/holder" "$st/url" "$st/hold.log"
+  # WS_HOURS: ws_place hands it to the place's up, here or in the detached hold; empty: the conf's hours.
+  if ws_gpu "$st"; then
+    lock=("$SELF_ROOT/bin/gpu-queue" lock --)
+    : >"$st/waits"
+  elif [[ -z "${VIBE_WEB:-}" ]]; then
+    WS_HOURS="$hours" ws_up "$n"
     return 0
   fi
-  : >"$st/waits"
   set -m
-  nohup "$SELF_ROOT/bin/gpu-queue" lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
+  WS_HOURS="$hours" nohup ${lock[@]+"${lock[@]}"} "$SELF_ROOT/bin/vibe" ws hold "$n" </dev/null >"$st/hold.log" 2>&1 &
   pid=$!
   set +m
   echo "$pid" >"$st/holder"
   for ((i = 0; ; i++)); do
     if grep -qxF "vibe: holds the GPU" "$st/hold.log"; then
-      ws_up_line "$1"
+      ws_up_line "$n"
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
+      if wait "$pid"; then
+        ws_up_line "$n"
+        return 0
+      fi
       cat "$st/hold.log" >&2
-      die "start of $1 failed — $st/hold.log"
+      die "start of $n failed — $st/hold.log"
     fi
-    if ((i >= 15)) && [[ -e "$st/waits" ]]; then
-      echo "$1 waits for the GPU — vibe ws status $1"
+    if ((i >= 15)); then
+      if [[ -e "$st/waits" ]]; then echo "$n waits for the GPU — vibe ws status $n"; else echo "$n starts — vibe ws status $n"; fi
       return 0
     fi
     sleep 0.2
   done
 }
 
-# vibe ws hold INSTANCE — start's command under `gpu-queue lock`: the instance up, then wait until its id file goes.
+# vibe ws hold INSTANCE — start's detached command: the instance up; under the GPU lock, then wait until its id file goes.
 cmd_ws_hold() {
   local st
   (($# == 1)) || die "usage: vibe ws hold <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
   rm -f "$st/waits"
+  : >"$st/starts"
   ws_up "$1"
-  echo "vibe: holds the GPU"
-  while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+  rm -f "$st/starts"
+  if ws_gpu "$st"; then
+    echo "vibe: holds the GPU"
+    while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+  fi
 }
 
 # vibe ws run INSTANCE — a tool job's run (tool_run): up, the run script, down; exit: the run script's.
@@ -4177,6 +4213,8 @@ cmd_ws_stop() {
     echo "$1 stopped — it waited for the GPU"
     return 0
   fi
+  # A down beside a running start script races it: stop once it is up.
+  [[ "$(ws_state "$st")" != starts ]] || die "$1 starts — stop it once it is up: vibe ws status $1"
   rm -f "$st/waits"
   [[ -s "$st/id" ]] || die "$1 is down"
   ws_down "$1" || die "down of $1 failed — vibe ws status $1"
