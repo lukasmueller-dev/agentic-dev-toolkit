@@ -156,6 +156,7 @@
   "sandbox": {
     "enabled": true,
     "allowUnsandboxedCommands": true,
+    "autoAllowBashIfSandboxed": true,
     "credentials": {
       "files": [
         { "mode": "deny", "path": "~/.aws/credentials" },

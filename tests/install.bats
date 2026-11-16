@@ -676,6 +676,12 @@ EOF
   jq -e '.sandbox.excludedCommands | length > 0' "$HOME/.claude/settings.json"
 }
 
+@test "claude settings: both baselines pin autoAllowBashIfSandboxed" {
+  # Claude Code v2.1.325 can flip this default; without the pin sandboxed Bash prompts
+  jq -e '.sandbox.autoAllowBashIfSandboxed == true' \
+    "$REPO_ROOT/claude/settings.json" "$REPO_ROOT/claude/vibe-job-settings.json"
+}
+
 @test "claude settings: agent jobs have no unsandboxed escape and no default-branch push" {
   local f="$REPO_ROOT/claude/vibe-job-settings.json"
   jq -e '.sandbox.allowUnsandboxedCommands == false' "$f"

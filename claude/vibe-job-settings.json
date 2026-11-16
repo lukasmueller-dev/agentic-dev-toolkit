@@ -20,6 +20,7 @@
   "sandbox": {
     "enabled": true,
     "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true,
     "failIfUnavailable": true,
     "filesystem": {
       "allowWrite": [
