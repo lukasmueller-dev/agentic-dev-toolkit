@@ -65,3 +65,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       (OpenRouter route) exist; `ar-preflight-mcp.sh` passed on 2026-11-16.
       Done when `out/result` starts with `done:`, `out/files` holds the six
       paths, and the recipe holds what the run proved wrong.
+
+### Workspace follow-ups
+
+- [ ] **turing place reaps zombies** — the container's PID 1 is `sleep infinity`
+      without `--init`, so a killed process stays a zombie and `ds --stop`
+      exits 1. Add `--init` to the place's `docker create`; check the runpod
+      and vast places.
+      Done when a bats test shows `--init` in the turing place's `docker create`
+      and `pr.md` states the result for runpod and vast.
