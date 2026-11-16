@@ -124,9 +124,10 @@ post() {
   [ ! -e "$Q/actions.log" ]
 }
 
-@test "vibe-web: the unit runs only on a server" {
+@test "vibe-web: the unit runs only on a server; a restart keeps the detached ws commands" {
   grep -q '^ExecStart=%h/bin/vibe-web$' "$REPO_ROOT/claude/systemd/vibe-web.service"
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/vibe-web.service"
+  grep -q '^KillMode=process$' "$REPO_ROOT/claude/systemd/vibe-web.service"
 }
 
 @test "vibe queue page: writes the page; buttons hidden until whoami" {
