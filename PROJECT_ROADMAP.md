@@ -36,11 +36,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       `for r in ~/github/*/PROJECT_ROADMAP.md; do [ -f "${r%/*}/.vibe-jobs/roadmap-cleanup.md" ] || echo "$r"; done`
       prints nothing, and `gh pr diff <n> --name-only` on the first
       `jobs/roadmap-cleanup` PR prints only `PROJECT_ROADMAP.md`.
-- [ ] **`vibe queue add --at HH:MM`** — jobs for the night start later without
-      a hand-made systemd timer. Added jobs wait until that local time (the next
-      one if it passed today); status and the page show the start time.
-      Done when a bats test shows a job added with `--at` does not start before
-      its time and starts after it, and `--at` with a bad time fails.
 
 ### Health items (repo review of 2026-11-03)
 
