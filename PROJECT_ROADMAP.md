@@ -29,11 +29,6 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
-- [ ] **Fail a review round whose fix session ends in an API error** — a
-      spend-limit 429 mid-fix ended the round `done` with a dirty worktree.
-      Done when a bats test shows such a round `failed`, its note naming the
-      dirty worktree, and a clean round `done` as before.
-
 - [ ] **Opt every roadmap repo into `roadmap-cleanup`** — the catalogue job
       exists, but only this repo opts in, and it has never run. In each repo
       with a `PROJECT_ROADMAP.md`: `vibe job add <repo> roadmap-cleanup`, commit.
