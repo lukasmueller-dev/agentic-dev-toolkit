@@ -1153,6 +1153,67 @@ mkprep() {
   [ "$(cat "$Q/01-a/status")" = "done" ]
 }
 
+# clockdate DAY NOW — a `date` in $BATS_TEST_TMPDIR/clock that fakes `date +%F` (DAY), `date +%s` (NOW) and tomorrow; the rest is the real date.
+clockdate() {
+  mkdir -p "$BATS_TEST_TMPDIR/clock"
+  cat >"$BATS_TEST_TMPDIR/clock/date" <<EOF
+#!/bin/sh
+case "\$*" in
+  "+%F") echo $1 ;;
+  "+%s") echo $2 ;;
+  "-d +1 day +%F") echo 2026-03-29 ;;
+  *) exec /bin/date "\$@" ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/clock/date"
+}
+
+@test "add --at: refuses a time the spring clock change skips, tonight and today; the next real time passes" {
+  local r a
+  [ -e /usr/share/zoneinfo/Europe/Berlin ] || skip "no tz database"
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  export TZ=Europe/Berlin
+  # 2026-03-28 20:00 CET: 02:30 has passed, and 2026-03-29 02:30 does not exist.
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # 2026-03-29 01:00 CET: 02:30 today does not exist, and no arithmetic error shows.
+  clockdate 2026-03-29 1774742400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [[ "$output" != *"syntax error"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 03:30 "$a"
+  [ "$status" -eq 0 ]
+  grep -qx 'at=2026-03-29 03:30' "$Q"/*-proj-x/job
+}
+
+@test "retry: a cancelled job that waited on at= comes back without it, and starts" {
+  local r a j id new
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  id="${j##*/}"
+  grep -q '^at=' "$j/job"
+  "$VIBE" queue cancel "$id"
+  run "$VIBE" queue retry "$id"
+  [ "$status" -eq 0 ]
+  new="$(echo "$Q"/*-proj-task-a)"
+  [ "$new" != "$j" ]
+  [ "$(grep -c '^at=' "$new/job")" = 0 ]
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$new/status")" = "done" ]
+}
+
 @test "milestones: a SPEC.md job that ticks one queues the next; the last one ends the chain" {
   local r
   r="$(make_repo proj)"

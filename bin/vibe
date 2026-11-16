@@ -479,12 +479,23 @@ deadline_of() {
   echo "$e"
 }
 
-# next_at HH:MM — `YYYY-MM-DD HH:MM` of the next HH:MM in local time: today while it is ahead, else tomorrow; dies on a bad time.
+# at_exists DAY HH:MM — true when that local time exists: a clock change skips an hour; GNU date refuses it, BSD date moves it.
+at_exists() {
+  local e
+  e="$(epoch_of "$1 $2:00")"
+  [[ -n "$e" && "$(at_time "$e")" == "$1 $2" ]]
+}
+
+# next_at HH:MM — `YYYY-MM-DD HH:MM` of the next HH:MM in local time: today while it is ahead, else tomorrow; dies on a bad time or one a clock change skips.
 next_at() {
   local day
   [[ "$1" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || die "bad time '$1' — HH:MM, 00:00 to 23:59"
   day="$(date +%F)"
-  if (($(epoch_of "$day $1:00") <= $(date +%s))); then day="$(date -d '+1 day' +%F 2>/dev/null || date -v+1d +%F)"; fi
+  at_exists "$day" "$1" || die "$1 does not exist on $day (clock change)"
+  if (($(epoch_of "$day $1:00") <= $(date +%s))); then
+    day="$(date -d '+1 day' +%F 2>/dev/null || date -v+1d +%F)"
+    at_exists "$day" "$1" || die "$1 does not exist on $day (clock change)"
+  fi
   echo "$day $1"
 }
 
@@ -1767,7 +1778,7 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=), prompt.md and in/; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, at=, follow=, review=), prompt.md and in/; echoes it.
 # A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
@@ -1775,9 +1786,9 @@ follow_dir() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
   r="$(jget "$1/job" review)"
   if [[ -z "$r" ]]; then
-    grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
+    grep -Ev '^(now|at|follow)=' "$1/job" >"$tmp/job" || true
   else
-    grep -Ev '^(now|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
+    grep -Ev '^(now|at|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
     t="$(jget "$(review_base "$1")/job" timeout)"
     if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
   fi
