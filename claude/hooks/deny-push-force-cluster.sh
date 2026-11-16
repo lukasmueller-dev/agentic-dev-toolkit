@@ -2,7 +2,8 @@
 #
 # PreToolUse hook (Bash) — deny `git push` with a short-flag cluster that holds
 # f (-vf, -fuv, -qf). Deny rules match whole tokens, so they miss these.
-# shortcut: text match, not a shell parse; a flag hidden by quotes or $VAR passes.
+# shortcut: text match, not a shell parse; a flag hidden by quotes or $VAR passes, and nested
+# or escaped quotes can deny text that only names it. Upgrade: a real shell parser.
 #
 # stdin: {"tool_input":{"command"},…}. stdout: a deny decision, else nothing. exit 0 always.
 set -uo pipefail
