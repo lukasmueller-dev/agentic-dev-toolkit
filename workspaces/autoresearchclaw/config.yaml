@@ -20,4 +20,3 @@ experiment:
   mode: sandbox
   sandbox:
     python_path: /opt/venv/bin/python3
-    gpu_required: true
