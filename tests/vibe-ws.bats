@@ -448,6 +448,19 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ ! -e "$S/containers/ws-svc" ]
 }
 
+@test "ws start: a gpu=yes service with a free lock returns once up, after a start script past 3 s" {
+  stubs
+  good svc service gpu=yes
+  secrets svc
+  touch "$S/hang-start"
+  SECONDS=0
+  run "$VIBE" ws start svc
+  [ "$status" -eq 0 ]
+  [ "$output" = "svc up — http://100.64.0.1:8080" ]
+  [ "$SECONDS" -ge 4 ]
+  "$VIBE" ws stop svc
+}
+
 @test "ws start: a gpu=yes service waits for a busy lock; stop ends the wait, a free lock brings it up" {
   stubs
   good svc service gpu=yes

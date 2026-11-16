@@ -4306,7 +4306,8 @@ cmd_ws_start() {
       cat "$st/hold.log" >&2
       die "start of $n failed — $st/hold.log"
     fi
-    if ((i >= 15)); then
+    # The CLI waits for up, as a script uses the url next; the page and a wait for the lock return.
+    if ((i >= 15)) && [[ -e "$st/waits" || -n "${VIBE_WEB:-}" ]]; then
       if [[ -e "$st/waits" ]]; then echo "$n waits for the GPU — vibe ws status $n"; else echo "$n starts — vibe ws status $n"; fi
       return 0
     fi
