@@ -2828,7 +2828,9 @@ ws_page() {
         case "$u" in http://* | https://*) b="<a class=\"btn ui\" href=\"$(esc "$u")\" target=\"_blank\" rel=\"noopener\">Open UI ↗</a>" ;; esac
         b+="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>"
         ;;
-      "waits for the GPU") b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>" ;;
+      "waits for the GPU" | starts)
+        if [[ "$s" != starts ]] || ws_stop_cuts "$st"; then b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>"; fi
+        ;;
     esac
     rail+="<a href=\"#ws-$e\"><i class=\"lamp l-$lamp\"></i>$(esc "$l")</a>"
     rows+="<div class=\"wrow\" id=\"ws-$e\"><i class=\"lamp l-$lamp\"></i><div class=\"t\"><b>$(esc "$l") <span class=\"role\">· $(esc "$(jget "$f" role)")</span></b><span class=\"why\">$line</span></div>$b</div>"
@@ -4231,6 +4233,8 @@ ws_secrets() {
 ws_up() {
   local st="$WS_STATES/$1" url="" secs="${VIBE_WS_START_SECS:-120}" r=0
   ws_place "$1" up || die "up of $1 failed"
+  # A page or GPU start: `starts` holds `script` from here on, and stop waits for up (ws_stop_cuts).
+  if [[ -e "$st/starts" ]]; then echo script >"$st/starts"; fi
   WS_SECS="$secs" ws_place "$1" exec start || r=$?
   if ((r)); then
     ws_place "$1" down >&2 || true
@@ -4353,10 +4357,13 @@ cmd_ws_run() {
   return "$r"
 }
 
+# ws_stop_cuts INSTANCE-DIR — true while a detached start runs the place's up: before ws_up marks `starts` with `script`.
+ws_stop_cuts() { [[ -e "$1/starts" && "$(jstate "$1" starts)" != script ]]; }
+
 # vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
 # From the page (VIBE_WEB) a detached `vibe ws down` does it: vibe-web kills a command after 120 s.
 cmd_ws_stop() {
-  local st pid s
+  local st pid s i
   (($# == 1)) || die "usage: vibe ws stop <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
@@ -4365,6 +4372,17 @@ cmd_ws_stop() {
     kill -TERM -- "-$pid" 2>/dev/null || true
     rm -f "$st/waits" "$st/holder" "$st/hold.log"
     echo "$1 stopped — it waited for the GPU"
+    return 0
+  fi
+  if [[ -n "$pid" ]] && ws_stop_cuts "$st"; then
+    # Each place's up traps TERM and removes what it made; wait for that, 60 s at most.
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for ((i = 0; i < 300; i++)); do
+      kill -0 -- "-$pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    rm -f "$st/starts" "$st/holder" "$st/hold.log"
+    echo "$1 stopped — its place was not up yet"
     return 0
   fi
   s="$(ws_state "$st")"

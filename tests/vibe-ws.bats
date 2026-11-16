@@ -216,7 +216,10 @@ case "$cmd" in
         [ ! -e "$S/fail-cp" ] && [ -e "$S/containers/${1%%:*}" ] || { echo "No such container" >&2; exit 1; }
         mkdir -p "$2" && echo "$1" >"$2/from-container"
         ;;
-      *) [ ! -e "$S/slow-restore" ] || { touch "$S/restoring" && sleep 2; } ;;
+      *)
+        [ ! -e "$S/slow-restore" ] || { touch "$S/restoring" && sleep 2; }
+        [ ! -e "$S/hang-restore" ] || sleep 30
+        ;;
     esac
     ;;
   rm)
@@ -406,6 +409,27 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [[ "$output" == *"start of svc failed"* ]] || false
   run "$VIBE" ws status svc
   [[ "$output" == "svc "*" down "*" turing  vibe: start of svc failed — it is down again" ]] || false
+}
+
+@test "ws stop: a page start whose place up runs is cut; the place removes its container; no start script runs" {
+  stubs
+  good svc service
+  secrets svc
+  touch "$S/hang-restore"
+  run env VIBE_WEB=1 "$VIBE" ws start svc
+  [ "$output" = "svc starts — vibe ws status svc" ]
+  [ -e "$S/containers/ws-svc" ]
+  SECONDS=0
+  run "$VIBE" ws stop svc
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -lt 10 ]
+  [ "$output" = "svc stopped — its place was not up yet" ]
+  [ ! -e "$S/containers/ws-svc" ]
+  [ ! -e "$STATES/svc/starts" ]
+  [ ! -e "$STATES/svc/holder" ]
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" down "*" turing" ]] || false
+  [ -z "$(grep start "$S/exec.log" 2>/dev/null || true)" ]
 }
 
 @test "ws stop from the page (VIBE_WEB): detached; stops while its stop script runs, a second stop refuses; then down" {

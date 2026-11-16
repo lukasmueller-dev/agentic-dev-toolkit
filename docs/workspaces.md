@@ -23,7 +23,8 @@ vibe ws tick                 # each instance with an id: its place's tick; the r
 - `stop` and a tick past the limit run the stop script for 300 s at most, then `down`.
 - `start` on turing with `gpu=yes` runs `vibe ws hold` under `gpu-queue lock`, detached. It prints `waits for the GPU` when the lock stays busy for 3 s, else it waits for `up`. The lock stays held until `stop` or the limit removes the `id` file.
 - `start` from the page (`VIBE_WEB=1`) detaches every start as `vibe ws hold` and returns after 3 s at most: `up`, `starts` or `waits for the GPU`.
-- `stop` ends a start that waits for the GPU, and refuses one that `starts` or `stops`.
+- `stop` ends a detached start that waits for the GPU or runs the place's `up`: TERM, and the place's `up` removes what it made.
+- `stop` refuses a start whose start script runs, and an instance that `stops`.
 - `stop` from the page detaches the stop script and `down` as `vibe ws down`, returns `stops`, and the tick skips the instance meanwhile.
 - The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
 - The queue page's Workspaces page has a row per service with Start, Stop and Open UI ↗: [Page](vibe-queue.md#3-page).
@@ -102,7 +103,7 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 ## State on turing
 
 - `~/.local/state/vibe/workspaces/<instance>/`: `place`, `id`, `started`, `limit` (epoch), `url`, `pulled` (epoch), `data/`, `out/`.
-- A detached start adds `holder` (the pid of `vibe ws hold`), `hold.log`, and `waits` or `starts` while it waits or starts.
+- A detached start adds `holder` (the pid of `vibe ws hold`), `hold.log`, and `waits` or `starts` while it waits or starts; `starts` holds `script` once the start script runs.
 - A page stop adds `stops` (the pid of `vibe ws down`) and `stop.log`; a failed one keeps `stop.log`.
 - Instance: `<name>` for a service, `<name>-<job id>` for a run.
 - Secrets: `~/.config/vibe/workspaces/<name>.env`, mode 600, `KEY=VALUE`.
