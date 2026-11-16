@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-15 · ws-surface_
+_Last updated: 2026-11-16 · queue-redesign_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-16: **the queue page is desk-first**: rail, one Needs-you inbox, a job
+  panel open from 1200 px, a Workspaces page; still the bash render of
+  `vibe queue page`. Page: `docs/vibe-queue.md`; decisions: PR for `queue-redesign`.
 - 2026-11-15: **outside research tools run through `vibe ws`**: one folder per
   tool under `workspaces/`, each in a container; a service stays up with a link,
   a `kind=run` tool is a queue job (`tool=`) with stop, steer and a checked
