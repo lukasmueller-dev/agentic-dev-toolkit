@@ -2427,6 +2427,19 @@ job_steps() {
 # btn_rows WRITE CONFIRM — the two button lists with an empty grid row between them, when both are filled.
 btn_rows() { printf '%s%s%s' "$1" "${1:+${2:+<hr>}}" "$2"; }
 
+# act_btn ROUTE — the one markup of a write button that a row and its card share: retry, answer, fix, archive,
+# feature-ready, feature-archive; routes in bin/vibe-web.
+act_btn() {
+  case "$1" in
+    retry) printf '%s' '<button data-act="retry">Retry</button>' ;;
+    answer) printf '%s' '<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
+    fix) printf '%s' '<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>' ;;
+    archive) printf '%s' '<button data-act="archive" data-confirm>Archive</button>' ;;
+    feature-ready) printf '%s' '<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button>' ;;
+    feature-archive) printf '%s' '<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+  esac
+}
+
 # job_buttons JOB — the card's write buttons by status, data-confirm ones last, then the file links; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
   local b="" c="" pr gpu="" f links=""
@@ -2442,15 +2455,15 @@ job_buttons() {
       gpu="$(jstate "$1" gpu-job)"
       if [[ -n "$gpu" ]]; then c+='<button data-act="gpu-cancel" data-confirm>Cancel GPU run</button>'; fi
       ;;
-    failed | timeout | skipped) b+='<button data-act="retry">Retry</button>' ;;
+    failed | timeout | skipped) b+="$(act_btn retry)" ;;
   esac
   case "$(jstate "$1" status)" in
-    blocked | failed | timeout) c+='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
-    "done") if [[ "$pr" == http* ]]; then b+='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>'; fi ;;
+    blocked | failed | timeout) c+="$(act_btn answer)" ;;
+    "done") if [[ "$pr" == http* ]]; then b+="$(act_btn fix)"; fi ;;
   esac
   if job_final "$1"; then
     if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
-    c+='<button data-act="archive" data-confirm>Archive</button>'
+    c+="$(act_btn archive)"
   fi
   # GET job/<id>/<file> in bin/vibe-web; the log as its tail.
   for f in report.md pr.md gate.log result note log; do
@@ -2459,20 +2472,12 @@ job_buttons() {
   printf '<div class="jacts" data-id="%s"%s%s>%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$(btn_rows "$b" "$c")" "${links:+<div class=\"files\">$links</div>}"
 }
 
-# status_card repo|feature|gpu|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
+# status_card feature|gpu|job|lane … — the card of one queue_jobs item: the fold of its page row (page_row);
 # a lane unpacks into a job card per job, a feature into a card per member. The phase line opens to name the review passes.
 status_card() {
   local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
   local r b p ms ph="" l c rs=""
   case "$1" in
-    repo)
-      if [[ -n "${3:-}" ]]; then
-        printf '<div class="repo"><div class="rh"><h2>%s</h2><div class="jacts" data-repo="%s"><button data-act="merge-order">Merge order</button></div></div>\n' "$(esc "$2")" "$(esc "$3")"
-      else
-        printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")"
-      fi
-      ;;
-    end) echo '</div>' ;;
     gpu)
       # An outside gpu-queue run: the pill is its state and elapsed time, or its exit code; the text its dir, or its end time.
       pill="$3${4:+ $4}" txt="$5" pr=""
@@ -2485,8 +2490,8 @@ status_card() {
     feature)
       pill="$3" txt="$5" pr="" dir="" items="$6" cls=" lane feature" name="$2 · $4"
       case "$3" in
-        "your test") extra='<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed: ready</button>' ;;
-        merge) extra='<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+        "your test") extra="$(act_btn feature-ready)" ;;
+        merge) extra="$(act_btn feature-archive)" ;;
       esac
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
@@ -2620,7 +2625,7 @@ page_repos() {
   } | awk '!seen[$0]++'
 }
 
-# new_work — the `New work` group: per repo a card of buttons, then Run or Reset per recurring job.
+# new_work — the New work cards (#new): per repo a card of buttons, then Run or Reset per recurring job.
 new_work() {
   local r j b e avail out="" rec
   while IFS= read -r r; do
@@ -2644,7 +2649,7 @@ new_work() {
     b+="${rec:+<span class=\"lbl\">Run recurring</span>$rec}"
     out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$b</div></div>"
   done < <(page_repos)
-  if [[ -n "$out" ]]; then printf '<div class="repo new"><h2>New work</h2>\n%s\n</div>\n' "$out"; fi
+  if [[ -n "$out" ]]; then printf '%s\n' "$out"; fi
 }
 
 # page_row repo|end|job|lane|feature|gpu … — a queue_jobs printer: `<section><TAB><row>` per item, one line.
@@ -2654,7 +2659,7 @@ page_row() {
   local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" bar="" el="" nm="" l c s e body
   case "$1" in
     repo)
-      P_REPO="$2"
+      P_REPO="$2" P_PATH="${3:-}"
       return 0
       ;;
     job) why="$4" pr="$5" dir="$6" ph="${7:-}" k="${6##*/}" ;;
@@ -2670,8 +2675,8 @@ page_row() {
     job/blocked) sec=you lamp=bad btn=answer ;;
     job/failed | job/timeout | job/skipped) sec=you lamp=bad btn=retry ;;
     lane/blocked | "feature/needs you") sec=you lamp=bad ;;
-    "feature/your test") sec=you lamp=you btn=ready ;;
-    feature/merge) sec=you lamp=you btn=farchive ;;
+    "feature/your test") sec=you lamp=you btn=feature-ready ;;
+    feature/merge) sec=you lamp=you btn=feature-archive ;;
     gpu/finished) sec="done" lamp="done" why="exit ${10}${11:+ · ${11}}" ;;
     *) sec="done" lamp="done" ;;
   esac
@@ -2703,14 +2708,7 @@ page_row() {
     case "$nm" in R[0-9]*) nm="Review ${nm#R}" ;; esac
     bar="<span class=\"pbar\" title=\"$(esc "${ph//$'\n'/ · }")\">$bar${nm:+<span>$(esc "$nm")</span>}</span>"
   fi
-  case "$btn" in
-    answer) b='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
-    retry) b='<button data-act="retry">Retry</button>' ;;
-    fix) b='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>' ;;
-    archive) b='<button data-act="archive" data-confirm>Archive</button>' ;;
-    ready) b='<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button>' ;;
-    farchive) b='<button data-act="feature-archive" data-confirm>Archive</button>' ;;
-  esac
+  b="$(act_btn "$btn")"
   if [[ "$1" == feature && -n "$b" ]]; then
     b="<span class=\"jacts p\" data-feature=\"$(esc "$2")\">$b</span>"
   elif [[ -n "$b" ]]; then
@@ -2718,8 +2716,9 @@ page_row() {
   fi
   if [[ "$btn" == open ]]; then b="<a class=\"btn\" href=\"$(esc "$pr")\" target=\"_blank\" rel=\"noopener\">Open PR</a>"; fi
   body="$(status_card "$@")"
-  if [[ "$pr" == http* && -n "$dir" ]]; then
-    body+="<div class=\"jacts\" data-repo=\"$(esc "$(jget "$dir/job" repo)")\"><button data-act=\"merge-order\">Merge order</button></div>"
+  # A lane that ended has no dir: the repo comes from queue_jobs' repo line.
+  if [[ "$pr" == http* && -n "${P_PATH:-}" ]]; then
+    body+="<div class=\"jacts\" data-repo=\"$(esc "$P_PATH")\"><button data-act=\"merge-order\">Merge order</button></div>"
   fi
   printf '%s\t<details class="row" data-k="%s"><summary><i class="lamp l-%s"></i><span class="t"><b>%s%s</b>%s</span>%s%s%s%s%s</summary>%s</details>\n' \
     "$sec" "$(esc "$k")" "$lamp" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${why:+<span class=\"why\">$(esc "$why")</span>}" \
@@ -2760,7 +2759,10 @@ page_status() {
   lim="$(limit_line)"
   if [[ -e "$QROOT/paused" ]]; then lamp=warn t=" · paused"; fi
   if limited; then
-    lamp=bad t+=" · usage limit until $(at_time "$(head -n 1 "$QROOT/limit")" | cut -c 12-)"
+    # A weekly limit resets days later: the date stays unless it is today.
+    lim="$(at_time "$(head -n 1 "$QROOT/limit")")"
+    if [[ "${lim%% *}" == "$(date +%F)" ]]; then lim="${lim#* }"; fi
+    lamp=bad t+=" · usage limit until $lim"
   elif [[ -n "$lim" ]]; then
     t+=" · $lim"
   fi

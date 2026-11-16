@@ -384,7 +384,7 @@ locked_out() (
   [ "$status" -eq 0 ]
   grep -qF '<details class="row" data-k="feature/teleop"><summary><i class="lamp l-you"></i><span class="t"><b>teleop <span class="n">3/3</span></b><span class="why">your test · The gamepad drives the robot.</span></span><span class="chip">feature</span><span class="jacts p" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button></span></summary><div class="job lane feature s-held">' "$f"
   [ "$(grep -o '<details class="row"' "$f" | wc -l)" -eq 1 ]
-  grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3/3</b><span class="pill">your test</span></div><p>The gamepad drives the robot.</p><div class="jacts" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed: ready</button></div><details class="stack"><summary>3 branches</summary>' "$f"
+  grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3/3</b><span class="pill">your test</span></div><p>The gamepad drives the robot.</p><div class="jacts" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button></div><details class="stack"><summary>3 branches</summary>' "$f"
   grep -qF '<div class="job lane s-done"><div class="top"><b>bridge · lane-x</b><span class="pill">2/2</span></div><p>Sticks <a href="https://example.com/pull/1">PR</a></p>' "$f"
   grep -qF '<div class="job s-done"><div class="top"><b>cmdr · gamepad</b><span class="pill">done</span></div><p>done: work.txt added <a href="https://example.com/pull/1">PR</a></p>' "$f"
   grep -qF '<div class="job s-done"><div class="top"><b>vla · node</b><span class="pill">no job</span></div><p> <a href="https://example.com/pull/7">PR</a></p></div></details></div>' "$f"
@@ -1815,6 +1815,8 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   [ "$(acts_of "${card#*<div class=\"jacts\" data-id=\"02-b\"}")" = 'retry hold <hr> answer archive files' ]
   grep -qF '<div class="files"><a href="/queue/api/job/02-b/report.md">report.md</a><a href="/queue/api/job/02-b/log">log</a></div></div>' "$f"
   new="$(grep "<b>proj</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$r\">" "$f")"
+  # Class repo is the row's mono label alone: the phone hides it, so a wrapper with it would hide New work.
+  [ "$(grep -o '<[a-z]* class="repo[" ]' "$f" | grep -vc '^<code')" = 0 ]
   [ "$(acts_of "${new#*"data-repo=\"$r\""}")" = 'roadmap worktrees new opt-in lbl run reset' ]
   # The recurring job keeps its own .jacts: page.js sends data-repo and data-job from the nearest one.
   grep -qF "<span class=\"lbl\">Run recurring</span><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">codebase-health</button><button data-act=\"reset\">Reset codebase-health</button></div></div>" "$f"
@@ -1908,7 +1910,7 @@ prim() {
 }
 
 @test "page: one primary button per row: Answer, Retry, Fix, Open PR, Test passed, Archive, else none; the rest in its fold" {
-  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" x
   r="$(make_repo proj)"
   you_jobs "$r"
   "$VIBE" queue page >/dev/null
@@ -1932,6 +1934,17 @@ prim() {
   # The fold keeps the card's buttons; a row with a PR adds Merge order for its repo.
   grep -qF '</summary><div class="job s-queued"><div class="top"><b>12-que</b><span class="pill">queued</span></div><p></p><p class="phases"><span>○ Agent</span> · <span>○ Gate</span> · <span>○ PR</span></p><div class="jacts" data-id="12-que"><button data-act="now">' "$f"
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">Merge order</button></div></details>" "$f"
+  # A row's button and its card's button share one markup.
+  for x in answer retry fix archive feature-ready; do
+    [ "$(grep -o "<button data-act=\"$x\"[^>]*>[^<]*</button>" "$f" | sort -u | wc -l)" -eq 1 ]
+  done
+  # A done job and its review round are a lane with no running job; its fold still has Merge order.
+  endjob 14-lan "$r" b14
+  endjob 14-lan-review1 "$r" b14 https://example.com/pull/14
+  "$VIBE" queue page >/dev/null
+  [ "$(prim proj/b14)" = "Open PR" ]
+  x="$(grep -o '<details class="row" data-k="proj/b14">.*' "$f" | sed 's#</details><details class="row".*##')"
+  [[ "$x" == *"<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">Merge order</button></div>"* ]] || false
 }
 
 @test "page: a running row shows a phase bar segment per phase, the running step's name, its run time and a tool's chip" {
@@ -1970,17 +1983,22 @@ prim() {
 }
 
 @test "page: the header holds the lamp, slots in use, the limit and the render time; Pause or Resume; Clear limit only while limited" {
-  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" lim
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok
   echo running >"$Q/01-a/status"
   "$VIBE" queue page >/dev/null
   grep -qE '<span class="stat"><i class="lamp l-ok"></i><span>1 of 4 slots · <span class="updated" data-t="[0-9]+">updated [0-9:]+</span></span></span><span class="jacts"><button data-act="pause">Pause</button></span><a class="btn new" href="#new">New job</a>' "$f"
   "$VIBE" queue pause >/dev/null
-  echo $(($(date +%s) + 3600)) >"$XDG_STATE_HOME/vibe/limit"
+  echo $(($(date +%s) + 60)) >"$XDG_STATE_HOME/vibe/limit"
   "$VIBE" queue page >/dev/null
   grep -qE '<i class="lamp l-bad"></i><span>1 of 4 slots · paused · usage limit until [0-9]{2}:[0-9]{2} · <span class="updated"' "$f"
   grep -qF '<span class="jacts"><button data-act="resume">Resume</button><button data-act="unlimit">Clear limit</button></span>' "$f"
+  # A weekly limit resets days later: the header keeps the date.
+  lim=$(($(date +%s) + 3 * 86400))
+  echo "$lim" >"$XDG_STATE_HOME/vibe/limit"
+  "$VIBE" queue page >/dev/null
+  grep -qF "usage limit until $(date -d "@$lim" '+%F %H:%M' 2>/dev/null || date -r "$lim" '+%F %H:%M') · <span class=\"updated\"" "$f"
 }
 
 @test "report: header, held jobs under Yours, per repo tables, next actions; writes no file" {
