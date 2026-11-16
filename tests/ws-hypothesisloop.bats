@@ -104,6 +104,18 @@ write_env() {
   [ ! -e "$LOG" ]
 }
 
+@test "start refuses a plain git host or registry and calls nothing" {
+  local key
+  for key in GIT_HOST_PROVIDER CONTAINER_REGISTRY_PROVIDER; do
+    write_env
+    echo "$key='plain'" >>"$HL/.env"
+    run "$WS/start"
+    [ "$status" -eq 1 ]
+    [[ "$output" == "error — "*"$key=plain"*"make dev"* ]] || false
+  done
+  [ ! -e "$LOG" ]
+}
+
 @test "start takes cloudrun, which has no account key" {
   write_env SANDBOX_FLY_API_KEY
   sed -i.bak "s/^SANDBOX_PROVIDER=.*/SANDBOX_PROVIDER='cloudrun'/" "$HL/.env"

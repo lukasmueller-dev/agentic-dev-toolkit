@@ -17,6 +17,11 @@ for key in SANDBOX_PROVIDER ${sandbox:+"SANDBOX_${sandbox}_API_KEY"} MODEL_ANTHR
   [[ -n "$(hl_key "$key")" ]] || missing="$missing $key"
 done
 [[ -z "$missing" ]] || hl_die "$HLOOP_REPO/.env does not set:$missing"
+# plain: the git server and the registry run under make dev only (localdev/dev.sh, local.mk controlplane-up).
+for key in GIT_HOST_PROVIDER CONTAINER_REGISTRY_PROVIDER; do
+  [[ "$(hl_key "$key")" != plain ]] ||
+    hl_die "$HLOOP_REPO/.env sets $key=plain, whose server runs under make dev only: see docs/workspaces/hypothesisloop.md"
+done
 # Compose publishes on an IP only; the tool also takes a host name here.
 HLOOP_BIND="$(hl_key LOCAL_REACHABLE_ADDRESS)"
 [[ "$HLOOP_BIND" =~ ^[0-9]+(\.[0-9]+){3}$ ]] ||
