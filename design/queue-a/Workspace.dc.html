@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workspaces</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#eef1f3}
+a{color:#3547b8}a:hover{color:#25338f}
+button,input{font:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-wrap: wrap; background: #eef1f3; color: #11171c; font-family: Geist, system-ui, sans-serif; font-size: 14px; line-height: 1.45">
+
+  <nav aria-label="Main" style="flex: 0 0 216px; box-sizing: border-box; padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; background: #ffffff; border-right: 1px solid #d2dae0">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 4px 10px 16px">
+      <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="13.5" height="13.5" rx="2" fill="#11171c"></rect><rect x="25.3" y="25.3" width="13.5" height="13.5" rx="2" fill="#11171c"></rect><rect x="42.6" y="25.3" width="13.5" height="13.5" rx="2" fill="#11171c"></rect><rect x="25.3" y="42.6" width="13.5" height="13.5" rx="2" fill="#11171c"></rect><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"></rect></svg>
+      <span style="font-weight: 600; font-size: 16px">vibe</span>
+    </div>
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; color: #11171c; text-decoration: none">Queue <span style="font-family: 'Geist Mono', monospace; font-size: 12px; color: #b3261e">3</span></a>
+    <a href="#" aria-current="page" style="margin-top: 12px; padding: 4px 10px; border-radius: 6px; background: #fbe9e7; font-size: 12px; color: #11171c; text-decoration: none; font-weight: 500">Workspaces</a>
+    <a href="#ws-deep" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; color: #11171c; text-decoration: none"><span style="width: 8px; height: 8px; border-radius: 50%; background: {{deepLamp}}"></span>DeepScientist</a>
+    <a href="#ws-hyp" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; color: #11171c; text-decoration: none"><span style="width: 8px; height: 8px; border-radius: 50%; background: #0a7145"></span>HypothesisLoop</a>
+    <div style="height: 12px"></div>
+    <a href="#" style="padding: 8px 10px; border-radius: 6px; color: #36434d; text-decoration: none">Config</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 24px 28px 48px">
+    <div style="max-width: 960px; display: flex; flex-direction: column; gap: 20px">
+
+      <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em">Workspaces</h1>
+        <span style="font-size: 13px; color: #36434d">GPU on turing: Kapso job · <a href="Detail.dc.html">Faster rollout buffer</a></span>
+      </header>
+
+      <section aria-label="Services" style="background: #ffffff; border: 1px solid #d2dae0; border-radius: 10px; overflow: hidden">
+
+        <div id="ws-deep" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px">
+          <span style="flex: none; width: 10px; height: 10px; border-radius: 50%; background: {{deepLamp}}"></span>
+          <div style="flex: 1 1 320px; min-width: 0">
+            <div style="font-weight: 500">DeepScientist <span style="font-weight: 400; font-size: 13px; color: #53616c">· research quests with a web UI</span></div>
+            <div style="font-size: 13px; color: #36434d">{{deepLine}}</div>
+          </div>
+          <sc-if value="{{deepUp}}" hint-placeholder-val="{{ false }}">
+            <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 14px; border-radius: 6px; background: #3547b8; color: #ffffff; text-decoration: none; font-weight: 500">Open UI ↗</a>
+            <button type="button" onClick="{{toggle}}" style="height: 32px; padding: 0 12px; border: 1px solid #e6aaa4; border-radius: 6px; background: #ffffff; color: #b3261e; cursor: pointer">Stop</button>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{deepOff}}" hint-placeholder-val="{{ true }}">
+          <form style="margin: 0 16px 16px 42px; padding: 14px 16px; background: #f2f5f7; border-radius: 8px; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px">
+            <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px">
+              <legend style="padding: 0 0 6px; font-size: 13px; font-weight: 600; color: #53616c">Place</legend>
+              <label style="display: flex; align-items: center; gap: 8px"><input type="radio" name="place"> turing <span style="font-size: 13px; color: #8a5600">waits: Kapso holds the GPU</span></label>
+              <label style="display: flex; align-items: center; gap: 8px"><input type="radio" name="place" checked="checked"> RunPod</label>
+              <label style="display: flex; align-items: center; gap: 8px"><input type="radio" name="place"> Vast.ai</label>
+            </fieldset>
+            <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: #53616c">Hours
+              <input type="number" value="8" min="1" style="width: 80px; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid #aab6bf; border-radius: 6px; font-family: 'Geist Mono', monospace; font-weight: 400; color: #11171c">
+            </label>
+            <button type="button" onClick="{{toggle}}" style="height: 32px; padding: 0 16px; border: 0; border-radius: 6px; background: #3547b8; color: #ffffff; font-weight: 500; cursor: pointer">Start on RunPod</button>
+            <span style="flex-basis: 100%; font-size: 12px; color: #53616c">vibe stops a rented machine at the limit and on a failed start.</span>
+          </form>
+        </sc-if>
+
+        <div id="ws-hyp" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px; border-top: 1px solid #d2dae0">
+          <span style="flex: none; width: 10px; height: 10px; border-radius: 50%; background: #0a7145"></span>
+          <div style="flex: 1 1 320px; min-width: 0">
+            <div style="font-weight: 500">HypothesisLoop <span style="font-weight: 400; font-size: 13px; color: #53616c">· hypothesis board and runs</span></div>
+            <div style="font-size: 13px; color: #36434d">turing · up <span style="font-family: 'Geist Mono', monospace">0:35</span> · no limit</div>
+          </div>
+          <a href="#" style="display: inline-flex; align-items: center; height: 32px; padding: 0 14px; border-radius: 6px; background: #3547b8; color: #ffffff; text-decoration: none; font-weight: 500">Open UI ↗</a>
+          <button type="button" style="height: 32px; padding: 0 12px; border: 1px solid #e6aaa4; border-radius: 6px; background: #ffffff; color: #b3261e; cursor: pointer">Stop</button>
+        </div>
+      </section>
+
+      <p style="margin: 0; font-size: 13px; color: #53616c">Kapso, AutoResearch and AutoResearchClaw run as queue jobs: start them with New job. A UI opens in its own tab, on its own port on the tailnet.</p>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { up: false }; }
+  renderVals() {
+    const up = this.state.up;
+    return {
+      deepUp: up,
+      deepOff: !up,
+      deepLamp: up ? '#0a7145' : '#d2dae0',
+      deepLine: up ? 'RunPod · up 0:01 · 7 h 59 left' : 'Off · places: turing, RunPod, Vast.ai · default 8 h',
+      toggle: () => this.setState({ up: !up })
+    };
+  }
+}
+</script>
+</body>
+</html>
