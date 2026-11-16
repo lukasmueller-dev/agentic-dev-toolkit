@@ -2592,11 +2592,9 @@ config_md() {
   fi
 }
 
-# page_buttons — the queue-wide write buttons, data-confirm ones last; routes in bin/vibe-web.
+# page_buttons — the Config page's write buttons, data-confirm ones last; routes in bin/vibe-web.
 page_buttons() {
   local b='<button data-act="servers">Servers</button>' c
-  if [[ -e "$QROOT/paused" ]]; then b+='<button data-act="resume">Resume</button>'; else b+='<button data-act="pause">Pause</button>'; fi
-  if limited; then b+='<button data-act="unlimit">Clear usage limit</button>'; fi
   b+='<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
   b+='<button data-act="triage">Triage PRs</button>'
   b+='<button data-act="sync">Sync worktrees</button>'
@@ -2649,27 +2647,158 @@ new_work() {
   if [[ -n "$out" ]]; then printf '<div class="repo new"><h2>New work</h2>\n%s\n</div>\n' "$out"; fi
 }
 
-# queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
+# page_row repo|end|job|lane|feature|gpu … — a queue_jobs printer: `<section><TAB><row>` per item, one line.
+# Section: you (the Needs-you rules), run, queued, held or done. The row: lamp, title, reason, the phase bar
+# while it runs, tool chip, repo label, run time, one primary button; it folds open to the item's status_card.
+page_row() {
+  local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" bar="" el="" nm="" l c s e body
+  case "$1" in
+    repo)
+      P_REPO="$2"
+      return 0
+      ;;
+    job) why="$4" pr="$5" dir="$6" ph="${7:-}" k="${6##*/}" ;;
+    lane) prog="$4" why="$7" pr="$6" dir="$8" ph="${11:-}" k="$P_REPO/$2" ;;
+    feature) prog="$4" why="$3${5:+ · $5}" k="feature/$2" chip=feature label="" ;;
+    gpu) k="$2" el="$4" why="${8:-$5}" chip=GPU label="${5##*/}" ;;
+    *) return 0 ;;
+  esac
+  case "$1/$3" in
+    */running | */gpu) sec=run lamp=ok ;;
+    */queued | */) sec=queued lamp=off ;;
+    */held | gpu/parked) sec=held lamp=held ;;
+    job/blocked) sec=you lamp=bad btn=answer ;;
+    job/failed | job/timeout | job/skipped) sec=you lamp=bad btn=retry ;;
+    lane/blocked | "feature/needs you") sec=you lamp=bad ;;
+    "feature/your test") sec=you lamp=you btn=ready ;;
+    feature/merge) sec=you lamp=you btn=farchive ;;
+    gpu/finished) sec="done" lamp="done" why="exit ${10}${11:+ · ${11}}" ;;
+    *) sec="done" lamp="done" ;;
+  esac
+  if [[ "$1" == job && "$3" == held ]]; then why="$(jstate "$dir" held)"; fi
+  if [[ "$sec" == "done" && "$1" != gpu ]]; then
+    if [[ "$1" == job ]] && checks_failed "$dir"; then
+      sec=you lamp=bad c="$(jstate "$dir" gate)"
+      if [[ "$c" =~ ^[1-9] ]]; then why="gate exit $c"; else why="verify: $(jstate "$dir" verify)"; fi
+      if [[ "$pr" == http* ]]; then btn=fix; fi
+    elif pr_missed "$pr"; then
+      sec=you lamp=bad why="$pr"
+    elif [[ "$pr" == http* ]]; then
+      sec=you lamp=you btn=open why="PR #${pr##*/} to review"
+    elif [[ "$1" == job ]]; then
+      btn=archive
+    fi
+  fi
+  if [[ "$1" == job && -n "$(jget "$dir/job" tool)" ]]; then chip="$(jget "$dir/job" tool) · $(tool_place "$dir")"; fi
+  if [[ "$sec" == run && -n "$dir" ]]; then
+    read -r s e <<<"$(job_span "$dir")"
+    if [[ -n "$s" ]]; then el="$(printf '%d:%02d' $(((e - s) / 3600)) $(((e - s) % 3600 / 60)))"; fi
+  fi
+  # The phase bar: a segment per phase line, the running step's name after it.
+  if [[ "$sec" == run && -n "$ph" ]]; then
+    while IFS= read -r l; do
+      case "$l" in "✓ "*) c=' class="ok"' ;; "▶ "*) c=' class="run"' nm="${l#▶ }" ;; "✗ "*) c=' class="bad"' ;; *) c="" ;; esac
+      bar+="<i$c></i>"
+    done <<<"$ph"
+    case "$nm" in R[0-9]*) nm="Review ${nm#R}" ;; esac
+    bar="<span class=\"pbar\" title=\"$(esc "${ph//$'\n'/ · }")\">$bar${nm:+<span>$(esc "$nm")</span>}</span>"
+  fi
+  case "$btn" in
+    answer) b='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
+    retry) b='<button data-act="retry">Retry</button>' ;;
+    fix) b='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>' ;;
+    archive) b='<button data-act="archive" data-confirm>Archive</button>' ;;
+    ready) b='<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button>' ;;
+    farchive) b='<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+  esac
+  if [[ "$1" == feature && -n "$b" ]]; then
+    b="<span class=\"jacts p\" data-feature=\"$(esc "$2")\">$b</span>"
+  elif [[ -n "$b" ]]; then
+    b="<span class=\"jacts p\" data-id=\"$(esc "${dir##*/}")\"${pr:+ data-pr=\"$(esc "$pr")\"}>$b</span>"
+  fi
+  if [[ "$btn" == open ]]; then b="<a class=\"btn\" href=\"$(esc "$pr")\" target=\"_blank\" rel=\"noopener\">Open PR</a>"; fi
+  body="$(status_card "$@")"
+  if [[ "$pr" == http* && -n "$dir" ]]; then
+    body+="<div class=\"jacts\" data-repo=\"$(esc "$(jget "$dir/job" repo)")\"><button data-act=\"merge-order\">Merge order</button></div>"
+  fi
+  printf '%s\t<details class="row" data-k="%s"><summary><i class="lamp l-%s"></i><span class="t"><b>%s%s</b>%s</span>%s%s%s%s%s</summary>%s</details>\n' \
+    "$sec" "$(esc "$k")" "$lamp" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${why:+<span class=\"why\">$(esc "$why")</span>}" \
+    "$bar" "${chip:+<span class=\"chip\">$(esc "$chip")</span>}" "${label:+<code class=\"repo\">$(esc "$label")</code>}" \
+    "${el:+<span class=\"el\">$(esc "$el")</span>}" "$b" "${body//$'\n'/}"
+}
+
+# page_sections — the Needs-you count on line 1, then the page's sections: Needs you and Running open,
+# then Queued, Held, Triage (triage.md) and Done folded to one line, each only when it has a row.
+page_sections() {
+  local rows s h you="" run="" que="" held="" dn="" ny=0 nr=0 nq=0 nh=0 nd=0 tri="" nt
+  rows="$(queue_jobs page_row)"
+  while IFS=$'\t' read -r s h; do
+    case "$s" in
+      you) you+="$h" ny=$((ny + 1)) ;;
+      run) run+="$h" nr=$((nr + 1)) ;;
+      queued) que+="$h" nq=$((nq + 1)) ;;
+      held) held+="$h" nh=$((nh + 1)) ;;
+      "done") dn+="$h" nd=$((nd + 1)) ;;
+    esac
+  done <<<"$rows"
+  echo "$ny"
+  printf '<section class="sec" data-k="you"><h2>Needs you <span class="n">%s</span></h2>%s</section>\n' "$ny" "${you:-<p class=\"none\">Nothing needs you.</p>}"
+  printf '<section class="sec" data-k="run"><h2>Running <span class="n">%s</span></h2>%s</section>\n' "$nr" "${run:-<p class=\"none\">No job runs.</p>}"
+  if ((nq)); then printf '<details class="sec" data-k="queued"><summary>Queued <span class="n">%s</span></summary>%s</details>\n' "$nq" "$que"; fi
+  if ((nh)); then printf '<details class="sec" data-k="held"><summary>Held <span class="n">%s</span></summary>%s</details>\n' "$nh" "$held"; fi
+  if [[ -f "$QROOT/triage.md" ]]; then
+    nt="$(grep -c '^- ' "$QROOT/triage.md" || true)"
+    tri="$(md_html <"$QROOT/triage.md")"
+    printf '<details class="sec" data-k="triage"><summary>Triage <span class="n">%s</span></summary><div class="md">\n%s\n</div></details>\n' "$nt" "$tri"
+  fi
+  if ((nd)); then printf '<details class="sec" data-k="done"><summary>Done <span class="n">%s</span></summary>%s</details>\n' "$nd" "$dn"; fi
+}
+
+# page_status RUNNING — the header line: lamp, slots in use, paused, the usage limit or the 5h use, the render time.
+page_status() {
+  local lamp=ok t="" lim
+  lim="$(limit_line)"
+  if [[ -e "$QROOT/paused" ]]; then lamp=warn t=" · paused"; fi
+  if limited; then
+    lamp=bad t+=" · usage limit until $(at_time "$(head -n 1 "$QROOT/limit")" | cut -c 12-)"
+  elif [[ -n "$lim" ]]; then
+    t+=" · $lim"
+  fi
+  printf '<i class="lamp l-%s"></i><span>%s of %s slots%s · <span class="updated" data-t="%s">updated %s</span></span>' \
+    "$lamp" "$1" "$(qconf slots 4)" "$(esc "$t")" "$(date +%s)" "$(date '+%H:%M:%S')"
+}
+
+# queue_web — QROOT/web/index.html, page.js and fonts/ from templates/; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q p o jobs lim front tools
-  local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
-  read -r r g q p o <<<"$(queue_counts)"
-  lim="$(limit_line)"
-  jobs="$(queue_jobs status_card)"
-  front="$(queue_front_md)" tools="$(ws_md)"
-  [[ -z "$front" ]] || front="<div class=\"md\">$(md_html <<<"$front")</div>"$'\n'
+  local f="$QROOT/web/index.html" r jobs you tab=vibe yn="" tools x hb
+  read -r r _ <<<"$(queue_counts)"
+  jobs="$(page_sections)"
+  you="${jobs%%$'\n'*}" jobs="${jobs#*$'\n'}"
+  if ((you > 0)); then tab="($you) vibe" yn="$you"; fi
+  hb='<button data-act="pause">Pause</button>'
+  if [[ -e "$QROOT/paused" ]]; then hb='<button data-act="resume">Resume</button>'; fi
+  if limited; then hb+='<button data-act="unlimit">Clear limit</button>'; fi
+  tools="$(ws_md)"
   [[ -z "$tools" ]] || tools="<div class=\"md\">$(md_html <<<"$tools")</div>"$'\n'
-  mkdir -p "${f%/*}" || return 1
+  mkdir -p "${f%/*}/fonts" || return 1
   # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
+  # Fonts from the page's own origin: the CSP blocks Google Fonts. Copied when the repo's copy is newer.
+  for x in "$SELF_ROOT"/templates/fonts/*; do
+    if [[ "$x" -nt "${f%/*}/fonts/${x##*/}" ]]; then
+      cp "$x" "$f.font.$$" && mv -f "$f.font.$$" "${f%/*}/fonts/${x##*/}" || return 1
+    fi
+  done
   if render_template "$SELF_ROOT/templates/queue-page.html" \
-    '<updated>' "$(date '+%F %H:%M:%S')" \
-    '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
-    '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
-    '<actions>' "$(page_buttons)" \
-    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$tools$(new_work)" \
-    '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
+    '<tab>' "$tab" \
+    '<you>' "$yn" \
+    '<status>' "$(page_status "$r")" \
+    '<actions>' "$hb" \
+    '<jobs>' "$jobs"$'\n'"$tools" \
+    '<acts>' "$(page_buttons)" \
+    '<config>' "$(config_md | md_html)" \
+    '<new>' "$(new_work)" >"$f.tmp.$$"; then
     mv -f "$f.tmp.$$" "$f"
   else
     rm -f "$f.tmp.$$"

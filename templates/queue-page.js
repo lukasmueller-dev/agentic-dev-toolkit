@@ -1,36 +1,39 @@
-/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
+/* Every 10 s: fetch this page (8 s limit) and swap what changed. Open folds stay. The header counts the render's age; over 2 min: stale.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow; data-ask="<arg> …" prompts for each (title: the questions, split by |).
    Output: #panel; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
-  /* The real nodes, held at load: #panel is empty then and comes first, so a later lookup could land in a .md. */
-  const queue = $('#queue'), filter = $('.filter', queue), updated = $('.updated'), parts = ['.updated', '.chips', '.flags', '.acts', '#config'].map(s => [s, $(s)]);
-  const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
-  const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
-  const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
-  let last = '', jobs = html(tail(filter)), seen = Date.now(), busy = false, again = false;
-  setInterval(() => updated.classList.toggle('stale', Date.now() - seen > 120000), 1000);
+  /* The real nodes, held at load; in a fetched page, a path from body: a .md in #queue can hold any class, never a child of main. */
+  const main = $('body > main'), parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #new', 'body > main > #config'].map(s => [s, $(s)]);
+  const queue = $('body > main > #queue');
+  /* A fold's key: its own or nearest data-k (a row, a section), then its place among that node's folds. */
+  const key = d => { const k = d.closest('[data-k]') || queue; return k.dataset.k + '#' + [...k.querySelectorAll('details')].indexOf(d); };
+  let last = '', jobs = queue.innerHTML, busy = false, again = false;
+  setInterval(() => {
+    const u = $('.updated', parts[1][1]), s = Math.max(0, Math.round(Date.now() / 1000 - u.dataset.t));
+    u.textContent = `updated ${s} s ago`; u.classList.toggle('stale', s > 120);
+  }, 1000);
   const api = '/queue/api/';
   const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
   const poll = async () => {
     if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
-    if (busy || $('.armed', queue)) return; /* a swap would un-arm a confirm button */
+    if (busy || $('.armed', main)) return; /* a swap would un-arm a confirm button */
     busy = true;
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
       if (r.ok && t !== last) {
-        const n = new DOMParser().parseFromString(t, 'text/html'), g = tail($('.filter', n)), h = html(g);
+        const n = new DOMParser().parseFromString(t, 'text/html'), h = $('body > main > #queue', n).innerHTML;
         for (const [s, live] of parts) if (live.innerHTML !== $(s, n).innerHTML) live.innerHTML = $(s, n).innerHTML;
+        document.title = n.title;
         if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
           const open = [...queue.querySelectorAll('details[open]')].map(key);
-          tail(filter).forEach(x => x.remove());
-          filter.after(...g);
+          queue.innerHTML = h;
           queue.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
           jobs = h;
         }
-        last = t; seen = Date.now();
+        last = t;
       }
     } catch (e) { /* keep the old content; the next poll tries again */ } finally {
       busy = false;
@@ -79,7 +82,7 @@
   });
   document.addEventListener('click', async e => {
     const f = e.target.closest('.files a');
-    if (f && queue.contains(f)) {
+    if (f && main.contains(f)) {
       e.preventDefault();
       const md = f.href.endsWith('.md');
       const v = open(f.textContent, f.closest('.jacts').dataset.id);
@@ -98,9 +101,9 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* #queue and the rows rows() built only: their text is escaped; a .md (Yours and triage in #queue, #config, a panel) carries agent-written Markdown. */
+    /* main and the rows rows() built only: their text is escaped; a .md (Triage, Tools, Config, a panel) carries agent-written Markdown. */
     const b = e.target.closest('button[data-act]');
-    if (!b || b.closest('.md') || !(queue.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
+    if (!b || b.closest('.md') || !(main.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
     if (b.disabled || !document.body.classList.contains('can')) return;
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;

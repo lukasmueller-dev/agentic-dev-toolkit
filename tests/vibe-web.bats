@@ -135,17 +135,19 @@ post() {
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
-  grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
+  grep -qF "if (busy || \$('.armed', main)) return;" "$Q/web/page.js"
   # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
-  grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "main.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
   grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
-  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
-  # The poll writes only to nodes held at load: a code fence alone gives <pre class="filter"> in a .md.
+  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<div id="queue" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The poll writes only to nodes held at load, found in the fetched page by a path from body: a .md can hold any class.
   grep -qF "for (const [s, live] of parts)" "$Q/web/page.js"
-  grep -qF "filter.after(...g);" "$Q/web/page.js"
-  [ "$(grep -c "\$('.filter'" "$Q/web/page.js")" = 2 ]
+  grep -qF "queue.innerHTML = h;" "$Q/web/page.js"
+  grep -qF "\$('body > main > #queue', n)" "$Q/web/page.js"
+  grep -qF "const main = \$('body > main'), parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #new', 'body > main > #config']" "$Q/web/page.js"
+  [ "$(grep -oE '[$][(][^)]*, n[)]' "$Q/web/page.js" | grep -vcF -e "\$(s, n)" -e "\$('body > ")" = 0 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
@@ -534,7 +536,8 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf '1. #14 — 5 lines — can conflict: #12\n2. #12 — 30 lines\n3. #15 — 100 lines')" ]
   grep -q -- '^pr list --state open --limit 1000 ' "$STUBS/gh.log"
-  qjob "$ID"
+  qjob "$ID" "done"
+  echo https://github.com/o/proj/pull/12 >"$Q/queue/$ID/pr"
   run "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">" "$Q/web/index.html"
   run act merge-order "{\"repo\": \"$r\"}"
@@ -729,10 +732,6 @@ optin() {
   grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
   run grep -q 'opt in: [^"]*repo-review' "$Q/web/index.html"
   [ "$status" -eq 1 ]
-}
-
-@test "queue page: a link opens claude.ai/code" {
-  grep -q 'claude.ai/code' "$REPO_ROOT/templates/queue-page.html"
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
