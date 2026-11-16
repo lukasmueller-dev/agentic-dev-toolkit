@@ -259,7 +259,7 @@ post() {
   grep -qF '<a href="#ws-svc"><i class="lamp l-ok"></i>Svc</a>' "$f"
   grep -qF '<span class="why">runpod · up 0:35 · <span class="warn">20m left</span></span></div><a class="btn ui" href="http://100.64.0.1:8080" target="_blank" rel="noopener">Open UI ↗</a><span class="jacts p" data-name="svc"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
   grep -qF '<span class="why">Off · places: turing · <span class="bad">vibe: start of one failed — it is down again</span></span>' "$f"
-  echo $((now + 7200)) >"$st/svc/limit"
+  echo $((now + 7230)) >"$st/svc/limit"
   echo c2 >"$st/one/id"
   echo $((now - 60)) >"$st/one/limit"
   echo 'javascript:alert(1)' >"$st/one/url"
