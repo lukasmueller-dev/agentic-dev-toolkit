@@ -124,6 +124,45 @@ lock_input() { printf '{"cwd":"%s","tool_input":{"command":"git push","dangerous
 }
 
 # ---------------------------------------------------------------------------
+# deny-push-force-cluster.sh
+# ---------------------------------------------------------------------------
+push_hook() { jq -cn --arg c "$1" '{tool_input:{command:$c}}' | "$HOOKS/deny-push-force-cluster.sh"; }
+
+@test "push-force: denies a flag cluster that holds f" {
+  local c out
+  for c in "git push -vf" "git push -fuv origin x" "git push -qf origin x" "git push origin x -vf" \
+    "git -C /r push -vf" "cd r && git push -fuv origin x"; do
+    out="$(push_hook "$c")"
+    [ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" = deny ] || {
+      echo "not denied: $c" >&2
+      return 1
+    }
+  done
+}
+
+@test "push-force: allows other pushes and text that only names the flag" {
+  local c out
+  for c in "git push -u origin feature" "git push origin fix-uf" "git push --follow-tags" \
+    "git push origin x && rm -f y" "git status" "git commit -m \"deny git push -vf\"" \
+    "gh pr create --body 'git push -vf'"; do
+    out="$(push_hook "$c")"
+    [ -z "$out" ] || {
+      echo "denied by mistake: $c" >&2
+      return 1
+    }
+  done
+}
+
+@test "push-force: silent no-op on malformed stdin and without jq" {
+  run bash -c "echo 'not json' | '$HOOKS/deny-push-force-cluster.sh'"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  run env PATH= /bin/bash "$HOOKS/deny-push-force-cluster.sh" </dev/null
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
 # statusline.sh
 # ---------------------------------------------------------------------------
 @test "statusline: prints repo and branch in a plain checkout" {
