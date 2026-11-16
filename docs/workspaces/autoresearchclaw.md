@@ -20,7 +20,7 @@ conf=workspaces/autoresearchclaw/workspace.conf
 img="$(sed -n 's/^image=//p' "$conf"):$(sed -n 's/^commit=//p' "$conf")"
 ```
 
-The image is unbuilt. The Dockerfile pins the base image, the npm packages and the direct pip packages. The apt packages and the tool's own Python dependencies resolve at build time.
+Built on turing on 2026-11-16; step 2 passed. The Dockerfile pins the base image, the npm packages and the direct pip packages. The apt packages and the tool's own Python dependencies resolve at build time.
 Rented place: `docker push "$img"` and make the package public. Turing uses the local image.
 
 ## 2. Check the token
