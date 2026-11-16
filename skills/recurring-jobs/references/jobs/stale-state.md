@@ -9,7 +9,7 @@ timeout: 30m
 Check the repo's state files against the repo; report, never edit them.
 
 - `PROJECT_STATUS.md`: `_Last updated_` older than 4 weeks, or a decision line that names a branch which no longer exists.
-- `PROJECT_ROADMAP.md`: an item without a done-when, or whose done-when already holds (run the check when it is a command).
+- `PROJECT_ROADMAP.md`: an item without a done-when, or whose done-when already holds (run the check when it is a command). Skip the done-when check when `.vibe-jobs/roadmap-cleanup.md` exists, because that job deletes done items.
 - `HANDOFF.md` on a branch whose PR is merged (`git branch -r --merged origin/HEAD`), or at the repo root of the default branch.
 - Worktrees under `.claude/worktrees/` whose branch is merged.
 
