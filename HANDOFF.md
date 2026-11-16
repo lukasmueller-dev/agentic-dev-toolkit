@@ -33,6 +33,6 @@ None.
 
 - The boards are `.dc.html` design files: they load `./support.js` and Google Fonts, so they do not render alone. Read them for layout, sizes and colors.
 - Screenshot → serve a dir with a `queue` copy of `web/` (`python3 -m http.server`), same Bash call. The headless shell: `~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`.
-- Clicks and keys → drive that shell with `--remote-debugging-pipe` from Python (no WebSocket library here); keep fds 3 and 4 in `pass_fds`.
+- Clicks and keys → `tests/page_check.py` drives page.js over `--remote-debugging-pipe`. Full Chrome does not start in the agent sandbox (the test skips): set `VIBE_TEST_BROWSER` to the headless shell.
 - In a fetched page, page.js finds a node only by a path from `body` (`body > main > #queue`): a `.md` can hold any class.
 - A phase span has class `x`: the panel's Close button is `.close`.
