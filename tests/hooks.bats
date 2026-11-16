@@ -134,7 +134,8 @@ push_hook() { jq -cn --arg c "$1" '{tool_input:{command:$c}}' | "$HOOKS/deny-pus
     "git -C /r push -vf" "cd r && git push -fuv origin x" \
     "git commit -m \"a\" && git push -vf && echo \"b\"" \
     "echo 'a' && git push -fuv origin x && echo 'b'" \
-    "echo \"a\"; git push -vf origin x; git log --format=\"%h\""; do
+    "echo \"a\"; git push -vf origin x; git log --format=\"%h\"" \
+    $'git push \\\n  -fu origin x' $'git push origin x \\\n -vf'; do
     out="$(push_hook "$c")"
     [ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.permissionDecision')" = deny ] || {
       echo "not denied: $c" >&2
@@ -147,7 +148,7 @@ push_hook() { jq -cn --arg c "$1" '{tool_input:{command:$c}}' | "$HOOKS/deny-pus
   local c out
   for c in "git push -u origin feature" "git push origin fix-uf" "git push --follow-tags" \
     "git push origin x && rm -f y" "git status" "git commit -m \"deny git push -vf\"" \
-    "gh pr create --body 'git push -vf'"; do
+    "gh pr create --body 'git push -vf'" $'git push -u origin x \\\n && rm -f y'; do
     out="$(push_hook "$c")"
     [ -z "$out" ] || {
       echo "denied by mistake: $c" >&2
