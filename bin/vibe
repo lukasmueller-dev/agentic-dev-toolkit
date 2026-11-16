@@ -2119,6 +2119,55 @@ gpu_outside() {
   done
 }
 
+# gpu_busy — true while the gpu-queue lock is held: flock, else its mkdir lock (with_lock in bin/gpu-queue).
+gpu_busy() {
+  local l
+  l="$(gpu_state_dir)/gpu.lock"
+  if command -v flock >/dev/null 2>&1; then
+    [[ -e "$l" ]] && ! flock -n "$l" true
+  else
+    [[ -d "$l.d" ]]
+  fi
+}
+
+# gpu_holder — who holds the GPU lock, first match: a running gpu job (its name), a running outside gpu-queue run
+# (its name), a workspace whose holder holds the lock (its label), a running tool job on turing with gpu=yes
+# (`<label> · <name>`); else `busy`. Empty while the lock is free.
+gpu_holder() {
+  local d id l
+  gpu_busy || return 0
+  for d in "$QDIR"/*/; do
+    d="${d%/}" id="$(jstate "$d" gpu-job)"
+    if [[ -n "$id" && "$(jstate "$d" status)" == gpu && -d "$(gpu_state_dir)/running/$id" ]]; then
+      short_id "$d" "$(jget "$d/job" repo)"
+      return 0
+    fi
+  done
+  IFS=$'\t' read -r _ id < <(gpu_outside running) || true
+  if [[ -n "$id" ]]; then
+    echo "${id#*-*-*-}"
+    return 0
+  fi
+  for d in "$WS_STATES"/*/; do
+    d="${d%/}"
+    if [[ -d "$d" && ! -e "$d/waits" ]] && ws_holder "$d" >/dev/null && ws_gpu "$d"; then
+      id="$(ws_name "${d##*/}")"
+      l="$(jget "$WS_ROOT/$id/workspace.conf" label)"
+      echo "${l:-$id}"
+      return 0
+    fi
+  done
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    if [[ "$(jstate "$d" status)" == running ]] && tool_gpu "$d"; then
+      l="$(tool_conf "$d" label)"
+      echo "${l:-$(jget "$d/job" tool)} · $(short_id "$d" "$(jget "$d/job" repo)")"
+      return 0
+    fi
+  done
+  echo busy
+}
+
 # short TEXT — TEXT cut to 80 characters, `…` last when cut; iconv -c drops a half character at the cut or the start.
 # shortcut: under the C locale (the runner unit sets none) the cut counts bytes, so non-ASCII text shows shorter; upgrade: set a UTF-8 locale in the unit.
 short() {
@@ -2449,6 +2498,23 @@ act_btn() {
   esac
 }
 
+# tool_up JOB — true while a tool= job runs its tool: running, no tool-exit yet.
+tool_up() { [[ -n "$(jget "$1/job" tool)" && "$(jstate "$1" status)" == running && ! -f "$1/tool-exit" ]]; }
+
+# tool_steers JOB — true when the job's tool has a steer script without the contract's bare `exit 3`.
+# shortcut: reads the script, never runs it; upgrade when a steer script answers 3 only at run time.
+tool_steers() {
+  local f
+  f="$WS_ROOT/$(jget "$1/job" tool)/steer"
+  [[ -x "$f" ]] && ! grep -qx 'exit 3' "$f"
+}
+
+# tool_tail FILE — its last 10 non-blank lines from the last 8 KB: ANSI codes and control characters gone, a `\r` a line break.
+tool_tail() {
+  local esc=$'\033'
+  tail -c 8192 "$1" 2>/dev/null | tr '\r' '\n' | sed -E "s/$esc\[[0-9;?]*[A-Za-z]//g" | tr '\001-\011\013-\037\177' ' ' | awk 'NF' | tail -n 10 || true
+}
+
 # job_buttons JOB — the card's fields, file links, then write buttons by status, data-confirm ones last; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
   local a="" b="" c="" pr gpu="" f links=""
@@ -2470,14 +2536,19 @@ job_buttons() {
     blocked | failed | timeout) a+="$(act_btn answer)" ;;
     "done") if [[ "$pr" == http* ]]; then a+="$(act_btn fix)"; fi ;;
   esac
+  if tool_up "$1" && tool_steers "$1"; then
+    f="$(tool_conf "$1" label)"
+    a+="$(ask steer text "Steer ${f:-$(jget "$1/job" tool)}: it reads the text at its next step" Send)"
+  fi
   if job_final "$1"; then
     if [[ ! -f "$1/held" ]]; then a+="$(ask hold note 'Hold: your note' Hold)"; fi
     c+="$(act_btn archive)"
   fi
-  # GET job/<id>/<file> in bin/vibe-web; the log as its tail.
-  for f in report.md pr.md gate.log result note log; do
+  # GET job/<id>/<file> in bin/vibe-web; a log as its tail, out/files as a list.
+  for f in report.md pr.md gate.log result note log tool.log out/report.md; do
     if [[ -s "$1/$f" ]]; then links+="<a href=\"/queue/api/job/$(esc "${1##*/}")/$f\">$f</a>"; fi
   done
+  if [[ -d "$1/out/files" ]]; then links+="<a href=\"/queue/api/job/$(esc "${1##*/}")/out/files\">out/files/</a>"; fi
   printf '<div class="jacts" data-id="%s"%s%s>%s%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$a" "${links:+<div class=\"files\">$links</div>}" "$(btn_rows "$b" "$c")"
 }
 
@@ -2535,6 +2606,11 @@ status_card() {
   if [[ "$1" == job ]]; then
     t="$(job_stats "$dir")"
     if [[ -n "$t" ]]; then extra+="<p class=\"stats\">$(esc "$t")</p>"; fi
+    if [[ -n "$dir" ]] && tool_up "$dir"; then
+      # &#10;: page_row joins a block to one line. awk, not ${//}: `&` in its replacement is the match on bash 5.2.
+      t="$(esc "$(tool_tail "$dir/tool.log")" | awk '{ printf "%s%s", (NR > 1 ? "&#10;" : ""), $0 }')"
+      extra+="<p class=\"lbl\">tool.log · last 10 lines</p><pre class=\"tlog\">$t</pre>"
+    fi
     if [[ -n "$dir" ]]; then extra+="$(job_buttons "$dir")"; fi
   fi
   case "$(jstate "${dir:-/nonexistent}" status)" in running | gpu) steps="$(job_steps "$dir")" ;; esac
@@ -2693,6 +2769,73 @@ config_page() {
   fi
 }
 
+# ws_page HOLDER — line 1: the rail's service links; then the Workspaces page: per kind=service tool a row with lamp, label,
+# role, place, time up and left (warn under 30 min), Open UI ↗ and Stop, or Start (a place and hours form for 2+ places);
+# then the run tools in one line. HOLDER: gpu_holder, named on turing for a gpu=yes tool. Routes ws-start, ws-stop.
+ws_page() {
+  local d n f l s st lamp line b e p u t x lim now rail="" rows="" runs="" opts hold="${1:-}"
+  now="$(date +%s)"
+  for d in "$WS_ROOT"/*/; do
+    n="${d%/}" n="${n##*/}"
+    if [[ ! -d "$d" || "$n" == _* || "$(slug "$n")" != "$n" || "$(ws_check "$WS_ROOT/$n")" != ok ]]; then continue; fi
+    f="$WS_ROOT/$n/workspace.conf" l="$(jget "$f" label)" l="${l:-$n}"
+    if [[ "$(jget "$f" kind)" != service ]]; then
+      runs+="${runs:+, }$l"
+      continue
+    fi
+    st="$WS_STATES/$n" s="$(ws_state "$st")" e="$(esc "$n")" p="$(jstate "$st" place)" b="" u=""
+    line="$(esc "$p") · $(esc "$s")" lamp=warn
+    case "$s" in
+      down)
+        lamp=off p="$(jget "$f" places)" t="$(jget "$f" hours)"
+        line="Off · places: $(esc "${p//,/, }")${t:+ · default $(esc "$t") h}"
+        t="$(ws_line "$st" | cut -f 4)"
+        if [[ -d "$st" && -n "$t" ]]; then line+=" · <span class=\"bad\">$(esc "$t")</span>"; fi
+        if [[ "$p" == *,* ]]; then
+          opts=""
+          while IFS= read -r t; do
+            if [[ "$t" == turing && -n "$hold" && "$(jget "$f" gpu)" == yes ]]; then
+              x="waits: $hold holds the GPU"
+              if [[ "$hold" == busy ]]; then x="waits for the GPU"; fi
+              opts+="<option value=\"turing\">turing — $(esc "$x")</option>"
+            else
+              opts+="<option>$(esc "$t")</option>"
+            fi
+          done < <(tr , '\n' <<<"$p")
+          t="$(jget "$f" hours)"
+          b="<div class=\"jacts\" data-name=\"$e\"><span class=\"ask\"><label>Place<select name=\"place\">$opts</select></label><label>Hours<input name=\"hours\" type=\"number\" min=\"1\" value=\"$(esc "$t")\"></label><button data-act=\"ws-start\">Start</button></span></div>"
+        else
+          b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-start\">Start</button></span>"
+        fi
+        ;;
+      up | "past limit")
+        t="$(jstate "$st" started)" lim="$(jstate "$st" limit)" u="$(jstate "$st" url)"
+        if [[ "$s" == "past limit" ]]; then
+          lamp=bad line+=": the next tick stops it"
+        else
+          lamp=ok
+          if [[ "$t" =~ ^[0-9]+$ ]]; then line+=" $(printf '%d:%02d' $(((now - t) / 3600)) $(((now - t) % 3600 / 60)))"; fi
+          if [[ "$lim" =~ ^[0-9]+$ ]]; then
+            t="$(span_text $((lim > now ? lim - now : 0))) left"
+            if ((lim - now < 1800)); then t="<span class=\"warn\">$t</span>"; fi
+            line+=" · $t"
+          else
+            line+=" · no limit"
+          fi
+        fi
+        case "$u" in http://* | https://*) b="<a class=\"btn ui\" href=\"$(esc "$u")\" target=\"_blank\" rel=\"noopener\">Open UI ↗</a>" ;; esac
+        b+="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>"
+        ;;
+      "waits for the GPU") b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>" ;;
+    esac
+    rail+="<a href=\"#ws-$e\"><i class=\"lamp l-$lamp\"></i>$(esc "$l")</a>"
+    rows+="<div class=\"wrow\" id=\"ws-$e\"><i class=\"lamp l-$lamp\"></i><div class=\"t\"><b>$(esc "$l") <span class=\"role\">· $(esc "$(jget "$f" role)")</span></b><span class=\"why\">$line</span></div>$b</div>"
+  done
+  echo "$rail"
+  printf '<section class="sec" aria-label="Services">%s</section>\n' "${rows:-<p class=\"none\">No service under workspaces/.</p>}"
+  if [[ -n "$runs" ]]; then printf '<p class="note">%s run as queue jobs.</p>\n' "$(esc "$runs")"; fi
+}
+
 # item_why LINE — `NAME STATUS: NOTE` of a lane or feature item line `NAME  STATUS  NOTE` (2+ spaces apart); the status once.
 item_why() {
   local n="${1%%  *}" r="${1#*  }" s
@@ -2840,7 +2983,8 @@ page_sections() {
   if ((nd)); then printf '<details class="sec" data-k="done"><summary>Done <span class="n">%s</span></summary>%s</details>\n' "$nd" "$dn"; fi
 }
 
-# page_status RUNNING — the header line: lamp, slots in use, paused, the usage limit or the 5h use, the render time.
+# page_status RUNNING HOLDER — the header line: lamp, slots in use, paused, the usage limit or the 5h use, the GPU holder,
+# the render time.
 page_status() {
   local lamp=ok t="" lim
   lim="$(limit_line)"
@@ -2853,6 +2997,7 @@ page_status() {
   elif [[ -n "$lim" ]]; then
     t+=" · $lim"
   fi
+  if [[ -n "$2" ]]; then t+=" · GPU: $2"; fi
   printf '<i class="lamp l-%s"></i><span>%s of %s slots%s · <span class="updated" data-t="%s">updated %s</span></span>' \
     "$lamp" "$1" "$(qconf slots 4)" "$(esc "$t")" "$(date +%s)" "$(date '+%H:%M:%S')"
 }
@@ -2860,8 +3005,9 @@ page_status() {
 # queue_web — QROOT/web/index.html, page.js and fonts/ from templates/; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r rows jobs you tab=vibe yn="" tools x hb
+  local f="$QROOT/web/index.html" r rows jobs you tab=vibe yn="" x hb hold ws
   read -r r _ <<<"$(queue_counts)"
+  hold="$(gpu_holder)" ws="$(ws_page "$hold")"
   rows="$(queue_jobs page_row)"
   jobs="$(page_sections "$rows")"
   you="${jobs%%$'\n'*}" jobs="${jobs#*$'\n'}"
@@ -2869,8 +3015,6 @@ queue_web() {
   hb='<button data-act="pause">Pause</button>'
   if [[ -e "$QROOT/paused" ]]; then hb='<button data-act="resume">Resume</button>'; fi
   if limited; then hb+='<button data-act="unlimit">Clear limit</button>'; fi
-  tools="$(ws_md)"
-  [[ -z "$tools" ]] || tools="<div class=\"md\">$(md_html <<<"$tools")</div>"$'\n'
   mkdir -p "${f%/*}/fonts" || return 1
   # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
@@ -2883,9 +3027,11 @@ queue_web() {
   if render_template "$SELF_ROOT/templates/queue-page.html" \
     '<tab>' "$tab" \
     '<you>' "$yn" \
-    '<status>' "$(page_status "$r")" \
+    '<status>' "$(page_status "$r" "$hold")" \
     '<actions>' "$hb" \
-    '<jobs>' "$jobs"$'\n'"$tools" \
+    '<jobs>' "$jobs" \
+    '<wsrail>' "${ws%%$'\n'*}" \
+    '<workspaces>' "${ws#*$'\n'}" \
     '<config>' "$(config_page)" \
     '<blocks>' "$(awk -F'\t' '$1 == "blk" { print substr($0, 5) }' <<<"$rows")" \
     '<new>' "$(new_work)" >"$f.tmp.$$"; then
@@ -4009,11 +4155,6 @@ cmd_ws_status() {
   else
     ws_lines
   fi | awk -F'\t' '{ l = sprintf("%-24s %-10s %-7s %s", $1, $2, $3, $4); sub(/ +$/, "", l); print l }'
-}
-
-# ws_md — the page's tool list: the lines of `vibe ws status` as Markdown; empty with no instance.
-ws_md() {
-  ws_lines | awk -F'\t' 'NR == 1 { print "## Tools\n" } { printf "- **%s** %s · %s%s\n", $1, $2, $3, ($4 == "" ? "" : " · " $4) }'
 }
 
 # ws_dir NAME — the folder of workspace NAME; dies on no such workspace or a conf that breaks the contract.

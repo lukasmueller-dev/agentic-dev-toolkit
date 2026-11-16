@@ -22,13 +22,17 @@
 body { display: flex; min-height: 100vh; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
 a { color: var(--accent); text-underline-offset: 2px; }
 code, .n, .repo, .el, .chip { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-/* Rail: glider and vibe, Queue with the Needs-you count, Config. */
+/* Rail: glider and vibe, Queue with the Needs-you count, Workspaces and a link per service, Config. */
 .rail { position: sticky; top: 0; flex: 0 0 216px; height: 100vh; display: flex; flex-direction: column; gap: 2px; padding: 20px 12px; background: var(--surface); border-right: 1px solid var(--line); }
 .rail a { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; color: var(--fg-2); text-decoration: none; }
 .rail .brand { justify-content: flex-start; gap: 8px; padding: 4px 10px 16px; color: var(--fg); font-size: 16px; font-weight: 600; }
-.rail .c { margin-top: 12px; }
+.rail .c, .rail .w { margin-top: 12px; }
+.rail .w { padding: 4px 10px; color: var(--muted); font-size: 12px; }
+.rail .wsl { display: flex; flex-direction: column; gap: 2px; }
+.rail .wsl a { justify-content: flex-start; gap: 8px; color: var(--fg); }
+.rail .wsl .lamp { width: 8px; height: 8px; }
 .rail .n { color: var(--bad); font-size: 12px; }
-body:not(:has(#config:target)) .rail .q, body:has(#config:target) .rail .c { background: var(--red-soft); color: var(--fg); font-weight: 500; box-shadow: inset 2px 0 var(--red); }
+body:not(:has(#config:target, #workspaces:target, #workspaces :target)) .rail .q, body:has(#config:target) .rail .c, body:has(#workspaces:target, #workspaces :target) .rail .w { background: var(--red-soft); color: var(--fg); font-weight: 500; box-shadow: inset 2px 0 var(--red); }
 .rail svg { flex: none; width: 22px; height: 22px; }
 .rail svg .i, .rail svg .run rect { fill: var(--fg); }
 /* While a job runs, the mark becomes a live glider: generations 0-3, CSS only. */
@@ -43,20 +47,20 @@ body:has(.s-running, .s-gpu) .rail svg .run { display: inline; }
 @keyframes gen { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { body:has(.s-running, .s-gpu) .rail svg .mark { display: inline; } body:has(.s-running, .s-gpu) .rail svg .run { display: none; } }
 main { flex: 1 1 auto; min-width: 0; max-width: 1016px; padding: 24px 28px 48px; }
-/* Header: lamp, slots, limit, updated; Pause or Resume, Clear limit, New job. */
+/* Header: lamp, slots, limit, GPU holder, updated; Pause or Resume, Clear limit, New job. */
 .head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 0 0 20px; }
 .head h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
-.head h1 span:not(.hq), body:has(#config:target) .hq { display: none; }
-body:has(#config:target) .hc { display: inline; }
+.head h1 span:not(.hq), body:has(#config:target, #workspaces:target, #workspaces :target) .hq { display: none; }
+body:has(#config:target) .hc, body:has(#workspaces:target, #workspaces :target) .hw { display: inline; }
 .stat { display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 13px; }
 .updated.stale { color: var(--bad); }
 .updated.stale::after { content: " · stale"; }
 .head .new { display: none; }
 body.can .head .new { display: inline-flex; }
-/* Pages: #queue, else #config when the URL hash names it. */
+/* Pages: #queue, else #config or #workspaces when the URL hash names it or a node in it. */
 .page { display: none; }
-#queue, .page:target { display: block; }
-body:has(#config:target) #queue { display: none; }
+#queue, .page:target, .page:has(:target) { display: block; }
+body:has(#config:target, #workspaces:target, #workspaces :target) #queue { display: none; }
 /* Sections: Needs you and Running open, the rest folded to one line. */
 .sec { margin: 0 0 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .sec > h2, .sec > summary { margin: 0; padding: 12px 16px 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
@@ -72,7 +76,7 @@ summary::-webkit-details-marker { display: none; }
 .row .t::after { content: ""; position: absolute; inset: 0; }
 .row .jacts, .row .btn { position: relative; }
 @media (hover: hover) { .row:hover { background: var(--surface-2); } }
-.row.sel { background: var(--red-soft); box-shadow: inset 2px 0 var(--red); }
+.row.sel, .wrow:target { background: var(--red-soft); box-shadow: inset 2px 0 var(--red); }
 .lamp { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); }
 .stat .lamp { width: 8px; height: 8px; }
 .l-ok { background: var(--ok); }
@@ -112,6 +116,8 @@ summary::-webkit-details-marker { display: none; }
 .job p { margin: 4px 0 0; color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; }
 .job p:empty { display: none; }
 .job p.stats { color: var(--muted); }
+.job p.lbl { margin-top: 12px; color: var(--muted); font-weight: 600; }
+.tlog { margin: 6px 0 0; padding: 12px 14px; background: #11171c; border: 1px solid var(--line); border-radius: 8px; color: #e8edf0; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .job p a { margin-left: 6px; }
 .job details { margin: 6px 0 0; color: var(--fg-2); font-size: 13px; }
 .job summary { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; cursor: pointer; }
@@ -128,7 +134,7 @@ body.can .head .jacts { margin: 0 0 0 auto; }
 body.can .jacts .jacts { display: contents; }
 button, .btn { display: inline-flex; flex: none; align-items: center; justify-content: center; height: 32px; min-width: 84px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--fg); font: 14px var(--sans); text-decoration: none; cursor: pointer; }
 @media (hover: hover) { button:hover:not(:disabled), .btn:hover { background: var(--surface-2); } }
-.head .new { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
+.head .new, .btn.ui { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
 button[data-confirm] { border-color: var(--bad-line); color: var(--bad); }
 button.armed, button.armed:hover { background: var(--lamp-bad); border-color: var(--lamp-bad); color: #fff; }
 button:disabled { opacity: .5; cursor: default; }
@@ -157,6 +163,16 @@ textarea { resize: vertical; }
 #queue > .md { margin: 0 0 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 /* Config: Settings, Actions, Recurring jobs, Page actions; each a section. */
 .sec > .jacts { padding: 0 16px 14px; }
+/* Workspaces: a row per service, lamp, label and role, state line, Open UI and Stop, or Start; a place and hours form below. */
+.wrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px; }
+.wrow + .wrow { border-top: 1px solid var(--line); }
+.wrow > .t { flex: 1 1 240px; }
+.wrow .ask label:has([name="hours"]) { flex: 0 0 96px; }
+.wrow .role { color: var(--muted); font-size: 13px; font-weight: 400; }
+.why .warn { color: var(--warn); }
+.why .bad { color: var(--bad); }
+body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px 16px; background: var(--surface-2); border-radius: 8px; }
+.note { margin: 0; color: var(--muted); font-size: 13px; }
 /* Panel: the block the URL hash names (#job-<key>, #new), then a button's output or a file. A right column from 1200 px;
    under it a modal over the list, on a phone a bottom sheet. */
 #panel { position: fixed; inset: 0 0 0 auto; width: min(480px, 100%); height: 100%; max-width: none; max-height: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 0; border-left: 1px solid var(--line); color: var(--fg); }
@@ -183,15 +199,17 @@ textarea { resize: vertical; }
 @media (min-width: 1200px) {
   #panel { position: sticky; inset: 0 auto auto; display: block; flex: 0 0 clamp(400px, 32vw, 560px); width: auto; height: 100vh; margin-left: auto; }
   #panel > .close { display: none; }
+  body:has(#workspaces:target, #workspaces :target) #panel:has(> .pout[hidden]) { display: none; }
 }
 /* Phone: the same page in one column; the rail is a top bar. */
 @media (max-width: 760px) {
   body { flex-direction: column; }
   .rail { z-index: 2; flex: none; height: auto; flex-flow: row wrap; gap: 0 20px; padding: calc(12px + env(safe-area-inset-top)) 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
   .rail .brand { flex-basis: 100%; padding: 0 0 4px; }
-  .rail a:not(.brand) { gap: 6px; margin: 0; padding: 8px 0 10px; border-radius: 0; }
+  .rail a:not(.brand) { gap: 6px; margin: 0; padding: 8px 0 10px; border-radius: 0; font-size: 14px; }
+  .rail .wsl { display: none; }
   #panel { inset: auto 0 0; width: 100%; height: 76dvh; border-top: 1px solid var(--line); border-left: 0; border-radius: 10px 10px 0 0; }
-  body:not(:has(#config:target)) .rail .q, body:has(#config:target) .rail .c { background: none; box-shadow: inset 0 -2px var(--red); }
+  body:not(:has(#config:target, #workspaces:target, #workspaces :target)) .rail .q, body:has(#config:target) .rail .c, body:has(#workspaces:target, #workspaces :target) .rail .w { background: none; box-shadow: inset 0 -2px var(--red); }
   main { padding: 16px 16px calc(40px + env(safe-area-inset-bottom)); }
   .row { flex-wrap: wrap; align-items: flex-start; }
   .row > .lamp { margin-top: 5px; }
@@ -208,12 +226,15 @@ textarea { resize: vertical; }
 </style>
 </head>
 <body>
-<nav class="rail" aria-label="Main"><a class="brand" href="#queue"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe</span></a><a class="q" href="#queue">Queue <span class="n"><you></span></a><a class="c" href="#config">Config</a></nav>
+<nav class="rail" aria-label="Main"><a class="brand" href="#queue"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe</span></a><a class="q" href="#queue">Queue <span class="n"><you></span></a><a class="w" href="#workspaces">Workspaces</a><div class="wsl"><wsrail></div><a class="c" href="#config">Config</a></nav>
 <main>
-<header class="head"><h1><span class="hq">Queue</span><span class="hc">Config</span></h1><span class="stat"><status></span><span class="jacts"><actions></span><a class="btn new" href="#new">New job</a></header>
+<header class="head"><h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1><span class="stat"><status></span><span class="jacts"><actions></span><a class="btn new" href="#new">New job</a></header>
 <div id="queue" class="page">
 <jobs>
 </div>
+<section id="workspaces" class="page">
+<workspaces>
+</section>
 <section id="config" class="page">
 <config>
 </section>

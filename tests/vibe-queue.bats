@@ -2095,7 +2095,7 @@ prim() {
   [ "$output" = "" ]
   grep -qF -- '--bg: #eef1f3;' "$f"
   grep -qF -- '--bg: #0e1317;' "$f"
-  [ "$(grep 'var(--red)' "$f" | grep -vc '\.rail\|^\.row\.sel ')" = 0 ]
+  [ "$(grep 'var(--red)' "$f" | grep -vc '\.rail\|^\.row\.sel, \.wrow:target ')" = 0 ]
 }
 
 @test "page: the header holds the lamp, slots in use, the limit and the render time; Pause or Resume; Clear limit only while limited" {
@@ -3049,6 +3049,99 @@ toolwait() {
   "$VIBE" queue stop 01-a >/dev/null
   wait "$runner"
   [ "$(grep '^steer' "$STUBS/tool.log")" = "$(printf 'steer try a smaller step\nsteer again')" ]
+}
+
+@test "page: a running tool job's block shows the last 10 lines of tool.log and a Steer field; no field for a steer that exits 3; after the run, its out/ links" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" w="$BATS_TEST_TMPDIR/workspaces"
+  r="$(make_repo proj)"
+  tool stub folder label=Stub
+  tooljob 01-a "$r" tool-y
+  echo running >"$Q/01-a/status"
+  {
+    printf 'line %s\n' 1 2 3 4
+    printf '\033[32mline 5\033[0m\n'
+    printf 'line %s <b>\n' 6 7 8 9 10 11 12
+    printf 'bar 10%%\rbar 50%%\n\n'
+  } >"$Q/01-a/tool.log"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<p class="lbl">tool.log · last 10 lines</p><pre class="tlog">line 5&#10;line 6 &lt;b&gt;&#10;line 7 &lt;b&gt;&#10;line 8 &lt;b&gt;&#10;line 9 &lt;b&gt;&#10;line 10 &lt;b&gt;&#10;line 11 &lt;b&gt;&#10;line 12 &lt;b&gt;&#10;bar 10%&#10;bar 50%</pre>' "$f"
+  grep -qF '<span class="ask"><label>Steer Stub: it reads the text at its next step<textarea name="text" rows="3"></textarea></label><button data-act="steer">Send</button></span>' "$f"
+  grep -qF "href=\"/queue/api/job/01-a/tool.log\">tool.log</a>" "$f"
+  printf '#!/usr/bin/env bash\n# no steer\nexit 3\n' >"$w/stub/steer"
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -c 'data-act="steer"' "$f")" = 0 ]
+  echo 0 >"$Q/01-a/tool-exit"
+  mkdir -p "$Q/01-a/out/files"
+  echo "# Report" >"$Q/01-a/out/report.md"
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -c 'class="tlog"' "$f")" = 0 ]
+  grep -qF '<a href="/queue/api/job/01-a/out/report.md">out/report.md</a><a href="/queue/api/job/01-a/out/files">out/files/</a>' "$f"
+}
+
+# gpu_hold — the GPU lock held by `gpu-queue lock` in its own process group ($holdpid) until gpu_free.
+gpu_hold() {
+  local l="$GPU_QUEUE_DIR/gpu.lock" i
+  mkdir -p "$GPU_QUEUE_DIR"
+  set -m
+  "$REPO_ROOT/bin/gpu-queue" lock -- sleep 30 </dev/null >/dev/null 2>&1 3>&- &
+  holdpid=$!
+  set +m
+  for i in $(seq 50); do
+    if { command -v flock >/dev/null && [ -e "$l" ] && ! flock -n "$l" true; } || [ -d "$l.d" ]; then return 0; fi
+    sleep 0.1
+  done
+  return 1
+}
+gpu_free() { kill -TERM -- "-$holdpid" 2>/dev/null || true; }
+
+@test "page: the header names the GPU holder, first match: gpu job, outside run, workspace, tool job, else busy; none while the lock is free" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" w="$BATS_TEST_TMPDIR/workspaces" st="$XDG_STATE_HOME/vibe/workspaces" holdpid other own
+  r="$(make_repo proj)"
+  tool stub folder gpu=yes label=Stub
+  mkdir -p "$w/gsv" "$w/two" "$st/gsv"
+  printf '%s\n' label=GSV kind=service gpu=yes places=turing >"$w/gsv/workspace.conf"
+  printf '%s\n' kind=service gpu=yes places=turing,runpod hours=2 >"$w/two/workspace.conf"
+  tooljob 04-d "$r" tool-y
+  echo running >"$Q/04-d/status"
+  "$VIBE" queue page >/dev/null
+  grep -qF '1 of 4 slots · <span class="updated"' "$f"
+  grep -qF '<option>turing</option><option>runpod</option>' "$f"
+  gpu_hold
+  rm "$Q/04-d/status"
+  "$VIBE" queue page >/dev/null
+  grep -qF '0 of 4 slots · GPU: busy · <span class="updated"' "$f"
+  grep -qF '<option value="turing">turing — waits for the GPU</option><option>runpod</option>' "$f"
+  echo running >"$Q/04-d/status"
+  "$VIBE" queue page >/dev/null
+  grep -qF '1 of 4 slots · GPU: Stub · 04-d · <span class="updated"' "$f"
+  grep -qF '<option value="turing">turing — waits: Stub · 04-d holds the GPU</option>' "$f"
+  # A workspace whose holder holds the lock: its command ends in `ws hold <instance>`; while it waits, it holds nothing.
+  echo turing >"$st/gsv/place"
+  echo c1 >"$st/gsv/id"
+  sh -c 'sleep 30; :' _ ws hold gsv 3>&- &
+  other=$!
+  echo "$other" >"$st/gsv/holder"
+  echo "vibe: holds the GPU" >"$st/gsv/hold.log"
+  : >"$st/gsv/waits"
+  "$VIBE" queue page >/dev/null
+  grep -qF 'GPU: Stub · 04-d · ' "$f"
+  rm "$st/gsv/waits"
+  "$VIBE" queue page >/dev/null
+  grep -qF 'GPU: GSV · ' "$f"
+  gpuq running train "$BATS_TEST_TMPDIR" >/dev/null
+  "$VIBE" queue page >/dev/null
+  grep -qF 'GPU: train · ' "$f"
+  mkjob 01-a "$r" task-a ok
+  echo gpu >"$Q/01-a/status"
+  own="$(gpuq running own "$BATS_TEST_TMPDIR")"
+  echo "$own" >"$Q/01-a/gpu-job"
+  "$VIBE" queue page >/dev/null
+  grep -qF 'GPU: 01-a · ' "$f"
+  gpu_free
+  kill "$other"
+  sleep 0.3
+  "$VIBE" queue page >/dev/null
+  [ "$(grep -c 'slots · GPU:' "$f")" = 0 ]
 }
 
 @test "steer: steer= unset leaves the agent's argv as it was and makes no FIFO; a plain job takes no steer" {

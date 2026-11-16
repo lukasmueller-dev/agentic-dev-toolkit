@@ -1,4 +1,4 @@
-/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or text; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
+/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or a changed value; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask; ⌘↵ in a field sends, Esc clears it.
@@ -10,11 +10,11 @@
   const main = $('body > main'), queue = $('body > main > #queue'), panel = $('body > #panel'), blocks = $('body > #panel > .pblocks');
   const pout = $('body > #panel > .pout'), none = $('body > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
   /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. */
-  const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks'].map(s => [s, $(s), $(s).innerHTML]);
+  const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces'].map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
-  /* A field the user is in or typed into: the swap leaves its part, or its block, alone. */
-  const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value));
+  /* A field the user is in or changed from its default: the swap leaves its part, or its block, alone. */
+  const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName !== 'SELECT' && f.value !== f.defaultValue));
   /* The panel block by block: one with a field in use stays, a changed one swaps, a gone one goes. True when one stayed. */
   const src = new WeakMap(); /* a live block -> the fetched HTML it came from */
   for (const b of blocks.children) src.set(b, b.outerHTML);
@@ -193,13 +193,13 @@
     /* data-id, data-pr, data-repo, data-feature, data-job; a row: data-line, data-path; then the fields */
     const args = Object.assign({}, card && card.dataset, vals);
     b.disabled = true;
-    const v = inner ? view : out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || '');
+    const v = inner ? view : out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || args.name || '');
     if (inner) say('…');
     let done = false;
     try {
       const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
       done = r.ok && j.code === 0;
-      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = ''; }); /* an empty field frees its part for the swap */
+      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; }); /* a field at its default frees its part for the swap */
       if (v !== view) { /* a newer view is open */ }
       else if (!r.ok) say(`refused: ${j.error}`, true);
       else if (inner) say((done ? '' : `exit ${j.code}\n`) + j.out, !done);
