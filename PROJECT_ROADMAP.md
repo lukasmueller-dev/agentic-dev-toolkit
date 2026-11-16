@@ -26,6 +26,14 @@ staged straight from it. Order matters within a track; tracks are independent.
       `ls skills/recurring-jobs/references/jobs | grep -cE '^(repo-review|lean-audit)\.md$'`
       prints `1` and `grep -n codebase-health PROJECT_STATUS.md` prints the
       scan decision.
+- [ ] **Pin `sandbox.autoAllowBashIfSandboxed`** — Claude Code v2.1.325 can
+      flip the default, so jobs and phone sessions would prompt for sandboxed
+      commands (`docs/sota/2026-W46.md`, recommendation 1). Add the key as
+      `true` to `claude/settings.json` and `claude/vibe-job-settings.json`.
+      Done when
+      `jq -e '.sandbox.autoAllowBashIfSandboxed == true' claude/settings.json claude/vibe-job-settings.json`
+      prints `true` twice and `bats tests/` passes with one test that fails
+      when either file drops the key.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
