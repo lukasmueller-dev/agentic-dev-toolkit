@@ -28,6 +28,11 @@ HLOOP_BIND="$(hl_key LOCAL_REACHABLE_ADDRESS)"
   hl_die "$HLOOP_REPO/.env sets LOCAL_REACHABLE_ADDRESS=$HLOOP_BIND: start needs the tailnet IPv4 in 100.64.0.0/10 (tailscale ip -4)"
 TAG="$(cat "$HLOOP_REPO/localdev/.image-tag" 2>/dev/null || true)"
 [[ -n "$TAG" ]] || hl_die "no $HLOOP_REPO/localdev/.image-tag: build the images by docs/workspaces/hypothesisloop.md"
+# The compose file at the commit of workspace.conf: compose.tailnet.yml binds the ports of that file only.
+HL_COMPOSE_SHA256=4905c446dcad210db4241e02bcac6a75d165d8c9aefd8126bc82ace7e79bd742
+sum="$(if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi <"$hl_compose_file" || true)"
+[[ "${sum%% *}" == "$HL_COMPOSE_SHA256" ]] ||
+  hl_die "$hl_compose_file differs from the commit in workspace.conf, and compose.tailnet.yml binds the ports of that file only: check out that commit"
 
 # TAG: the settings name the tag compose runs, not the tag of the working tree.
 make -C "$HLOOP_REPO" -s render-settings TAG="$TAG"

@@ -4,7 +4,7 @@
 
 load helper
 
-WS="$REPO_ROOT/workspaces/hypothesisloop"
+WS_SRC="$REPO_ROOT/workspaces/hypothesisloop"
 KEYS="SANDBOX_PROVIDER SANDBOX_FLY_API_KEY MODEL_ANTHROPIC_OAUTH_TOKEN GIT_HOST_PROVIDER LOCAL_REACHABLE_ADDRESS OBJECT_STORE_MINIO_SECRET_ACCESS_KEY"
 
 setup() {
@@ -13,6 +13,10 @@ setup() {
   export LOG
   mkdir -p "$HL/localdev/controlplane" "$HL/controlplane/settings" "$HOME/.config/vibe/workspaces" "$BATS_TEST_TMPDIR/bin"
   : >"$HL/localdev/controlplane/docker-compose.yml"
+  # A copy of the workspace whose start pins the sha256 of the empty compose file above.
+  WS="$BATS_TEST_TMPDIR/ws"
+  cp -R "$WS_SRC" "$WS"
+  sed -i.bak "s/^HL_COMPOSE_SHA256=.*/HL_COMPOSE_SHA256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/" "$WS/start"
   printf 'services:\n  api_port: 8081\n  metric_controller_port: 8084\n' >"$HL/controlplane/settings/hypothesisloop.yaml"
   echo abc123 >"$HL/localdev/.image-tag"
   write_env
@@ -165,6 +169,15 @@ write_env() {
   [ ! -e "$LOG" ]
 }
 
+@test "start refuses a compose file other than the pinned one and calls nothing" {
+  grep -qE '^HL_COMPOSE_SHA256=[0-9a-f]{64}$' "$WS_SRC/start"
+  echo '    ports: ["8090:8090"]' >>"$HL/localdev/controlplane/docker-compose.yml"
+  run "$WS/start"
+  [ "$status" -eq 1 ]
+  [[ "$output" == "error — $HL/localdev/controlplane/docker-compose.yml differs from the commit in workspace.conf"* ]] || false
+  [ ! -e "$LOG" ]
+}
+
 @test "start refuses an image this host does not hold and does not call compose" {
   DOCKER_NO_IMAGE=1 run "$WS/start"
   [ "$status" -eq 1 ]
@@ -241,7 +254,7 @@ write_env() {
 }
 
 @test "compose.tailnet.yml replaces the ports of each service start brings up, each on loopback or the tailnet address" {
-  local f="$WS/compose.tailnet.yml" s bad
+  local f="$WS_SRC/compose.tailnet.yml" s bad
   for s in postgres greptimedb memgraph minio control-service metrics-service; do
     grep -qx "  $s:" "$f"
   done
