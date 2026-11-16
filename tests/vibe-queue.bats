@@ -1233,6 +1233,23 @@ EOF
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
 }
 
+@test "milestones: a job started by now=1 over a future at= queues the next milestone without at=, and it starts" {
+  local r d n
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" spec >/dev/null 2>&1
+  printf '# Spec\n\n- [ ] one\n- [ ] two\n' >"$r/.claude/worktrees/spec/SPEC.md"
+  git -C "$r/.claude/worktrees/spec" add SPEC.md
+  git -C "$r/.claude/worktrees/spec" commit -q -m "docs(spec): x"
+  mkjob 01-a "$r" spec milestone "at=2999-01-01 03:30" now=1
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2 ]
+  for d in "$Q"/*/; do [ "$(cat "$d/status")" = "done" ]; done
+  n="$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-proj-spec')"
+  [ -n "$n" ]
+  [ "$(grep -c '^at=' "$n/job")" = 0 ]
+}
+
 @test "conf: sets one key in queue.conf; refuses an unknown key and a bad value" {
   run "$VIBE" queue conf slots=2
   [ "$status" -eq 0 ]

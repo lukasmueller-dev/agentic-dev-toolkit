@@ -900,7 +900,7 @@ job_chain() {
   [[ -n "$before" && -n "$after" ]] || return 0
   ((after > 0 && after < before)) || return 0
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
-  grep -v '^now=' "$d/job" >"$tmp/job" || true
+  grep -Ev '^(now|at)=' "$d/job" >"$tmp/job" || true
   cp "$d/prompt.md" "$tmp/prompt.md"
   echo "next milestone → $(basename "$(queue_add "$tmp")")"
 }
