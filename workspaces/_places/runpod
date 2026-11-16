@@ -44,6 +44,8 @@ q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 # addr — host and sshargs for the pod's direct ssh (the proxy ssh has no scp).
 # A new pod reuses old IPs: a known_hosts per instance, never ~/.ssh/known_hosts.
+# shortcut: an hours-long exec run lives on one ssh, which outlasts a 10 min gap (30 s x 20) and no more;
+# a run detached in the pod, with exec polling /ws/out/result, is the upgrade once a longer gap ends a run.
 addr() {
   local info ip port key
   info="$(rp ssh info "$id" 2>/dev/null)" &&
@@ -52,7 +54,7 @@ addr() {
     key="$(jq -r '.ssh_key.path // empty' <<<"$info")" &&
     [ -n "$ip" ] && [ -n "$port" ] &&
     host="root@$ip" &&
-    sshargs=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30
+    sshargs=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=20
       -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$WS_STATE/known_hosts"
       -p "$port" ${key:+-i "$key"})
 }

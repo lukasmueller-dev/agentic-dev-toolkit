@@ -305,6 +305,7 @@ pod_up() {
   [ "$status" -eq 7 ]
   [ "$output" = "script ran" ]
   grep -qF "exec /ws/scripts/'steer' 'it'\\''s late'" "$STUB/ssh.log"
+  grep -q -- '-o ServerAliveCountMax=20 ' "$STUB/ssh.log"
   local t0
   t0="$(date +%s)"
   run "$PLACE" url
