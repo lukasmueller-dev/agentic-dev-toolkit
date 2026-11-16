@@ -41,6 +41,7 @@ memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
 web_login=         # your tailnet login; empty: every page write gets 403
 pr_login=          # the GitHub login whose /fix starts a fix job; empty: gh's login
+steer=             # 1: vibe queue steer reaches a running session; read at each session start
 ```
 
 Optional, per repo: a gate the job sandbox cannot run (docker, hardware).
@@ -60,13 +61,13 @@ systemctl --user enable --now vibe-queue.service gpu-queue.service
 ```
 
 Every other machine: `echo 'client <host>' > ~/.config/vibe/role` (`<host>` takes `ssh <host>`).
-There `vibe queue status|report` and `vibe job list` run on the server; other `queue` and `job` commands stop.
+There `vibe queue status|report`, `vibe job list` and `vibe ws list|status` run on the server; other `queue`, `job` and `ws` commands stop.
 
 ## 3. Phone page
 
 The runner writes `~/.local/state/vibe/web/index.html` each pass: tabs Queue and Config (settings, `vibe job list`), `pandoc` if present. Raw HTML in the text shows as code; a link or image with a scheme other than `http`, `https` or `mailto` shows as text.
 A running card shows its last step and the last 10 from `queue/<id>/log` (`jq` if present).
-The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups.
+The Queue tab starts with your held jobs ("Yours") and the triage lines, then the repo groups, then `Tools`: the lines of `vibe ws status`, from state files only.
 At 1024 px and wider, the page is 15% larger and an open panel is a right column.
 The page re-fetches itself every 10 s and keeps the filter, open cards and open steps; no change for 2 minutes turns the time stamp red, `stale` (runner or network down). Without JS it needs a reload.
 A lane card is a stack of three sheets. One click on it unpacks a job card per job; a click on its header packs it again.
@@ -114,10 +115,11 @@ vibe queue run --claude --drain                     # by hand, without the servi
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the report skip a final job that has a `pid` file and no `ended` file: its process still writes.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
-- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`; other keys and bad values are refused.
+- `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
 - `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
+- `vibe queue steer <id> <text>` with `steer=1`: each session starts with `--input-format stream-json` and reads the FIFO `<job>/steer`. The running session gets the text as a user message at its next boundary. Its first result event ends the input; `vibe queue steer` refuses a text after it. A tool job's run: [Tool jobs](#tool-jobs).
 - `vibe queue unlimit` removes `limit`: jobs start again.
 - `vibe queue new <repo> <branch> <done-when> <task>`: a job from [`job-prompt.md`](../skills/fill-queue/references/job-prompt.md), source `new`. No done-when, or a job on the branch queued or running: refused.
 - `--line <n> <repo> <branch>`: the item at line `n` of the last `vibe queue roadmap <repo>` listing (its origin commit in `roadmap/`); refused when that item changed or left `origin/<default>` since. Its done-when is the text after `Done when`.
@@ -191,6 +193,24 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
 
+## Tool jobs
+
+An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
+`/enqueue` makes one: route Tool run. Contract: [`docs/workspaces.md`](workspaces.md).
+
+- Keys, input and output files: [Queue job](workspaces.md#queue-job). `place=` defaults to the first of its `places`, `hours=` to its `hours`.
+- At start the runner checks the tool's conf, its secrets, `kind=run`, the place and `hours`. A fail ends the job `failed` with the reason, before the worktree.
+- The run: instance `<tool>-<id>`, `/ws/in/repo` a clone of the job's worktree. `hours=` limits it; `timeout=` limits the closing session. `gpu=yes` on turing: under the `gpu-queue` lock.
+- One `gpu=yes` tool job on turing runs its tool at a time. The next one stays `queued` and takes no slot.
+- After the run the runner removes each link from `out/`. No `out/result` → `failed`. An `out/result` of `failed: …` → `failed` with that line, no closing session.
+- `result=branch`: the runner fast-forwards the job's branch to `out/branch` of `out/repo.bundle`. No fast-forward, or a commit in agent or git config (`.claude/`, `CLAUDE.md`, `.github/` …) → `failed`.
+- `result=folder`: a report job (`output=report`); the files stay in `out/files/`.
+- The closing session reads `close.md`: `prompt.md`, then [`tool-run.md`](../skills/fill-queue/references/tool-run.md). It checks the tool's score with the repo's metric command; a tool commit that changes the metric fails the job. Review, gate and PR as for any job.
+- `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
+- `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
+- Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
+- shortcut: the run has no memory limit (`MEM_CMD` covers sessions and gates only); add one at the place when a tool runs the machine out of RAM.
+
 ## Page actions
 
 A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed argv (`ROUTES`). `<arg>` comes from the card's `data-*` or a prompt. ✓: a second tap within 4 s.
@@ -246,7 +266,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)); the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
@@ -257,6 +277,8 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
+| `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
+| `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |
 | `archive/<YYYY-MM>/<id>/`, `features/` | reviewed jobs (`vibe queue archive`); archived features (`vibe feature archive`) |
 | `features/<slug>.md`, `<slug>.ready` | a feature (`vibe feature add`); the human test passed (`vibe feature ready`) |
@@ -319,4 +341,5 @@ The PR footer line and the report row end with the job's size, from the last `re
 - `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
 - No buttons on the page → `vibe-web.service` down, no `/queue/api` serve path, or `web_login` is not your login: `journalctl --user -u vibe-web`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
+- `vibe queue steer` prints `takes no steer now` → the session started before `steer=1`, or its first turn ended; `steer=1` acts from the next session on.
 - `gh failed` in the sweep → the sandbox hides gh's token; run `sweep.sh` unsandboxed.

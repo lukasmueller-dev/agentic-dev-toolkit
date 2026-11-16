@@ -552,7 +552,7 @@ complete_vibe() {
   [ "$(complete_vibe sync --w)" = --wip ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(complete_vibe status --)" = --claude ]
-  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop " ]
+  [ "$(complete_vibe queue st | tr '\n' ' ')" = "status stop steer " ]
   [ "$(complete_vibe queue r | tr '\n' ' ')" = "roadmap report resume run retry ready " ]
   [ "$(complete_vibe queue m)" = merge-order ]
   [ "$(complete_vibe queue a | tr '\n' ' ')" = "add archive answer " ]
@@ -561,6 +561,8 @@ complete_vibe() {
   [ "$(complete_vibe job l)" = list ]
   [ "$(complete_vibe f)" = feature ]
   [ "$(complete_vibe feature r)" = ready ]
+  [ "$(complete_vibe w)" = ws ]
+  [ "$(complete_vibe ws st | tr '\n' ' ')" = "status start stop " ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task
@@ -595,6 +597,7 @@ zcomplete_vibe() {
   [ "$(zcomplete_vibe start -C '')" = "files -/" ]
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(zcomplete_vibe status '')" = --claude ]
+  [ "$(zcomplete_vibe ws '' | tr '\n' ' ')" = "list status build start stop tick " ]
   local r
   r="$(make_repo zproj)"
   git -C "$r" branch zsh-task
