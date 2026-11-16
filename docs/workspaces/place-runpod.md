@@ -77,6 +77,7 @@ The header of `workspaces/_places/runpod` lists the other `RUNPOD_*` keys and th
 
 ```bash
 grep '^places=runpod' workspaces/<name>/workspace.conf   # a service starts at the first place in places
+grep '^hours=[1-9]' workspaces/<name>/workspace.conf     # one line: a pod always has a limit
 vibe ws start <name>
 ```
 
@@ -101,6 +102,7 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
   `up` deletes a pod named `ws-<instance>` if one exists.
 - `--gpu-id` gets quotes → the script reads `runpod.env` as `KEY=VALUE` lines and does not source it. Write the id with no quotes.
 - `runpod.env: others can read it` → `chmod 600` it. `up` refuses the file; `tick` and `down` warn and still delete.
+- `hours must be a whole number above 0 …` → the conf has no `hours`, or a queue job has no `hours=`. Set `hours=<n>` with no leading zero.
 - `already up: pod <id>` → the `id` file names a pod. Run `vibe ws stop <name>` first.
 - `no input: …/in/ is missing` → a `kind=run` needs `$WS_STATE/in/`. A queue job with `tool=<name>` and `place=runpod` writes it.
 - `the pod list fails, so the id of pod ws-<instance> is unknown` → `runpodctl pod list` fails. The `id` file keeps `pending`, so the next `vibe ws tick` looks for the pod by name again.
