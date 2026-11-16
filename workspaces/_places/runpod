@@ -33,6 +33,8 @@ if [ -f "$place_env" ]; then
 fi
 wait_s="${RUNPOD_WAIT:-600}"
 poll="${RUNPOD_POLL:-10}"
+pull_s=300  # a pull on the tick path, or past the limit, stops after 5 min: each minute bills
+pull_end="" # the epoch that bound ends; empty: no bound (vibe ws stop before the limit)
 
 # The API key reaches runpodctl as RUNPOD_API_KEY, never in argv.
 rp() { runpodctl "$@" --output json; }
@@ -57,7 +59,8 @@ addr() {
 # shellcheck disable=SC2029 # the command is built for the remote shell
 rsh() { ssh "${sshargs[@]}" "$host" "$@"; }
 # shortcut: rsync -e takes no escaped quote, so a path with ' breaks it.
-rcopy() { rsync -a -e "ssh $(printf "'%s' " "${sshargs[@]}")" "$@"; }
+# --timeout ends a copy over a dead link.
+rcopy() { rsync -a --timeout=60 -e "ssh $(printf "'%s' " "${sshargs[@]}")" "$@"; }
 
 ready() {
   [ "$(rp pod get "$id" 2>/dev/null | jq -r '.runtimeStatus // empty' 2>/dev/null)" = running ] &&
@@ -170,13 +173,22 @@ verb_exec() {
   rsh "$cmd"
 }
 
-# Runs as a tested condition too (down): an && chain, so a failed step fails it.
+# Runs as a tested condition too (down): each failed step returns 1.
 verb_pull() {
-  [ -n "$id" ] && addr &&
-    mkdir -p "$WS_STATE/data" "$WS_STATE/out" &&
-    rcopy --safe-links "$host:/ws/data/" "$WS_STATE/data/" &&
-    rcopy --safe-links "$host:/ws/out/" "$WS_STATE/out/" &&
-    date +%s >"$WS_STATE/pulled"
+  local d left stop=()
+  if [ -z "$id" ] || ! addr || ! mkdir -p "$WS_STATE/data" "$WS_STATE/out"; then return 1; fi
+  for d in data out; do
+    if [ -n "$pull_end" ]; then
+      left=$(((pull_end - $(date +%s) + 59) / 60))
+      if [ "$left" -le 0 ]; then
+        echo "runpod: pull ran past its bound of ${pull_s}s" >&2
+        return 1
+      fi
+      stop=("--stop-after=$left")
+    fi
+    rcopy --safe-links "${stop[@]+"${stop[@]}"}" "$host:/ws/$d/" "$WS_STATE/$d/" || return 1
+  done
+  date +%s >"$WS_STATE/pulled"
 }
 
 # url — an ssh tunnel from the tailnet address of this machine: the phone talks to it only.
@@ -196,7 +208,9 @@ verb_url() {
 
 verb_down() {
   [ -n "$id" ] || return 0
-  local rc=0
+  local rc=0 now
+  now="$(date +%s)"
+  if [ "$now" -ge "$(cat "$WS_STATE/limit" 2>/dev/null || echo 0)" ]; then pull_end=$((now + pull_s)); fi
   verb_pull || {
     echo "runpod: pull failed; deleting pod $id anyway" >&2
     rc=1
@@ -219,6 +233,7 @@ verb_tick() {
     wait_s=0 # one delete per tick: a wait here stalls the runner pass
     verb_down
   elif [ $((now - pulled)) -ge 600 ]; then
+    pull_end=$((now + pull_s))
     verb_pull
   fi
 }

@@ -6,7 +6,8 @@ Script: [`workspaces/_places/runpod`](../../workspaces/_places/runpod). Contract
 ## Requirements
 
 - `runpodctl` with the `pod` and `ssh info` commands, `jq`, `rsync`, `ssh` and `tailscale` on turing.
-- `rsync` 3.4.0, or a distro build with the fixes for CVE-2024-12084 to 12088 and CVE-2024-12747. `pull` copies from a pod that runs an untrusted tool.
+- `rsync` 3.4.0, or a distro build of 3.2.3 or newer with the fixes for CVE-2024-12084 to 12088 and CVE-2024-12747.
+  `pull` copies from a pod that runs an untrusted tool, and its bound needs `--stop-after`.
 - A RunPod account with prepaid credit and auto-pay off. The credit is the last money stop: RunPod has no spend limit per pod.
 - A public tool image that holds `rsync`. Its entrypoint writes `$PUBLIC_KEY` to `/root/.ssh/authorized_keys` and starts `sshd`.
   `up` replaces the image CMD with `sleep infinity`, so a CMD that starts `sshd` never runs.
@@ -19,6 +20,7 @@ wget -qO ~/.local/bin/runpodctl https://github.com/runpod/runpodctl/releases/lat
 chmod +x ~/.local/bin/runpodctl && runpodctl version
 runpodctl ssh --help | grep -w info      # one line; none means a runpodctl too old for the script
 zcat /usr/share/doc/rsync/changelog.Debian.gz | grep -c CVE-2024-12088   # 1 or more; else rsync --version shows 3.4.0 or newer
+rsync --help | grep -c -- --stop-after   # 1; 0 means an rsync older than 3.2.3
 ```
 
 ## 2. Add the keys
@@ -100,9 +102,12 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
 - `--gpu-id` gets quotes → the script reads `runpod.env` as `KEY=VALUE` lines and does not source it. Write the id with no quotes.
 - `runpod.env: others can read it` → `chmod 600` it. `up` refuses the file; `tick` and `down` warn and still delete.
 - `already up: pod <id>` → the `id` file names a pod. Run `vibe ws stop <name>` first.
-- `no input: …/in/ is missing` → a `kind=run` needs `brief.md` and `args` in `$WS_STATE/in/`. The contract names no source for `/ws/in` yet.
+- `no input: …/in/ is missing` → a `kind=run` needs `$WS_STATE/in/`. A queue job with `tool=<name>` and `place=runpod` writes it.
+- `the pod list fails, so the id of pod ws-<instance> is unknown` → `runpodctl pod list` fails. The `id` file keeps `pending`, so the next `vibe ws tick` looks for the pod by name again.
 - `pod <id> still exists; delete it with: …` → RunPod did not confirm the delete. The `id` file stays, so the next `vibe ws tick` tries again.
 - `pull failed; deleting pod <id> anyway` → the image has no `rsync`, or the pod died. `data/` holds the last good `pull`, at most 10 min old.
-- A pod bills past its limit → `down` at the limit waits for `pull` with no time bound. Run `runpodctl pod delete <id>`.
+- `run-time limit exceeded` or `pull ran past its bound of 300s` → a pull in `tick`, or in `down` past the limit, stops after 5 min.
+  The files it copied stay. `pulled` keeps the time of the last full pull.
+- `vibe ws stop` waits a long time → before the limit, `down` copies all of `/ws/data` with no time bound. `--timeout=60` ends only a dead link.
 - `no tunnel` and `ControlPath too long` in `tunnel.log` → `$WS_STATE/tunnel.sock` is over 104 characters. Use a short instance name.
 - A long `exec run` ends with no result → a dropped ssh ends the remote command with SIGPIPE. `tick` still pulls `/ws/data` until the limit.

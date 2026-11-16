@@ -271,6 +271,29 @@ pod_up() {
   [ -e "$STUB/pod" ]
 }
 
+@test "tick, and down past the limit, stop a pull after 5 min; down before the limit has no bound" {
+  local now
+  pod_up
+  now="$(date +%s)"
+  echo $((now + 3600)) >"$WS_STATE/limit"
+  run "$PLACE" down
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--timeout=60 ' "$STUB/rsync.log")" -eq 2 ]
+  run grep -q -- --stop-after "$STUB/rsync.log"
+  [ "$status" -eq 1 ]
+  rm "$STUB/rsync.log"
+  pod_up
+  echo $((now - 600)) >"$WS_STATE/pulled"
+  run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--stop-after=5 root@' "$STUB/rsync.log")" -eq 2 ]
+  rm "$STUB/rsync.log"
+  echo $((now - 1)) >"$WS_STATE/limit"
+  run "$PLACE" down
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--stop-after=5 root@' "$STUB/rsync.log")" -eq 2 ]
+}
+
 @test "exec passes stdout and the exit code; url tunnels the first port to the tailnet address" {
   pod_up
   run "$PLACE" exec steer "it's late"
