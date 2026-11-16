@@ -678,7 +678,8 @@ EOF
 
 @test "claude settings: both baselines pin autoAllowBashIfSandboxed" {
   # Claude Code v2.1.325 can flip this default; without the pin sandboxed Bash prompts
-  jq -e '.sandbox.autoAllowBashIfSandboxed == true' \
+  # -s + all(): plain `jq -e f1 f2` reports only the last file's value
+  jq -es 'all(.[]; .sandbox.autoAllowBashIfSandboxed == true)' \
     "$REPO_ROOT/claude/settings.json" "$REPO_ROOT/claude/vibe-job-settings.json"
 }
 
