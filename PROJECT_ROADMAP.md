@@ -27,12 +27,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       prints `1` and `grep -n codebase-health PROJECT_STATUS.md` prints the
       scan decision.
 
-- [ ] **Update the mattpocock vendor pin** — the pin `59db609` is 7 commits
-      behind upstream `main`; `7739eae` changes one line of `grilling`. Run
-      `bin/plug update mattpocock`; commit conf, lock and `vendor/` together.
-      Done when `bin/plug verify` passes on the new pin and
-      `bin/skill-lint --strict skills` reports 0 errors.
-
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
 - [ ] **Opt every roadmap repo into `roadmap-cleanup`** — the catalogue job
