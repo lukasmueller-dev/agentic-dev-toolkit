@@ -106,7 +106,7 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
 - `the pod list fails, so the id of pod ws-<instance> is unknown` → `runpodctl pod list` fails. The `id` file keeps `pending`, so the next `vibe ws tick` looks for the pod by name again.
 - `pod <id> still exists; delete it with: …` → RunPod did not confirm the delete. The `id` file stays, so the next `vibe ws tick` tries again.
 - `pull failed; deleting pod <id> anyway` → the image has no `rsync`, or the pod died. `data/` holds the last good `pull`, at most 10 min old.
-- `run-time limit exceeded` or `pull ran past its bound of 300s` → a pull in `tick`, or in `down` past the limit, stops after 5 min.
+- `stopping at requested limit` (rsync exit 30) or `pull ran past its bound of 300s` → a pull in `tick`, or in `down` past the limit, stops after 5 min.
   The files it copied stay. `pulled` keeps the time of the last full pull.
 - `vibe ws stop` waits a long time → before the limit, `down` copies all of `/ws/data` with no time bound. `--timeout=60` ends only a dead link.
 - `no tunnel` and `ControlPath too long` in `tunnel.log` → `$WS_STATE/tunnel.sock` is over 104 characters. Use a short instance name.
