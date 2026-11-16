@@ -1095,6 +1095,17 @@ get() {
   [ "${lines[0]}" = "# Tool report" ]
   run get "/queue/api/job/$ID/out/files/"
   [ "$output" = "$(printf 'table.csv\nsub/b.txt\n\n200')" ]
+  # A name that is not UTF-8 (Linux; APFS refuses it): a ? in the list, not a dropped connection.
+  if touch "$d/out/files/caf$(printf '\351').txt" 2>/dev/null; then
+    run get "/queue/api/job/$ID/out/files/"
+    [ "${lines[0]}" = "caf?.txt" ]
+    [ "${lines[3]}" = 200 ]
+    rm "$d/out/files/caf"*
+  fi
+  # gate.log is no log tail: the first line, the command, stays.
+  { echo '$ make test' && python3 -c 'print("x" * 100000)'; } >"$d/gate.log"
+  run get "/queue/api/job/$ID/gate.log"
+  [ "${lines[0]}" = '$ make test' ]
   "$REPO_ROOT/bin/vibe" queue page
   grep -q "href=\"/queue/api/job/$ID/tool.log\">tool.log</a>" "$Q/web/index.html"
   grep -q "href=\"/queue/api/job/$ID/out/report.md\">out/report.md</a>" "$Q/web/index.html"

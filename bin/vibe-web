@@ -182,10 +182,10 @@ class Handler(BaseHTTPRequestHandler):
                 fd, old = os.open(p, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd), fd
                 os.close(old)
             if name == "out/files":  # fwalk follows no link, the top one included
-                data = "".join(os.path.join(r, f)[6:] + "\n" for r, _, fs, _ in os.fwalk("files", dir_fd=fd) for f in sorted(fs)).encode()[:1 << 20]
+                data = "".join(os.path.join(r, f)[6:] + "\n" for r, _, fs, _ in os.fwalk("files", dir_fd=fd) for f in sorted(fs)).encode(errors="replace")[:1 << 20]
             else:
                 with os.fdopen(os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd), "rb") as f:
-                    if name.endswith("log"):
+                    if name in ("log", "tool.log"):  # gate.log from its start: its first lines name the command
                         f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
                     data = f.read(1 << 20)
         except OSError:
