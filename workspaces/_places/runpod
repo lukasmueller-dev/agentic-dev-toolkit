@@ -249,7 +249,11 @@ verb_tick() {
   if [ "$now" -ge "$limit" ]; then
     wait_s=0 # one delete per tick: a wait here stalls the runner pass
     verb_down
-  elif [ $((now - pulled)) -ge 600 ]; then
+    return
+  fi
+  # A tunnel ends after a 10 min network gap, and only url opens one: the phone link stays dead without this.
+  if [ "${WS_CONF_KIND:-}" = service ] && [ -n "${WS_CONF_PORTS:-}" ]; then (verb_url) >/dev/null || true; fi
+  if [ $((now - pulled)) -ge 600 ]; then
     pull_end=$((now + pull_s))
     verb_pull
   fi

@@ -109,6 +109,7 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
 - `stopping at requested limit` (rsync exit 30) or `pull ran past its bound of 300s` → a pull in `tick`, or in `down` past the limit, stops after 5 min.
   A cut file stays in `.rsync-partial/`, and the next pull resumes it. `pulled` keeps the time of the last full pull.
 - `vibe ws stop` waits a long time → before the limit, `down` copies all of `/ws/data` with no time bound. `--timeout=60` ends only a dead link.
+- The phone link is dead → turing lost the pod for more than 10 min, and the tunnel ended. The next `vibe ws tick` opens it again.
 - `no tunnel` and `ControlPath too long` in `tunnel.log` → `$WS_STATE/tunnel.sock` is over 104 characters. Use a short instance name.
 - A long `exec run` ends with ssh exit 255 and no result → turing lost the pod for more than 10 min, and ssh gave up.
   `vibe ws run` then calls `down`, which pulls `/ws/data` and deletes the pod. Start the run again.

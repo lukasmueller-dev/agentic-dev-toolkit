@@ -359,6 +359,23 @@ pod_up() {
   grep -q -- "-S $WS_STATE/tunnel.sock -O exit pod" "$STUB/ssh.log"
 }
 
+@test "tick re-opens a dead tunnel of a service, and leaves a live one" {
+  pod_up
+  echo $(($(date +%s) + 3600)) >"$WS_STATE/limit"
+  date +%s >"$WS_STATE/pulled"
+  WS_CONF_KIND=service run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUB/ssh.log")" -eq 1 ]
+  touch "$STUB/tunnel-up"
+  WS_CONF_KIND=service run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUB/ssh.log")" -eq 1 ]
+  rm "$STUB/tunnel-up"
+  WS_CONF_KIND=run run "$PLACE" tick
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- ' -M ' "$STUB/ssh.log")" -eq 1 ]
+}
+
 @test "exec passes stdout and the exit code; url tunnels the first port to the tailnet address" {
   pod_up
   run "$PLACE" exec steer "it's late"
