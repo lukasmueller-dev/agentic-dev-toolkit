@@ -17,13 +17,14 @@ vibe ws tick                 # each instance with an id: its place's tick; the r
 
 - `VIBE_WORKSPACES` overrides the folder; the default is `workspaces/` in the toolkit checkout.
 - `list` flags a conf with no `kind` or `places`, a line that is not `key=value`, an unknown or doubled key, a value that breaks its row below, `result` on a service, or a run with no `result`. `hours` must be a whole number above 0.
-- `status` reads the state files only and calls no place: `waits for the GPU` while a start waits for the lock, `starts` while a detached start runs, `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
+- `status` reads the state files only and calls no place: `waits for the GPU` while a start waits for the lock, `starts` while a detached start runs, `stops` while a page stop runs, `down` with no `id` file, `past limit` when `limit` has passed, else `up`.
 - `start` refuses a secret the env file does not set, an env file that others can read, a place not in `places`, and an `--hours` that is not a whole number above 0.
 - `start` fails and brings the place down when the start script runs past 120 s.
 - `stop` and a tick past the limit run the stop script for 300 s at most, then `down`.
 - `start` on turing with `gpu=yes` runs `vibe ws hold` under `gpu-queue lock`, detached. It prints `waits for the GPU` when the lock stays busy for 3 s, else it waits for `up`. The lock stays held until `stop` or the limit removes the `id` file.
 - `start` from the page (`VIBE_WEB=1`) detaches every start as `vibe ws hold` and returns after 3 s at most: `up`, `starts` or `waits for the GPU`.
-- `stop` ends a start that waits for the GPU, and refuses one that `starts`.
+- `stop` ends a start that waits for the GPU, and refuses one that `starts` or `stops`.
+- `stop` from the page detaches the stop script and `down` as `vibe ws down`, returns `stops`, and the tick skips the instance meanwhile.
 - The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
 - The queue page's Workspaces page has a row per service with Start, Stop and Open UI ↗: [Page](vibe-queue.md#3-page).
 - A `kind=run` tool runs as a queue job: `/enqueue` route Tool run. Flow, stop and steer: [Tool jobs](vibe-queue.md#tool-jobs).
@@ -102,6 +103,7 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 
 - `~/.local/state/vibe/workspaces/<instance>/`: `place`, `id`, `started`, `limit` (epoch), `url`, `pulled` (epoch), `data/`, `out/`.
 - A detached start adds `holder` (the pid of `vibe ws hold`), `hold.log`, and `waits` or `starts` while it waits or starts.
+- A page stop adds `stops` (the pid of `vibe ws down`) and `stop.log`; a failed one keeps `stop.log`.
 - Instance: `<name>` for a service, `<name>-<job id>` for a run.
 - Secrets: `~/.config/vibe/workspaces/<name>.env`, mode 600, `KEY=VALUE`.
 

@@ -4102,8 +4102,15 @@ ws_gpu() {
   [[ "$(jstate "$1" place)" == turing && "$(jget "$WS_ROOT/$n/workspace.conf" gpu)" == yes ]]
 }
 
-# ws_state INSTANCE-DIR — waits for the GPU, starts while its holder runs ws_up, down with no id file,
-# past limit when limit has passed, else up.
+# ws_stopper INSTANCE-DIR — the pid of its live page stop (`vibe ws down`); fails when none. Same pid check as ws_holder.
+ws_stopper() {
+  local p
+  p="$(jstate "$1" stops)"
+  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws down ${1##*/}" ]] && echo "$p"
+}
+
+# ws_state INSTANCE-DIR — waits for the GPU, starts while its holder runs ws_up, stops while a page stop runs,
+# down with no id file, past limit when limit has passed, else up.
 ws_state() {
   local lim
   lim="$(jstate "$1" limit)"
@@ -4111,6 +4118,8 @@ ws_state() {
     echo "waits for the GPU"
   elif [[ -e "$1/starts" ]] && ws_holder "$1" >/dev/null; then
     echo starts
+  elif ws_stopper "$1" >/dev/null; then
+    echo stops
   elif [[ ! -s "$1/id" ]]; then
     echo down
   elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
@@ -4345,8 +4354,9 @@ cmd_ws_run() {
 }
 
 # vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
+# From the page (VIBE_WEB) a detached `vibe ws down` does it: vibe-web kills a command after 120 s.
 cmd_ws_stop() {
-  local st pid
+  local st pid s
   (($# == 1)) || die "usage: vibe ws stop <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
@@ -4357,11 +4367,34 @@ cmd_ws_stop() {
     echo "$1 stopped — it waited for the GPU"
     return 0
   fi
+  s="$(ws_state "$st")"
   # A down beside a running start script races it: stop once it is up.
-  [[ "$(ws_state "$st")" != starts ]] || die "$1 starts — stop it once it is up: vibe ws status $1"
+  [[ "$s" != starts ]] || die "$1 starts — stop it once it is up: vibe ws status $1"
+  [[ "$s" != stops ]] || die "$1 stops already — vibe ws status $1"
   rm -f "$st/waits"
   [[ -s "$st/id" ]] || die "$1 is down"
+  if [[ -n "${VIBE_WEB:-}" ]]; then
+    set -m
+    nohup "$SELF_ROOT/bin/vibe" ws down "$1" </dev/null >"$st/stop.log" 2>&1 &
+    echo "$!" >"$st/stops"
+    set +m
+    echo "$1 stops — vibe ws status $1"
+    return 0
+  fi
   ws_down "$1" || die "down of $1 failed — vibe ws status $1"
+  echo "$1 down"
+}
+
+# vibe ws down INSTANCE — a page stop's detached command: ws_down, then the stops file goes.
+# shortcut: a failed one shows only in stop.log, and the page offers Stop again; show its reason when one fails.
+cmd_ws_down() {
+  local r=0
+  (($# == 1)) || die "usage: vibe ws down <instance>"
+  ws_inst "$1"
+  ws_down "$1" || r=$?
+  rm -f "$WS_STATES/$1/stops"
+  ((r == 0)) || die "down of $1 failed — vibe ws status $1"
+  rm -f "$WS_STATES/$1/stop.log"
   echo "$1 down"
 }
 
@@ -4393,8 +4426,8 @@ cmd_ws_tick() {
   local d i secs="${VIBE_WS_TICK_SECS:-600}"
   for d in "$WS_STATES"/*/; do
     d="${d%/}" i="${d##*/}"
-    if [[ ! -s "$d/id" ]]; then
-      continue
+    if [[ ! -s "$d/id" ]] || ws_stopper "$d" >/dev/null; then
+      continue # down, or its page stop runs ws_down
     elif [[ "$(ws_state "$d")" == "past limit" ]]; then
       ws_down "$i" || warn "down of $i past its limit failed"
     else
@@ -4419,7 +4452,7 @@ cmd_ws() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | status | build | start | stop | tick | hold | run) "cmd_ws_$sub" "$@" ;;
+    list | status | build | start | stop | tick | hold | down | run) "cmd_ws_$sub" "$@" ;;
     *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
   esac
 }

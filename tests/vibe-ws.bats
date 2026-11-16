@@ -408,6 +408,34 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [[ "$output" == "svc "*" down "*" turing  vibe: start of svc failed — it is down again" ]] || false
 }
 
+@test "ws stop from the page (VIBE_WEB): detached; stops while its stop script runs, a second stop refuses; then down" {
+  stubs
+  good svc service
+  secrets svc
+  "$VIBE" ws start svc
+  touch "$S/hang-stop"
+  SECONDS=0
+  run env VIBE_WEB=1 "$VIBE" ws stop svc
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -lt 3 ]
+  [ "$output" = "svc stops — vibe ws status svc" ]
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" stops "*" turing "* ]] || false
+  run env VIBE_WEB=1 "$VIBE" ws stop svc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"svc stops already"* ]] || false
+  p="$(cat "$STATES/svc/stops")"
+  for _ in $(seq 100); do
+    if dead "$p"; then break; fi
+    sleep 0.1
+  done
+  dead "$p"
+  run "$VIBE" ws status svc
+  [[ "$output" == "svc "*" down "*" turing" ]] || false
+  [ ! -e "$STATES/svc/stops" ]
+  [ ! -e "$S/containers/ws-svc" ]
+}
+
 @test "ws start: a first place with no script stops before any state" {
   stubs
   conf far kind=service places=runpod,turing
