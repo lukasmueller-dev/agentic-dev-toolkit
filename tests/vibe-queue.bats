@@ -2907,7 +2907,7 @@ refused() {
   [ ! -e "$Q/02-b/cost" ]
 }
 
-@test "gpu --place: the usd gate refuses a start when spent + hours × price is above usd; spent is the cost of the research's live and archived jobs" {
+@test "gpu --place: the usd gate refuses a start when spent + hours × price is above usd; spent is the cost of the research's live and archived jobs of its repo" {
   local r a="$XDG_STATE_HOME/vibe/archive/2026-11/00-w"
   places
   r="$(research_repo)"
@@ -2917,9 +2917,10 @@ refused() {
   echo 0.40 >"$a/cost"
   mkjob 00-x "$r" task-x ok research=q1
   mkjob 00-y "$r" task-y ok research=q2
-  echo "done" | tee "$Q/00-x/status" >"$Q/00-y/status"
+  mkjob 00-z "$(make_repo other)" task-z ok research=q1
+  echo "done" | tee "$Q/00-x/status" "$Q/00-y/status" >"$Q/00-z/status"
   echo 1.50 >"$Q/00-x/cost"
-  echo 9.00 >"$Q/00-y/cost"
+  echo 9.00 | tee "$Q/00-y/cost" >"$Q/00-z/cost"
   mkjob 01-a "$r" task-a place research=q1 usd=2.8
   drain
   [ "$status" -eq 0 ]
@@ -3142,7 +3143,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(grep -c '^## Research' "$j/prompt.md")" = 1 ]
 }
 
-@test "worker: refused at workers= live workers; an ended worker or another research counts not; one hid runs once" {
+@test "worker: refused at workers= live workers; an ended worker, another research or another repo's counts not; one hid runs once" {
   local r w n
   r="$(make_repo proj)"
   w="$(coord_wt "$r")"
@@ -3153,6 +3154,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   mkjob 04-w "$r" research/q1/h3 ok research=q1 hid=h3
   echo "done" >"$Q/04-w/status"
   mkjob 05-w "$r" research/q2/h9 ok research=q2 hid=h9
+  mkjob 06-w "$(make_repo other)" research/q1/h4 ok research=q1 hid=h4
   n="$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)"
   VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h3
   [ "$status" -ne 0 ]
@@ -3329,7 +3331,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
-@test "worker: a done, an archived or no coordinator gets no wake; the worker's fan says why" {
+@test "worker: a done, an archived or no coordinator gets no wake; the worker's fan says why; another repo's coordinator is none" {
   local r a="$XDG_STATE_HOME/vibe/archive/2026-11"
   r="$(make_repo proj)"
   mkjob 01-c "$r" research-q1 ok research=q1
@@ -3337,7 +3339,8 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   mkjob 03-w "$r" research/q1/h1 ok research=q1 hid=h1
   mkjob 04-w "$r" research/q2/h1 ok research=q2 hid=h1
   mkjob 05-w "$r" research/q3/h1 ok research=q3 hid=h1
-  for j in 01-c 02-k 03-w 04-w 05-w; do
+  mkjob 06-k "$(make_repo other)" research-q3 ok research=q3
+  for j in 01-c 02-k 03-w 04-w 05-w 06-k; do
     echo "done" >"$Q/$j/status"
     date '+%F %T' >"$Q/$j/ended"
   done
@@ -3349,7 +3352,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$Q/03-w/fan")" = "no wake: 01-c done" ]
   [ "$(cat "$Q/04-w/fan")" = "no wake: 02-k archived" ]
   [ "$(cat "$Q/05-w/fan")" = "no coordinator" ]
-  [ "$(ls "$Q")" = "$(printf '%s\n' 01-c 03-w 04-w 05-w)" ]
+  [ "$(ls "$Q")" = "$(printf '%s\n' 01-c 03-w 04-w 05-w 06-k)" ]
   [ "$(cat "$a/02-k/status")" = timeout ]
 }
 

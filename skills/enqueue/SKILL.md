@@ -83,7 +83,7 @@ Write one job dir (`mktemp -d`) as `fill-queue` Phase 6 describes: `job` and
 `prompt.md` from `skills/fill-queue/references/job-prompt.md`, every `<…>`
 filled; `after=` and `verify=` as `fill-queue` Phase 6 says for the draft's review and verify. Tool run: add `tool=<name>`, `place=<place>` and `hours=<n>`
 to `job`; write the brief to `in/brief.md` and the args to `in/args` in the job dir. Research: add
-`research=<branch>`, `question=<the Question, one line>`, `usd=` (the Cost limit; `0` with no `## Research` section, as empty is no limit), `workers=` (default 3), `better=higher|lower` and `deadline=YYYY-MM-DD HH:MM` to `job`; `vibe queue add` appends the coordinator block. A feature: one job dir per member with a `SPEC.md`. Then, outside the
+`research=<branch>` (a slug no earlier research of the repo used: its spend counts), `question=<the Question, one line>`, `usd=` (the Cost limit; `0` with no `## Research` section, as empty is no limit), `workers=` (default 3), `better=higher|lower` and `deadline=YYYY-MM-DD HH:MM` to `job`; `vibe queue add` appends the coordinator block. A feature: one job dir per member with a `SPEC.md`. Then, outside the
 sandbox: `vibe queue add <dir>...`. Add `--now` only when the user asked for it.
 
 ## Done

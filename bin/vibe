@@ -2264,10 +2264,10 @@ place_run() {
 }
 
 # place_gate JOB INST — run/price: the USD per hour of INST's place (its exit 3: 0). With usd= in JOB/job, a start
-# is refused when spent (the cost of each live or archived job of JOB's research=) + hours × price is above usd.
+# is refused when spent (the cost of each live or archived job of JOB's repo= and research=) + hours × price is above usd.
 # A start writes cost = hours × price: a run counts at its full hours while it runs. Exit 1: refused, 2: no price or no lock.
 place_gate() {
-  local d="$1" h p u r s=0 j rc=0 l="$QROOT/usd" m=""
+  local d="$1" h p u r g s=0 j rc=0 l="$QROOT/usd" m=""
   h="$(jget "$WS_STATES/$2/in/repo/.claude/research/workspace.conf" hours)"
   p="$(WS_SECS=60 ws_place "$2" price)" || rc=$?
   if ((rc == 3)); then
@@ -2279,10 +2279,12 @@ place_gate() {
   echo "$p" >"$d/run/price"
   # One gate at a time: a run that starts in the same pass sees this one's cost.
   mkdir_lock "$l" || return 2
-  u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)"
+  u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
   if [[ -n "$r" ]]; then
     s="$(for j in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
-      if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" ]]; then head -n 1 "${j}cost"; fi
+      if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" && "$(jget "${j}job" repo)" == "$g" ]]; then
+        head -n 1 "${j}cost"
+      fi
     done | awk '{ s += $1 } END { printf "%.2f", s }')"
   fi
   # awk compares a number with a word as text: a usd that is no number must refuse here.
@@ -2387,7 +2389,7 @@ follow_ready() {
 # Its prompt: job-prompt.md, then the block of fill-queue's references/research-worker.md.
 # One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
 cmd_queue_worker() {
-  local d="${VIBE_JOB_DIR:-}" h="" p=turing s k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|ias]"
+  local d="${VIBE_JOB_DIR:-}" h="" p=turing s g k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|ias]"
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue worker runs inside a queue job (VIBE_JOB_DIR)"
   while (($#)); do
     case "$1" in
@@ -2408,7 +2410,7 @@ cmd_queue_worker() {
   done
   [[ -n "$h" && "$p" =~ ^(turing|runpod|vast|ias)$ ]] || die "$u"
   [[ "$(slug "$h")" == "$h" ]] || die "hid '$h' is no slug: lowercase letters, digits, . _ -"
-  s="$(jget "$d/job" research)"
+  s="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
   [[ -n "$s" && -z "$(jget "$d/job" hid)" ]] || die "vibe queue worker runs inside a research coordinator job: research=, no hid="
   deadline_gate "$d" "start no worker"
   k="$(jget "$d/job" workers)"
@@ -2418,10 +2420,11 @@ cmd_queue_worker() {
   # the agent's sandbox writes there.
   mkdir_lock "$QDIR/.workers" || exit 1
   trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
-  # Live: a worker of this research with a job that has not ended (session 2 is queued before session 1 ends).
+  # Live: a worker of this repo's research with a job that has not ended (session 2 is queued before session 1 ends).
   for j in "$QDIR"/*/; do
     x="$(jget "${j}job" hid)"
-    if [[ -n "$x" && " $live " != *" $x "* && "$(jget "${j}job" research)" == "$s" ]] && ! job_final "${j%/}"; then
+    if [[ -n "$x" && " $live " != *" $x "* && "$(jget "${j}job" research)" == "$s" && "$(jget "${j}job" repo)" == "$g" ]] &&
+      ! job_final "${j%/}"; then
       live+="${live:+ }$x" n=$((n + 1))
     fi
   done
@@ -2483,10 +2486,11 @@ fan_in() {
     echo "follow-up ${d##*/}-gpu" >"$d/fan"
     return 0
   fi
-  # The newest coordinator job: research= of the worker, no hid=, no review round; queued or archived.
+  # The newest coordinator job: repo= and research= of the worker, no hid=, no review round; queued or archived.
   while IFS= read -r f; do
     f="${f%/job}"
-    if [[ -z "$(jget "$f/job" hid)$(jget "$f/job" review)" && -f "$f/prompt.md" && "${f##*/}" > "${c##*/}" ]]; then c="$f"; fi
+    if [[ -z "$(jget "$f/job" hid)$(jget "$f/job" review)" && "$(jget "$f/job" repo)" == "$(jget "$d/job" repo)" &&
+    -f "$f/prompt.md" && "${f##*/}" > "${c##*/}" ]]; then c="$f"; fi
   done < <(grep -lxF -- "research=$(jget "$d/job" research)" "$QDIR"/*/job "$QROOT"/archive/*/*/job 2>/dev/null || true)
   st="$(jstate "$c" status)"
   if [[ -z "$c" ]]; then

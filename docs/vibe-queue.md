@@ -230,13 +230,13 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 - The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason. `vibe queue add` refuses a `usd=` that is no number.
-- Spent is the sum of `cost` over the live and archived jobs with the same `research=`. A start writes `cost` = `hours` × price, so a running run counts at its full `hours`.
+- Spent is the sum of `cost` over the live and archived jobs with the same `repo=` and `research=`. A start writes `cost` = `hours` × price, so a running run counts at its full `hours`.
 - At the end of a place run, `cost` is price × the time from `up` to `down`. A run on turing costs 0.
 - `vibe queue worker <hid> [--place turing|runpod|vast|ias]`, from inside the coordinator job (`research=`, no `hid=`), queues a worker for item `### <hid> <name>` of the committed `RESEARCH.md`. Its branch `research/<slug>/<hid>` starts at the worktree's HEAD.
 - The worker job: the coordinator's `repo=` `model=` `effort=` `timeout=` `research=` `usd=` `deadline=`, then `hid=` `place=` (default `turing`) `idea=` (the item's name) `builds=` (the first word of its `Builds on:` line, else `root`) and `after=`. The runner pushes it and opens no PR.
-- Each refusal is one error line, and nothing is queued: past `deadline=`; `workers=` (default 3) workers of the research with a job that has not ended; no ledger row with the id `baseline`; no such item; a branch git refuses (it exists, or a branch `research/<slug>` does). A rerun takes a new hid.
+- Each refusal is one error line, and nothing is queued: past `deadline=`; `workers=` (default 3) workers of the repo's research with a job that has not ended; no ledger row with the id `baseline`; no such item; a branch git refuses (it exists, or a branch `research/<slug>` does). A rerun takes a new hid.
 - A worker end wakes the coordinator, once per worker job (`fan`). The end: the job is final and has no `<id>-gpu` session 2.
-- The coordinator's newest job decides the wake. Queued: it gets a `## Worker finished` block. `gpu` (it ended `queued:`) or `timeout`: a follow-up job gets the block, and a `gpu` one ends `done`.
+- The newest coordinator job with the worker's `repo=` and `research=` decides the wake. Queued: it gets a `## Worker finished` block. `gpu` (it ended `queued:`) or `timeout`: a follow-up job gets the block, and a `gpu` one ends `done`.
 - Running, `blocked`, `failed` or `skipped`: the wake waits for its end, `vibe queue answer` or `retry`. `done` or archived: no wake.
 - `vibe queue worker` counts and queues under the lock `queue/.workers.lock`, so parallel calls respect `workers=`.
 - shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.
