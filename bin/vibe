@@ -2179,6 +2179,15 @@ place_queue() {
   echo "queued a run at $p — now write result 'queued: <what runs>' and exit"
 }
 
+# fresh FILE — stdin to FILE as a new file, never through a link: an agent can write every job dir. rm drops a link
+# planted before; noclobber refuses one planted after the rm.
+fresh() {
+  rm -f "$1" && (
+    set -C
+    cat >"$1"
+  )
+}
+
 # place_pass JOB — the runner pass for JOB/run/: start place_run once. A run whose process died before
 # run/exit (a reboot) ends as infra; its instance goes down at its limit (vibe ws tick).
 place_pass() {
@@ -2186,11 +2195,14 @@ place_pass() {
   if [[ ! -f "$d/job" || ! -f "$d/run/place" || -e "$d/run/exit" ]]; then return 0; fi
   p="$(jstate "$d/run" pid)"
   if [[ -z "$p" ]]; then
+    # Once per runner process: a run/pid that cannot be written starts no second run in the next pass.
+    if [[ " ${PLACE_STARTED:-} " == *" $d "* ]]; then return 0; fi
+    PLACE_STARTED="${PLACE_STARTED:-} $d"
     place_run "$d" >>"$d/runner.log" 2>&1 &
-    echo "$!" >"$d/run/pid"
+    echo "$!" | fresh "$d/run/pid"
   elif ! run_alive "$d" && [[ ! -e "$d/run/exit" ]]; then
-    echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" >"$d/infra"
-    echo infra >"$d/run/exit"
+    echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" | fresh "$d/infra"
+    echo infra | fresh "$d/run/exit"
     (GPUQ_EXIT=infra GPUQ_LOG="$d/run/log" cmd_queue_follow "$d") >>"$d/runner.log" 2>&1 || true
   fi
 }
@@ -2204,7 +2216,8 @@ run_alive() {
 
 # place_run JOB — JOB's run in instance research-<id>: in/repo holds run/commit alone (depth 1: no other branch
 # leaves turing), in/cmd the command, in/repo/.claude/research/ the folder. The usd gate (place_gate), up, exec run
-# until the stop bound before the limit, then exec stop, pull, down. All output to run/log; /ws/out to JOB/out/.
+# until the stop bound before the limit, then exec stop, pull, down. All output to the runner's log in the instance
+# state, run/log at the end (fresh: no write through a link); /ws/out to JOB/out/.
 # A failed fetch, price or up writes JOB/infra; a refused start ends as usd. Then cost, run/exit and the follow-up.
 place_run() {
   local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t
@@ -2221,46 +2234,47 @@ place_run() {
   echo "$st/in/repo/.claude/research" >"$st/dir"
   echo "research-$(basename "$(jget "$d/job" repo)")" >"$st/name"
   if [[ "$rc" == infra ]]; then
-    echo "vibe: run/place must be runpod or vast, run/commit a commit id, run/cmd a file, and none a link" >>"$d/run/log"
+    echo "vibe: run/place must be runpod or vast, run/commit a commit id, run/cmd a file, and none a link" >>"$st/log"
   elif ! {
     cp "$d/run/cmd" "$st/in/cmd" && chmod +x "$st/in/cmd" &&
       agent_git init -q "$st/in/repo" &&
       agent_git -C "$st/in/repo" fetch -q --depth 1 -- "$(jstate "$d" worktree)" "$c" &&
       agent_git -C "$st/in/repo" checkout -q --detach FETCH_HEAD
-  } >>"$d/run/log" 2>&1; then
+  } >>"$st/log" 2>&1; then
     rc=infra
   fi
-  if [[ "$rc" == 0 ]]; then place_gate "$d" "$inst" >>"$d/run/log" 2>&1 || rc=$?; fi
+  if [[ "$rc" == 0 ]]; then place_gate "$d" "$inst" >>"$st/log" 2>&1 || rc=$?; fi
   case "$rc" in 1) rc=usd ;; 2) rc=infra ;; esac
   if [[ "$rc" == 0 ]]; then
     t0="$(date +%s)"
-    ws_place "$inst" up >>"$d/run/log" 2>&1 || rc=infra
+    ws_place "$inst" up >>"$st/log" 2>&1 || rc=infra
   fi
   if [[ "$rc" == infra ]]; then
-    tail -n 1 "$d/run/log" >"$d/infra"
+    tail -n 1 "$st/log" | fresh "$d/infra" || true
   elif [[ "$rc" == 0 ]]; then
     lim="$(jstate "$st" limit)" secs=""
-    # The stop script runs before the limit: its RESULT line lands in run/log, not in a tick's log.
+    # The stop script runs before the limit: its RESULT line lands in the run's log, not in a tick's log.
     if [[ "$lim" =~ ^[0-9]+$ ]]; then secs=$((lim - $(date +%s) - stop)); fi
     if [[ -n "$secs" ]] && ((secs < 1)); then secs=1; fi
-    WS_SECS="$secs" ws_place "$inst" exec run >>"$d/run/log" 2>&1 || rc=$?
+    WS_SECS="$secs" ws_place "$inst" exec run >>"$st/log" 2>&1 || rc=$?
     # From here this process stops, pulls and downs the instance: vibe ws tick leaves it alone (owner).
     echo "$d" >"$st/owner"
-    if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$d/run/log" 2>&1 || true; fi
+    if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$st/log" 2>&1 || true; fi
     # Bounded as a tick's call: vibe ws tick skips the instance while this process lives, then takes it down at its limit.
     t="${VIBE_WS_TICK_SECS:-600}"
-    WS_SECS="$t" ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
-    WS_SECS="$t" ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
+    WS_SECS="$t" ws_place "$inst" pull >>"$st/log" 2>&1 || true
+    WS_SECS="$t" ws_place "$inst" down >>"$st/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$st/log"
   fi
-  copy_out "$st" "$d" "$d/run/log"
+  copy_out "$st" "$d" "$st/log"
+  fresh "$d/run/log" <"$st/log" || true
   if [[ ! -s "$st/id" ]]; then
     # The instance is gone: cost is price × the time from up to now. A live one keeps hours × price (down at its limit).
     if [[ -n "$t0" ]]; then
-      awk -v p="$(jstate "$d/run" price)" -v s=$(($(date +%s) - t0)) 'BEGIN { printf "%.2f\n", p * s / 3600 }' >"$d/cost"
+      awk -v p="$(jstate "$st" price)" -v s=$(($(date +%s) - t0)) 'BEGIN { printf "%.2f\n", p * s / 3600 }' | fresh "$d/cost" || true
     fi
     rm -rf "$st"
   fi
-  echo "$rc" >"$d/run/exit"
+  echo "$rc" | fresh "$d/run/exit" || true
   GPUQ_EXIT="$rc" GPUQ_LOG="$d/run/log" cmd_queue_follow "$d"
 }
 
@@ -2277,7 +2291,8 @@ place_gate() {
     echo "vibe: no price from $(jstate "$WS_STATES/$2" place) (exit $rc)${p:+: $p}"
     return 2
   fi
-  echo "$p" >"$d/run/price"
+  echo "$p" >"$WS_STATES/$2/price"
+  echo "$p" | fresh "$d/run/price" || true
   # One gate at a time: a run that starts in the same pass sees this one's cost.
   mkdir_lock "$l" || return 2
   u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
@@ -2299,8 +2314,13 @@ place_gate() {
     echo "usd gate: $m: no start"
     return 1
   fi
-  awk -v h="$h" -v p="$p" 'BEGIN { printf "%.2f\n", h * p }' >"$d/cost"
+  # No cost file, no start: the gate of the next run sums it.
+  awk -v h="$h" -v p="$p" 'BEGIN { printf "%.2f\n", h * p }' | fresh "$d/cost" || m="no cost file in ${d##*/}"
   rmdir "$l.lock" 2>/dev/null || true
+  if [[ -n "$m" ]]; then
+    echo "vibe: $m: no start"
+    return 2
+  fi
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
@@ -2349,7 +2369,7 @@ cmd_queue_follow() {
     r="none — no RESULT line: the run failed"
   fi
   # turing and a run that never started cost 0 USD.
-  if [[ -n "$(jget "$p/job" research)" && ! -s "$p/cost" ]]; then echo 0 >"$p/cost"; fi
+  if [[ -n "$(jget "$p/job" research)" && ! -s "$p/cost" ]]; then echo 0 | fresh "$p/cost" || true; fi
   f="$p-gpu"
   while [[ -e "$f" ]]; do
     n=$((n + 1))

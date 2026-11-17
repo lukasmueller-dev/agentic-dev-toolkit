@@ -3035,6 +3035,31 @@ refused() {
   [ "$status" -eq 1 ]
 }
 
+@test "gpu --place: the runner writes no job dir file through a link the agent planted; cost takes the runner's price" {
+  local r f h="$BATS_TEST_TMPDIR/host-file"
+  places
+  r="$(research_repo)"
+  echo 0.5 >"$STUBS/price"
+  mkjob 01-a "$r" task-a ok research=q1
+  echo "$r" >"$Q/01-a/worktree"
+  echo gpu >"$Q/01-a/status"
+  mkdir "$Q/01-a/run"
+  echo runpod >"$Q/01-a/run/place"
+  git -C "$r" rev-parse HEAD >"$Q/01-a/run/commit"
+  printf '#!/usr/bin/env bash\nsh train.sh\n' >"$Q/01-a/run/cmd"
+  echo keep >"$h"
+  for f in run/log run/price cost; do ln -s "$h" "$Q/01-a/$f"; done
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$h")" = keep ]
+  for f in run/log run/price run/pid run/exit cost; do
+    [ -f "$Q/01-a/$f" ]
+    [ ! -L "$Q/01-a/$f" ]
+  done
+  [ "$(cat "$Q/01-a/run/price")" = 0.5 ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
 @test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
   local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake-runner" pid
   places
