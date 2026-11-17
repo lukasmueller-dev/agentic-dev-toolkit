@@ -2199,7 +2199,7 @@ run_alive() {
 # until the stop bound before the limit, then exec stop, pull, down. All output to run/log; /ws/out to JOB/out/.
 # A failed fetch, price or up writes JOB/infra; a refused start ends as usd. Then cost, run/exit and the follow-up.
 place_run() {
-  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c
+  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t
   p="$(jstate "$d/run" place)" c="$(jstate "$d/run" commit)"
   st="$WS_STATES/$inst"
   mkdir -p "$st/in"
@@ -2235,8 +2235,10 @@ place_run() {
     # From here this process stops, pulls and downs the instance: vibe ws tick leaves it alone (owner).
     echo "$d" >"$st/owner"
     if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$d/run/log" 2>&1 || true; fi
-    ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
-    ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
+    # Bounded as a tick's call: vibe ws tick skips the instance while this process lives, then takes it down at its limit.
+    t="${VIBE_WS_TICK_SECS:-600}"
+    WS_SECS="$t" ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
+    WS_SECS="$t" ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
   fi
   copy_out "$st" "$d" "$d/run/log"
   if [[ ! -s "$st/id" ]]; then

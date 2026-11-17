@@ -2646,7 +2646,7 @@ gpurace() {
 
 # places — stub places runpod and vast: each verb but tick to $STUBS/place.log; exec runs the folder's script
 # with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up; price: what price prints,
-# none: price exits 3; out-links: pull leaves a link and a FIFO in out/.
+# none: price exits 3; out-links: pull leaves a link and a FIFO in out/; pull-hang, down-hang: that verb sleeps 30 s.
 places() {
   local w="$BATS_TEST_TMPDIR/workspaces"
   export VIBE_WORKSPACES="$w"
@@ -2669,10 +2669,14 @@ case "\$v" in
     WS_IN="\$WS_STATE/in" exec "\$WS_DIR/\$@"
     ;;
   pull)
+    [ ! -e "$STUBS/pull-hang" ] || exec sleep 30
     mkdir -p "\$WS_STATE/out" && echo pulled >"\$WS_STATE/out/note"
     if [ -e "$STUBS/out-links" ]; then ln -sfn "\$HOME" "\$WS_STATE/out/home" && mkfifo "\$WS_STATE/out/fifo"; fi
     ;;
-  down) rm -f "\$WS_STATE/id" ;;
+  down)
+    [ ! -e "$STUBS/down-hang" ] || exec sleep 30
+    rm -f "\$WS_STATE/id"
+    ;;
   price) if [ -e "$STUBS/price" ]; then cat "$STUBS/price"; else exit 3; fi ;;
 esac
 EOF
@@ -2749,6 +2753,25 @@ EOF
   [ "$(cat "$Q/01-a/run/exit")" = 124 ]
   [ "$(tail -n 1 "$Q/01-a/run/log")" = 'RESULT {"metric": 0.1, "partial": true}' ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.1,"partial":true}' ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu --place: a hung pull or down ends after VIBE_WS_TICK_SECS; the instance stays for vibe ws tick, the follow-up runs" {
+  local r
+  command -v timeout >/dev/null || command -v gtimeout >/dev/null || skip "no timeout(1): no bound"
+  places
+  r="$(research_repo)"
+  touch "$STUBS/pull-hang" "$STUBS/down-hang"
+  export VIBE_WS_TICK_SECS=1
+  mkjob 01-a "$r" task-a place
+  SECONDS=0
+  drain
+  [ "$status" -eq 0 ]
+  [ "$SECONDS" -lt 25 ]
+  [ "$(cut -d' ' -f2 "$STUBS/place.log" | tail -n 2)" = "$(printf '%s\n' pull down)" ]
+  grep -qxF 'vibe: down of research-01-a failed — vibe ws status research-01-a' "$Q/01-a/run/log"
+  [ "$(cat "$XDG_STATE_HOME/vibe/workspaces/research-01-a/id")" = pod-1 ]
+  [ "$(cat "$XDG_STATE_HOME/vibe/workspaces/research-01-a/owner")" = "$Q/01-a" ]
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 

@@ -212,6 +212,7 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - Secrets and `VAST_*` settings: `~/.config/vibe/workspaces/research-<repo folder>.env`, mode 600, one file per repo. `vibe queue gpu --place` refuses a run when it lacks a `secrets=` name of the conf.
 - The runner fetches only the worktree's HEAD (depth 1) to `/ws/in/repo` and writes the command to `/ws/in/cmd`. In instance `research-<id>` it runs `up`, `exec run`, `pull` and `down`, then the follow-up job.
 - The run stops 300 s (`VIBE_WS_STOP_SECS`) before the limit of its `hours`. Then the `stop` script runs, then `pull` and `down`.
+- `pull` and `down` each stop after 600 s (`VIBE_WS_TICK_SECS`). An instance that is still up then goes down at its limit through `vibe ws tick`.
 - After each run the runner writes `run-result`: the JSON of the last `RESULT {` line of the run log, on turing too. With no such line, bad JSON or a metric that is no finite number (`NaN`, `Infinity`), there is no `run-result` and the run failed.
 - A failed `price` or `up` writes `infra` with the reason, and the follow-up gets `Exit: infra`. A run whose process died (a reboot) gets `infra` too; its instance goes down at its limit.
 - The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
