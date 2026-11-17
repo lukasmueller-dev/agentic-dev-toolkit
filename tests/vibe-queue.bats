@@ -3264,6 +3264,30 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
+@test "worker: a done, an archived or no coordinator gets no wake; the worker's fan says why" {
+  local r a="$XDG_STATE_HOME/vibe/archive/2026-11"
+  r="$(make_repo proj)"
+  mkjob 01-c "$r" research-q1 ok research=q1
+  mkjob 02-k "$r" research-q2 ok research=q2
+  mkjob 03-w "$r" research/q1/h1 ok research=q1 hid=h1
+  mkjob 04-w "$r" research/q2/h1 ok research=q2 hid=h1
+  mkjob 05-w "$r" research/q3/h1 ok research=q3 hid=h1
+  for j in 01-c 02-k 03-w 04-w 05-w; do
+    echo "done" >"$Q/$j/status"
+    date '+%F %T' >"$Q/$j/ended"
+  done
+  echo timeout >"$Q/02-k/status"
+  mkdir -p "$a"
+  mv "$Q/02-k" "$a/"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/03-w/fan")" = "no wake: 01-c done" ]
+  [ "$(cat "$Q/04-w/fan")" = "no wake: 02-k archived" ]
+  [ "$(cat "$Q/05-w/fan")" = "no coordinator" ]
+  [ "$(ls "$Q")" = "$(printf '%s\n' 01-c 03-w 04-w 05-w)" ]
+  [ "$(cat "$a/02-k/status")" = timeout ]
+}
+
 @test "worker: a blocked coordinator holds the wake until a session is queued; a timed-out one gets a follow-up" {
   local r c
   r="$(make_repo proj)"
