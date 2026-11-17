@@ -212,12 +212,15 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - The runner fetches only the worktree's HEAD (depth 1) to `/ws/in/repo` and writes the command to `/ws/in/cmd`. In instance `research-<id>` it runs `up`, `exec run`, `pull` and `down`, then the follow-up job.
 - The run stops 300 s (`VIBE_WS_STOP_SECS`) before the limit of its `hours`. Then the `stop` script runs, then `pull` and `down`.
 - After each run the runner writes `run-result`: the JSON of the last `RESULT {` line of the run log, on turing too. With no such line, bad JSON or a metric that is no finite number (`NaN`, `Infinity`), there is no `run-result` and the run failed.
-- A failed `up` writes `infra` with the reason, and the follow-up gets `Exit: infra`. A run whose process died (a reboot) gets `infra` too; its instance goes down at its limit.
+- A failed `price` or `up` writes `infra` with the reason, and the follow-up gets `Exit: infra`. A run whose process died (a reboot) gets `infra` too; its instance goes down at its limit.
 - The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
 - `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
 - The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
-- shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
+- `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason.
+- Spent is the sum of `cost` over the live and archived jobs with the same `research=`. A start writes `cost` = `hours` × price, so a running run counts at its full `hours`.
+- At the end of a place run, `cost` is price × the time from `up` to `down`. A run on turing costs 0.
+- shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.
 
 ## Tool jobs
 
@@ -309,8 +312,8 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
-| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `log`, `exit` |
-| `queue/<id>/run-result`, `infra`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `up` failed; the pulled `/ws/out` |
+| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `price` (USD per hour), `log`, `exit` |
+| `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
 | `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
 | `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |

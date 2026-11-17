@@ -2633,7 +2633,8 @@ gpurace() {
 }
 
 # places — stub places runpod and vast: each verb but tick to $STUBS/place.log; exec runs the folder's script
-# with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up.
+# with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up; price: what price prints,
+# none: price exits 3.
 places() {
   local w="$BATS_TEST_TMPDIR/workspaces"
   export VIBE_WORKSPACES="$w"
@@ -2656,6 +2657,7 @@ case "\$v" in
     ;;
   pull) mkdir -p "\$WS_STATE/out" && echo pulled >"\$WS_STATE/out/note" ;;
   down) rm -f "\$WS_STATE/id" ;;
+  price) if [ -e "$STUBS/price" ]; then cat "$STUBS/price"; else exit 3; fi ;;
 esac
 EOF
   cp "$w/_places/runpod" "$w/_places/vast"
@@ -2663,7 +2665,7 @@ EOF
 }
 
 # research_repo — a repo whose main holds .claude/research/ (runpod, vast; hours=2) and train.sh; echoes its path.
-# $STUBS/run-sleep: train.sh waits 30 s first.
+# $STUBS/run-sleep: train.sh waits 30 s first; run-hold: it waits while the file exists.
 research_repo() {
   local r
   r="$(make_repo proj)"
@@ -2676,6 +2678,7 @@ research_repo() {
   cat >"$r/train.sh" <<EOF
 echo "in \${PWD##*/} at \$(git rev-parse HEAD), commits: \$(git rev-list --all | wc -l | tr -d ' ')"
 [ ! -e "$STUBS/run-sleep" ] || sleep 30
+while [ -e "$STUBS/run-hold" ]; do sleep 0.1; done
 echo 'RESULT {"metric": 0.5}'
 echo 'RESULT {"metric": 0.7, "seed": 1}'
 echo "a last line"
@@ -2693,11 +2696,13 @@ EOF
   drain
   [ "$status" -eq 0 ]
   for p in runpod vast; do
-    [ "$(grep "^$p " "$STUBS/place.log")" = "$(printf '%s %s hours=2 folder=in/repo/.claude/research\n' "$p" up "$p" 'exec run' "$p" pull "$p" down)" ]
+    [ "$(grep "^$p " "$STUBS/place.log")" = "$(printf '%s %s hours=2 folder=in/repo/.claude/research\n' "$p" price "$p" up "$p" 'exec run' "$p" pull "$p" down)" ]
   done
   [ "$(cat "$Q/01-a/run/place")" = runpod ]
   grep -qx "in repo at $(cat "$Q/01-a/run/commit"), commits: 1" "$Q/01-a/run/log"
   [ "$(cat "$Q/01-a/run/exit")" = 0 ]
+  [ "$(cat "$Q/01-a/run/price")" = 0 ]
+  [ "$(cat "$Q/01-a/cost")" = 0.00 ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a/out/note")" = pulled ]
@@ -2719,7 +2724,7 @@ EOF
   mkjob 01-a "$r" task-a place
   drain
   [ "$status" -eq 0 ]
-  [ "$(cut -d' ' -f2,3 "$STUBS/place.log")" = "$(printf '%s\n' 'up hours=2' 'exec run' 'exec stop' 'pull hours=2' 'down hours=2')" ]
+  [ "$(cut -d' ' -f2,3 "$STUBS/place.log")" = "$(printf '%s\n' 'price hours=2' 'up hours=2' 'exec run' 'exec stop' 'pull hours=2' 'down hours=2')" ]
   [ "$(cat "$Q/01-a/run/exit")" = 124 ]
   [ "$(tail -n 1 "$Q/01-a/run/log")" = 'RESULT {"metric": 0.1, "partial": true}' ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.1,"partial":true}' ]
@@ -2781,7 +2786,7 @@ refused() {
   [ -z "$(ls "$Q/01-a/run")" ]
 }
 
-@test "gpu: run-result holds the last RESULT line of the run log, on turing too" {
+@test "gpu: run-result holds the last RESULT line of the run log, on turing too; a turing run costs 0" {
   local r pid
   r="$(make_repo proj)"
   printf 'RESULT {"metric": 1}\nRESULT {"metric": 2.5, "seed": 3}\nbye\n' >"$STUBS/gpu-result"
@@ -2796,6 +2801,7 @@ refused() {
   wait "$pid"
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":2.5,"seed":3}' ]
   grep -qF -- "- Result: {\"metric\":2.5,\"seed\":3} ($Q/01-a/run-result)" "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a/cost")" = 0 ]
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
@@ -2825,7 +2831,7 @@ refused() {
   mkjob 01-a "$r" task-a place
   drain
   [ "$status" -eq 0 ]
-  [ "$(cat "$STUBS/place.log")" = "runpod up hours=2 folder=in/repo/.claude/research" ]
+  [ "$(cut -d' ' -f1,2 "$STUBS/place.log")" = "$(printf '%s\n' 'runpod price' 'runpod up')" ]
   [ "$(cat "$Q/01-a/infra")" = "runpod: no machine free" ]
   [ "$(cat "$Q/01-a/run/exit")" = infra ]
   [ ! -e "$Q/01-a/run-result" ]
@@ -2833,6 +2839,75 @@ refused() {
   grep -qF -- '- Exit: infra' "$Q/01-a-gpu/prompt.md"
   grep -qF -- '- Infra: runpod: no machine free' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  rm "$STUBS/fail-up" "$STUBS/place.log"
+  echo n/a >"$STUBS/price"
+  mkjob 02-b "$r" task-b place
+  drain
+  [ "$(cat "$STUBS/place.log")" = "runpod price hours=2 folder=in/repo/.claude/research" ]
+  [ "$(cat "$Q/02-b/infra")" = "vibe: no price from runpod (exit 0): n/a" ]
+  [ "$(cat "$Q/02-b/run/exit")" = infra ]
+  [ ! -e "$Q/02-b/cost" ]
+}
+
+@test "gpu --place: the usd gate refuses a start when spent + hours × price is above usd; spent is the cost of the research's live and archived jobs" {
+  local r a="$XDG_STATE_HOME/vibe/archive/2026-11/00-w"
+  places
+  r="$(research_repo)"
+  echo 0.5 >"$STUBS/price"
+  mkdir -p "$a"
+  printf 'repo=%s\nbranch=w\nresearch=q1\n' "$r" >"$a/job"
+  echo 0.40 >"$a/cost"
+  mkjob 00-x "$r" task-x ok research=q1
+  mkjob 00-y "$r" task-y ok research=q2
+  echo "done" | tee "$Q/00-x/status" >"$Q/00-y/status"
+  echo 1.50 >"$Q/00-x/cost"
+  echo 9.00 >"$Q/00-y/cost"
+  mkjob 01-a "$r" task-a place research=q1 usd=2.8
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/run/exit")" = usd ]
+  [ "$(grep -c ' up ' "$STUBS/place.log")" -eq 0 ]
+  grep -qF -- '- Exit: usd' "$Q/01-a-gpu/prompt.md"
+  grep -qF -- '- Result: none — usd gate: spent 1.90 + 2 h × 0.5 USD/h is above usd=2.8: no start' "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a/cost")" = 0 ]
+  [ ! -e "$Q/01-a/infra" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  mkjob 02-b "$r" task-b place research=q1 usd=3
+  drain
+  [ "$(cat "$Q/02-b/run/exit")" = 0 ]
+  [ "$(grep -c '^runpod up ' "$STUBS/place.log")" -eq 1 ]
+  [ "$(cat "$Q/02-b/run/price")" = 0.5 ]
+  [ "$(cat "$Q/02-b/cost")" = 0.00 ]
+  [ ! -e "$XDG_STATE_HOME/vibe/usd.lock" ]
+}
+
+@test "gpu --place: the usd gate counts a running run at its full hours: of two runs that start in one pass, one starts" {
+  local r j pid
+  places
+  r="$(research_repo)"
+  echo 0.5 >"$STUBS/price"
+  touch "$STUBS/run-hold"
+  for j in 01-a 02-b; do
+    mkjob "$j" "$r" "task-$j" ok research=q1 usd=1.5
+    echo "$r" >"$Q/$j/worktree"
+    echo gpu >"$Q/$j/status"
+    mkdir "$Q/$j/run"
+    echo runpod >"$Q/$j/run/place"
+    git -C "$r" rev-parse HEAD >"$Q/$j/run/commit"
+    printf '#!/usr/bin/env bash\nsh train.sh\n' >"$Q/$j/run/cmd"
+  done
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    if [ -e "$Q/01-a-gpu/job" ] || [ -e "$Q/02-b-gpu/job" ]; then break; fi
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-a/cost" "$Q/02-b/cost" | sort | tr '\n' ' ')" = "0 1.00 " ]
+  rm "$STUBS/run-hold"
+  wait "$pid"
+  [ "$(cat "$Q/01-a/run/exit" "$Q/02-b/run/exit" | sort | tr '\n' ' ')" = "0 usd " ]
+  [ "$(grep -c '^runpod up ' "$STUBS/place.log")" -eq 1 ]
+  [ "$(cat "$Q/01-a-gpu/status") $(cat "$Q/02-b-gpu/status")" = "done done" ]
 }
 
 @test "gpu --place: a run whose process died before its end is infra too; the follow-up gets the reason" {
