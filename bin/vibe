@@ -1092,7 +1092,7 @@ review_pr_md() {
 # job's session fixes what it found. A fix that is not trivial earns another round;
 # the last round publishes the PR with the rounds in its body.
 job_review() {
-  local d="$1" n t rc=0 count=0 before wt line f v i=0 s=s next=0 prev
+  local d="$1" n t rc=0 count=0 before wt line f v i=0 s=s next=0 prev ev e
   n="$(jget "$d/job" review)" t="$(job_timeout "$d")" wt="$(jstate "$d" worktree)"
   : >"$d/log"
   review_agent "$d" "$t" "$n" || rc=$?
@@ -1109,8 +1109,23 @@ job_review() {
       before="$(agent_git -C "$wt" rev-parse HEAD)"
       review_fix "$d" "$t" || rc=$?
       if stopped "$d"; then return 0; fi
-      if ((rc == 124)); then
-        line+=" → timeout"
+      ev="$(job_result "$d")"
+      if ((rc != 0)) || [[ "$ev" == *'"is_error":true'* ]]; then
+        # A fix cut off (timeout, API error, crash) may leave half a fix: fail, no publish; `vibe queue retry` adopts the worktree.
+        e="$(ev_num "$ev" api_error_status)"
+        if ((rc == 124)); then
+          e="timeout"
+        elif [[ -n "$e" ]]; then
+          e="API error $e"
+        elif ((rc)); then
+          e="agent exit $rc"
+        else
+          e="error result"
+        fi
+        # shortcut: untracked files do not count (sandbox placeholders); count them once a leftover skips a job.
+        if [[ -n "$(agent_git -C "$wt" status --porcelain -uno)" ]]; then e+="; $wt has uncommitted changes"; fi
+        job_end "$d" failed "$line → fix failed: $e"
+        return 0
       else
         line+=" → $(review_tally "$d" "$count")"
         if ((n < $(qconf review_rounds 2))) && review_big "$wt" "$before"; then next=1; fi
