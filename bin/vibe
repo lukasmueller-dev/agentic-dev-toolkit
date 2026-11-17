@@ -510,7 +510,7 @@ at_due() {
   [[ -z "$e" || "$e" -le "$(date +%s)" ]]
 }
 
-# vibe queue add [--now|--at HH:MM] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify= or deadline=.
+# vibe queue add [--now|--at HH:MM] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify=, deadline= or usd=.
 cmd_queue_add() {
   local now=0 at="" dirs=() d use="usage: vibe queue add [--now|--at HH:MM] <dir>..."
   while (($#)); do
@@ -533,6 +533,7 @@ cmd_queue_add() {
     [[ "$(jget "$d/job" after)" =~ ^(review|code)?$ ]] || die "$d: after=$(jget "$d/job" after) — review, code or empty"
     verify_ok "$d"
     deadline_of "$d/job" >/dev/null
+    [[ "$(jget "$d/job" usd)" =~ ^([0-9]+([.][0-9]+)?)?$ ]] || die "$d: usd=$(jget "$d/job" usd) — a number of USD or empty"
   done
   for d in "${dirs[@]}"; do
     d="$(queue_add "$d" "$now" "$at")"
@@ -2220,7 +2221,7 @@ place_run() {
 # is refused when spent (the cost of each live or archived job of JOB's research=) + hours × price is above usd.
 # A start writes cost = hours × price: a run counts at its full hours while it runs. Exit 1: refused, 2: no price.
 place_gate() {
-  local d="$1" h p u r s=0 j rc=0 n=0 l="$QROOT/usd.lock"
+  local d="$1" h p u r s=0 j rc=0 n=0 l="$QROOT/usd.lock" m=""
   h="$(jget "$WS_STATES/$2/in/repo/.claude/research/workspace.conf" hours)"
   p="$(WS_SECS=60 ws_place "$2" price)" || rc=$?
   if ((rc == 3)); then
@@ -2245,9 +2246,15 @@ place_gate() {
       if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" ]]; then head -n 1 "${j}cost"; fi
     done | awk '{ s += $1 } END { printf "%.2f", s }')"
   fi
-  if [[ -n "$u" ]] && ! awk -v s="$s" -v h="$h" -v p="$p" -v u="$u" 'BEGIN { exit !(s + h * p <= u) }'; then
+  # awk compares a number with a word as text: a usd that is no number must refuse here.
+  if [[ -n "$u" && ! "$u" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    m="usd=$u is no number"
+  elif [[ -n "$u" ]] && ! awk -v s="$s" -v h="$h" -v p="$p" -v u="$u" 'BEGIN { exit !(s + h * p <= u) }'; then
+    m="spent $s + $h h × $p USD/h is above usd=$u"
+  fi
+  if [[ -n "$m" ]]; then
     rmdir "$l" 2>/dev/null || true
-    echo "usd gate: spent $s + $h h × $p USD/h is above usd=$u: no start"
+    echo "usd gate: $m: no start"
     return 1
   fi
   awk -v h="$h" -v p="$p" 'BEGIN { printf "%.2f\n", h * p }' >"$d/cost"

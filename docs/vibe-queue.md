@@ -217,7 +217,7 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
 - The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
-- `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason.
+- `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason. `vibe queue add` refuses a `usd=` that is no number.
 - Spent is the sum of `cost` over the live and archived jobs with the same `research=`. A start writes `cost` = `hours` × price, so a running run counts at its full `hours`.
 - At the end of a place run, `cost` is price × the time from `up` to `down`. A run on turing costs 0.
 - shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.

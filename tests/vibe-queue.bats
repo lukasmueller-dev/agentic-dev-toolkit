@@ -2612,7 +2612,7 @@ gpurace() {
   [ -s "$Q/02-b/gpu-job" ]
 }
 
-@test "add, gpu: a deadline= that is not YYYY-MM-DD HH:MM is refused" {
+@test "add, gpu: a deadline= that is not YYYY-MM-DD HH:MM is refused; add refuses a usd= that is no number" {
   local r a
   r="$(make_repo proj)"
   a="$BATS_TEST_TMPDIR/a"
@@ -2627,7 +2627,12 @@ gpurace() {
   VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu -- true
   [ "$status" -ne 0 ]
   [ ! -e "$Q/01-a/gpu-job" ]
-  printf 'repo=%s\nbranch=x\ndeadline=2999-01-01 08:00\n' "$r" >"$a/job"
+  printf 'repo=%s\nbranch=x\nusd=abc\n' "$r" >"$a/job"
+  run "$VIBE" queue add "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usd=abc — a number of USD or empty"* ]] || false
+  [ "$(ls "$Q")" = 01-a ]
+  printf 'repo=%s\nbranch=x\ndeadline=2999-01-01 08:00\nusd=2.5\n' "$r" >"$a/job"
   run "$VIBE" queue add "$a"
   [ "$status" -eq 0 ]
 }
@@ -2879,6 +2884,11 @@ refused() {
   [ "$(cat "$Q/02-b/run/price")" = 0.5 ]
   [ "$(cat "$Q/02-b/cost")" = 0.00 ]
   [ ! -e "$XDG_STATE_HOME/vibe/usd.lock" ]
+  mkjob 03-c "$r" task-c place research=q1 usd=abc
+  drain
+  [ "$(cat "$Q/03-c/run/exit")" = usd ]
+  [ "$(grep -c '^runpod up ' "$STUBS/place.log")" -eq 1 ]
+  grep -qF -- '- Result: none — usd gate: usd=abc is no number: no start' "$Q/03-c-gpu/prompt.md"
 }
 
 @test "gpu --place: the usd gate counts a running run at its full hours: of two runs that start in one pass, one starts" {
