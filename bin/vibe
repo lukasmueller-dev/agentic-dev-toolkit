@@ -943,14 +943,18 @@ secs() {
 
 # agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
 # timeout(1), JOB/agent as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
-# The sandbox writes only JOB/agent: links to JOB's inputs in, the agent's outputs (plain files) back to JOB after.
+# The sandbox writes only JOB/agent: copies of JOB's inputs in (no links: the file tools run unsandboxed),
+# the agent's outputs (plain files) back to JOB after.
 agent_exec() {
   local d="$1" t="$2" s="$3" rc=0 start="$SECONDS" x
   shift 3
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
   mkdir -p "$d/agent"
-  for x in job base lane-pr.md in out tool.log tool-exit; do ln -s "../$x" "$d/agent/$x" 2>/dev/null || true; done
+  for x in job base lane-pr.md in out tool.log tool-exit; do
+    rm -rf "${d:?}/agent/$x"
+    if [[ -e "$d/$x" ]]; then cp -R "$d/$x" "$d/agent/$x"; fi
+  done
   VIBE_JOB_DIR="$d/agent" VIBE_STEER="$d/steer" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
   echo "$!" >"$d/agent-pid"
   wait "$!" || rc=$?

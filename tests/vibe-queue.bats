@@ -1539,6 +1539,9 @@ EOF
   [ ! -e "$BATS_TEST_TMPDIR/pwned" ]
   [ "$(cat "$Q/01-a/status")" = "done" ]
   [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:work.txt)" = work ]
+  # A copy, not a link: Write and Edit run outside the sandbox and could follow a link.
+  [ ! -L "$Q/01-a/agent/job" ]
+  cmp "$Q/01-a/job" "$Q/01-a/agent/job"
 }
 
 @test "trust: a job-written agent-pid is not what vibe queue stop TERMs" {

@@ -296,7 +296,7 @@ Add a route or a button:
 | `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
-| `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; links to `job`, `base`, `lane-pr.md`, a tool run's `in/`, `out/`, `tool.log`, `tool-exit` |
+| `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; copies of `job`, `base`, `lane-pr.md`, a tool run's `in/`, `out/`, `tool.log`, `tool-exit`, fresh each session |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`). The runner copies them, `verdicts` and `gpu-cmd` from `agent/` after each session, plain files only |
 | `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
 | `queue/<id>/held`, `gpu-cmd`, `gpu-job` | `vibe queue hold` note; the run `vibe queue gpu` asked for (NUL-ended args); the `gpu-queue` job id |
