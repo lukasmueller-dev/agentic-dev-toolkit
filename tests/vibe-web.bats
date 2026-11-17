@@ -228,6 +228,28 @@ post() {
   [ "$status" -eq 0 ]
 }
 
+@test "vibe queue page: Help ↗ and Recipe ↗ link the GitHub origin in each of its three forms; no link for another host, a credential or no origin" {
+  local f="$Q/web/index.html" g u
+  g="$(command -v git)"
+  # git: origin's URL from STUBS/origin (none: exit 2), every other call to the real git.
+  # shellcheck disable=SC2016  # the stub's own $3 $4 $5 and $@
+  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$g" >"$STUBS/git"
+  chmod +x "$STUBS/git"
+  for u in git@github.com:o/r.git ssh://git@github.com/o/r.git https://github.com/o/r.git https://github.com/o/r; do
+    echo "$u" >"$STUBS/origin"
+    VIBE_WORKSPACES="$REPO_ROOT/workspaces" "$REPO_ROOT/bin/vibe" queue page
+    grep -qF '<a href="https://github.com/o/r/blob/HEAD/docs/vibe-queue.md#page-words" target="_blank" rel="noopener">Help ↗</a>' "$f"
+    grep -qF '<a class="rcp" href="https://github.com/o/r/blob/HEAD/docs/workspaces/kapso.md" target="_blank" rel="noopener">Recipe ↗</a>' "$f"
+  done
+  for u in https://me:tok@github.com/o/r.git https://gitlab.com/o/r.git https://github.com/o/r/x none; do
+    rm -f "$STUBS/origin"
+    if [ "$u" != none ]; then echo "$u" >"$STUBS/origin"; fi
+    VIBE_WORKSPACES="$REPO_ROOT/workspaces" "$REPO_ROOT/bin/vibe" queue page
+    run grep -c 'Help ↗\|Recipe ↗\|me:tok' "$f"
+    [ "$output" = 0 ]
+  done
+}
+
 @test "vibe queue page: CSP allows only page.js, so HTML in a note runs no script" {
   run "$REPO_ROOT/bin/vibe" queue page
   [ "$status" -eq 0 ]
