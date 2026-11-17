@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vibe Queue · Recurring jobs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1216}
+a{color:#9fb2ff}a:hover{color:#c3cfff}
+.vq{font-family:'Geist',system-ui,sans-serif;color:#e6ecef;background:#0d1216;font-size:14px;line-height:1.45}
+.mono{font-family:'Geist Mono',ui-monospace,monospace}
+.lamp{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.l-ok{background:#5fd6a3}
+.card{background:#141b21;border:1px solid #242f37;border-radius:10px;overflow:hidden}
+.btn{font:inherit;font-size:13px;font-weight:500;padding:0 14px;height:32px;border-radius:8px;border:1px solid #2f3c46;background:#1b242b;color:#e6ecef;cursor:pointer}
+.tab{color:#94a3ad;text-decoration:none;font-weight:500;padding:18px 2px 16px;border-bottom:2px solid transparent}
+.tab.on{color:#e6ecef;border-bottom-color:#9fb2ff}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#2a3566;color:#c3cfff;font-size:11px;font-weight:600;text-align:center;line-height:18px;margin-left:6px}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;font-weight:500;color:#94a3ad;text-align:left;padding:10px 20px;background:#10161b}
+td{padding:10px 20px;border-top:1px solid #242f37;font-size:14px}
+td.n{color:#94a3ad}
+.repo{font-size:15px;font-weight:600;margin:0 0 8px 4px}
+.due{color:#f2b45b}
+</style>
+</helmet>
+<div class="vq" style="min-height: 900px">
+  <header style="border-bottom: 1px solid #242f37; background: #10161b">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap">
+      <a href="#" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #e6ecef">
+        <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="25.3" y="25.3" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="42.6" y="25.3" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="25.3" y="42.6" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"></rect></svg>
+        <span style="font-weight: 600; font-size: 16px">vibe<span class="mono" style="font-weight: 400; color: #94a3ad; margin-left: 4px">queue</span></span>
+      </a>
+      <nav aria-label="Main" style="display: flex; gap: 24px">
+        <a class="tab" href="#">Jobs<span class="badge">1</span></a>
+        <a class="tab on" href="#">Recurring</a>
+        <a class="tab" href="#">Workspaces</a>
+        <a class="tab" href="#">Config</a>
+        <a class="tab" href="#">Help ↗</a>
+      </nav>
+      <div style="flex: 1"></div>
+      <div class="mono" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94a3ad"><i class="lamp l-ok"></i>5 of 8 slots</div>
+      <button class="btn" type="button" style="height: 36px">Pause</button>
+    </div>
+  </header>
+  <main style="max-width: 1040px; box-sizing: border-box; margin: 0 auto; padding: 28px 32px 48px; display: flex; flex-direction: column; gap: 28px">
+    <div>
+      <h1 style="margin: 0 0 4px; font-size: 22px; font-weight: 600">Recurring jobs</h1>
+      <p style="margin: 0; color: #94a3ad">Due jobs start at 01:00. Run starts one now. Add or change a job in a session.</p>
+    </div>
+    <section>
+      <h2 class="repo">agentic-dev-toolkit</h2>
+      <div class="card"><table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Last run</th><th scope="col">State</th><th scope="col"><span style="position: absolute; left: -9999px">Action</span></th></tr></thead>
+        <tbody>
+          <tr><td>lean-audit</td><td class="n">monthly</td><td class="n">never</td><td class="due">due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+          <tr><td>roadmap-cleanup</td><td class="n">weekly · Sun</td><td class="n">never</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+          <tr><td>sota-digest</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+          <tr><td>toolkit-check</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section>
+      <h2 class="repo">humanoid-locoman-vla</h2>
+      <div class="card"><table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Last run</th><th scope="col">State</th><th scope="col"><span style="position: absolute; left: -9999px">Action</span></th></tr></thead>
+        <tbody>
+          <tr><td>codebase-health</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+          <tr><td>experiment-hygiene</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section>
+      <h2 class="repo">humanoid_bridge</h2>
+      <div class="card"><table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Last run</th><th scope="col">State</th><th scope="col"><span style="position: absolute; left: -9999px">Action</span></th></tr></thead>
+        <tbody>
+          <tr><td>codebase-health</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section>
+      <h2 class="repo">robots_web_commander</h2>
+      <div class="card"><table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Schedule</th><th scope="col">Last run</th><th scope="col">State</th><th scope="col"><span style="position: absolute; left: -9999px">Action</span></th></tr></thead>
+        <tbody>
+          <tr><td>codebase-health</td><td class="n">weekly · Sat</td><td class="n">2026-11-14</td><td class="n">not due</td><td style="text-align: right"><button class="btn" type="button">Run</button></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

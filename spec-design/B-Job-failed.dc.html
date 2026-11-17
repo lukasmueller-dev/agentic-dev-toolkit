@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vibe Queue · Failed job</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0d1216}
+a{color:#9fb2ff}a:hover{color:#c3cfff}
+.vq{font-family:'Geist',system-ui,sans-serif;color:#e6ecef;background:#0d1216;font-size:14px;line-height:1.45}
+.mono{font-family:'Geist Mono',ui-monospace,monospace}
+.lamp{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.l-ok{background:#5fd6a3}.l-bad{background:#ff8a80}.l-you{background:#9fb2ff}
+.card{background:#141b21;border:1px solid #242f37;border-radius:10px}
+.row{display:flex;gap:12px;align-items:center;padding:12px 16px;border-top:1px solid #242f37;color:#e6ecef;text-decoration:none}
+.row.first{border-top:0}
+.row.sel{background:#1d2731}
+.sec{display:flex;gap:8px;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#94a3ad;margin:0 0 8px 4px}
+.fold{display:flex;justify-content:space-between;padding:12px 16px;color:#b6c2ca;text-decoration:none;font-weight:500}
+.btn{font:inherit;font-size:13px;font-weight:500;padding:0 16px;height:36px;border-radius:8px;border:1px solid #2f3c46;background:#1b242b;color:#e6ecef;cursor:pointer}
+.btn.primary{background:#4257e0;border-color:#4257e0;color:#fff}
+.btn.quiet{background:transparent;border-color:transparent;color:#b6c2ca}
+.tab{color:#94a3ad;text-decoration:none;font-weight:500;padding:18px 2px 16px;border-bottom:2px solid transparent}
+.tab.on{color:#e6ecef;border-bottom-color:#9fb2ff}
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#2a3566;color:#c3cfff;font-size:11px;font-weight:600;text-align:center;line-height:18px;margin-left:6px}
+.step{font-size:13px;color:#5b6b78;border-bottom:1px dotted #3a4852;cursor:help}
+.step.bad{color:#ff8a80}
+.k{font-size:12px;color:#94a3ad;font-weight:500;margin:0 0 6px}
+textarea{font:inherit;font-size:14px;color:#e6ecef;background:#0d1216;border:1px solid #2f3c46;border-radius:8px;padding:10px 12px;resize:vertical}
+</style>
+</helmet>
+<div class="vq" style="min-height: 900px">
+  <header style="border-bottom: 1px solid #242f37; background: #10161b">
+    <div style="max-width: 1440px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; gap: 32px; flex-wrap: wrap">
+      <a href="#" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #e6ecef">
+        <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><rect x="8" y="8" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="25.3" y="25.3" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="42.6" y="25.3" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="25.3" y="42.6" width="13.5" height="13.5" rx="2" fill="#e6ecef"></rect><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"></rect></svg>
+        <span style="font-weight: 600; font-size: 16px">vibe<span class="mono" style="font-weight: 400; color: #94a3ad; margin-left: 4px">queue</span></span>
+      </a>
+      <nav aria-label="Main" style="display: flex; gap: 24px">
+        <a class="tab on" href="#">Jobs<span class="badge">2</span></a>
+        <a class="tab" href="#">Recurring</a>
+        <a class="tab" href="#">Workspaces</a>
+        <a class="tab" href="#">Config</a>
+        <a class="tab" href="#">Help ↗</a>
+      </nav>
+      <div style="flex: 1"></div>
+      <div class="mono" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94a3ad"><i class="lamp l-ok"></i>4 of 8 slots · 5h use 100% until 11:50</div>
+      <button class="btn" type="button">Pause</button>
+    </div>
+  </header>
+  <main style="max-width: 1440px; width: 100%; box-sizing: border-box; margin: 0 auto; padding: 28px 32px 48px; display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start">
+    <div style="flex: 1 1 480px; max-width: 600px; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+      <section>
+        <h2 class="sec">Needs you <span style="color: #9fb2ff">2</span></h2>
+        <div class="card">
+          <a class="row first sel" href="#" aria-current="true"><i class="lamp l-bad"></i><div style="flex: 1"><div style="font-weight: 500">jobs-codebase-health</div><div style="color: #94a3ad; font-size: 13px">humanoid_bridge · stopped</div></div></a>
+          <a class="row" href="#"><i class="lamp l-you"></i><div style="flex: 1"><div style="font-weight: 500">critic-gates</div><div style="color: #94a3ad; font-size: 13px">PR #58 to review · safety-critic</div></div></a>
+        </div>
+      </section>
+      <section>
+        <h2 class="sec">Running <span>3</span></h2>
+        <div class="card">
+          <a class="row first" href="#"><i class="lamp l-ok"></i><div style="flex: 1"><div style="font-weight: 500">GPU run · t1-surv1-s42</div><div style="color: #94a3ad; font-size: 13px">safety-critic</div></div><span class="mono" style="font-size: 12px; color: #94a3ad">1:15</span></a>
+          <a class="row" href="#"><i class="lamp l-ok"></i><div style="flex: 1"><div style="font-weight: 500">job-state-private</div><div style="color: #94a3ad; font-size: 13px">agentic-dev-toolkit · Review 1</div></div><span class="mono" style="font-size: 12px; color: #94a3ad">0:10</span></a>
+          <a class="row" href="#"><i class="lamp l-ok"></i><div style="flex: 1"><div style="font-weight: 500">job-exec-guards</div><div style="color: #94a3ad; font-size: 13px">agentic-dev-toolkit · Work</div></div><span class="mono" style="font-size: 12px; color: #94a3ad">0:20</span></a>
+        </div>
+      </section>
+      <section class="card">
+        <a class="fold" href="#"><span>Queued 1</span><span aria-hidden="true">›</span></a>
+        <a class="fold" href="#" style="border-top: 1px solid #242f37"><span>Done 3</span><span aria-hidden="true">›</span></a>
+      </section>
+    </div>
+
+    <article class="card" style="flex: 999 1 560px; min-width: 0; padding: 28px 32px; display: flex; flex-direction: column; gap: 24px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ff8a80; font-weight: 500"><i class="lamp l-bad"></i>Failed<span style="flex: 1"></span><a href="#" style="color: #94a3ad; font-weight: 400">Close</a></div>
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600">jobs-codebase-health</h1>
+        <div class="mono" style="font-size: 12px; color: #94a3ad">humanoid_bridge · jobs/codebase-health · 0:01</div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap">
+        <span class="step bad" title="The agent did the task in its worktree.">✗ Work</span><span aria-hidden="true" style="color: #3a4852">—</span>
+        <span class="step" title="A second agent reviews the diff.">Review 1</span><span aria-hidden="true" style="color: #3a4852">—</span>
+        <span class="step" title="The repo's test script .vibe-jobs/gate; a fail stops the PR.">Checks</span><span aria-hidden="true" style="color: #3a4852">—</span>
+        <span class="step" title="The runner opens a draft PR.">PR</span>
+      </div>
+      <p style="margin: 0; color: #e6ecef">You stopped it at 10:05, during Work.</p>
+
+      <form style="display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 10px; background: #10161b; border: 1px solid #242f37">
+        <label for="note" style="font-size: 13px; color: #b6c2ca">Note <span style="color: #94a3ad">— optional for Run again, needed for Hold</span></label>
+        <textarea id="note" rows="3" placeholder="What the next try should do differently"></textarea>
+        <div style="display: flex; gap: 8px; align-items: center">
+          <button class="btn primary" type="button">Run again</button>
+          <button class="btn" type="button">Hold</button>
+          <span style="flex: 1"></span>
+          <button class="btn quiet" type="button">Archive</button>
+        </div>
+      </form>
+
+      <div>
+        <h2 class="k">Task</h2>
+        <p style="margin: 0; max-width: 68ch">Weekly codebase health check: duplicated code, needless complexity, and docs that drifted from the code. Report first, fix only approved categories.</p>
+        <a href="#" style="font-size: 13px">Show the full task</a>
+      </div>
+      <div>
+        <h2 class="k">Files</h2>
+        <div style="display: flex; gap: 16px; font-size: 13px"><a href="#">note</a><a href="#">raw log</a></div>
+      </div>
+      <div>
+        <h2 class="k">Activity</h2>
+        <p style="margin: 0; color: #94a3ad; font-size: 13px">No step yet: the job stopped before the agent did its first step.</p>
+      </div>
+    </article>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
