@@ -733,8 +733,8 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   run grep -c 'research-archive' "$f"
   [ "$output" = 0 ]
   # A finished question has Archive, no stop buttons, and a worker with no paste has no panel.
-  echo done >"$Q/queue/20261117-100300-proj-research-lr-h3/status"
-  echo done >"$Q/queue/20261117-100200-proj-research-lr-h2/status"
+  echo "done" >"$Q/queue/20261117-100300-proj-research-lr-h3/status"
+  echo "done" >"$Q/queue/20261117-100200-proj-research-lr-h2/status"
   "$REPO_ROOT/bin/vibe" queue page
   run grep -c 'research-stop\|data-copy' "$f"
   [ "$output" = 0 ]

@@ -442,6 +442,7 @@ locked_out() (
 # rpage — write the page: $XDG_STATE_HOME/vibe/web/index.html.
 rpage() { "$VIBE" queue page >/dev/null; }
 
+# shellcheck disable=SC2016  # a literal $ in the expected text
 @test "page: a research question is one row; its block has the head line, a row per worker, a builds= row below its parent" {
   local f="$XDG_STATE_HOME/vibe/web/index.html" r
   r="$(make_repo proj)"
@@ -478,21 +479,22 @@ rpage() { "$VIBE" queue page >/dev/null; }
   waits 'you (coordinator blocked, paste h3)' 'needs you'
   grep -qF '<span class="why">coordinator blocked: name the metric</span>' "$f"
   grep -qF "<div class=\"jacts\" data-id=\"${c##*/}\">" "$f"
-  echo done >"$c/status"
+  echo "done" >"$c/status"
   # The paste is back: h3 is done.
-  echo done >"$h/status"
+  echo "done" >"$h/status"
   waits nothing running
   sed -i.bak 's/^place=runpod/place=turing/' "$Q"/*-h2/job
   waits GPU running
   echo queued >"$c/status"
   waits GPU running
-  echo done >"$Q"/*-h2/status
+  echo "done" >"$Q"/*-h2/status
   waits coordinator queued
-  echo done >"$c/status"
-  waits nothing done
+  echo "done" >"$c/status"
+  waits nothing "done"
   [[ "$(grep -o '<div class="row" data-k="research/lr">.*' "$f")" == *'<i class="lamp l-done"></i>'* ]] || false
 }
 
+# shellcheck disable=SC2016  # a literal $ in the expected text
 @test "page: a research best follows better=, skips a null metric; session 2 gives the state and adds its cost" {
   local f="$XDG_STATE_HOME/vibe/web/index.html" r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2"
   r="$(make_repo proj)"
@@ -506,13 +508,14 @@ rpage() { "$VIBE" queue page >/dev/null; }
   # Session 2 of h2: a follow-up job on the same hid, queued, with its own cost.
   rjob "$Q" "${h2##*/}-gpu" queued "$r" research/lr/h2 research=lr hid=h2 place=runpod "idea=wider net" builds=root follow=1 "parent=${h2##*/}"
   echo 0.30 >"$h2-gpu/cost"
-  echo done >"$h2/status"
+  echo "done" >"$h2/status"
   rpage
   grep -qF '<span class="n">closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
   grep -qF '$1.50 of $50' "$f"
   [ "$(grep -o 'data-hid="h2"' "$f" | wc -l)" -eq 1 ]
 }
 
+# shellcheck disable=SC2016  # a literal $ in the expected text
 @test "research: status has a Research group with a line per question (2/4) and a line per worker with its place; the report has one row" {
   local r c="$Q/20261117-100000-proj-research-lr"
   r="$(make_repo proj)"
@@ -546,8 +549,8 @@ rpage() { "$VIBE" queue page >/dev/null; }
   local r c="$Q/20261117-100000-proj-research-lr"
   r="$(make_repo proj)"
   research_fixture "$Q" "$r"
-  echo done >"$Q/20261117-100200-proj-research-lr-h2/status"
-  echo done >"$Q/20261117-100300-proj-research-lr-h3/status"
+  echo "done" >"$Q/20261117-100200-proj-research-lr-h2/status"
+  echo "done" >"$Q/20261117-100300-proj-research-lr-h3/status"
   echo "push failed: rejected" >"$c/pr"
   run "$VIBE" queue status
   [[ "${lines[0]}" == *" · 1 no PR · "* ]] || false
@@ -578,18 +581,18 @@ rpage() { "$VIBE" queue page >/dev/null; }
 }
 
 @test "queue archive --research: a question archives with all its jobs once each has ended; a live one refuses all" {
-  local r a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)"
-  r="$(make_repo proj)"
+  local r a
+  r="$(make_repo proj)" a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)"
   research_fixture "$Q" "$r"
   run "$VIBE" queue archive --research lr
   [ "$status" -ne 0 ]
   [[ "$output" == *"research-lr-h2 has not ended (gpu)"* ]] || false
-  [ "$(ls -d "$Q"/*research-lr* | wc -l)" -eq 5 ]
-  echo done >"$Q/20261117-100200-proj-research-lr-h2/status"
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 -name "*research-lr*" | wc -l)" -eq 5 ]
+  echo "done" >"$Q/20261117-100200-proj-research-lr-h2/status"
   run "$VIBE" queue archive --research lr
   [ "$status" -eq 0 ]
-  [ "$(ls -d "$Q"/*research-lr* 2>/dev/null | wc -l)" -eq 0 ]
-  [ "$(ls -d "$a"/*research-lr* | wc -l)" -eq 5 ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 -name "*research-lr*" | wc -l)" -eq 0 ]
+  [ "$(find "$a" -mindepth 1 -maxdepth 1 -name "*research-lr*" | wc -l)" -eq 5 ]
   run "$VIBE" queue archive --research lr
   [[ "$output" == *"no research job 'lr'"* ]] || false
   run "$VIBE" queue archive --research
