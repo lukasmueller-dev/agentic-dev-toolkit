@@ -2980,6 +2980,34 @@ refused() {
   done
 }
 
+@test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
+  local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake-runner" pid
+  places
+  r="$(research_repo)"
+  mkjob 01-a "$r" task-a ok
+  mkdir -p "$Q/01-a/run" "$st"
+  printf '#!/bin/sh\nsleep 30\n' >"$f"
+  chmod +x "$f"
+  "$f" queue run --claude &
+  pid=$!
+  echo "$pid" >"$Q/01-a/run/pid"
+  echo runpod >"$st/place"
+  echo pod-1 >"$st/id"
+  echo $(($(date +%s) - 10)) >"$st/limit"
+  echo "$r/.claude/research" >"$st/dir"
+  echo "$Q/01-a" >"$st/owner"
+  run "$VIBE" ws tick
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUBS/place.log" ]
+  [ "$(cat "$st/id")" = pod-1 ]
+  kill "$pid"
+  wait "$pid" || true
+  run "$VIBE" ws tick
+  [ "$status" -eq 0 ]
+  [ "$(cut -d' ' -f1-3 "$STUBS/place.log")" = "$(printf '%s\n' 'runpod exec stop' 'runpod down hours=2')" ]
+  [ ! -e "$st/id" ]
+}
+
 # two_findings — the stub reviewer's first answer: two findings.
 two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"

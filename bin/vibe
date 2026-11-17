@@ -2151,7 +2151,6 @@ place_queue() {
 
 # place_pass JOB — the runner pass for JOB/run/: start place_run once. A run whose process died before
 # run/exit (a reboot) ends as infra; its instance goes down at its limit (vibe ws tick).
-# The run is a fork of the runner: a pid that a reboot gave to another command is no run.
 place_pass() {
   local d="$1" p
   if [[ ! -f "$d/job" || ! -f "$d/run/place" || -e "$d/run/exit" ]]; then return 0; fi
@@ -2159,11 +2158,18 @@ place_pass() {
   if [[ -z "$p" ]]; then
     place_run "$d" >>"$d/runner.log" 2>&1 &
     echo "$!" >"$d/run/pid"
-  elif [[ "$(ps -o command= -p "$p" 2>/dev/null || true)" != *" queue run --"* && ! -e "$d/run/exit" ]]; then
+  elif ! run_alive "$d" && [[ ! -e "$d/run/exit" ]]; then
     echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" >"$d/infra"
     echo infra >"$d/run/exit"
     (GPUQ_EXIT=infra GPUQ_LOG="$d/run/log" cmd_queue_follow "$d") >>"$d/runner.log" 2>&1 || true
   fi
+}
+
+# run_alive JOB — JOB/run/pid is a live fork of the runner: a pid that a reboot gave to another command is no run.
+run_alive() {
+  local p
+  p="$(jstate "$1/run" pid)"
+  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" queue run --"* ]]
 }
 
 # place_run JOB — JOB's run in instance research-<id>: in/repo holds run/commit alone (depth 1: no other branch
@@ -2203,6 +2209,8 @@ place_run() {
     if [[ "$lim" =~ ^[0-9]+$ ]]; then secs=$((lim - $(date +%s) - stop)); fi
     if [[ -n "$secs" ]] && ((secs < 1)); then secs=1; fi
     WS_SECS="$secs" ws_place "$inst" exec run >>"$d/run/log" 2>&1 || rc=$?
+    # From here this process stops, pulls and downs the instance: vibe ws tick leaves it alone (owner).
+    echo "$d" >"$st/owner"
     if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$d/run/log" 2>&1 || true; fi
     ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
     ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
@@ -4705,6 +4713,8 @@ cmd_ws_tick() {
     d="${d%/}" i="${d##*/}"
     if [[ ! -s "$d/id" ]] || ws_stopper "$d" >/dev/null; then
       continue # down, or its page stop runs ws_down
+    elif [[ -s "$d/owner" ]] && run_alive "$(jstate "$d" owner)"; then
+      continue # its place run stops, pulls and downs it
     elif [[ "$(ws_state "$d")" == "past limit" ]]; then
       ws_down "$i" || warn "down of $i past its limit failed"
     else

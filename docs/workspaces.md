@@ -108,6 +108,7 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 - A page stop adds `stops` (the pid of `vibe ws down`) and `stop.log`; a failed one keeps `stop.log`.
 - Instance: `<name>` for a service, `<name>-<job id>` for a run, `research-<job id>` for a [research run](vibe-queue.md#research-jobs).
 - A research run adds `dir`: its folder, the clone's `.claude/research/`. The place verbs use that folder, not one under `workspaces/`.
+- After `exec run` it adds `owner`, its job dir. Its run then stops, pulls and downs the instance; `vibe ws tick` skips it while that run's process lives.
 - Secrets: `~/.config/vibe/workspaces/<name>.env`, mode 600, `KEY=VALUE`.
 
 ## Queue job
