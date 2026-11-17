@@ -3060,6 +3060,26 @@ refused() {
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
+@test "gpu --place: a run/pid the runner cannot write warns; the runner goes on, starts the run once, runs the next job" {
+  local r
+  places
+  r="$(research_repo)"
+  mkjob 01-a "$r" task-a ok
+  echo "$r" >"$Q/01-a/worktree"
+  echo gpu >"$Q/01-a/status"
+  mkdir -p "$Q/01-a/run/pid"
+  echo runpod >"$Q/01-a/run/place"
+  git -C "$r" rev-parse HEAD >"$Q/01-a/run/commit"
+  printf '#!/usr/bin/env bash\nsh train.sh\n' >"$Q/01-a/run/cmd"
+  mkjob 02-b "$r" task-b ok
+  drain
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"vibe: warning: $Q/01-a: place run pass failed"* ]] || false
+  [ "$(grep -c '^runpod up ' "$STUBS/place.log")" -eq 1 ]
+  [ "$(cat "$Q/01-a/run/exit")" = 0 ]
+  [ "$(cat "$Q/02-b/status")" = "done" ]
+}
+
 @test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
   local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake-runner" pid
   places

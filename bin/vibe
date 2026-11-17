@@ -1590,9 +1590,10 @@ cmd_queue_run() {
     queue_web || warn "queue page not written: $QROOT/web/index.html"
     ws_tick_bg
     # Before the scan: a follow-up a place run or a worker end makes this pass is in it.
+    # A failed write in one job dir must not stop the runner: errexit is off inside both, so each returns on its own.
     for d in "$QDIR"/*/; do
-      place_pass "${d%/}"
-      fan_in "${d%/}"
+      place_pass "${d%/}" || warn "${d%/}: place run pass failed"
+      fan_in "${d%/}" || warn "${d%/}: worker wake failed"
     done
     running=0 waiting=0 busy="" queued=() gpu_tool=0
     for d in "$QDIR"/*/; do
@@ -2201,8 +2202,9 @@ place_pass() {
     place_run "$d" >>"$d/runner.log" 2>&1 &
     echo "$!" | fresh "$d/run/pid"
   elif ! run_alive "$d" && [[ ! -e "$d/run/exit" ]]; then
-    echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" | fresh "$d/infra"
-    echo infra | fresh "$d/run/exit"
+    echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" | fresh "$d/infra" || true
+    # No run/exit, no follow-up: else each pass queues one.
+    echo infra | fresh "$d/run/exit" || return 1
     (GPUQ_EXIT=infra GPUQ_LOG="$d/run/log" cmd_queue_follow "$d") >>"$d/runner.log" 2>&1 || true
   fi
 }
@@ -2499,7 +2501,7 @@ research_item() {
 # fan_in JOB — a research worker's end wakes its coordinator once (JOB/fan). The coordinator's newest job: queued, it
 # gets a `## Worker finished` block; `gpu` (ends done) or `timeout`, a follow-up with it. Running, blocked, failed or
 # skipped: wait for its end or the user's answer or retry. Done or archived: no wake. Never for a worker with a session 2
-# (JOB-gpu). The runner, each pass.
+# (JOB-gpu). The runner, each pass, with errexit off: each failure returns 1.
 fan_in() {
   local d="$1" c="" f st t
   if [[ -z "$(jget "$d/job" hid)" || -e "$d/fan" ]] || ! job_settled "$d"; then return 0; fi
@@ -2522,16 +2524,20 @@ fan_in() {
   elif [[ "$st" =~ ^(running|blocked|failed|skipped)$ ]]; then
     return 0
   elif is_queued "$c"; then
-    worker_block "$d" >>"$c/prompt.md"
-    echo "${c##*/}" >"$d/fan"
+    # fan first: a wake whose fan cannot be written must not repeat each pass; a failed wake drops it to retry.
+    echo "${c##*/}" >"$d/fan" || return 1
+    worker_block "$d" >>"$c/prompt.md" || {
+      rm -f "$d/fan"
+      return 1
+    }
   else
-    t="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
-    {
-      cat "$c/prompt.md"
-      worker_block "$d"
-    } >"$t/prompt.md"
-    follow_job "$c" "$t"
-    t="$(queue_add "$t")"
+    echo waking >"$d/fan" || return 1
+    t="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")" || t=""
+    if [[ -z "$t" ]] || ! { cat "$c/prompt.md" && worker_block "$d"; } >"$t/prompt.md" || ! follow_job "$c" "$t" ||
+      ! t="$(queue_add "$t")"; then
+      rm -f "$d/fan"
+      return 1
+    fi
     if [[ "$st" == gpu ]]; then job_end "$c" "done" "worker $(jget "$d/job" hid) ended → ${t##*/}"; fi
     echo "${t##*/}" >"$d/fan"
   fi
