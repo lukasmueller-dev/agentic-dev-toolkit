@@ -35,6 +35,5 @@ None.
 - Settings data: `rc_servers` (claude-rc@ unit files); Recurring data: `job_rows REPO` (TSV, `-` or `never` when unset). Both render on today's Config page (`config_page`).
 - `job_steps` still renders the last tool steps into the block; Activity replaces it, so the page milestone can drop it.
 - Docs for milestone 3: the new labels in the Parts and Page actions tables of `docs/vibe-queue.md`, and the Page words table. The triage timer, the retry note and the activity route are in the docs already.
-- `shfmt -f . | xargs shellcheck` reports 22 warnings in `tests/vibe-queue.bats` and `tests/vibe-web.bats` that #208/#209 bring; main has none.
 - Run `bats` and the lint in a `git clone` in `$TMPDIR`: the sandbox's device files in the worktree root break `install.bats` and `shfmt -f .`.
 - Browser test: `VIBE_TEST_BROWSER=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`.
