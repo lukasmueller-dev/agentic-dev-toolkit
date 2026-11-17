@@ -65,7 +65,7 @@ only the actions a human uses from a phone or a desk.
 ## Milestones
 
 - [x] Backend: hourly triage timer with auto-archive; route cuts; Run again with optional note; Hold on the same note; activity GET route; recurring and server data for the page — code — done when `bats tests/` passes, and new tests cover auto-archive of a merged-PR job (gh stub), Run again with no note on a failed job, the activity route on a stream-json fixture, and no removed route left in `ROUTES`.
-- [ ] Page: direction B per `spec-design/` and the Decisions, every label from the table — code — done when `bats tests/vibe-web.bats` passes with `VIBE_TEST_BROWSER` set, `tests/page_check.py` checks the five tabs and that no raw state word (`blocked`, `gate.log`) shows, and screenshots at 2560×1440, 1440×900 and 390×844 are in `$VIBE_JOB_DIR/shots/`.
+- [x] Page: direction B per `spec-design/` and the Decisions, every label from the table — code — done when `bats tests/vibe-web.bats` passes with `VIBE_TEST_BROWSER` set, `tests/page_check.py` checks the five tabs and that no raw state word (`blocked`, `gate.log`) shows, and screenshots at 2560×1440, 1440×900 and 390×844 are in `$VIBE_JOB_DIR/shots/`.
 - [ ] Docs and end action: "Page words" table, page actions table and triage timer setup in `docs/vibe-queue.md` and `docs/vibe-jobs.md`; delete `SPEC.md` and `spec-design/` — code — done when the "Before committing" commands of `CLAUDE.md` pass and `test ! -e SPEC.md && test ! -e spec-design`.
 
 ## End action
