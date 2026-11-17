@@ -736,6 +736,50 @@ denied() {
   done
 }
 
+@test "claude settings: a flag that runs a program is denied, plain use of the command is not" {
+  local c
+  # each runs its argument as a program outside the sandbox (checked by hand in a scratch dir)
+  for c in \
+    "git pull --upload-pack=x" "git pull --upload-pack x origin" "git pull '--upload-pack=x'" "git pull --upl=x" \
+    "git fetch --upload-pack=x origin" "git ls-remote --upload-pack=x origin" "git ls-remote --exec=x origin" \
+    "git ls-remote --u=x origin" "git clone --upload-pack=x url" "git clone --up=x url" \
+    "git clone -u x url" "git clone url -u x" "git clone -ux url" \
+    "git push --receive-pack=x origin b" "git push --exec=x origin b" "git push --receive=x origin b" \
+    "git push --ex=x origin b" "git push origin b --e=x" \
+    "git grep -Ox foo" "git grep -n foo -Ox" "git grep --open-files-in-pager=x foo" "git grep --open=x foo" \
+    "rsync -e x a h:b" "rsync -ex a h:b" "rsync -av -e x a h:b" "rsync a h:b -e x" \
+    "rsync --rsh=x a h:b" "rsync --rsh x a h:b" \
+    "scp -S x a h:b" "scp -Sx a h:b" "scp a h:b -S x" \
+    "scp -o ProxyCommand=x a h:b" "scp -oProxyCommand=x a h:b" "scp -o LocalCommand=x a h:b" \
+    "ssh -o ProxyCommand=x h" "ssh -o'ProxyCommand x' h" "ssh -o ProxyCommand=x h true" \
+    "ssh -o PermitLocalCommand=yes -o LocalCommand=x h" \
+    "sort --compress-program=x f" "sort --compress-program x f" "sort -u --co=x f" \
+    "rg --pre=x foo" "rg foo --pre x" "rg -n --pre x foo"; do
+    denied "$c" || {
+      echo "not denied: $c" >&2
+      return 1
+    }
+  done
+  for c in \
+    "git pull --ff-only" "git pull --rebase origin main" "git fetch --prune origin" \
+    "git ls-remote --exit-code origin main" "git ls-remote --heads origin" \
+    "git clone https://github.com/a/my-utils" "git clone --depth 1 -b main url dir" "git clone --recurse-submodules url" \
+    "git push -u origin b" "git push --recurse-submodules=check origin b" "git push --set-upstream origin b" \
+    "git status --untracked-files=no" "git diff --exit-code" "git log --exclude=x" "git ls-files --exclude-standard" \
+    "git grep -n foo" "git grep -e Output" "git grep --extended-regexp foo" "git commit -m fix" \
+    "rsync -av --exclude=.git a h:b" "rsync -av --exclude .git a h:b" "rsync -a --delete-excluded a h:b" \
+    "rsync -a --existing a h:b" "rsync -a my-extra.txt h:b" \
+    "scp -r a h:b" "scp -P 22 a h:b" "scp -o BatchMode=yes a h:b" "scp a.txt user@host:my-dir" \
+    "ssh h true" "ssh -o BatchMode=yes h true" "ssh -p 22 -i key h" \
+    "sort -u f" "sort -k2 f" "sort --check f" "sort -T /tmp f" \
+    "rg foo" "rg -n --glob '*.sh' foo" "rg --hidden foo"; do
+    if denied "$c"; then
+      echo "denied by mistake: $c" >&2
+      return 1
+    fi
+  done
+}
+
 @test "claude settings: unions sandbox arrays instead of replacing them" {
   mkdir -p "$HOME/.claude"
   cat >"$HOME/.claude/settings.json" <<'EOF'

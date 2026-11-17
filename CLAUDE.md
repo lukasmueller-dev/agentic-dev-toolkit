@@ -286,6 +286,11 @@ things about permission rules that are easy to get wrong:
 
 - **`*` spans spaces.** `Bash(git *)` allows `git push --force`. Name
   read-only subcommands individually.
+- **A program flag needs its own deny rule.** `git pull *` in `excludedCommands`
+  or `git grep:*` in the allow list lets `--upload-pack=<cmd>` or `-O<cmd>` run
+  `<cmd>`. Add the deny rule and a case to the program-flag test in
+  `tests/install.bats`. A glob misses the flag inside a short cluster
+  (`rsync -ave <cmd>`), behind `$VAR`, and a keyword in other case (`ssh -o proxycommand=`).
 - **A leading `/` in a path rule anchors to the settings file's own
   directory**, not the project. In user settings, `Read(/secrets/**)` protects
   `~/.claude/secrets`, not anything in your repo. Use `**/` patterns.
