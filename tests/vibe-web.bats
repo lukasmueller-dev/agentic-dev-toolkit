@@ -689,12 +689,34 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop" title="No new worker: each run finishes">Stop question</button><hr><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
   grep -qF '<div class="paste"><ol><li><code>git fetch the commit</code><button type="button" data-copy>Copy</button></li><li><code>sbatch runs/h3/job.sbatch</code><button type="button" data-copy>Copy</button></li><li><code>print the RESULT line</code><button type="button" data-copy>Copy</button></li></ol><div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>The RESULT line from IAS: the worker closes its run with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
   [ "$(grep -o 'data-copy' "$f" | wc -l)" -eq 3 ]
-  # A finished question has no stop buttons, and a worker with no paste has no panel.
+  run grep -c 'research-archive' "$f"
+  [ "$output" = 0 ]
+  # A finished question has Archive, no stop buttons, and a worker with no paste has no panel.
   echo done >"$Q/queue/20261117-100300-proj-research-lr-h3/status"
   echo done >"$Q/queue/20261117-100200-proj-research-lr-h2/status"
   "$REPO_ROOT/bin/vibe" queue page
   run grep -c 'research-stop\|data-copy' "$f"
   [ "$output" = 0 ]
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
+}
+
+@test "page: a blocked research worker with no paste.md has the answer field of its own job" {
+  local f="$Q/web/index.html"
+  research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
+  rm "$Q/queue/20261117-100300-proj-research-lr-h3/paste.md"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<span class="n">blocked · ias</span>' "$f"
+  grep -qF '<div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>Your answer: the job runs again with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
+  run grep -c 'class="paste"' "$f"
+  [ "$output" = 0 ]
+}
+
+@test "route research-archive: vibe queue archive --research <slug>; a bad slug is 400" {
+  run act research-archive '{"research": "lr"}'
+  grep -q $'\tvibe queue archive --research lr\t[0-9]*$' "$Q/actions.log"
+  run act research-archive '{"research": "-x"}'
+  [ "${lines[1]}" = 400 ]
+  [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
 }
 
 @test "route research-stop: vibe queue stop --research <slug>; a bad slug or none is 400" {

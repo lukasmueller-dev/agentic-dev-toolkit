@@ -538,6 +538,25 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o 'class="paste"' "$f" | wc -l)" -eq 1 ]
 }
 
+@test "queue archive --research: a question archives with all its jobs once each has ended; a live one refuses all" {
+  local r a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  run "$VIBE" queue archive --research lr
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"research-lr-h2 has not ended (gpu)"* ]] || false
+  [ "$(ls -d "$Q"/*research-lr* | wc -l)" -eq 5 ]
+  echo done >"$Q/20261117-100200-proj-research-lr-h2/status"
+  run "$VIBE" queue archive --research lr
+  [ "$status" -eq 0 ]
+  [ "$(ls -d "$Q"/*research-lr* 2>/dev/null | wc -l)" -eq 0 ]
+  [ "$(ls -d "$a"/*research-lr* | wc -l)" -eq 5 ]
+  run "$VIBE" queue archive --research lr
+  [[ "$output" == *"no research job 'lr'"* ]] || false
+  run "$VIBE" queue archive --research
+  [[ "$output" == *"usage: vibe queue archive --research <slug>"* ]] || false
+}
+
 @test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
   local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
   r="$(make_repo proj)"

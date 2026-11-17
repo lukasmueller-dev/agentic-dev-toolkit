@@ -46,6 +46,7 @@ ROUTES = {
     "merge-order": ["vibe", "queue", "merge-order", "{repo}"],
     "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
     "feature-archive": ["vibe", "feature", "archive", "{feature}"],
+    "research-archive": ["vibe", "queue", "archive", "--research", "{research}"],
     "research-stop": ["vibe", "queue", "stop", "--research", "{research}"],
     "research-stop-now": ["vibe", "queue", "stop", "--research", "{research}", "--now"],
     "new": ["vibe", "queue", "new", "{repo}", "{branch}", "{done}", "{task}"],

@@ -20,7 +20,8 @@
 #   vibe queue roadmap [--full] <repo>  open PROJECT_ROADMAP.md items on origin: <line>: <title>, or the whole item
 #   vibe queue report               the report of the jobs to review, on stdout
 #   vibe queue hold <id> <note>     keep a job for you: first in every report
-#   vibe queue archive <id>...      move reviewed jobs out of the queue
+#   vibe queue archive <id>...|--research <slug>
+#                                   move reviewed jobs, or every job of a research question, out of the queue
 #   vibe queue pause | resume       stop or allow new starts; running jobs finish
 #   vibe queue page                 write the phone page now (the runner writes it each pass)
 #   vibe queue conf <key>=<value>   set one queue.conf key: slots, after, review_*, memory_max, steer
@@ -1649,10 +1650,22 @@ cmd_queue_hold() {
   echo "held ${d##*/}"
 }
 
-# vibe queue archive ID... — move reviewed jobs to archive/<YYYY-MM>/.
+# vibe queue archive ID...|--research SLUG — move reviewed jobs to archive/<YYYY-MM>/.
+# --research: every job of the question, none unless each has ended.
 cmd_queue_archive() {
-  local d a
-  (($#)) || die "usage: vibe queue archive <id>..."
+  local d a q
+  (($#)) || die "usage: vibe queue archive <id>...|--research <slug>"
+  if [[ "$1" == --research ]]; then
+    [[ $# == 2 && -n "$2" ]] || die "usage: vibe queue archive --research <slug>"
+    q="$2"
+    set --
+    for d in "$QDIR"/*/; do
+      d="${d%/}"
+      if [[ -f "$d/job" && "$(jget "$d/job" research)" == "$q" ]]; then set -- "$@" "${d##*/}"; fi
+    done
+    (($#)) || die "no research job '$q' in $QDIR"
+    for d in "$@"; do job_settled "$QDIR/$d" || die "$d has not ended ($(jstate "$QDIR/$d" status)) — archive the question once every job has"; done
+  fi
   a="$QROOT/archive/$(date +%Y-%m)"
   for d in "$@"; do
     d="$(queue_job "$d")"
@@ -2585,6 +2598,7 @@ act_btn() {
     archive) printf '%s' '<button data-act="archive" data-confirm>Archive</button>' ;;
     feature-ready) printf '%s' '<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button>' ;;
     feature-archive) printf '%s' '<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+    research-archive) printf '%s' '<button data-act="research-archive" data-confirm>Archive</button>' ;;
   esac
 }
 
@@ -2680,8 +2694,8 @@ research_paste() {
 
 # research_card SLUG PILL DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS,
 # R_WORKERS): the head line, what the question waits for, a line per job that needs you, the coordinator's buttons until
-# it is done, the two stop buttons until the question is done, then a row per worker: lamp, hid, state, place, metric,
-# USD, idea, last step, and for a worker in `paste` its steps. A builds= row is indented by its depth.
+# it is done, the two stop buttons until the question is done, then Archive, then a row per worker: lamp, hid, state,
+# place, metric, USD, idea, last step, for a worker in `paste` its steps, for another blocked one an answer field. A builds= row is indented by its depth.
 research_card() {
   local l w h dp s pl lt m u idea lamp mu rows=""
   rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>waits for $(esc "${4##*|}")</p>"
@@ -2691,6 +2705,8 @@ research_card() {
   if [[ -n "$3" && "$(jstate "$3" status)" != "done" ]]; then rows+="$(job_buttons "$3")"; fi
   if [[ "$2" != "done" ]]; then
     rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(btn_rows '<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>' '<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>')</div>"
+  else
+    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(act_btn research-archive)</div>"
   fi
   rows+='<div class="wks">'
   while IFS=$'\037' read -r h dp s pl lt m u idea w; do
@@ -2703,7 +2719,7 @@ research_card() {
       *) lamp="done" ;;
     esac
     mu="$(research_mu "$m" "$u")"
-    rows+="<div class=\"wk\" style=\"--d:$dp\" data-hid=\"$(esc "$h")\"><i class=\"lamp l-$lamp\"></i><span class=\"wh\"><b>$(esc "$h")</b> <span class=\"n\">$(esc "$s${pl:+ · $pl}")</span></span><span class=\"wm\">$(esc "$mu")</span><p>$(esc "$idea")</p><p class=\"stats\">$(esc "$lt")</p>$(if [[ "$s" == paste && -s "$w/paste.md" ]]; then research_paste "$w"; fi)</div>"
+    rows+="<div class=\"wk\" style=\"--d:$dp\" data-hid=\"$(esc "$h")\"><i class=\"lamp l-$lamp\"></i><span class=\"wh\"><b>$(esc "$h")</b> <span class=\"n\">$(esc "$s${pl:+ · $pl}")</span></span><span class=\"wm\">$(esc "$mu")</span><p>$(esc "$idea")</p><p class=\"stats\">$(esc "$lt")</p>$(if [[ "$s" == paste && -s "$w/paste.md" ]]; then research_paste "$w"; elif [[ "$s" == blocked ]]; then printf '<div class="jacts" data-id="%s">%s</div>' "$(esc "${w##*/}")" "$(act_btn answer)"; fi)</div>"
   done <<<"$6"
   printf '%s</div>' "$rows"
 }

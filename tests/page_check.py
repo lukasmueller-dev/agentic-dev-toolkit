@@ -176,6 +176,10 @@ try:
     js("%s.querySelectorAll('.paste button[data-copy]')[1].click()" % RB)
     check("Copy writes its step, without the list marker", until("window.copied === 'sbatch runs/h3/job.sbatch'", 2))
     check("the button names the copy", until("%s.querySelectorAll('.paste button[data-copy]')[1].textContent === 'Copied'" % RB, 2))
+    # A second tap while it reads Copied: the label goes back to Copy, not stuck on Copied.
+    js("%s.querySelectorAll('.paste button[data-copy]')[1].click()" % RB)
+    time.sleep(2.5)
+    check("a second tap leaves the label at Copy", js("%s.querySelectorAll('.paste button[data-copy]')[1].textContent" % RB) == "Copy")
     check("a paste field and both stop buttons are in the block", js("!!%s.querySelector('.wk[data-hid=\"h3\"] .paste textarea[name=text]') && %s.querySelectorAll('button[data-act^=research-stop]').length === 2" % (RB, RB)))
 finally:
     proc.kill()

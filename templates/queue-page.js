@@ -173,9 +173,8 @@
     }
     const c = e.target.closest('button[data-copy]');
     if (c && blocks.contains(c)) { /* a paste step: its text to the clipboard; no write */
-      const was = c.textContent;
       (navigator.clipboard ? navigator.clipboard.writeText(c.previousElementSibling.textContent) : Promise.reject()).then(() => 'Copied', () => 'No clipboard')
-        .then(m => { c.textContent = m; setTimeout(() => { c.textContent = was; }, 1500); });
+        .then(m => { c.textContent = m; setTimeout(() => { c.textContent = 'Copy'; }, 1500); });
       return;
     }
     const f = e.target.closest('.files a');
