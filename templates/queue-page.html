@@ -198,7 +198,7 @@ body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px
 .prow > .ask { grid-column: 1 / -1; }
 @media (min-width: 1200px) {
   #panel { position: sticky; inset: 0 auto auto; display: block; flex: 0 0 clamp(400px, 32vw, 560px); width: auto; height: 100vh; margin-left: auto; }
-  #panel > .close { display: none; }
+  #panel:has(> .pout[hidden]) > .close { display: none; } /* Close only while a button's output shows */
   body:has(#workspaces:target, #workspaces :target) #panel:has(> .pout[hidden]) { display: none; }
 }
 /* Phone: the same page in one column; the rail is a top bar. */

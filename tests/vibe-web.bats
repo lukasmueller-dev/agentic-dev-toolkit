@@ -196,6 +196,8 @@ post() {
   grep -qF "ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {}))" "$js"
   # The panel: Close, the empty note, the blocks with New job last, the output.
   grep -qF '<dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">' "$Q/web/index.html"
+  # From 1200 px Close shows only with a button's output: the column itself never closes.
+  grep -qF '#panel:has(> .pout[hidden]) > .close { display: none; }' "$Q/web/index.html"
   grep -qF '<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>' "$Q/web/index.html"
   grep -qF '</div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>' "$Q/web/index.html"
   grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
