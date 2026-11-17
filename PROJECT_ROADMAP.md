@@ -21,6 +21,12 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 
+- [ ] **Keep the runner's trusted job files out of the sandbox** — a job can
+      write its own `worktree`, `agent-pid`, `log` and `gpu-queue/queued/<id>`,
+      and the runner then acts on them unsandboxed (audit of PR #205, finding 1).
+      Done when a bats test shows that a job-written `worktree`, `agent-pid`
+      and `gpu-queue/queued/<id>` are not used by the runner.
+
 - [ ] **Opt every roadmap repo into `roadmap-cleanup`** — the catalogue job
       exists, but only this repo opts in, and it has never run. In each repo
       with a `PROJECT_ROADMAP.md`: `vibe job add <repo> roadmap-cleanup`, commit.
