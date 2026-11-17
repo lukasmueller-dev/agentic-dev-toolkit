@@ -5,6 +5,7 @@
 # under $STUBS. The stub prints a system/init event (session id sess-<job id>)
 # unless $STUBS/no-init exists. With --input-format stream-json it reads its prompt
 # from the first message and ends with a result event. The runner runs with --drain, so each test ends.
+# A coordinator in status gpu that nothing wakes keeps --drain from its end: the test hangs; give it blocked.
 # A coordinator prompt with fewer `## Worker finished` blocks than $STUBS/coord-blocks (default 1) ends `queued:`.
 
 load helper
@@ -207,7 +208,7 @@ EOF
 
 # mkjob ID REPO BRANCH MODE [JOB-LINE...] — one job dir in the queue.
 mkjob() {
-  local id="$1" repo="$2" branch="$3" mode="$4"
+  local id="$1" repo="$2" branch="$3" mode="$4" l
   shift 4
   mkdir -p "$Q/$id"
   printf 'Do the task.\nMODE=%s\n' "$mode" >"$Q/$id/prompt.md"
