@@ -1,6 +1,6 @@
 /* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
-   Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
+   Buttons: a paste step's Copy writes its text to the clipboard; /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
    Output: .pout under the block; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
@@ -169,6 +169,12 @@
       history.pushState(null, '', g.getAttribute('href'));
       const blk = show();
       if (blk) [...blk.querySelectorAll('textarea, input')].find(f => f.offsetParent)?.focus();
+      return;
+    }
+    const c = e.target.closest('button[data-copy]');
+    if (c && blocks.contains(c)) { /* a paste step: its text to the clipboard; no write */
+      (navigator.clipboard ? navigator.clipboard.writeText(c.previousElementSibling.textContent) : Promise.reject()).then(() => 'Copied', () => 'No clipboard')
+        .then(m => { c.textContent = m; setTimeout(() => { c.textContent = 'Copy'; }, 1500); });
       return;
     }
     const f = e.target.closest('.files a');
