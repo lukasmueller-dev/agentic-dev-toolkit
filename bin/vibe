@@ -3510,13 +3510,13 @@ group_prog() {
   echo "${1%/*} of ${1#*/} items"
 }
 
-# spec_prog JOB — `Milestone K of T` of the SPEC.md in JOB's worktree: K the first open one, T all; empty without one.
+# spec_prog JOB — `Milestone K of T` of the SPEC.md in JOB's worktree: K the place of the first open box, else T; T all boxes.
+# Empty without a SPEC.md or a box.
 spec_prog() {
-  local f t o
+  local f
   f="$(jstate "$1" worktree)/SPEC.md"
   [[ -n "${f%/SPEC.md}" && -f "$f" ]] || return 0
-  t="$(grep -c '^- \[[ x]\]' "$f" || true)" o="$(grep -c '^- \[ \]' "$f" || true)"
-  if ((t > 0)); then echo "Milestone $((o > 0 ? t - o + 1 : t)) of $t"; fi
+  awk '/^- \[[ x]\]/ { t++; if (!k && /^- \[ \]/) k = t } END { if (t) print "Milestone " (k ? k : t) " of " t }' "$f"
 }
 
 # md_html — Markdown on stdin as HTML, file links as plain text: pandoc, else <pre>.

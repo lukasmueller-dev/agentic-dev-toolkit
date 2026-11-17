@@ -2460,6 +2460,32 @@ prim() {
   [ "$(prim proj/b14)" = "Open PR" ]
 }
 
+@test "page: a branch of jobs shows the first open milestone of its newest job's SPEC.md, else N of M jobs; a lane counts items" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html" w0="$BATS_TEST_TMPDIR/w0" w1="$BATS_TEST_TMPDIR/w1"
+  r="$(make_repo proj)"
+  mkdir -p "$w0" "$w1"
+  printf -- '- [ ] only\n' >"$w0/SPEC.md"
+  printf -- '# Spec\n\n- [x] a\n- [ ] b\n- [x] c\n' >"$w1/SPEC.md"
+  endjob 01-a "$r" b01
+  echo "$w0" >"$Q/01-a/worktree"
+  mkjob 01-a-review1 "$r" b01 ok
+  echo running >"$Q/01-a-review1/status"
+  echo "$w1" >"$Q/01-a-review1/worktree"
+  endjob 02-b "$r" b02
+  endjob 02-b-review1 "$r" b02
+  endjob 03-c "$r" b03 "" "lane=Ports" item=alpha
+  mkjob 03-d "$r" b03 ok "lane=Ports" item=beta
+  echo "$w1" >"$Q/03-d/worktree"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<b>b01 <span class="n">Milestone 2 of 3</span></b>' "$f"
+  grep -qF '<b>b02 <span class="n">2 of 2 jobs</span></b>' "$f"
+  grep -qF '<b>b03 <span class="n">1 of 2 items</span></b>' "$f"
+  # Every box ticked: the last one.
+  printf -- '- [x] a\n- [x] b\n' >"$w1/SPEC.md"
+  "$VIBE" queue page >/dev/null
+  grep -qF '<b>b01 <span class="n">Milestone 2 of 2</span></b>' "$f"
+}
+
 @test "page: a lane or feature that needs you names the item that blocks it; a done lane job with a failed gate needs you, with Open PR" {
   local r r2 f="$XDG_STATE_HOME/vibe/web/index.html"
   r="$(make_repo proj)" r2="$(make_repo cmdr)"
