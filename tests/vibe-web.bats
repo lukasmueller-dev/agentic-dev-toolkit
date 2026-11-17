@@ -379,13 +379,35 @@ ID=20261104-080000-proj-task
   [ "$output" = 0 ]
 }
 
-@test "route retry: a failed job is queued again, the old one archived" {
+@test "route retry: Run again with no note: a failed job is queued again with its own task, the old one archived" {
+  local n
   qjob "$ID" failed
   run act retry "{\"id\": \"$ID\"}"
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -q $'\tvibe queue retry '"$ID"$'\t0$' "$Q/actions.log"
   [ -d "$Q/archive/$(date +%Y-%m)/$ID" ]
   [ "$(find "$Q/queue" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = 1 ]
+  n="$(find "$Q/queue" -mindepth 1 -maxdepth 1)"
+  [ "$(cat "$n/prompt.md")" = task ]
+}
+
+@test "route retry: a note ends the task of a job without HANDOFF.md; a blocked job needs one; a bad note is 400" {
+  local n
+  qjob "$ID" blocked
+  run act retry "{\"id\": \"$ID\"}"
+  [[ "${lines[0]}" == *'"code": 1'*"is blocked"*"give it a note"* ]] || false
+  [ -d "$Q/queue/$ID" ]
+  run act retry "{\"id\": \"$ID\", \"note\": \"a\\tb\"}"
+  [ "${lines[1]}" = 400 ]
+  run act retry "{\"id\": \"$ID\", \"note\": \"Use plan B.\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  n="$(find "$Q/queue" -mindepth 1 -maxdepth 1)"
+  [ "$(cat "$n/prompt.md")" = "$(printf 'task\n\nNote: Use plan B.')" ]
+  echo done >"$n/status"
+  run "$REPO_ROOT/bin/vibe" queue retry "${n##*/}" x
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is done — retry takes blocked, failed, timeout or skipped"* ]] || false
 }
 
 @test "route cancel: a queued job ends skipped; the card asks for a second tap" {

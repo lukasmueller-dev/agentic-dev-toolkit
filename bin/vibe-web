@@ -35,7 +35,7 @@ ROUTES = {
     "restart": ["systemctl", "--user", "restart", "vibe-queue"],
     "now": ["vibe", "queue", "set", "{id}", "now=1"],
     "noreview": ["vibe", "queue", "set", "{id}", "after="],
-    "retry": ["vibe", "queue", "retry", "{id}"],
+    "retry": ["vibe", "queue", "retry", "{id}", "{note?}"],
     "cancel": ["vibe", "queue", "cancel", "{id}"],
     "stop": ["vibe", "queue", "stop", "{id}"],
     "hold": ["vibe", "queue", "hold", "{id}", "{note}"],
@@ -69,7 +69,7 @@ ROUTES = {
 ARGS = {
     "id": re.compile(r"[0-9]{8}-[0-9]{6}-[A-Za-z0-9._-]{1,200}"),
     "set": re.compile(r"[a-z_]{1,40}=[A-Za-z0-9.%_-]{0,40}"),
-    "note": re.compile(r"[^\x00-\x1f\x7f]{1,300}"),
+    "note": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
     "text": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
     "pr": re.compile(r"https://github\.com/[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}/pull/[0-9]{1,9}"),
     "repo": re.compile(r"(/[A-Za-z0-9_][A-Za-z0-9._-]{0,100}){1,20}"),  # absolute, no .. or option

@@ -28,7 +28,8 @@
 #   vibe queue unlimit              forget the usage limit: jobs start again
 #   vibe queue set <id> now=1|after=
 #                                   a queued job: start it next, or with no review
-#   vibe queue retry <id>           a failed, timeout or skipped job again as a new job; the old one archived
+#   vibe queue retry <id> [<note>]  a failed, timeout or skipped job again as a new job; the old one archived;
+#                                   a note: as with answer, else at the task's end; a blocked job needs one
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
 #   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue;
 #                                   a tool job's run: its stop script, then down
@@ -1810,19 +1811,31 @@ cmd_queue_set() {
   echo "${d##*/}: $2"
 }
 
-# vibe queue retry ID — a failed, timeout or skipped job again as a new job (job,
-# prompt.md, its own worktree); the old one is archived.
+# vibe queue retry ID [NOTE...] — a failed, timeout or skipped job again as a new job (job,
+# prompt.md, its own worktree); the old one is archived. A blocked job needs NOTE. NOTE goes
+# through `queue answer` when the job has a HANDOFF.md, a lane side branch or an IAS run out; else it ends the task.
 cmd_queue_retry() {
-  local d tmp n
-  [[ $# == 1 ]] || die "usage: vibe queue retry <id>"
+  local d tmp n st wt
+  (($# >= 1)) || die "usage: vibe queue retry <id> [<note>]"
   d="$(queue_job "$1")"
-  case "$(jstate "$d" status)" in failed | timeout | skipped) ;; *) die "${d##*/} is $(jstate "$d" status) — retry takes failed, timeout or skipped" ;; esac
+  shift
+  st="$(jstate "$d" status)" wt="$(jstate "$d" worktree)"
+  case "$st" in
+    failed | timeout | skipped) ;;
+    blocked) (($#)) || die "${d##*/} is blocked — give it a note: vibe queue retry <id> <note>" ;;
+    *) die "${d##*/} is ${st:-queued} — retry takes blocked, failed, timeout or skipped" ;;
+  esac
+  if (($#)) && [[ "$st" != skipped ]] && { ias_waits "$d" || [[ -n "$(jstate "$d" side)" || (-n "$wt" && -f "$wt/HANDOFF.md") ]]; }; then
+    cmd_queue_answer "$d" "$@"
+    return 0
+  fi
   [[ -f "$d/prompt.md" ]] || die "no prompt.md in ${d##*/}"
   if [[ -z "$(jget "$d/job" repo)" ]] || ! branch_ok "$(jget "$d/job" branch)"; then die "bad repo or branch in ${d##*/}"; fi
   # follow_dir: a failed review round comes back as an agent job with its base job's timeout.
   tmp="$(follow_dir "$d")"
   # Its own worktree: job_prepare then takes the job's own uncommitted work.
   if [[ -f "$d/worktree" ]]; then cp "$d/worktree" "$tmp/worktree"; fi
+  if (($#)); then task_append "$tmp/prompt.md" "Note: $*"; fi
   n="$(queue_add "$tmp")"
   cmd_queue_archive "$d" >/dev/null
   echo "queued ${n##*/}; archived ${d##*/}"
