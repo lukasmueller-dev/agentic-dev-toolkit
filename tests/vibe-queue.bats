@@ -42,7 +42,7 @@ case "\$prompt" in
 esac
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"## Worker finished"* | *"Agent job: Research worker"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -54,6 +54,11 @@ case "\$mode" in
     p="\$(sed -n 's/^place=//p' "\$VIBE_JOB_DIR/job")"
     "$VIBE" queue gpu --place "\${p:-runpod}" -- sh train.sh >>"$STUBS/queue-gpu.out" 2>&1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
+    ;;
+  workers)
+    "$VIBE" queue worker h1 >>"$STUBS/worker.out" 2>&1
+    "$VIBE" queue worker h2 --place runpod >>"$STUBS/worker.out" 2>&1
+    echo "queued: workers h1 h2" >"\$VIBE_JOB_DIR/result"
     ;;
   gpurace)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -3018,6 +3023,226 @@ refused() {
   [ "$status" -eq 0 ]
   [ "$(cut -d' ' -f1-3 "$STUBS/place.log")" = "$(printf '%s\n' 'runpod exec stop' 'runpod down hours=2')" ]
   [ ! -e "$st/id" ]
+}
+
+# coord_wt REPO [ROW] — REPO's worktree research-q1 with RESEARCH.md committed: items h1, h2 (builds on h1), h3; the
+# ledger holds ROW, by default a baseline row. Echoes its path.
+coord_wt() {
+  local w="$1/.claude/worktrees/research-q1"
+  "$VIBE" start -C "$1" research-q1 >/dev/null 2>&1
+  {
+    printf '# Research — proj / research-q1\n\n## Backlog\n\n### h1 wider net — open\n\n- Idea: a wider net fits.\n\n'
+    printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n## Ledger\n\n'
+    printf '| id | commit | run | cost | result | verdict | evidence |\n| --- | --- | --- | --- | --- | --- | --- |\n'
+    printf '%s\n' "${2-| baseline | 0123abc | 1 | 0 | 0.50 | baseline | runs/baseline/log |}"
+  } >"$w/RESEARCH.md"
+  git -C "$w" add RESEARCH.md && git -C "$w" commit -q -m "docs(research): q1"
+  printf '%s' "$w"
+}
+
+# coord R W [JOB-LINE...] — the coordinator job 01-c of research q1 on R's worktree W, as a session sees it.
+coord() {
+  mkjob 01-c "$1" research-q1 ok research=q1 "${@:3}"
+  echo "$2" >"$Q/01-c/worktree"
+}
+
+# qjob PATTERN — the one queue dir whose name ends in PATTERN.
+qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
+
+@test "worker: a job for an item of the committed RESEARCH.md on research/<slug>/<hid> from HEAD; worker keys, after=, no question=" {
+  local r w j
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w" usd=5 "deadline=2999-01-01 08:00" "question=Does width help?" workers=2 better=higher timeout=3h
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2 --place runpod
+  [ "$status" -eq 0 ]
+  j="$(qjob -proj-research-q1-h2)"
+  [ "$output" = "queued ${j##*/}: worker h2 at runpod on research/q1/h2" ]
+  [ "$(git -C "$r" rev-parse research/q1/h2)" = "$(git -C "$w" rev-parse HEAD)" ]
+  [ "$(cat "$j/job")" = "$(printf '%s\n' "repo=$r" model=sonnet research=q1 usd=5 'deadline=2999-01-01 08:00' timeout=3h \
+    branch=research/q1/h2 'context=Research worker h2: warmup' hid=h2 place=runpod idea=warmup builds=h1 after=)" ]
+  grep -qxF '# Agent job: Research worker h2: warmup' "$j/prompt.md"
+  grep -qF -- "- **Repo / branch:** $r · \`research/q1/h2\`" "$j/prompt.md"
+  grep -qF -- '- **Time limit:** 3h' "$j/prompt.md"
+  grep -qF '`runs/h2/row.md` holds the ledger row of the run' "$j/prompt.md"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h1
+  [ "$status" -eq 0 ]
+  j="$(qjob -research-q1-h1)"
+  grep -qx place=turing "$j/job"
+  grep -qx builds=root "$j/job"
+  grep -qx 'idea=wider net' "$j/job"
+  [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
+}
+
+@test "worker: refused at workers= live workers; an ended worker or another research counts not; one hid runs once" {
+  local r w n
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w" workers=2
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  mkjob 03-w "$r" research/q1/h2 ok research=q1 hid=h2
+  echo gpu >"$Q/03-w/status"
+  mkjob 04-w "$r" research/q1/h3 ok research=q1 hid=h3
+  echo "done" >"$Q/04-w/status"
+  mkjob 05-w "$r" research/q2/h9 ok research=q2 hid=h9
+  n="$(ls "$Q" | wc -l)"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h3
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: workers=2: h1 h2 run — start the next one after a worker ends" ]
+  [ "$(ls "$Q" | wc -l)" = "$n" ]
+  run git -C "$r" rev-parse --verify -q research/q1/h3
+  [ "$status" -ne 0 ]
+  echo "done" >"$Q/02-w/status"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: worker h2 runs already" ]
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h3
+  [ "$status" -eq 0 ]
+}
+
+@test "worker: refused past the coordinator's deadline=" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w" "deadline=2000-01-01 08:00"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h1
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: past this job's deadline (2000-01-01 08:00): start no worker, finish the task" ]
+  [ "$(ls "$Q")" = 01-c ]
+  run git -C "$r" rev-parse --verify -q research/q1/h1
+  [ "$status" -ne 0 ]
+}
+
+@test "worker: refused with no baseline row in the ledger of RESEARCH.md at HEAD; an uncommitted one counts not" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r" '| h1 | 0123abc | 1 | 0 | 0.60 | passed | runs/h1/log |')"
+  coord "$r" "$w"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: no baseline row in the ledger of RESEARCH.md at HEAD: run the baseline first" ]
+  echo '| baseline | 0123abc | 1 | 0 | 0.50 | baseline | runs/baseline/log |' >>"$w/RESEARCH.md"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -ne 0 ]
+  [ "$(ls "$Q")" = 01-c ]
+  git -C "$w" commit -q -am "docs(research): baseline row"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -eq 0 ]
+}
+
+@test "worker: refused outside a coordinator job, for a hid that is no slug, an item RESEARCH.md lacks, or a branch git refuses" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  mkjob 01-a "$r" task-a ok
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue worker h1
+  [ "$output" = "vibe: vibe queue worker runs inside a research coordinator job: research=, no hid=" ]
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  VIBE_JOB_DIR="$Q/02-w" run "$VIBE" queue worker h2
+  [ "$output" = "vibe: vibe queue worker runs inside a research coordinator job: research=, no hid=" ]
+  coord "$r" "$w"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker H1
+  [ "$output" = "vibe: hid 'H1' is no slug: lowercase letters, digits, . _ -" ]
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h9
+  [ "$output" = "vibe: no item '### h9 <name>' in RESEARCH.md at HEAD: commit it first" ]
+  git -C "$r" branch research/q1/h3 main
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h3
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: no branch research/q1/h3: fatal: a branch named 'research/q1/h3' already exists" ]
+  [ "$(ls "$Q")" = "$(printf '%s\n' 01-a 01-c 02-w)" ]
+}
+
+@test "worker: the runner runs each worker, pushes its branch, opens no PR; the worker ends wake the coordinator" {
+  local r w c0 h c
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  c0="$(git -C "$w" rev-parse HEAD)"
+  mkjob 01-c "$r" research-q1 workers research=q1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^queued .*: worker h[12] at ' "$STUBS/worker.out")" = 2 ]
+  for h in h1 h2; do
+    [ "$(cat "$(qjob "-research-q1-$h")/status")" = "done" ]
+    [ ! -e "$(qjob "-research-q1-$h")/pr" ]
+    [ "$(git -C "$r" rev-parse "research/q1/$h~1")" = "$c0" ]
+    [ "$(git --git-dir="$BATS_TEST_TMPDIR/proj.git" rev-parse "research/q1/$h")" = "$(git -C "$r" rev-parse "research/q1/$h")" ]
+    [ -d "$r/.claude/worktrees/research/q1/$h" ]
+  done
+  run grep -c 'pr create' "$STUBS/gh.log"
+  [ "$output" -ge 1 ]
+  run grep 'pr create.*research/q1' "$STUBS/gh.log"
+  [ "$status" -ne 0 ]
+  [ "$(cat "$Q/01-c/status")" = "done" ]
+  [[ "$(cat "$Q/01-c/note")" == "worker h"[12]" ended → "* ]] || false
+  c="$(grep -lx research=q1 "$Q"/*/job | xargs grep -L '^hid=' | sort | tail -n 1)"
+  c="${c%/job}"
+  [ "$c" != "$Q/01-c" ]
+  [ "$(cat "$c/status")" = "done" ]
+  grep -qF -- '- Worker: h1 · ' "$c/prompt.md"
+  grep -qF -- '- Worker: h2 · ' "$c/prompt.md"
+}
+
+@test "worker: two worker ends queue one coordinator follow-up with both; the waiting session ends done; a worker with a session 2 wakes none" {
+  local r c st nt
+  r="$(make_repo proj)"
+  mkjob 01-c "$r" research-q1 ok research=q1
+  echo gpu >"$Q/01-c/status"
+  date '+%F %T' >"$Q/01-c/ended"
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  echo '{"metric":0.7}' >"$Q/02-w/run-result"
+  mkjob 03-w "$r" research/q1/h2 ok research=q1 hid=h2
+  mkjob 04-w "$r" research/q1/h3 ok research=q1 hid=h3
+  mkdir "$Q/04-w-gpu"
+  for c in 02-w:done:"done: row written" 03-w:failed:"failed: infra" 04-w:done:"GPU run exit 0 → 04-w-gpu"; do
+    IFS=: read -r c st nt <<<"$c"
+    echo "$st" >"$Q/$c/status"
+    echo "$nt" >"$Q/$c/note"
+    date '+%F %T' >"$Q/$c/ended"
+  done
+  drain
+  [ "$status" -eq 0 ]
+  c="$(qjob -proj-research-q1)"
+  [ "$(echo "$c" | wc -l)" = 1 ]
+  [ "$(cat "$c/status")" = "done" ]
+  grep -qx follow=1 "$c/job"
+  grep -qx parent=01-c "$c/job"
+  [ "$(grep -c '^## Worker finished$' "$c/prompt.md")" = 2 ]
+  grep -qxF -- '- Worker: h1 · job 02-w · branch research/q1/h1' "$c/prompt.md"
+  grep -qxF -- '- End: done — done: row written' "$c/prompt.md"
+  grep -qxF -- "- Result: {\"metric\":0.7} ($Q/02-w/run-result)" "$c/prompt.md"
+  grep -qxF -- '- Worker: h2 · job 03-w · branch research/q1/h2' "$c/prompt.md"
+  grep -qxF -- '- Result: none' "$c/prompt.md"
+  run grep -c 'h3' "$c/prompt.md"
+  [ "$output" = 0 ]
+  [ "$(cat "$Q/01-c/status")" = "done" ]
+  [ "$(cat "$Q/01-c/note")" = "worker h1 ended → ${c##*/}" ]
+  [ "$(cat "$Q/02-w/fan")" = "${c##*/}" ]
+  [ "$(cat "$Q/03-w/fan")" = "${c##*/}" ]
+  [ "$(cat "$Q/04-w/fan")" = "follow-up 04-w-gpu" ]
+}
+
+@test "worker: a worker end waits while the coordinator session runs" {
+  local r pid run c
+  r="$(make_repo proj)"
+  mkjob 01-c "$r" research-q1 ok research=q1
+  sleep 30 3>&- &
+  pid=$!
+  echo running >"$Q/01-c/status"
+  echo "$pid" >"$Q/01-c/pid"
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  echo "done" >"$Q/02-w/status"
+  date '+%F %T' >"$Q/02-w/ended"
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  run=$!
+  sleep 1
+  [ ! -e "$Q/02-w/fan" ]
+  [ "$(ls "$Q")" = "$(printf '%s\n' 01-c 02-w)" ]
+  kill "$pid"
+  wait "$run"
+  c="$(qjob -proj-research-q1)"
+  [ "$(cat "$Q/02-w/fan")" = "${c##*/}" ]
+  grep -qx parent=01-c "$c/job"
+  [ "$(cat "$c/status")" = "done" ]
 }
 
 # two_findings — the stub reviewer's first answer: two findings.
