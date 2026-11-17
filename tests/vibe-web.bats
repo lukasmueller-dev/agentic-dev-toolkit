@@ -124,9 +124,10 @@ post() {
   [ ! -e "$Q/actions.log" ]
 }
 
-@test "vibe-web: the unit runs only on a server" {
+@test "vibe-web: the unit runs only on a server; a restart keeps the detached ws commands" {
   grep -q '^ExecStart=%h/bin/vibe-web$' "$REPO_ROOT/claude/systemd/vibe-web.service"
   grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/vibe-web.service"
+  grep -q '^KillMode=process$' "$REPO_ROOT/claude/systemd/vibe-web.service"
 }
 
 @test "vibe queue page: writes the page; buttons hidden until whoami" {
@@ -135,22 +136,85 @@ post() {
   grep -q 'data-act="pause"' "$Q/web/index.html"
   grep -q "fetch(api + 'whoami'" "$Q/web/page.js"
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
-  grep -qF "if (busy || \$('.armed', queue)) return;" "$Q/web/page.js"
+  grep -qF "if (busy || \$('button.armed')) return;" "$Q/web/page.js"
   # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
-  grep -qF "queue.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "main.contains(b) || blocks.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
   grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
-  [ "$(grep -n '<dialog id="panel">' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '<section id="queue">' "$Q/web/index.html" | cut -d: -f1)" ]
-  # The poll writes only to nodes held at load: a code fence alone gives <pre class="filter"> in a .md.
-  grep -qF "for (const [s, live] of parts)" "$Q/web/page.js"
-  grep -qF "filter.after(...g);" "$Q/web/page.js"
-  [ "$(grep -c "\$('.filter'" "$Q/web/page.js")" = 2 ]
+  # The panel after main: the column right of the list.
+  [ "$(grep -n '<dialog id="panel"' "$Q/web/index.html" | cut -d: -f1)" -gt "$(grep -n '<div id="queue" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The poll writes only to nodes held at load, found in the fetched page by a path from body: a .md can hold any class.
+  grep -qF "const [s, live, was] = p, h = \$(s, n).innerHTML;" "$Q/web/page.js"
+  grep -qF "live.innerHTML = h; p[2] = h;" "$Q/web/page.js"
+  grep -qF "const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces']" "$Q/web/page.js"
+  [ "$(grep -oE '[$][(][^)]*, n[)]' "$Q/web/page.js" | grep -vcF -e "\$(s, n)" -e "\$('body > ")" = 0 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
+  # The page's age comes from the server's clock alone (Date header minus data-t): a skewed browser clock cannot fake it.
+  grep -qF "base = Date.now() - (d - \$('.updated', parts[1][1]).dataset.t * 1000);" "$Q/web/page.js"
+  run grep -c 'Date.now() / 1000' "$Q/web/page.js"
+  [ "$output" = 0 ]
   grep -qF "if (v !== view) return;" "$Q/web/page.js"
   grep -qF "e.target === panel && (e.clientY < r.top" "$Q/web/page.js"
-  grep -q '<dialog id="panel">' "$Q/web/index.html"
-  grep -q 'body.can .acts' "$Q/web/index.html"
+  grep -q '<dialog id="panel"' "$Q/web/index.html"
+  grep -q 'body.can .jacts' "$Q/web/index.html"
+}
+
+@test "vibe queue page: the panel shows the block the hash names; j/k move it; fields replace prompt(); the swap skips a part in use" {
+  local js="$Q/web/page.js"
+  run "$REPO_ROOT/bin/vibe" queue page
+  [ "$status" -eq 0 ]
+  if command -v node >/dev/null; then node --check "$js"; fi
+  run grep -c 'prompt(' "$js"
+  [ "$output" = 0 ]
+  # The hash names the block; its row is marked; another block drops the output.
+  grep -qF "for (const b of blocks.children) { b.hidden = b.id !== id; if (!b.hidden) blk = b; }" "$js"
+  grep -qF "r.classList.toggle('sel', 'job-' + r.dataset.k === id)" "$js"
+  grep -qF "addEventListener('hashchange', show);" "$js"
+  # Wide: a CSS column, never show(), which would take the focus; narrow: a modal only for a block or an output.
+  grep -qF "wide = matchMedia('(min-width: 1200px)')" "$js"
+  grep -qF "else if (!panel.open) panel.showModal();" "$js"
+  run grep -c 'panel.show()' "$js"
+  [ "$output" = 0 ]
+  # j/k only select; the one key that sends needs ⌘ or Ctrl.
+  grep -qF "(e.key !== 'j' && e.key !== 'k')) return;" "$js"
+  [ "$(grep -c '\.click()' "$js")" = 1 ]
+  grep -qF "if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); \$('button[data-act]', f.closest('.ask') || f)?.click(); }" "$js"
+  grep -qF "else if (e.key === 'Escape' && f.value && f.tagName !== 'SELECT') { e.preventDefault(); f.value = ''; }" "$js"
+  # Args: each named field of the button's .ask after the card's data; an empty field sends nothing.
+  grep -qF "const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};" "$js"
+  grep -qF "if (!v && 'opt' in x.dataset) continue;" "$js"
+  grep -qF "if (!v) { x.focus(); return; }" "$js"
+  grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
+  # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
+  grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));" "$js"
+  # A send resets a select to its default option too, so its part swaps again.
+  grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
+  grep -qF "if (held(live)) { if (swapIn(live, \$(s, n))) kept = true; else p[2] = h; continue; }" "$js"
+  grep -qF "if (r.ok && !kept) last = t;" "$js"
+  # The roadmap rows get a Branch slug field, not a prompt.
+  grep -qF "ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {}))" "$js"
+  # The panel: Close, the empty note, the blocks with New job last, the output.
+  grep -qF '<dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">' "$Q/web/index.html"
+  # From 1200 px Close shows only with a button's output: the column itself never closes.
+  grep -qF '#panel:has(> .pout[hidden]) > .close { display: none; }' "$Q/web/index.html"
+  grep -qF '<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>' "$Q/web/index.html"
+  grep -qF '</div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>' "$Q/web/index.html"
+  grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
+}
+
+@test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps" {
+  local b a=20261104-080000-proj-a c=20261104-080001-proj-c
+  b="${VIBE_TEST_BROWSER:-$(command -v chrome-headless-shell chromium chromium-browser google-chrome google-chrome-stable | head -n 1 || true)}"
+  [ -n "$b" ] || skip "no headless browser (VIBE_TEST_BROWSER)"
+  qjob "$a" blocked
+  qjob "$c" blocked
+  printf 'repo=%s/proj\nbranch=task-c\n' "$BATS_TEST_TMPDIR" >"$Q/queue/$c/job"
+  "$REPO_ROOT/bin/vibe" queue page
+  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c"
+  echo "$output"
+  [ "$status" -ne 77 ] || skip "$output"
+  [ "$status" -eq 0 ]
 }
 
 @test "vibe queue page: CSP allows only page.js, so HTML in a note runs no script" {
@@ -167,25 +231,48 @@ post() {
   [ "$status" -eq 1 ]
 }
 
-@test "vibe queue page: a Tools list of the instances from the state files alone; none with no instance" {
-  local w="$Q/workspaces" lim f="$Q/web/index.html"
-  lim=$(($(date +%s) + 3600))
+@test "vibe queue page: Workspaces page and rail from the state files alone: Start, or a place and hours form; Open UI, Stop and time left when up; run tools in one line" {
+  local w="$BATS_TEST_TMPDIR/workspaces" st="$Q/workspaces" f="$Q/web/index.html" now
   printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
-  printf '#!/bin/sh\ncat\n' >"$STUBS/pandoc"
-  chmod +x "$STUBS/docker" "$STUBS/pandoc"
+  chmod +x "$STUBS/docker"
+  wsfold
+  mkdir -p "$w/one" "$w/loop"
+  printf '%s\n' kind=service places=turing "role=One place." >"$w/one/workspace.conf"
+  printf '%s\n' label=Loop kind=run places=turing result=folder >"$w/loop/workspace.conf"
   "$REPO_ROOT/bin/vibe" queue page
-  run grep -c '## Tools' "$f"
-  [ "$output" = 0 ]
-  mkdir -p "$w/ds" "$w/old"
-  echo turing >"$w/ds/place"
-  echo c1 >"$w/ds/id"
-  echo http://100.64.0.1:8080 >"$w/ds/url"
-  echo "$lim" >"$w/ds/limit"
-  echo turing >"$w/old/place"
+  grep -qF '<a class="w" href="#workspaces">Workspaces</a><div class="wsl"><a href="#ws-one"><i class="lamp l-off"></i>one</a><a href="#ws-svc"><i class="lamp l-off"></i>Svc</a></div><a class="c" href="#config">Config</a>' "$f"
+  grep -qF '<div class="wrow" id="ws-svc"><i class="lamp l-off"></i><div class="t"><b>Svc <span class="role">· Serves one thing.</span></b><span class="why">Off · places: turing, runpod · default 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
+  grep -qF '<span class="why">Off · places: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
+  grep -qF '<p class="note">Loop run as queue jobs.</p>' "$f"
+  # No hours= in the conf: an optional Hours field; page.js sends no hours, the start has no limit.
+  sed -i.bak '/^hours=/d' "$w/svc/workspace.conf"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<div class="md">## Tools' "$f"
-  grep -qF -- "- **ds** up · turing · until $(date -d "@$lim" '+%F %H:%M' 2>/dev/null || date -r "$lim" '+%F %H:%M') http://100.64.0.1:8080" "$f"
-  grep -qF -- '- **old** down · turing</div>' "$f"
+  grep -qF '<span class="why">Off · places: turing, runpod</span>' "$f"
+  grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
+  printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
+  grep -qF '<h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1>' "$f"
+  now="$(date +%s)"
+  mkdir -p "$st/svc" "$st/one"
+  echo runpod >"$st/svc/place"
+  echo c1 >"$st/svc/id"
+  echo $((now - 2100)) >"$st/svc/started"
+  echo $((now + 1250)) >"$st/svc/limit"
+  echo http://100.64.0.1:8080 >"$st/svc/url"
+  echo turing >"$st/one/place"
+  echo "vibe: start of one failed — it is down again" >"$st/one/hold.log"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<a href="#ws-svc"><i class="lamp l-ok"></i>Svc</a>' "$f"
+  grep -qF '<span class="why">runpod · up 0:35 · <span class="warn">20m left</span></span></div><a class="btn ui" href="http://100.64.0.1:8080" target="_blank" rel="noopener">Open UI ↗</a><span class="jacts p" data-name="svc"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
+  grep -qF '<span class="why">Off · places: turing · <span class="bad">vibe: start of one failed — it is down again</span></span>' "$f"
+  echo $((now + 7230)) >"$st/svc/limit"
+  echo c2 >"$st/one/id"
+  echo $((now - 60)) >"$st/one/limit"
+  echo 'javascript:alert(1)' >"$st/one/url"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<span class="why">runpod · up 0:35 · 2h' "$f"
+  grep -qF '<div class="wrow" id="ws-one"><i class="lamp l-bad"></i><div class="t"><b>one <span class="role">· One place.</span></b><span class="why">turing · past limit: the next tick stops it</span></div><span class="jacts p" data-name="one"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
+  [ "$(grep -c 'javascript:' "$f")" = 0 ]
+  [ "$(grep -c '## Tools' "$f")" = 0 ]
   [ ! -e "$STUBS/docker.log" ]
 }
 
@@ -316,6 +403,77 @@ ID=20261104-080000-proj-task
   [ -s "$Q/queue/$ID/stop" ]
 }
 
+@test "route steer: the text reaches the running job's steer FIFO; no text is 400" {
+  local d="$Q/queue/$ID"
+  qjob "$ID" running
+  mkfifo "$d/steer"
+  cat "$d/steer" >"$BATS_TEST_TMPDIR/got" &
+  local cat=$!
+  run act steer "{\"id\": \"$ID\", \"text\": \"keep fp16\"}"
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *"steered $ID"* ]] || false
+  wait "$cat"
+  [ "$(tr '\0' '\n' <"$BATS_TEST_TMPDIR/got")" = "keep fp16" ]
+  grep -q $'\tvibe queue steer '"$ID"$' \'keep fp16\'\t0$' "$Q/actions.log"
+  run act steer "{\"id\": \"$ID\"}"
+  [ "${lines[1]}" = 400 ]
+}
+
+# wsfold — a workspaces folder with the service svc (places turing,runpod, hours=4) on stub places that log
+# "<verb> hours=<WS_HOURS>" to $STUBS/place.log; vibe-web restarted to see it.
+wsfold() {
+  local w="$BATS_TEST_TMPDIR/workspaces" p
+  mkdir -p "$w/_places" "$w/svc"
+  printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
+  for p in turing runpod; do
+    cat >"$w/_places/$p" <<EOF
+#!/bin/sh
+echo "\$1 hours=\$WS_HOURS" >>"$STUBS/place.log"
+case "\$1" in
+  up) echo c1 >"\$WS_STATE/id" ;;
+  url) echo http://100.64.0.1:8080 ;;
+  down) rm -f "\$WS_STATE/id" ;;
+esac
+EOF
+    chmod +x "$w/_places/$p"
+  done
+  export VIBE_WORKSPACES="$w"
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")"
+  web_start
+}
+
+@test "routes ws-start and ws-stop: place and hours when given, else the conf's; the stop detaches; a bad name, place or hours is 400" {
+  wsfold
+  run act ws-start '{"name": "svc", "place": "runpod", "hours": "2"}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'*'svc up \u2014 http://100.64.0.1:8080'* ]] || false
+  [ "$(cat "$Q/workspaces/svc/place")" = runpod ]
+  grep -qx 'up hours=2' "$STUBS/place.log"
+  grep -q $'\tvibe ws start svc --place=runpod --hours=2\t0$' "$Q/actions.log"
+  run act ws-stop '{"name": "svc"}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *"svc stops"* ]] || false
+  for _ in $(seq 50); do
+    if [ ! -e "$Q/workspaces/svc/stops" ]; then break; fi
+    sleep 0.1
+  done
+  [ ! -e "$Q/workspaces/svc/stops" ]
+  grep -q "^down " "$STUBS/place.log"
+  run act ws-start '{"name": "svc"}'
+  [ "${lines[1]}" = 200 ]
+  [ "$(cat "$Q/workspaces/svc/place")" = turing ]
+  [ "$(grep '^up ' "$STUBS/place.log" | tail -n 1)" = "up hours=4" ]
+  grep -q $'\tvibe ws start svc\t0$' "$Q/actions.log"
+  for body in '{}' '{"name": "../x"}' '{"name": "svc", "place": "Turing"}' '{"name": "svc", "place": ""}' \
+    '{"name": "svc", "hours": "0"}' '{"name": "svc", "hours": 2}' '{"name": "svc", "hours": "1 --place=vast"}'; do
+    run act ws-start "$body"
+    [ "${lines[1]}" = 400 ]
+  done
+  run act ws-stop '{"name": "-x"}'
+  [ "${lines[1]}" = 400 ]
+  [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 3 ]
+}
+
 @test "route hold: the note lands in held" {
   qjob "$ID" blocked
   run act hold "{\"id\": \"$ID\", \"note\": \"test it on the robot\"}"
@@ -370,7 +528,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   qjob "$ID" blocked
   echo "$wt" >"$Q/queue/$ID/worktree"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="answer" data-ask="text" data-confirm' "$Q/web/index.html"
+  grep -qF '<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button>' "$Q/web/index.html"
   run act answer "{\"id\": \"$ID\", \"text\": \"Plan B.\"}"
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
@@ -439,7 +597,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   qjob "$ID" "done"
   echo "$URL" >"$Q/queue/$ID/pr"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q "data-pr=\"$URL\"><button data-act=\"fix\" data-ask=\"text\"" "$Q/web/index.html"
+  grep -qF "data-pr=\"$URL\"><span class=\"ask\"><label>Fix job: what to change on the PR<textarea name=\"text\" rows=\"3\"></textarea></label><button data-act=\"fix\">" "$Q/web/index.html"
   "$REPO_ROOT/bin/vibe" queue archive "$ID" >/dev/null
   run act fix "{\"pr\": \"$URL\", \"text\": \"Rename foo to bar.\"}"
   [ "${lines[1]}" = 200 ]
@@ -534,7 +692,8 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf '1. #14 — 5 lines — can conflict: #12\n2. #12 — 30 lines\n3. #15 — 100 lines')" ]
   grep -q -- '^pr list --state open --limit 1000 ' "$STUBS/gh.log"
-  qjob "$ID"
+  qjob "$ID" "done"
+  echo https://github.com/o/proj/pull/12 >"$Q/queue/$ID/pr"
   run "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">" "$Q/web/index.html"
   run act merge-order "{\"repo\": \"$r\"}"
@@ -725,14 +884,11 @@ optin() {
   run act opt-in "{\"repo\": \"$r\", \"job\": \"lean-audit\"}"
   [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"roadmap\">Roadmap</button><button data-act=\"worktrees\">Worktrees</button><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
-  grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
-  run grep -q 'opt in: [^"]*lean-audit' "$Q/web/index.html"
+  grep -qF "<option value=\"$r\">proj</option></select></label><label>Task<textarea name=\"task\" rows=\"3\"></textarea></label><label>Done when: a command that checks it<input name=\"done\"></label><label>Branch slug<input name=\"branch\"></label><button data-act=\"new\">Queue job</button>" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><span class=\"lbl\">proj</span><button data-act=\"roadmap\">Roadmap</button><span class=\"ask\"><label>Recurring job<select name=\"job\">" "$Q/web/index.html"
+  grep -qF '<option>stale-state</option>' "$Q/web/index.html"
+  run grep -qF '<option>lean-audit</option>' "$Q/web/index.html"
   [ "$status" -eq 1 ]
-}
-
-@test "queue page: a link opens claude.ai/code" {
-  grep -q 'claude.ai/code' "$REPO_ROOT/templates/queue-page.html"
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
@@ -833,7 +989,7 @@ optin() {
   done
   [ "$(grep -c restart "$STUBS/systemctl.log")" = 1 ]
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="server-restart" data-ask="server" data-confirm' "$Q/web/index.html"
+  grep -qF '<span class="ask"><label>Server to restart (Servers lists them)<input name="server"></label><button data-act="server-restart" data-confirm>Restart server</button></span>' "$Q/web/index.html"
 }
 
 @test "routes worktrees and worktree-remove: a merged one goes; dirty, unpushed and locked stay" {
@@ -862,7 +1018,8 @@ optin() {
   [ "${lines[1]}" = 400 ]
   echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "action('Remove', 'worktree-remove', { data: { confirm: '' } })" "$Q/web/page.js"
+  grep -qF "action('Remove', 'worktree-remove', { confirm: '' })" "$Q/web/page.js"
+  grep -qF "<label>Repo<select name=\"repo\"><option value=\"$r\">proj</option></select></label><button data-act=\"worktrees\">Worktrees</button>" "$Q/web/index.html"
 }
 
 @test "route sync: vibe sync --all pushes a worktree's new branch" {
@@ -931,6 +1088,50 @@ get() {
   run "$REPO_ROOT/bin/vibe" queue page
   grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
   grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
+}
+
+@test "route job/<id>/tool.log, out/report.md, out/files: the log's tail, the report, the file list; a link out of the job dir is 404" {
+  local d="$Q/queue/$ID"
+  qjob "$ID" running
+  printf 'tool=kapso\n' >>"$d/job"
+  python3 -c 'import sys; [print("step %06d %s" % (i, "x" * 90)) for i in range(2000)]' >"$d/tool.log"
+  run get "/queue/api/job/$ID/tool.log"
+  [[ "$output" == *$'\nstep 001999 '*$'\n200' ]] || false
+  [ "${#output}" -le 65540 ]
+  mkdir -p "$d/out/files/sub" "$BATS_TEST_TMPDIR/secret"
+  echo "# Tool report" >"$d/out/report.md"
+  echo a,b >"$d/out/files/table.csv"
+  echo x >"$d/out/files/sub/b.txt"
+  run get "/queue/api/job/$ID/out/report.md"
+  [ "${lines[0]}" = "# Tool report" ]
+  run get "/queue/api/job/$ID/out/files/"
+  [ "$output" = "$(printf 'table.csv\nsub/b.txt\n\n200')" ]
+  # A name that is not UTF-8 (Linux; APFS refuses it): a ? in the list, not a dropped connection.
+  if touch "$d/out/files/caf$(printf '\351').txt" 2>/dev/null; then
+    run get "/queue/api/job/$ID/out/files/"
+    [ "${lines[0]}" = "caf?.txt" ]
+    [ "${lines[3]}" = 200 ]
+    rm "$d/out/files/caf"*
+  fi
+  # gate.log is no log tail: the first line, the command, stays.
+  { echo '$ make test' && python3 -c 'print("x" * 100000)'; } >"$d/gate.log"
+  run get "/queue/api/job/$ID/gate.log"
+  [ "${lines[0]}" = '$ make test' ]
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -q "href=\"/queue/api/job/$ID/tool.log\">tool.log</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/out/report.md\">out/report.md</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/out/files\">out/files/</a>" "$Q/web/index.html"
+  echo hidden >"$BATS_TEST_TMPDIR/secret/report.md"
+  rm -rf "$d/out/files"
+  ln -s "$BATS_TEST_TMPDIR/secret" "$d/out/files"
+  for p in out/files out/job out/report.md/x; do
+    run get "/queue/api/job/$ID/$p"
+    [[ "$output" == *$'\n404' ]] || false
+  done
+  rm -rf "$d/out"
+  ln -s "$BATS_TEST_TMPDIR/secret" "$d/out"
+  run get "/queue/api/job/$ID/out/report.md"
+  [[ "$output" == *$'\n404' ]] || false
 }
 
 @test "route job/<id>/<file>?html: a .md through pandoc under the API's CSP; without pandoc escaped; other files stay text" {

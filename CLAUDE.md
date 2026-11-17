@@ -362,8 +362,14 @@ success — green, having linted none of the skills you shipped.
 fail 3 `install.bats` tests, `shfmt -f .` and `git add -A`.** Run the lint and that
 suite in a `git clone` under `$TMPDIR`; add files by name.
 
-**`bats -j 8 tests/vibe-queue.bats` fails 5 review and verify tests under load.**
-Run that file without `-j`.
+**`bats -j 8` fails 5 review and verify tests in `vibe-queue.bats` and the gpu=yes lock-wait test in `vibe-ws.bats` under load.**
+Run those two files without `-j`.
+
+**The page.js test in `vibe-web.bats` skips inside the agent sandbox: full Chrome does not start there.**
+Set `VIBE_TEST_BROWSER` to the Playwright `chrome-headless-shell` under `~/.cache/ms-playwright/`.
+For a screenshot, serve a dir that holds a copy of `web/` as `queue/` (`python3 -m http.server`) in the same Bash call.
+
+**A bare `wait` in `vibe-web.bats` hangs: setup's `vibe-web` is a background job too.** Wait on a pid.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
 It is the sandbox's mount point for its write-deny on `.git/config`; no setting

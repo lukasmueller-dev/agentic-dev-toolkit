@@ -6,210 +6,245 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0f0f0f" media="(prefers-color-scheme: dark)">
-<title>vibe queue</title>
+<meta name="theme-color" content="#151c22" media="(prefers-color-scheme: dark)">
+<title><tab></title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cstyle%3E.i%7Bfill:%23111%7D@media(prefers-color-scheme:dark)%7B.i%7Bfill:%23d6d6d6%7D%7D%3C/style%3E%3Crect class='i' x='8' y='8' width='13.5' height='13.5' rx='2'/%3E%3Crect class='i' x='25.3' y='25.3' width='13.5' height='13.5' rx='2'/%3E%3Crect class='i' x='42.6' y='25.3' width='13.5' height='13.5' rx='2'/%3E%3Crect class='i' x='25.3' y='42.6' width='13.5' height='13.5' rx='2'/%3E%3Crect x='42.6' y='8' width='13.5' height='13.5' rx='2' fill='%23e12d1a'/%3E%3C/svg%3E">
 <style>
-/* Tokens from lukasmueller.dev (portfolio-site app/globals.css) */
-:root { color-scheme: light; --red: #e12d1a; --ink: #111111; --body: #4a4a4a; --body-2: #5a5a5a; --muted: #767676; --bg: #ffffff; --bg-alt: #fcfcfc; --border: rgba(0,0,0,.1); --fill: rgba(0,0,0,.05); --fill-2: rgba(0,0,0,.1); --sans: "Helvetica Neue", Archivo, Arial, sans-serif; --mono: ui-monospace, Menlo, monospace; }
+/* Fonts: copied to web/fonts/ by vibe queue page; the CSP blocks Google Fonts. Sizes: 12, 13, 14, 16, 24 px only. */
+@font-face { font-family: "Geist"; src: url("/queue/fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("/queue/fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+/* B3 tokens (robots_web_commander style.css). Brand red only on the glider cell, the active nav item and the selected row. */
+:root { color-scheme: light; --red: #e12d1a; --red-soft: #fbe9e7; --bg: #eef1f3; --surface: #ffffff; --surface-2: #f2f5f7; --fg: #11171c; --fg-2: #36434d; --muted: #53616c; --line: #d2dae0; --line-strong: #aab6bf; --accent: #3547b8; --ok: #0a7145; --warn: #8a5600; --bad: #b3261e; --bad-line: #e6aaa4; --lamp-bad: #d92d2d; --lamp-ring: #7f8c96; --lamp-off: #d2dae0; --sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; --mono: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
 @media (prefers-color-scheme: dark) {
-  :root { color-scheme: dark; --ink: #d6d6d6; --body: #c8c8c8; --body-2: #b8b8b8; --muted: #9a9a9a; --bg: #0f0f0f; --bg-alt: #1a1a1a; --border: rgba(255,255,255,.12); --fill: rgba(255,255,255,.08); --fill-2: rgba(255,255,255,.15); }
+  :root { color-scheme: dark; --red-soft: #3a1618; --bg: #0e1317; --surface: #151c22; --surface-2: #1f2930; --fg: #e8edf0; --fg-2: #b9c4cc; --muted: #9aa8b2; --line: #27323a; --line-strong: #33414b; --accent: #a9bbff; --ok: #5fd6a3; --warn: #f2b45b; --bad: #ff8a80; --bad-line: #6a2428; --lamp-bad: #ff5a52; --lamp-ring: #3a4852; --lamp-off: #222c33; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; padding: 0 0 calc(40px + env(safe-area-inset-bottom)); background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
-a { color: inherit; }
-.bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: calc(16px + env(safe-area-inset-top)) 20px 0; background: rgba(225,45,26,.04); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
-.bar svg { flex: none; width: 22px; height: 22px; }
-.bar svg .i, .bar svg .run rect { fill: var(--ink); }
+body { display: flex; min-height: 100vh; margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%; }
+a { color: var(--accent); text-underline-offset: 2px; }
+code, .n, .repo, .el, .chip { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* Rail: glider and vibe, Queue with the Needs-you count, Workspaces and a link per service, Config. */
+.rail { position: sticky; top: 0; flex: 0 0 216px; height: 100vh; display: flex; flex-direction: column; gap: 2px; padding: 20px 12px; background: var(--surface); border-right: 1px solid var(--line); }
+.rail a { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; color: var(--fg-2); text-decoration: none; }
+.rail .brand { justify-content: flex-start; gap: 8px; padding: 4px 10px 16px; color: var(--fg); font-size: 16px; font-weight: 600; }
+.rail .c, .rail .w { margin-top: 12px; }
+.rail .w { padding: 4px 10px; color: var(--muted); font-size: 12px; }
+.rail .wsl { display: flex; flex-direction: column; gap: 2px; }
+.rail .wsl a { justify-content: flex-start; gap: 8px; color: var(--fg); }
+.rail .wsl .lamp { width: 8px; height: 8px; }
+.rail .n { color: var(--bad); font-size: 12px; }
+body:not(:has(#config:target, #workspaces:target, #workspaces :target)) .rail .q, body:has(#config:target) .rail .c, body:has(#workspaces:target, #workspaces :target) .rail .w { background: var(--red-soft); color: var(--fg); font-weight: 500; box-shadow: inset 2px 0 var(--red); }
+.rail svg { flex: none; width: 22px; height: 22px; }
+.rail svg .i, .rail svg .run rect { fill: var(--fg); }
 /* While a job runs, the mark becomes a live glider: generations 0-3, CSS only. */
-.bar svg .run { display: none; }
-body:has(.s-running, .s-gpu) .bar svg .mark { display: none; }
-body:has(.s-running, .s-gpu) .bar svg .run { display: inline; }
-.bar svg .f { opacity: 0; animation: gen 1.6s steps(1, end) infinite; }
-.bar svg .f1 { animation-delay: .4s; }
-.bar svg .f2 { animation-delay: .8s; }
-.bar svg .f3 { animation-delay: 1.2s; }
-.bar svg .run .r { fill: var(--red); }
+.rail svg .run { display: none; }
+body:has(.s-running, .s-gpu) .rail svg .mark { display: none; }
+body:has(.s-running, .s-gpu) .rail svg .run { display: inline; }
+.rail svg .f { opacity: 0; animation: gen 1.6s steps(1, end) infinite; }
+.rail svg .f1 { animation-delay: .4s; }
+.rail svg .f2 { animation-delay: .8s; }
+.rail svg .f3 { animation-delay: 1.2s; }
+.rail svg .run .r { fill: var(--red); }
 @keyframes gen { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { body:has(.s-running, .s-gpu) .bar svg .mark { display: inline; } body:has(.s-running, .s-gpu) .bar svg .run { display: none; } }
-.bar strong { font: 600 14px/1 var(--sans); letter-spacing: -.01em; }
-.updated { margin-left: auto; color: var(--muted); font: 500 13px var(--sans); font-variant-numeric: tabular-nums; }
-.updated.stale { color: var(--red); }
+@media (prefers-reduced-motion: reduce) { body:has(.s-running, .s-gpu) .rail svg .mark { display: inline; } body:has(.s-running, .s-gpu) .rail svg .run { display: none; } }
+main { flex: 1 1 auto; min-width: 0; max-width: 1016px; padding: 24px 28px 48px; }
+/* Header: lamp, slots, limit, GPU holder, updated; Pause or Resume, Clear limit, New job. */
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 0 0 20px; }
+.head h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+.head h1 span:not(.hq), body:has(#config:target, #workspaces:target, #workspaces :target) .hq { display: none; }
+body:has(#config:target) .hc, body:has(#workspaces:target, #workspaces :target) .hw { display: inline; }
+.stat { display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 13px; }
+.updated.stale { color: var(--bad); }
 .updated.stale::after { content: " · stale"; }
-nav { display: flex; gap: 26px; flex-basis: 100%; padding: 14px 0 0; }
-nav a { padding: 0 0 12px; border-bottom: 1.5px solid transparent; color: var(--body); font: 500 14px/1 var(--sans); text-decoration: none; }
-nav .q, body:has(#config:target) nav .c { color: var(--ink); border-bottom-color: var(--red); }
-body:has(#config:target) nav .q { color: var(--body); border-bottom-color: transparent; }
-section { display: none; padding: 0 20px; scroll-margin-top: 100px; }
-#queue, .md:target { display: block; }
-body:has(.md:target) #queue { display: none; }
-.chips { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 22px 0 0; border: 1px solid var(--border); }
-.chip { padding: 14px 12px 13px; color: var(--muted); font: 500 13px/1.3 var(--sans); }
-.chip + .chip { border-left: 1px solid var(--border); }
-.chip b { display: block; margin: 0 0 8px; color: var(--ink); font: 600 26px/1 var(--sans); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.chip:nth-child(n+4) b { color: var(--red); }
-.chip a { display: block; margin: 6px 0 0; }
-.flags { margin: 12px 0 0; color: var(--muted); font: 400 13px/1.4 var(--sans); }
-/* Write buttons: shown only after GET whoami returns your login (body.can). */
-.acts, .jacts { display: none; margin: 12px 0 0; }
-/* New work: per repo a card of buttons; shown only with buttons, not numbered. */
-.repo.new { display: none; counter-increment: none; }
-body.can .repo.new { display: block; }
-.repo.new h2::before, .repo.new .top::before { content: none; }
-/* One grid for every group: 3 columns, 4 on a desk screen. A long label wraps: the row grows, the cell width stays. A nested .jacts (one recurring job) shares its parent's grid. */
-body.can .acts, body.can .jacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-body.can .jacts .jacts { display: contents; }
-/* Merge order: the last cell of the same grid, in the repo heading row. */
-.rh { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; gap: 8px; margin: 0 0 10px; }
-.repo .rh h2 { grid-column: 1 / -2; margin: 0; }
-body.can .rh .jacts { display: block; grid-column: -2; margin: 0; }
-.acts button, .jacts button, .prow button { width: 100%; padding: 10px 6px; background: var(--fill); border: 0; border-radius: 0; color: var(--ink); font: 500 12.5px/1.25 var(--sans); overflow-wrap: anywhere; cursor: pointer; }
-/* The <hr> before the data-confirm buttons is an empty row; the "Run recurring" label and the file links take a row of their own. */
-.acts hr, .jacts hr { grid-column: 1 / -1; height: 0; margin: 0; border: 0; }
-.jacts .lbl { grid-column: 1 / -1; margin: 4px 0 -2px; color: var(--muted); font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
-.jacts .files { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 14px; }
-.jacts a { color: var(--muted); font: 500 12px var(--sans); }
-@media (hover: hover) { :is(.acts, .jacts, .prow) button:hover:not(:disabled) { background: var(--fill-2); } }
-:is(.acts, .jacts, .prow) button[data-confirm] { color: var(--red); }
-:is(.acts, .jacts, .prow) button.armed, :is(.acts, .jacts, .prow) button.armed:hover { background: var(--red); color: #fff; }
-:is(.acts, .jacts, .prow) button:disabled { opacity: .5; cursor: default; }
-:is(.acts, .jacts, .prow) button:focus-visible, #panel .x:focus-visible { outline: 1.5px solid var(--red); outline-offset: 1px; }
-.filter { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 24px 0 0; }
-.filter input { position: absolute; opacity: 0; }
-.filter label { padding: 8px 2px; background: var(--fill); color: var(--body-2); font: 500 12px/1.2 var(--sans); text-align: center; }
-.filter input:checked + label { background: var(--ink); color: var(--bg); }
-.filter input:focus-visible + label { outline: 1.5px solid var(--red); outline-offset: 2px; }
-body:has(#f-active:checked) .job:not(.s-running, .s-gpu, :has(.s-running, .s-gpu)),
-body:has(#f-active:checked) .repo:not(:has(.s-running, .s-gpu)),
-body:has(#f-wait:checked) .job:not(.s-queued, .s-held, :has(.s-queued, .s-held)),
-body:has(#f-wait:checked) .repo:not(:has(.s-queued, .s-held)),
-body:has(#f-you:checked) .job:not(.s-blocked, .s-failed, .s-timeout, .s-skipped, :has(.s-blocked, .s-failed, .s-timeout, .s-skipped)),
-body:has(#f-you:checked) .repo:not(:has(.s-blocked, .s-failed, .s-timeout, .s-skipped)),
-body:has(#f-done:checked) .job:not(.s-done, :has(.s-done)),
-body:has(#f-done:checked) .repo:not(:has(.s-done)) { display: none; }
-#queue { counter-reset: repo; }
-.repo { counter-increment: repo; margin-top: 34px; }
-.repo h2 { margin: 0 0 10px; color: var(--muted); font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
-.repo h2::before { content: counter(repo, decimal-leading-zero) "  "; color: var(--red); white-space: pre; }
-.job { padding: 16px 0 17px; border-top: 1px solid var(--border); }
-.top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.top::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 2px; border: 1.5px solid var(--muted); }
-.top b { flex: 1; min-width: 0; color: var(--ink); font: 600 16px/1.25 var(--sans); letter-spacing: -.01em; overflow-wrap: anywhere; }
-.pill { color: var(--muted); font: 600 13px var(--sans); font-variant-numeric: tabular-nums; }
-/* A lane is a stack: a bordered card with two sheets peeking out below it. Box shadows: they never paint over the card, in any stacking context. */
-.job.lane { position: relative; margin: 12px 0 26px; padding: 16px 14px 17px; background: var(--bg); border: 1px solid var(--border);
-  box-shadow: 0 12px 0 -9px var(--bg-alt), 0 12px 0 -8px var(--border), 0 24px 0 -16px var(--bg-alt), 0 24px 0 -15px var(--border); }
-/* Unpacked: the sheets go; each job of the lane shows as a job card. */
-.job.lane:has(> .stack[open]) { box-shadow: none; }
-/* The stack's summary covers the whole card: one click anywhere packs or unpacks it. No arrow. */
-.job.lane > .stack > summary { position: absolute; inset: 0; font-size: 0; list-style: none; }
-.job.lane > .stack > summary::-webkit-details-marker { display: none; }
-/* Above the summary: the PR link, the steps, the buttons and the job cards. A click there does not pack. Below .bar (z-index 2). */
-.job.lane > p a, .job.lane > details:not(.stack), .job.lane > .jacts, .stack > .job { position: relative; z-index: 1; }
-.stack > .job:first-of-type { margin-top: 8px; }
-.stack > .job:last-child { padding-bottom: 0; }
-.job p { margin: 6px 0 0 19px; color: var(--body-2); font: 400 14px/1.5 var(--sans); overflow-wrap: anywhere; }
+.head .new { display: none; }
+body.can .head .new { display: inline-flex; }
+/* Pages: #queue, else #config or #workspaces when the URL hash names it or a node in it. */
+.page { display: none; }
+#queue, .page:target, .page:has(:target) { display: block; }
+body:has(#config:target, #workspaces:target, #workspaces :target) #queue { display: none; }
+/* Sections: Needs you and Running open, the rest folded to one line. */
+.sec { margin: 0 0 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.sec > h2, .sec > summary { margin: 0; padding: 12px 16px 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+details.sec > summary { padding: 12px 16px; cursor: pointer; }
+.sec > h2 .n, .sec > summary .n { font-weight: 500; }
+.sec[data-k="you"] > h2 .n { color: var(--bad); }
+.none { margin: 0; padding: 10px 16px 14px; color: var(--muted); font-size: 13px; }
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }
+/* A row: lamp, title and reason (a link to its block, over the whole row), phase bar, chip, repo, time, one primary button. */
+.row { position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); }
+.row .t { color: inherit; text-decoration: none; }
+.row .t::after { content: ""; position: absolute; inset: 0; }
+.row .jacts, .row .btn { position: relative; }
+@media (hover: hover) { .row:hover { background: var(--surface-2); } }
+.row.sel, .wrow:target { background: var(--red-soft); box-shadow: inset 2px 0 var(--red); }
+.lamp { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); }
+.stat .lamp { width: 8px; height: 8px; }
+.l-ok { background: var(--ok); }
+.l-bad { background: var(--lamp-bad); }
+.l-you { background: var(--accent); }
+.l-warn { background: var(--warn); }
+.l-held { background: none; box-shadow: inset 0 0 0 1.5px var(--lamp-ring); }
+.l-done { background: var(--line-strong); }
+.t { flex: 1; min-width: 0; }
+.t b { display: block; font-weight: 500; overflow-wrap: anywhere; }
+.t b .n { color: var(--muted); font-size: 12px; font-weight: 400; }
+.why { display: block; color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; }
+.l-bad + .t .why { color: var(--bad); }
+.pbar { display: flex; flex: none; align-items: center; gap: 3px; }
+.pbar i { width: 22px; height: 4px; border-radius: 2px; background: var(--lamp-off); }
+.pbar .ok { background: var(--ok); }
+.pbar .run { background: var(--accent); }
+.pbar .bad { background: var(--lamp-bad); }
+.pbar span { margin-left: 6px; color: var(--fg-2); font-size: 13px; white-space: nowrap; }
+.chip { padding: 1px 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--fg-2); font-size: 12px; white-space: nowrap; }
+.repo, .el { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.el { width: 48px; text-align: right; }
+/* A block: lamp, state, title, meta line, then the card, its title already in the block's head. */
+.bh { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); }
+.bh .lamp { display: inline-block; }
+.bh .st { margin-left: 8px; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.bh .l-bad + .st { color: var(--bad); }
+.bh h2 { margin: 8px 0 4px; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.bh h2 .n, .bh .meta { color: var(--muted); font: 12px var(--mono); }
+.blk > .job { padding: 4px 24px 16px; }
+.blk > .job > .top { display: none; }
+.blk > .jacts { padding: 0 24px 16px; }
+#new > .jacts { padding: 16px 24px; border-bottom: 1px solid var(--line); }
+.job .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0; }
+.job .top b { font-weight: 500; }
+.pill { color: var(--muted); font-size: 13px; }
+.job p { margin: 4px 0 0; color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; }
 .job p:empty { display: none; }
-.job p.stats { color: var(--muted); font: 400 13px var(--sans); font-variant-numeric: tabular-nums; }
-.job p a { margin-left: 6px; padding-bottom: 1px; border-bottom: 1.5px solid var(--red); color: var(--ink); font: 600 13px var(--sans); text-decoration: none; }
-.job details { margin: 8px 0 0 19px; color: var(--body-2); font-size: 13px; }
-.job summary { color: var(--muted); font: 500 13px var(--sans); overflow-wrap: anywhere; cursor: pointer; }
-/* The phase line: ✓ done, ▶ running, ○ to come, ✗ failed in red. Open, it names the review passes. */
-.job .phases { color: var(--muted); font: 500 13px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
-.job .phases p { margin-left: 0; font-size: 13px; }
-.phases .r { color: var(--ink); }
-.phases .x { color: var(--red); }
+.job p.stats { color: var(--muted); }
+.job p.lbl { margin-top: 12px; color: var(--muted); font-weight: 600; }
+.tlog { margin: 6px 0 0; padding: 12px 14px; background: #11171c; border: 1px solid var(--line); border-radius: 8px; color: #e8edf0; font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.job p a { margin-left: 6px; }
+.job details { margin: 6px 0 0; color: var(--fg-2); font-size: 13px; }
+.job summary { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; cursor: pointer; }
+.job .phases { color: var(--muted); font-size: 13px; }
+.phases .r { color: var(--fg); }
+.phases .x { color: var(--bad); }
 .job ol { margin: 6px 0 0; padding-left: 22px; }
 .job li { margin: 2px 0; overflow-wrap: anywhere; }
-.s-running > .top::before, .s-gpu > .top::before { background: var(--ink); border-color: var(--ink); animation: beat 1.6s steps(2, jump-none) infinite; }
-.s-running > .top .pill, .s-gpu > .top .pill { color: var(--ink); }
-.s-done > .top::before { background: var(--muted); border-color: var(--muted); }
-/* Held: 12 dots, one per corner, even spacing (a CSS dotted border spaces them unevenly). */
-.s-held > .top::before { border-color: transparent; background: var(--ink); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Crect x='.75' y='.75' width='10.5' height='10.5' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-dasharray='0 3.5'/%3E%3C/svg%3E") 0 0 / 100% 100%; }
-.s-held > .top .pill { color: var(--ink); }
-.s-failed > .top::before, .s-blocked > .top::before, .s-timeout > .top::before, .s-skipped > .top::before { background: var(--red); border-color: var(--red); }
-.s-failed > .top .pill, .s-blocked > .top .pill, .s-timeout > .top .pill, .s-skipped > .top .pill { color: var(--red); }
-@keyframes beat { 50% { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { .top::before { animation: none !important; } }
-#queue > p:not(.flags) { margin: 34px 0; padding: 40px 16px; border: 1px solid var(--border); color: var(--muted); font: 400 14px var(--sans); text-align: center; }
-.md { padding-top: 8px; }
-.md h1 { margin: 22px 0 8px; font: 600 22px/1.2 var(--sans); letter-spacing: -.02em; }
-.md h2 { margin: 36px 0 12px; color: var(--muted); font: 600 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; }
-.md h3 { margin: 22px 0 8px; color: var(--red); font: 600 15px var(--sans); }
-.md p, .md li { color: var(--body-2); font-size: 14px; }
-.md a { text-decoration: underline; text-decoration-color: var(--red); text-decoration-thickness: 1.5px; text-underline-offset: 2px; }
-.md code { padding: 1px 5px; background: var(--fill); border-radius: 3px; font: .86em var(--mono); }
-.md pre { padding: 14px; background: var(--bg-alt); border: 1px solid var(--border); white-space: pre-wrap; font: 12.5px/1.55 var(--mono); }
+/* Write buttons: shown only after GET whoami returns your login (body.can). */
+.jacts { display: none; }
+body.can .jacts { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+body.can .p { margin: 0; }
+body.can .head .jacts { margin: 0 0 0 auto; }
+body.can .jacts .jacts { display: contents; }
+button, .btn { display: inline-flex; flex: none; align-items: center; justify-content: center; height: 32px; min-width: 84px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--fg); font: 14px var(--sans); text-decoration: none; cursor: pointer; }
+@media (hover: hover) { button:hover:not(:disabled), .btn:hover { background: var(--surface-2); } }
+.head .new, .btn.ui { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
+button[data-confirm] { border-color: var(--bad-line); color: var(--bad); }
+button.armed, button.armed:hover { background: var(--lamp-bad); border-color: var(--lamp-bad); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+:is(button, .btn, summary, .rail a, .row .t, input, textarea, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.jacts hr { flex-basis: 100%; height: 0; margin: 0; border: 0; }
+.jacts .lbl { flex-basis: 100%; margin: 4px 0 -2px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.jacts .files { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+/* A field and its send button: ⌘↵ sends, Esc clears. */
+.ask { display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.ask label { display: flex; flex: 1 1 160px; flex-direction: column; gap: 4px; color: var(--fg-2); font-size: 13px; }
+.ask label:has(textarea) { flex-basis: 100%; }
+input, textarea, select { width: 100%; min-height: 32px; padding: 5px 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--fg); font: 14px var(--sans); }
+textarea { resize: vertical; }
+/* Markdown: Triage, Tools, Config, a panel file. */
+.md { padding: 4px 16px 12px; overflow-wrap: anywhere; }
+.md h1 { margin: 16px 0 8px; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+.md h2 { margin: 24px 0 8px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.md h3 { margin: 16px 0 6px; font-size: 14px; font-weight: 600; }
+.md p, .md li { color: var(--fg-2); }
+.md code { padding: 1px 4px; background: var(--surface-2); border-radius: 4px; font-size: 12px; }
+.md pre { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font: 12px/1.55 var(--mono); white-space: pre-wrap; }
 .md pre code { padding: 0; background: none; }
-.md table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.md th { color: var(--muted); font: 600 13px var(--sans); }
-.md th, .md td { padding: 10px 8px 10px 0; border-top: 1px solid var(--border); text-align: left; vertical-align: top; }
-.md pre, .md code, .md td { overflow-wrap: anywhere; }
-/* Panel: every button's output and every file. A bottom sheet here, a right column on a desk screen while it is open; outside #queue, so a poll leaves it alone. */
-#panel { position: fixed; inset: auto 0 0; width: 100%; max-width: 680px; height: 76dvh; max-height: none; margin: 0 auto; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border: 0; border-top: 2px solid var(--ink); color: var(--ink); }
+.md table { width: 100%; border-collapse: collapse; }
+.md th { color: var(--muted); font-size: 13px; font-weight: 600; }
+.md th, .md td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+#queue > .md { margin: 0 0 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+/* Config: Settings, Actions, Recurring jobs, Page actions; each a section. */
+.sec > .jacts { padding: 0 16px 14px; }
+/* Workspaces: a row per service, lamp, label and role, state line, Open UI and Stop, or Start; a place and hours form below. */
+.wrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px; }
+.wrow + .wrow { border-top: 1px solid var(--line); }
+.wrow > .t { flex: 1 1 240px; }
+.wrow .ask label:has([name="hours"]) { flex: 0 0 96px; }
+.wrow .role { color: var(--muted); font-size: 13px; font-weight: 400; }
+.why .warn { color: var(--warn); }
+.why .bad { color: var(--bad); }
+body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px 16px; background: var(--surface-2); border-radius: 8px; }
+.note { margin: 0; color: var(--muted); font-size: 13px; }
+/* Panel: the block the URL hash names (#job-<key>, #new), then a button's output or a file. A right column from 1200 px;
+   under it a modal over the list, on a phone a bottom sheet. */
+#panel { position: fixed; inset: 0 0 0 auto; width: min(480px, 100%); height: 100%; max-width: none; max-height: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 0; border-left: 1px solid var(--line); color: var(--fg); }
 #panel::backdrop { background: rgba(0,0,0,.3); }
-/* .pmsg sits in the sticky header: a row's answer stays in view at the end of a long list. */
-.ph { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 14px 20px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
-.ph strong { font: 600 15px/1.2 var(--sans); letter-spacing: -.01em; }
-.ph span { flex: 1; min-width: 0; color: var(--muted); font: 400 12.5px var(--sans); overflow-wrap: anywhere; }
-#panel .x { margin: -10px 0; padding: 10px 0 10px 16px; background: none; border: 0; color: var(--muted); font: 500 13px var(--sans); cursor: pointer; }
-.pmsg { flex-basis: 100%; max-height: 8em; margin: 6px 0 0; overflow-y: auto; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+#panel > .close { position: sticky; top: 0; z-index: 1; float: right; min-width: 0; height: auto; padding: 16px 24px 8px; background: none; border: 0; color: var(--muted); font-size: 13px; }
+.pnone { margin: 0; padding: 24px; color: var(--muted); font-size: 13px; }
+.pout { border-top: 1px solid var(--line); }
+.ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 16px 24px 8px; }
+.ph strong { font-size: 16px; font-weight: 600; }
+.ph span { flex: 1; min-width: 0; color: var(--muted); font: 12px var(--mono); overflow-wrap: anywhere; }
+.pmsg { max-height: 8em; margin: 0; padding: 0 24px; overflow-y: auto; color: var(--fg-2); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .pmsg:empty { display: none; }
-.pmsg.bad { color: var(--red); }
-.pbody > pre { margin: 0; padding: 14px 20px; color: var(--body-2); font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-#panel .md { padding: 0 20px 20px; }
-.prow { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 14px; align-items: start; padding: 13px 20px; }
-.prow + .prow { border-top: 1px solid var(--border); }
-.prow b { font: 600 14px/1.3 var(--sans); overflow-wrap: anywhere; }
-.prow p { grid-column: 1; margin: 0; color: var(--body-2); font: 400 13px/1.45 var(--sans); overflow-wrap: anywhere; }
+.pmsg.bad { color: var(--bad); }
+.pbody > pre { margin: 0; padding: 14px 24px; color: var(--fg-2); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+#panel .md { padding: 0 24px 20px; }
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; padding: 12px 24px; }
+.prow + .prow { border-top: 1px solid var(--line); }
+.prow b { font-weight: 600; overflow-wrap: anywhere; }
+.prow p { grid-column: 1; margin: 0; color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; }
 .prow p + p { color: var(--muted); }
-.prow code { padding: 1px 4px; background: var(--fill); font: .88em var(--mono); }
-.prow button { grid-area: 1 / 2 / span 3; }
-@media (max-width: 700px) {
+.prow code { padding: 1px 4px; background: var(--surface-2); font-size: 12px; }
+.prow > button { grid-area: 1 / 2 / span 3; }
+.prow > .ask { grid-column: 1 / -1; }
+@media (min-width: 1200px) {
+  #panel { position: sticky; inset: 0 auto auto; display: block; flex: 0 0 clamp(400px, 32vw, 560px); width: auto; height: 100vh; margin-left: auto; }
+  #panel:has(> .pout[hidden]) > .close { display: none; } /* Close only while a button's output shows */
+  body:has(#workspaces:target, #workspaces :target) #panel:has(> .pout[hidden]) { display: none; }
+}
+/* Phone: the same page in one column; the rail is a top bar. */
+@media (max-width: 760px) {
+  body { flex-direction: column; }
+  .rail { z-index: 2; flex: none; height: auto; flex-flow: row wrap; gap: 0 20px; padding: calc(12px + env(safe-area-inset-top)) 16px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .rail .brand { flex-basis: 100%; padding: 0 0 4px; }
+  .rail a:not(.brand) { gap: 6px; margin: 0; padding: 8px 0 10px; border-radius: 0; font-size: 14px; }
+  .rail .wsl { display: none; }
+  #panel { inset: auto 0 0; width: 100%; height: 76dvh; border-top: 1px solid var(--line); border-left: 0; border-radius: 10px 10px 0 0; }
+  body:not(:has(#config:target, #workspaces:target, #workspaces :target)) .rail .q, body:has(#config:target) .rail .c, body:has(#workspaces:target, #workspaces :target) .rail .w { background: none; box-shadow: inset 0 -2px var(--red); }
+  main { padding: 16px 16px calc(40px + env(safe-area-inset-bottom)); }
+  .row { flex-wrap: wrap; align-items: flex-start; }
+  .row > .lamp { margin-top: 5px; }
+  .pbar i, .repo { display: none; }
+  button, .btn { height: 44px; }
+  input, textarea, select { font-size: 16px; }
   .md thead { display: none; }
   .md table, .md tbody, .md tr, .md td { display: block; width: auto; }
-  .md tr { padding: 12px 0; border-top: 1px solid var(--border); }
-  .md td { padding: 1px 0; border: 0; color: var(--body-2); }
-  .md td:first-child { color: var(--ink); font-weight: 600; }
+  .md tr { padding: 10px 0; border-top: 1px solid var(--line); }
+  .md td { padding: 1px 0; border: 0; }
+  .md td:first-child { color: var(--fg); font-weight: 600; }
   .md td:empty { display: none; }
-  #config td:not(:first-child) { display: inline; }
-  #config td:not(:first-child):not(:last-child)::after { content: " · "; }
-  .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .chip:nth-child(4) { grid-column: span 2; border-left: 0; }
-  .chip:nth-child(n+4) { border-top: 1px solid var(--border); }
-}
-/* Desk screen: 15% larger; the open panel is a second column. */
-@media (min-width: 1024px) {
-  body { zoom: 1.15; display: grid; grid-template-columns: minmax(0, 1fr); }
-  body:has(#panel[open]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  body.can .acts, body.can .jacts, .rh { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .bar, #config { grid-column: 1 / -1; }
-  body:has(#config:target) #panel { display: none; }
-  /* zoom scales px and vh: 90px is the bar's measured 89.7, 100vh / 1.15 the window. */
-  #panel { position: sticky; inset: 90px auto auto; grid-area: 2 / 2; align-self: start; max-width: none; height: auto; max-height: calc(100vh / 1.15 - 90px); border-top: 0; border-left: 2px solid var(--ink); }
 }
 </style>
 </head>
 <body>
-<header class="bar"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><strong>vibe queue</strong><span class="updated"><updated></span>
-<nav><a class="q" href="#queue">Queue</a><a class="c" href="#config">Config</a><a class="s" href="https://claude.ai/code" target="_blank" rel="noopener">Sessions ↗</a></nav></header>
-<dialog id="panel"><div class="ph"><strong></strong><span></span><button class="x" type="button">Close</button><p class="pmsg"></p></div><div class="pbody"></div></dialog>
-<section id="queue">
-<div class="chips"><counts></div>
-<p class="flags"><flags></p>
-<div class="acts"><actions></div>
-<div class="filter">
-<input type="radio" name="f" id="f-all" checked><label for="f-all">All</label>
-<input type="radio" name="f" id="f-active"><label for="f-active">Active</label>
-<input type="radio" name="f" id="f-wait"><label for="f-wait">Waiting</label>
-<input type="radio" name="f" id="f-you"><label for="f-you">Needs you</label>
-<input type="radio" name="f" id="f-done"><label for="f-done">Done</label>
-</div>
+<nav class="rail" aria-label="Main"><a class="brand" href="#queue"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe</span></a><a class="q" href="#queue">Queue <span class="n"><you></span></a><a class="w" href="#workspaces">Workspaces</a><div class="wsl"><wsrail></div><a class="c" href="#config">Config</a></nav>
+<main>
+<header class="head"><h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1><span class="stat"><status></span><span class="jacts"><actions></span><a class="btn new" href="#new">New job</a></header>
+<div id="queue" class="page">
 <jobs>
+</div>
+<section id="workspaces" class="page">
+<workspaces>
 </section>
-<section id="config" class="md">
+<section id="config" class="page">
 <config>
 </section>
+</main>
+<dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">
+<blocks>
+<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>
+<new>
+</div>
+</div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>
 <script src="/queue/page.js"></script>
 </body>
 </html>

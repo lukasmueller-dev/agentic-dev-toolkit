@@ -36,7 +36,7 @@ vibe ws start deepscientist
 ```
 
 `start` links the image's seed (`/opt/ds-seed/runtime`) into `/ws/data/runtime` and starts the daemon with `--auth true`.
-The queue page lists the link without the token.
+The Workspaces page links the address without the token.
 
 ## 4. Verify
 

@@ -56,8 +56,8 @@ These are the defaults. `up` adds `verified=true rentable=true datacenter=True` 
 ## 5. Start
 
 ```bash
-grep '^places=vast' workspaces/<name>/workspace.conf   # a service starts at the first place in places
-vibe ws start <name>
+grep '^places=.*vast' workspaces/<name>/workspace.conf   # one line: vast is one of its places
+vibe ws start <name> --place vast                         # --hours <n>: another limit than the conf's hours
 ```
 
 A queue job names `place=vast` and `hours=<n>` instead. At the limit, `vibe ws tick` copies the data back and destroys the instance.

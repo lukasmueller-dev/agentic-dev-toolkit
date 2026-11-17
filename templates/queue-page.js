@@ -1,52 +1,117 @@
-/* Every 10 s: fetch this page (8 s limit) and swap what changed. The filter, open cards and open steps stay. No change for 2 min: stale.
+/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
+   Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts or .prow; data-ask="<arg> …" prompts for each (title: the questions, split by |).
-   Output: #panel; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
+   Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
+   Output: .pout under the block; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
-  /* The real nodes, held at load: #panel is empty then and comes first, so a later lookup could land in a .md. */
-  const queue = $('#queue'), filter = $('.filter', queue), updated = $('.updated'), parts = ['.updated', '.chips', '.flags', '.acts', '#config'].map(s => [s, $(s)]);
-  const key = d => $('h2', d.closest('.repo')).textContent + '|' + $('b', d.closest('.job')).textContent + '|' + d.className;
-  const tail = x => { const o = []; while ((x = x.nextSibling)) o.push(x); return o; };
-  const html = ns => ns.map(x => x.outerHTML || x.textContent).join('');
-  let last = '', jobs = html(tail(filter)), seen = Date.now(), busy = false, again = false;
-  setInterval(() => updated.classList.toggle('stale', Date.now() - seen > 120000), 1000);
-  const api = '/queue/api/';
+  /* The real nodes, held at load; in a fetched page, a path from body: a .md in #queue can hold any class, never a child of main. */
+  const main = $('body > main'), queue = $('body > main > #queue'), panel = $('body > #panel'), blocks = $('body > #panel > .pblocks');
+  const pout = $('body > #panel > .pout'), none = $('body > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
+  /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. */
+  const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces'].map(s => [s, $(s), $(s).innerHTML]);
+  /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
+  const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
+  /* A select's default: the option marked selected, else the first. */
+  const dflt = s => [...s.options].find(o => o.defaultSelected) || s.options[0];
+  /* A field the user is in or changed from its default: the swap leaves its part, or its block, alone. */
+  const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));
+  /* The panel block by block: one with a field in use stays, a changed one swaps, a gone one goes. True when one stayed. */
+  const src = new WeakMap(); /* a live block -> the fetched HTML it came from */
+  for (const b of blocks.children) src.set(b, b.outerHTML);
+  const swapBlocks = part => {
+    let kept = false;
+    const got = [...part.children], ids = new Set(got.map(f => f.id));
+    for (const b of [...blocks.children]) if (!ids.has(b.id) && !held(b)) b.remove();
+    for (const f of got) {
+      const b = [...blocks.children].find(x => x.id === f.id), h = f.outerHTML;
+      if (b && held(b)) { kept = true; continue; }
+      if (b && src.get(b) === h) continue;
+      const open = b ? [...b.querySelectorAll('details[open]')].map(key) : [];
+      src.set(f, h);
+      if (b) b.replaceWith(f); else blocks.append(f);
+      f.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
+    }
+    return kept;
+  };
+  /* A part with a field in use, child by child: one unchanged stays, one without a field in use swaps, one with it recurses;
+     a field stays. A changed child list waits for the next poll. True when one stayed. */
+  const swapIn = (live, got) => {
+    const a = [...live.children], b = [...got.children];
+    if (a.length !== b.length || a.some((x, i) => x.tagName !== b[i].tagName || x.id !== b[i].id)) return true;
+    let kept = false;
+    a.forEach((x, i) => {
+      const f = b[i], h = f.outerHTML;
+      if (src.get(x) === h || x.outerHTML === h) { src.set(x, h); return; }
+      if (x.matches('input, textarea, select')) { kept = true; return; }
+      if (held(x)) { if (swapIn(x, f)) kept = true; return; }
+      const open = [...x.querySelectorAll('details[open]')].map(key);
+      src.set(f, h); x.replaceWith(f);
+      f.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
+    });
+    return kept;
+  };
+  /* base: the browser time at which the render was 0 s old; the browser clock only ever measures a span. */
+  let last = '', busy = false, again = false, base = Date.now(), cur = '', view = 0;
+  setInterval(() => {
+    const u = $('.updated', parts[1][1]), s = Math.max(0, Math.round((Date.now() - base) / 1000));
+    u.textContent = `updated ${s} s ago`; u.classList.toggle('stale', s > 120);
+  }, 1000);
+  const api = '/queue/api/', wide = matchMedia('(min-width: 1200px)');
   const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
+  /* The block the hash names, its row marked; another block drops the output. Under 1200 px the modal opens only for a block or an output. */
+  const show = () => {
+    let id = '', blk = null;
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* a bad % escape: no block */ }
+    for (const b of blocks.children) { b.hidden = b.id !== id; if (!b.hidden) blk = b; }
+    queue.querySelectorAll('.row').forEach(r => r.classList.toggle('sel', 'job-' + r.dataset.k === id));
+    if ((blk ? blk.id : '') !== cur) { cur = blk ? blk.id : ''; pout.hidden = true; view++; }
+    none.hidden = !!blk || !pout.hidden;
+    if (wide.matches || (!blk && pout.hidden)) { if (panel.open) panel.close(); } /* wide: CSS shows it; show() would take the focus */
+    else if (!panel.open) panel.showModal();
+    return blk;
+  };
+  const shut = () => { pout.hidden = true; if (/^#(job-|new$)/.test(location.hash)) history.pushState(null, '', '#queue'); show(); };
   const poll = async () => {
     if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
-    if (busy || $('.armed', queue)) return; /* a swap would un-arm a confirm button */
+    if (busy || $('button.armed')) return; /* a swap would un-arm a confirm button */
     busy = true;
     try {
       const r = await fetch(location.href, { cache: 'no-store', signal: AbortSignal.timeout(8000) }), t = await r.text();
+      let kept = false;
       if (r.ok && t !== last) {
-        const n = new DOMParser().parseFromString(t, 'text/html'), g = tail($('.filter', n)), h = html(g);
-        for (const [s, live] of parts) if (live.innerHTML !== $(s, n).innerHTML) live.innerHTML = $(s, n).innerHTML;
-        if (h !== jobs) { /* against the last fetch, not the live nodes: an open <details> changes their HTML */
-          const open = [...queue.querySelectorAll('details[open]')].map(key);
-          tail(filter).forEach(x => x.remove());
-          filter.after(...g);
-          queue.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
-          jobs = h;
+        const n = new DOMParser().parseFromString(t, 'text/html');
+        for (const p of parts) {
+          const [s, live, was] = p, h = $(s, n).innerHTML;
+          if (h === was) continue;
+          if (live === blocks) { if (swapBlocks($(s, n))) kept = true; else p[2] = h; continue; }
+          if (held(live)) { if (swapIn(live, $(s, n))) kept = true; else p[2] = h; continue; } /* kept: the next poll tries again */
+          const open = [...live.querySelectorAll('details[open]')].map(key);
+          live.innerHTML = h; p[2] = h;
+          live.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
         }
-        last = t; seen = Date.now();
+        document.title = n.title;
+        show();
       }
+      /* The age at fetch: the Date header minus data-t, both the server's clock; no header: a new render is 0 s old. */
+      const d = Date.parse(r.headers.get('Date'));
+      if (r.ok && d) base = Date.now() - (d - $('.updated', parts[1][1]).dataset.t * 1000);
+      else if (r.ok && t !== last) base = Date.now();
+      if (r.ok && !kept) last = t;
     } catch (e) { /* keep the old content; the next poll tries again */ } finally {
       busy = false;
       if (again) { again = false; poll(); } /* a write came in mid-fetch: that fetch may hold the old page */
     }
   };
   setInterval(poll, 10000);
-  who();
-  const panel = $('#panel'), msg = $('.pmsg'), pbody = $('.pbody'), wide = matchMedia('(min-width: 1024px)');
-  let view = 0; /* the newest open(): an older answer must not fill it */
-  const open = (title, sub) => {
-    $('strong', panel).textContent = title; $('.ph span', panel).textContent = sub;
+  poll(); /* now too: until a fetch gives the server's Date, a page the runner stopped writing would read fresh */
+  /* The output under the block: a button's answer or a file. */
+  const out = (title, sub) => {
+    $('strong', pout).textContent = title; $('.ph span', pout).textContent = sub;
     msg.textContent = '…'; msg.classList.remove('bad'); pbody.replaceChildren();
-    if (!panel.open) { if (wide.matches) panel.show(); else panel.showModal(); }
-    panel.scrollTop = 0;
-    return ++view;
+    pout.hidden = false; show(); pout.scrollIntoView({ block: 'nearest' });
+    return ++view; /* the newest output: an older answer must not fill it */
   };
   const say = (t, bad) => { msg.textContent = t; msg.classList.toggle('bad', !!bad); };
   const el = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
@@ -55,34 +120,62 @@
   const row = (data, title, lines, button) => {
     const r = el('div'); r.className = 'prow'; Object.assign(r.dataset, data);
     r.append(inline(el('b'), title));
-    if (button) r.append(button);
     lines.filter(Boolean).forEach(l => r.append(inline(el('p'), l)));
+    if (button) r.append(button);
     return r;
   };
-  const rows = (list, none) => { const d = el('div'); d.className = 'prows'; d.append(...list); pbody.replaceChildren(list.length ? d : el('pre', none)); };
-  const action = (text, act, attrs) => { const b = el('button', text); b.type = 'button'; b.dataset.act = act; Object.assign(b.dataset, attrs.data); if (attrs.title) b.title = attrs.title; return b; };
+  const rows = (list, empty) => { const d = el('div'); d.className = 'prows'; d.append(...list); pbody.replaceChildren(list.length ? d : el('pre', empty)); };
+  const action = (text, act, data) => { const b = el('button', text); b.type = 'button'; b.dataset.act = act; Object.assign(b.dataset, data); return b; };
+  const ask = (name, label, b) => { const s = el('span'), l = el('label', label), f = el('input'); s.className = 'ask'; f.name = name; l.append(f); s.append(l, b); return s; };
   const views = {
-    roadmap: (out, a) => rows(out.split('\n').flatMap(l => {
+    roadmap: (txt, a) => rows(txt.split('\n').flatMap(l => {
       const m = /^(\d+): (.*)$/.exec(l); if (!m) return [];
       const t = /^\*\*(.+?)\*\*\s*(?:— )?(.*)$/.exec(m[2]) || [0, m[2], ''], k = t[2].search(/\b[Dd]one when\b/);
-      return row({ repo: a.repo, line: m[1] }, t[1], k < 0 ? [t[2]] : [t[2].slice(0, k), t[2].slice(k)], action('Queue', 'roadmap-new', { data: { ask: 'branch' }, title: 'Branch slug' }));
+      return row({ repo: a.repo, line: m[1] }, t[1], k < 0 ? [t[2]] : [t[2].slice(0, k), t[2].slice(k)], ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {})));
     }), 'No open roadmap item.'),
-    worktrees: out => rows(out.split('\n').flatMap(l => {
+    worktrees: txt => rows(txt.split('\n').flatMap(l => {
       const [state, path, branch, why] = l.split('\t'); if (!why) return [];
-      return row({ path }, branch === '-' ? path : branch, [`${state}: ${why}`], /^(merged|prunable)$/.test(state) ? action('Remove', 'worktree-remove', { data: { confirm: '' } }) : null);
+      return row({ path }, branch === '-' ? path : branch, [`${state}: ${why}`], /^(merged|prunable)$/.test(state) ? action('Remove', 'worktree-remove', { confirm: '' }) : null);
     }), 'No linked worktree.'),
   };
-  $('.x', panel).addEventListener('click', () => panel.close());
+  $('body > #panel > .close').addEventListener('click', shut);
+  panel.addEventListener('cancel', e => { e.preventDefault(); shut(); }); /* Esc on the modal */
   panel.addEventListener('click', e => { /* the backdrop; a tap on the sheet's empty part has the same target */
     const r = panel.getBoundingClientRect();
-    if (e.target === panel && (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right)) panel.close();
+    if (e.target === panel && (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right)) shut();
+  });
+  addEventListener('hashchange', show);
+  wide.addEventListener('change', show);
+  show();
+  document.addEventListener('keydown', e => {
+    const f = e.target.closest && e.target.closest('input, textarea, select');
+    if (f) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $('button[data-act]', f.closest('.ask') || f)?.click(); }
+      else if (e.key === 'Escape' && f.value && f.tagName !== 'SELECT') { e.preventDefault(); f.value = ''; }
+      return;
+    }
+    /* j/k: the next or the previous visible row; no single key writes. */
+    if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'j' && e.key !== 'k')) return;
+    const list = [...queue.querySelectorAll('.row')].filter(r => r.offsetParent), i = list.findIndex(r => r.classList.contains('sel'));
+    const r = list[i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (e.key === 'j' ? 1 : -1)))];
+    if (!r) return;
+    history.replaceState(null, '', '#job-' + r.dataset.k);
+    show(); r.scrollIntoView({ block: 'nearest' });
   });
   document.addEventListener('click', async e => {
+    const g = e.target.closest('a.go');
+    if (g && main.contains(g)) { /* Answer or Fix in a row: its block, the first field focused */
+      e.preventDefault();
+      history.pushState(null, '', g.getAttribute('href'));
+      const blk = show();
+      if (blk) [...blk.querySelectorAll('textarea, input')].find(f => f.offsetParent)?.focus();
+      return;
+    }
     const f = e.target.closest('.files a');
-    if (f && queue.contains(f)) {
+    if (f && blocks.contains(f)) {
       e.preventDefault();
       const md = f.href.endsWith('.md');
-      const v = open(f.textContent, f.closest('.jacts').dataset.id);
+      const v = out(f.textContent, f.closest('.jacts').dataset.id);
       try {
         const r = await fetch(f.href + (md ? '?html' : ''), { cache: 'no-store' }), t = await r.text();
         if (v !== view) return;
@@ -98,10 +191,18 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* #queue and the rows rows() built only: their text is escaped; a .md (Yours and triage in #queue, #config, a panel) carries agent-written Markdown. */
+    /* main, the blocks and the rows rows() built only: their text is escaped; a .md (Triage, Tools, Config, a file) carries agent-written Markdown. */
     const b = e.target.closest('button[data-act]');
-    if (!b || b.closest('.md') || !(queue.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
+    if (!b || b.closest('.md') || !(main.contains(b) || blocks.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
     if (b.disabled || !document.body.classList.contains('can')) return;
+    const card = b.closest('.jacts, .prow'), inner = pout.contains(b), box = b.closest('.ask');
+    const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};
+    for (const x of fields) {
+      const v = x.value.trim().replace(/\s*\n\s*/g, ' '); /* one line: a route refuses control characters */
+      if (!v && 'opt' in x.dataset) continue; /* an optional field left empty: its arg is not sent */
+      if (!v) { x.focus(); return; }
+      vals[x.name] = v;
+    }
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;
       b.classList.add('armed'); b.textContent = 'Tap again: ' + t;
@@ -109,23 +210,16 @@
       return;
     }
     b.classList.remove('armed'); /* the poll after the write may swap again */
-    const args = {}, card = b.closest('.jacts, .prow'), inner = b.closest('#panel');
-    if (card) Object.assign(args, card.dataset); /* data-id, data-pr, data-repo, data-feature, data-job; a row: data-line, data-path */
-    if (b.dataset.ask) { /* data-ask="a b": one prompt per arg; title "question a|question b" */
-      const qs = (b.title || b.textContent).split('|');
-      for (const [i, a] of b.dataset.ask.split(' ').entries()) {
-        const v = prompt(qs[i] || a);
-        if (!v) return;
-        args[a] = v;
-      }
-    }
+    /* data-id, data-pr, data-repo, data-feature, data-job; a row: data-line, data-path; then the fields */
+    const args = Object.assign({}, card && card.dataset, vals);
     b.disabled = true;
-    const v = inner ? view : open(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || '');
+    const v = inner ? view : out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || args.name || '');
     if (inner) say('…');
     let done = false;
     try {
       const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
       done = r.ok && j.code === 0;
+      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; }); /* a field at its default frees its part for the swap */
       if (v !== view) { /* a newer view is open */ }
       else if (!r.ok) say(`refused: ${j.error}`, true);
       else if (inner) say((done ? '' : `exit ${j.code}\n`) + j.out, !done);

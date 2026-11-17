@@ -45,10 +45,11 @@
 #   vibe feature archive <slug>...  move merged features out of the queue; refuses an open member PR
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
-#   vibe ws status [<instance>]     each tool instance: up, past limit, waits for the GPU or down, from its state files
+#   vibe ws status [<instance>]     each tool instance: up, past limit, starts, waits for the GPU or down, from its state files
 #   vibe ws build <name>            docker build the tool's image at its pinned commit, tagged with it
-#   vibe ws start <name>            a kind=service tool up at the first of its places, then its start script;
-#                                   gpu=yes on turing: under the gpu-queue lock, held until stop
+#   vibe ws start <name> [--place P] [--hours N]
+#                                   a kind=service tool up at P (the first of its places) for N hours (its hours),
+#                                   then its start script; gpu=yes on turing: under the gpu-queue lock, held until stop
 #   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
 #   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
 #   vibe job list [--all] [<repo>...]
@@ -323,18 +324,18 @@ cmd_status() {
 }
 
 cmd_update_toolkit() {
-  local t="$TOOLKIT" def unit before after rbefore rafter wbefore wafter
+  local t="$TOOLKIT" def units before after rbefore rafter wbefore wafter
   [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
   def="$(default_branch "$t")"
   [[ "$(git -C "$t" rev-parse --abbrev-ref HEAD)" == "$def" ]] || die "$t is not on $def"
   [[ -z "$(git -C "$t" status --porcelain --untracked-files=no)" ]] || die "$t has uncommitted changes"
-  unit="claude/systemd/claude-rc@.service"
-  before="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  units="claude/systemd" # each unit is linked: a changed one needs daemon-reload
+  before="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   wbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
-  after="$(git -C "$t" rev-parse -q --verify "HEAD:$unit" || true)"
+  after="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rafter="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
   wafter="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
   echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
@@ -342,7 +343,7 @@ cmd_update_toolkit() {
   "$t/install.sh" doctor || die "doctor reports problems"
   if [[ "$before" != "$after" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     systemctl --user daemon-reload
-    echo "unit changed; restart stops running sessions: systemctl --user restart 'claude-rc@*'"
+    echo "units reloaded; a changed claude-rc@ unit takes effect after: systemctl --user restart 'claude-rc@*' (stops running sessions)"
   fi
   # The runner holds bin/vibe and the lib in memory; running jobs survive (KillMode=process).
   if [[ "$rbefore" != "$rafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
@@ -2187,6 +2188,55 @@ gpu_outside() {
   done
 }
 
+# gpu_busy — true while the gpu-queue lock is held: flock, else its mkdir lock (with_lock in bin/gpu-queue).
+gpu_busy() {
+  local l
+  l="$(gpu_state_dir)/gpu.lock"
+  if command -v flock >/dev/null 2>&1; then
+    [[ -e "$l" ]] && ! flock -n "$l" true
+  else
+    [[ -d "$l.d" ]]
+  fi
+}
+
+# gpu_holder — who holds the GPU lock, first match: a running gpu job (its name), a running outside gpu-queue run
+# (its name), a workspace whose holder holds the lock (its label), a running tool job on turing with gpu=yes
+# (`<label> · <name>`); else `busy`. Empty while the lock is free.
+gpu_holder() {
+  local d id l
+  gpu_busy || return 0
+  for d in "$QDIR"/*/; do
+    d="${d%/}" id="$(jstate "$d" gpu-job)"
+    if [[ -n "$id" && "$(jstate "$d" status)" == gpu && -d "$(gpu_state_dir)/running/$id" ]]; then
+      short_id "$d" "$(jget "$d/job" repo)"
+      return 0
+    fi
+  done
+  IFS=$'\t' read -r _ id < <(gpu_outside running) || true
+  if [[ -n "$id" ]]; then
+    echo "${id#*-*-*-}"
+    return 0
+  fi
+  for d in "$WS_STATES"/*/; do
+    d="${d%/}"
+    if [[ -d "$d" && ! -e "$d/waits" ]] && ws_holder "$d" >/dev/null && ws_gpu "$d"; then
+      id="$(ws_name "${d##*/}")"
+      l="$(jget "$WS_ROOT/$id/workspace.conf" label)"
+      echo "${l:-$id}"
+      return 0
+    fi
+  done
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    if [[ "$(jstate "$d" status)" == running ]] && tool_gpu "$d"; then
+      l="$(tool_conf "$d" label)"
+      echo "${l:-$(jget "$d/job" tool)} · $(short_id "$d" "$(jget "$d/job" repo)")"
+      return 0
+    fi
+  done
+  echo busy
+}
+
 # short TEXT — TEXT cut to 80 characters, `…` last when cut; iconv -c drops a half character at the cut or the start.
 # shortcut: under the C locale (the runner unit sets none) the cut counts bytes, so non-ASCII text shows shorter; upgrade: set a UTF-8 locale in the unit.
 short() {
@@ -2496,9 +2546,47 @@ job_steps() {
 # btn_rows WRITE CONFIRM — the two button lists with an empty grid row between them, when both are filled.
 btn_rows() { printf '%s%s%s' "$1" "${1:+${2:+<hr>}}" "$2"; }
 
-# job_buttons JOB — the card's write buttons by status, data-confirm ones last, then the file links; routes in bin/vibe-web, shown after whoami.
+# ask ROUTE FIELD LABEL BUTTON [ATTR] — a labelled field and its send button; page.js posts each named field of
+# the .ask with the nearest .jacts data. FIELD text: a textarea, else one line.
+ask() {
+  local f="<input name=\"$2\">"
+  if [[ "$2" == text ]]; then f="<textarea name=\"$2\" rows=\"3\"></textarea>"; fi
+  printf '<span class="ask"><label>%s%s</label><button data-act="%s"%s>%s</button></span>' "$(esc "$3")" "$f" "$1" "${5:+ $5}" "$4"
+}
+
+# act_btn ROUTE — the one markup of a write button or field that a row and its block share: retry, answer, fix,
+# archive, feature-ready, feature-archive; routes in bin/vibe-web.
+act_btn() {
+  case "$1" in
+    retry) printf '%s' '<button data-act="retry">Retry</button>' ;;
+    answer) ask answer text 'Your answer: the job runs again with it' 'Send answer' ;;
+    fix) ask fix text 'Fix job: what to change on the PR' 'Start fix job' ;;
+    archive) printf '%s' '<button data-act="archive" data-confirm>Archive</button>' ;;
+    feature-ready) printf '%s' '<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button>' ;;
+    feature-archive) printf '%s' '<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+  esac
+}
+
+# tool_up JOB — true while a tool= job runs its tool: running, no tool-exit yet.
+tool_up() { [[ -n "$(jget "$1/job" tool)" && "$(jstate "$1" status)" == running && ! -f "$1/tool-exit" ]]; }
+
+# tool_steers JOB — true when the job's tool has a steer script without the contract's bare `exit 3`.
+# shortcut: reads the script, never runs it; upgrade when a steer script answers 3 only at run time.
+tool_steers() {
+  local f
+  f="$WS_ROOT/$(jget "$1/job" tool)/steer"
+  [[ -x "$f" ]] && ! grep -qx 'exit 3' "$f"
+}
+
+# tool_tail FILE — its last 10 non-blank lines from the last 8 KB: ANSI codes and control characters gone, a `\r` a line break.
+tool_tail() {
+  local esc=$'\033'
+  tail -c 8192 "$1" 2>/dev/null | tr '\r' '\n' | sed -E "s/$esc\[[0-9;?]*[A-Za-z]//g" | tr '\001-\011\013-\037\177' ' ' | awk 'NF' | tail -n 10 || true
+}
+
+# job_buttons JOB — the card's fields, file links, then write buttons by status, data-confirm ones last; routes in bin/vibe-web, shown after whoami.
 job_buttons() {
-  local b="" c="" pr gpu="" f links=""
+  local a="" b="" c="" pr gpu="" f links=""
   pr="$(jstate "$1" pr)"
   case "$(jstate "$1" status)" in
     "" | queued)
@@ -2511,37 +2599,34 @@ job_buttons() {
       gpu="$(jstate "$1" gpu-job)"
       if [[ -n "$gpu" ]]; then c+='<button data-act="gpu-cancel" data-confirm>Cancel GPU run</button>'; fi
       ;;
-    failed | timeout | skipped) b+='<button data-act="retry">Retry</button>' ;;
+    failed | timeout | skipped) b+="$(act_btn retry)" ;;
   esac
   case "$(jstate "$1" status)" in
-    blocked | failed | timeout) c+='<button data-act="answer" data-ask="text" data-confirm title="Your answer: the job runs again with it">Answer</button>' ;;
-    "done") if [[ "$pr" == http* ]]; then b+='<button data-act="fix" data-ask="text" title="What to fix on the PR">Fix</button>'; fi ;;
+    blocked | failed | timeout) a+="$(act_btn answer)" ;;
+    "done") if [[ "$pr" == http* ]]; then a+="$(act_btn fix)"; fi ;;
   esac
-  if job_final "$1"; then
-    if [[ ! -f "$1/held" ]]; then b+='<button data-act="hold" data-ask="note" title="Hold: your note">Hold</button>'; fi
-    c+='<button data-act="archive" data-confirm>Archive</button>'
+  if tool_up "$1" && tool_steers "$1"; then
+    f="$(tool_conf "$1" label)"
+    a+="$(ask steer text "Steer ${f:-$(jget "$1/job" tool)}: it reads the text at its next step" Send)"
   fi
-  # GET job/<id>/<file> in bin/vibe-web; the log as its tail.
-  for f in report.md pr.md gate.log result note log; do
+  if job_final "$1"; then
+    if [[ ! -f "$1/held" ]]; then a+="$(ask hold note 'Hold: your note' Hold)"; fi
+    c+="$(act_btn archive)"
+  fi
+  # GET job/<id>/<file> in bin/vibe-web; a log as its tail, out/files as a list.
+  for f in report.md pr.md gate.log result note log tool.log out/report.md; do
     if [[ -s "$1/$f" ]]; then links+="<a href=\"/queue/api/job/$(esc "${1##*/}")/$f\">$f</a>"; fi
   done
-  printf '<div class="jacts" data-id="%s"%s%s>%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$(btn_rows "$b" "$c")" "${links:+<div class=\"files\">$links</div>}"
+  if [[ -d "$1/out/files" ]]; then links+="<a href=\"/queue/api/job/$(esc "${1##*/}")/out/files\">out/files/</a>"; fi
+  printf '<div class="jacts" data-id="%s"%s%s>%s%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$a" "${links:+<div class=\"files\">$links</div>}" "$(btn_rows "$b" "$c")"
 }
 
-# status_card repo|feature|gpu|job|lane|end … — queue_jobs as HTML: a group per repo, a card per job or lane;
+# status_card feature|gpu|job|lane … — the card of one queue_jobs item: the body of its panel block (page_row);
 # a lane unpacks into a job card per job, a feature into a card per member. The phase line opens to name the review passes.
 status_card() {
   local pill txt pr dir items="" link="" extra="" steps="" details="" t nl=$'\n' all="" j list="" cls="" name="${2:-}" st="${3:-}"
   local r b p ms ph="" l c rs=""
   case "$1" in
-    repo)
-      if [[ -n "${3:-}" ]]; then
-        printf '<div class="repo"><div class="rh"><h2>%s</h2><div class="jacts" data-repo="%s"><button data-act="merge-order">Merge order</button></div></div>\n' "$(esc "$2")" "$(esc "$3")"
-      else
-        printf '<div class="repo"><h2>%s</h2>\n' "$(esc "$2")"
-      fi
-      ;;
-    end) echo '</div>' ;;
     gpu)
       # An outside gpu-queue run: the pill is its state and elapsed time, or its exit code; the text its dir, or its end time.
       pill="$3${4:+ $4}" txt="$5" pr=""
@@ -2554,8 +2639,8 @@ status_card() {
     feature)
       pill="$3" txt="$5" pr="" dir="" items="$6" cls=" lane feature" name="$2 · $4"
       case "$3" in
-        "your test") extra='<button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed: ready</button>' ;;
-        merge) extra='<button data-act="feature-archive" data-confirm>Archive</button>' ;;
+        "your test") extra="$(act_btn feature-ready)" ;;
+        merge) extra="$(act_btn feature-archive)" ;;
       esac
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
@@ -2590,6 +2675,11 @@ status_card() {
   if [[ "$1" == job ]]; then
     t="$(job_stats "$dir")"
     if [[ -n "$t" ]]; then extra+="<p class=\"stats\">$(esc "$t")</p>"; fi
+    if [[ -n "$dir" ]] && tool_up "$dir"; then
+      # &#10;: page_row joins a block to one line. awk, not ${//}: `&` in its replacement is the match on bash 5.2.
+      t="$(esc "$(tool_tail "$dir/tool.log")" | awk '{ printf "%s%s", (NR > 1 ? "&#10;" : ""), $0 }')"
+      extra+="<p class=\"lbl\">tool.log · last 10 lines</p><pre class=\"tlog\">$t</pre>"
+    fi
     if [[ -n "$dir" ]]; then extra+="$(job_buttons "$dir")"; fi
   fi
   case "$(jstate "${dir:-/nonexistent}" status)" in running | gpu) steps="$(job_steps "$dir")" ;; esac
@@ -2638,40 +2728,44 @@ function Image(i) if not ok(i.src) then return i.caption end end'
   fi
 }
 
-# config_md — the queue settings, then `vibe job list` as a table and its sweep line.
+# config_md settings|recurring|actions — the queue settings; `vibe job list` as a table and its sweep line; the last 20 page actions.
 config_md() {
   local limit=none conf="$QCONF"
-  if limited; then limit="until $(at_time "$(head -n 1 "$QROOT/limit")")"; fi
-  printf '## Queue\n\n| Setting | Value |\n| --- | --- |\n'
-  printf '| Slots | %s |\n' "$(qconf slots 4)"
-  printf '| Paused | %s |\n' "$(if [[ -e "$QROOT/paused" ]]; then echo yes; else echo no; fi)"
-  printf '| Usage limit | %s |\n' "$limit"
-  # shellcheck disable=SC2088  # a literal ~ for display
-  case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
-  # shellcheck disable=SC2016  # Markdown backticks, not an expansion
-  printf '\nFrom `%s`: `queue.conf`, `repos`.\n\n## Recurring jobs\n\n' "$conf"
-  # shellcheck disable=SC2119  # no arguments: every repo
-  cmd_job_list | awk '
-    NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
-    /^$/ || /^fill-queue sweep/ { print; next }
-    { s = $0; for (i = 1; i <= 5; i++) sub(/^[^ ]+ +/, "", s); printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, s }'
-  if [[ -s "$QROOT/actions.log" ]]; then
-    printf '\n## Page actions\n\n| Time | Login | Command | Exit |\n| --- | --- | --- | --- |\n'
-    tail -n 20 "$QROOT/actions.log" | awk -F'\t' '{ gsub(/\|/, "\\|", $3); l[NR] = sprintf("| %s | %s | `%s` | %s |", $1, $2, $3, $4) } END { for (i = NR; i > 0; i--) print l[i] }'
-  fi
+  case "$1" in
+    settings)
+      if limited; then limit="until $(at_time "$(head -n 1 "$QROOT/limit")")"; fi
+      printf '| Setting | Value |\n| --- | --- |\n'
+      printf '| Slots | %s |\n' "$(qconf slots 4)"
+      printf '| Paused | %s |\n' "$(if [[ -e "$QROOT/paused" ]]; then echo yes; else echo no; fi)"
+      printf '| Usage limit | %s |\n' "$limit"
+      # shellcheck disable=SC2088  # a literal ~ for display
+      case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
+      # shellcheck disable=SC2016  # Markdown backticks, not an expansion
+      printf '\nFrom `%s`: `queue.conf`, `repos`.\n' "$conf"
+      ;;
+    recurring)
+      # shellcheck disable=SC2119  # no arguments: every repo
+      cmd_job_list | awk '
+        NR == 1 { print "| Repo | Job | Schedule | Day | Last run | State |"; print "| --- | --- | --- | --- | --- | --- |"; next }
+        /^$/ || /^fill-queue sweep/ { print; next }
+        { s = $0; for (i = 1; i <= 5; i++) sub(/^[^ ]+ +/, "", s); printf "| %s | %s | %s | %s | %s | %s |\n", $1, $2, $3, $4, $5, s }'
+      ;;
+    actions)
+      printf '| Time | Login | Command | Exit |\n| --- | --- | --- | --- |\n'
+      tail -n 20 "$QROOT/actions.log" | awk -F'\t' '{ gsub(/\|/, "\\|", $3); l[NR] = sprintf("| %s | %s | `%s` | %s |", $1, $2, $3, $4) } END { for (i = NR; i > 0; i--) print l[i] }'
+      ;;
+  esac
 }
 
-# page_buttons — the queue-wide write buttons, data-confirm ones last; routes in bin/vibe-web.
+# page_buttons REPO_OPTIONS — the Config page's Actions, read-only first, data-confirm ones last; routes in bin/vibe-web.
 page_buttons() {
   local b='<button data-act="servers">Servers</button>' c
-  if [[ -e "$QROOT/paused" ]]; then b+='<button data-act="resume">Resume</button>'; else b+='<button data-act="pause">Pause</button>'; fi
-  if limited; then b+='<button data-act="unlimit">Clear usage limit</button>'; fi
-  b+='<button data-act="conf" data-ask="set" title="key=value, e.g. slots=3">Set config</button>'
+  if [[ -n "$1" ]]; then b+="<span class=\"ask\"><label>Repo<select name=\"repo\">$1</select></label><button data-act=\"worktrees\">Worktrees</button></span>"; fi
   b+='<button data-act="triage">Triage PRs</button>'
   b+='<button data-act="sync">Sync worktrees</button>'
   c='<button data-act="restart" data-confirm>Restart runner</button>'
-  c+='<button data-act="server-restart" data-ask="server" data-confirm title="Server to restart (Servers lists them)">Restart server</button>'
   c+='<button data-act="update-toolkit" data-confirm>Update toolkit</button>'
+  c+="$(ask server-restart server 'Server to restart (Servers lists them)' 'Restart server' data-confirm)"
   btn_rows "$b" "$c"
 }
 
@@ -2691,54 +2785,329 @@ page_repos() {
   } | awk '!seen[$0]++'
 }
 
-# new_work — the `New work` group: per repo a card of buttons, then Run or Reset per recurring job.
-new_work() {
-  local r j b e avail out="" rec
-  while IFS= read -r r; do
-    [[ -e "$r/.git" ]] || continue
-    e="$(esc "$r")" avail="" rec=""
-    for j in "$JOBS_CATALOGUE"/*.md; do
-      j="${j##*/}" && j="${j%.md}"
-      if [[ "$j" != _* && ! -f "$r/.vibe-jobs/$j.md" ]]; then avail+="${avail:+, }$j"; fi
-    done
-    b='<button data-act="roadmap">Roadmap</button>'
-    b+='<button data-act="worktrees">Worktrees</button>'
-    b+='<button data-act="new" data-ask="task done branch" title="Task|Done when: a command that checks it|Branch slug">New job</button>'
-    if [[ -n "$avail" ]]; then b+="<button data-act=\"opt-in\" data-ask=\"job\" title=\"Recurring job to opt in: $(esc "$avail")\">Opt in</button>"; fi
-    # A nested .jacts with display: contents: its buttons sit in the repo's grid, its data-job reaches page.js.
-    while IFS= read -r j; do
-      [[ -n "$j" ]] || continue
-      rec+="<div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\"><button data-act=\"run\">$(esc "$j")</button>"
-      if [[ "$(job_due "$r" "$j")" == stopped ]]; then rec+="<button data-act=\"reset\">Reset $(esc "$j")</button>"; fi
-      rec+='</div>'
-    done < <(job_names "$r")
-    b+="${rec:+<span class=\"lbl\">Run recurring</span>$rec}"
-    out+="<div class=\"job\"><div class=\"top\"><b>$(esc "${r##*/}")</b><span class=\"pill\"></span></div><div class=\"jacts\" data-repo=\"$e\">$b</div></div>"
-  done < <(page_repos)
-  if [[ -n "$out" ]]; then printf '<div class="repo new"><h2>New work</h2>\n%s\n</div>\n' "$out"; fi
+# rec_buttons REPO [reset] — per recurring job of REPO a .jacts with its Run button, and Reset when asked and the job stopped.
+# A nested .jacts has display: contents: its buttons sit in the outer grid, its data-job reaches page.js.
+rec_buttons() {
+  local j e
+  e="$(esc "$1")"
+  while IFS= read -r j; do
+    [[ -n "$j" ]] || continue
+    printf '<div class="jacts" data-repo="%s" data-job="%s"><button data-act="run">%s</button>' "$e" "$(esc "$j")" "$(esc "$j")"
+    if [[ -n "${2:-}" && "$(job_due "$1" "$j")" == stopped ]]; then printf '<button data-act="reset">Reset %s</button>' "$(esc "$j")"; fi
+    printf '</div>'
+  done < <(job_names "$1")
 }
 
-# queue_web — QROOT/web/index.html and page.js from templates/queue-page.*; the runner writes them each pass.
+# new_work — the New job block (#new): the new-job form, then per repo Roadmap, Opt in and its recurring jobs.
+new_work() {
+  local r j b e avail opts="" out="" rec
+  while IFS= read -r r; do
+    [[ -e "$r/.git" ]] || continue
+    e="$(esc "$r")" avail=""
+    opts+="<option value=\"$e\">$(esc "${r##*/}")</option>"
+    for j in "$JOBS_CATALOGUE"/*.md; do
+      j="${j##*/}" && j="${j%.md}"
+      if [[ "$j" != _* && ! -f "$r/.vibe-jobs/$j.md" ]]; then avail+="<option>$(esc "$j")</option>"; fi
+    done
+    b='<button data-act="roadmap">Roadmap</button>'
+    if [[ -n "$avail" ]]; then b+="<span class=\"ask\"><label>Recurring job<select name=\"job\">$avail</select></label><button data-act=\"opt-in\">Opt in</button></span>"; fi
+    rec="$(rec_buttons "$r")"
+    b+="${rec:+<span class=\"lbl\">Run recurring</span>$rec}"
+    out+="<div class=\"jacts\" data-repo=\"$e\"><span class=\"lbl\">$(esc "${r##*/}")</span>$b</div>"
+  done < <(page_repos)
+  [[ -n "$opts" ]] || return 0
+  printf '<div class="jacts"><span class="ask"><label>Repo<select name="repo">%s</select></label><label>Task<textarea name="task" rows="3"></textarea></label><label>Done when: a command that checks it<input name="done"></label><label>Branch slug<input name="branch"></label><button data-act="new">Queue job</button></span></div>%s\n' "$opts" "$out"
+}
+
+# config_page — the Config page: settings with Set config, Actions, recurring jobs with Run and Reset, the last 20 page actions.
+config_page() {
+  local r e rec="" opts="" x
+  while IFS= read -r r; do
+    [[ -e "$r/.git" ]] || continue
+    e="$(esc "$r")"
+    opts+="<option value=\"$e\">$(esc "${r##*/}")</option>"
+    x="$(rec_buttons "$r" reset)"
+    if [[ -n "$x" ]]; then rec+="<div class=\"jacts\"><span class=\"lbl\">$(esc "${r##*/}")</span>$x</div>"; fi
+  done < <(page_repos)
+  printf '<section class="sec"><h2>Settings</h2><div class="md">\n%s\n</div><div class="jacts">%s</div></section>\n' \
+    "$(config_md settings | md_html)" "$(ask conf set 'Set config: key=value, e.g. slots=3' 'Set config')"
+  printf '<section class="sec"><h2>Actions</h2><div class="jacts">%s</div></section>\n' "$(page_buttons "$opts")"
+  printf '<section class="sec"><h2>Recurring jobs</h2><div class="md">\n%s\n</div>%s</section>\n' "$(config_md recurring | md_html)" "$rec"
+  if [[ -s "$QROOT/actions.log" ]]; then
+    printf '<section class="sec"><h2>Page actions</h2><div class="md">\n%s\n</div></section>\n' "$(config_md actions | md_html)"
+  fi
+}
+
+# ws_page HOLDER — line 1: the rail's service links; then the Workspaces page: per kind=service tool a row with lamp, label,
+# role, place, time up and left (warn under 30 min), Open UI ↗ and Stop, or Start (a place and hours form for 2+ places);
+# then the run tools in one line. HOLDER: gpu_holder, named on turing for a gpu=yes tool. Routes ws-start, ws-stop.
+ws_page() {
+  local d n f l s st lamp line b e p u t x lim now rail="" rows="" runs="" opts hold="${1:-}"
+  now="$(date +%s)"
+  for d in "$WS_ROOT"/*/; do
+    n="${d%/}" n="${n##*/}"
+    if [[ ! -d "$d" || "$n" == _* || "$(slug "$n")" != "$n" || "$(ws_check "$WS_ROOT/$n")" != ok ]]; then continue; fi
+    f="$WS_ROOT/$n/workspace.conf" l="$(jget "$f" label)" l="${l:-$n}"
+    if [[ "$(jget "$f" kind)" != service ]]; then
+      runs+="${runs:+, }$l"
+      continue
+    fi
+    st="$WS_STATES/$n" s="$(ws_state "$st")" e="$(esc "$n")" p="$(jstate "$st" place)" b="" u=""
+    line="$(esc "$p") · $(esc "$s")" lamp=warn
+    case "$s" in
+      down)
+        lamp=off p="$(jget "$f" places)" t="$(jget "$f" hours)"
+        line="Off · places: $(esc "${p//,/, }")${t:+ · default $(esc "$t") h}"
+        t="$(ws_line "$st" | cut -f 4)"
+        if [[ -d "$st" && -n "$t" ]]; then line+=" · <span class=\"bad\">$(esc "$t")</span>"; fi
+        if [[ "$p" == *,* ]]; then
+          opts=""
+          while IFS= read -r t; do
+            if [[ "$t" == turing && -n "$hold" && "$(jget "$f" gpu)" == yes ]]; then
+              x="waits: $hold holds the GPU"
+              if [[ "$hold" == busy ]]; then x="waits for the GPU"; fi
+              opts+="<option value=\"turing\">turing — $(esc "$x")</option>"
+            else
+              opts+="<option>$(esc "$t")</option>"
+            fi
+          done < <(tr , '\n' <<<"$p")
+          # No hours= in the conf: the field may stay empty (data-opt), and the start has no limit, as from the CLI.
+          t="$(jget "$f" hours)" x=" data-opt placeholder=\"no limit\""
+          if [[ -n "$t" ]]; then x=" value=\"$(esc "$t")\""; fi
+          b="<div class=\"jacts\" data-name=\"$e\"><span class=\"ask\"><label>Place<select name=\"place\">$opts</select></label><label>Hours<input name=\"hours\" type=\"number\" min=\"1\"$x></label><button data-act=\"ws-start\">Start</button></span></div>"
+        else
+          b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-start\">Start</button></span>"
+        fi
+        ;;
+      up | "past limit")
+        t="$(jstate "$st" started)" lim="$(jstate "$st" limit)" u="$(jstate "$st" url)"
+        if [[ "$s" == "past limit" ]]; then
+          lamp=bad line+=": the next tick stops it"
+        else
+          lamp=ok
+          if [[ "$t" =~ ^[0-9]+$ ]]; then line+=" $(printf '%d:%02d' $(((now - t) / 3600)) $(((now - t) % 3600 / 60)))"; fi
+          if [[ "$lim" =~ ^[0-9]+$ ]]; then
+            t="$(span_text $((lim > now ? lim - now : 0))) left"
+            if ((lim - now < 1800)); then t="<span class=\"warn\">$t</span>"; fi
+            line+=" · $t"
+          else
+            line+=" · no limit"
+          fi
+        fi
+        case "$u" in http://* | https://*) b="<a class=\"btn ui\" href=\"$(esc "$u")\" target=\"_blank\" rel=\"noopener\">Open UI ↗</a>" ;; esac
+        b+="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>"
+        ;;
+      "waits for the GPU" | starts)
+        if [[ "$s" != starts ]] || ws_stop_cuts "$st"; then b="<span class=\"jacts p\" data-name=\"$e\"><button data-act=\"ws-stop\" data-confirm>Stop</button></span>"; fi
+        ;;
+    esac
+    rail+="<a href=\"#ws-$e\"><i class=\"lamp l-$lamp\"></i>$(esc "$l")</a>"
+    rows+="<div class=\"wrow\" id=\"ws-$e\"><i class=\"lamp l-$lamp\"></i><div class=\"t\"><b>$(esc "$l") <span class=\"role\">· $(esc "$(jget "$f" role)")</span></b><span class=\"why\">$line</span></div>$b</div>"
+  done
+  echo "$rail"
+  printf '<section class="sec" aria-label="Services">%s</section>\n' "${rows:-<p class=\"none\">No service under workspaces/.</p>}"
+  if [[ -n "$runs" ]]; then printf '<p class="note">%s run as queue jobs.</p>\n' "$(esc "$runs")"; fi
+}
+
+# item_why LINE — `NAME STATUS: NOTE` of a lane or feature item line `NAME  STATUS  NOTE` (2+ spaces apart); the status once.
+item_why() {
+  local n="${1%%  *}" r="${1#*  }" s
+  s="${r%%  *}" r="${r#*  }"
+  r="${r#"${r%%[! ]*}"}"
+  case "$r" in "$s"*) echo "$n $r" ;; *) echo "$n $s${r:+: $r}" ;; esac
+}
+
+# page_row repo|end|job|lane|feature|gpu … — a queue_jobs printer: `<section><TAB><row>`, then `blk<TAB><block>`, per item.
+# Section: you (the Needs-you rules), run, queued, held or done. The row: lamp, title and reason as a link to the
+# block (#job-<key>), the phase bar while it runs, tool chip, repo label, run time, one primary button.
+# The block (hidden; the panel shows it): lamp, state, title, meta line, then the item's status_card.
+page_row() {
+  local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" bar="" el="" nm="" l c s e j fj="" body
+  local st="${3:-}" meta="" pre="" x
+  case "$1" in
+    repo)
+      P_REPO="$2" P_PATH="${3:-}"
+      return 0
+      ;;
+    job) why="$4" pr="$5" dir="$6" ph="${7:-}" k="${6##*/}" ;;
+    lane) prog="$4" why="$7" pr="$6" dir="$8" ph="${11:-}" k="$P_REPO/$2" ;;
+    feature) prog="$4" why="$3${5:+ · $5}" k="feature/$2" chip=feature label="" ;;
+    gpu) k="$2" el="$4" why="${8:-$5}" chip=GPU label="${5##*/}" ;;
+    *) return 0 ;;
+  esac
+  case "$1/$3" in
+    */running | */gpu) sec=run lamp=ok ;;
+    */queued | */) sec=queued lamp=off ;;
+    */held | gpu/parked) sec=held lamp=held ;;
+    job/blocked) sec=you lamp=bad btn=answer ;;
+    job/failed | job/timeout | job/skipped) sec=you lamp=bad btn=retry ;;
+    lane/blocked | "feature/needs you") sec=you lamp=bad ;;
+    "feature/your test") sec=you lamp=you btn=feature-ready ;;
+    feature/merge) sec=you lamp=you btn=feature-archive ;;
+    gpu/finished) sec="done" lamp="done" why="exit ${10}${11:+ · ${11}}" ;;
+    *) sec="done" lamp="done" ;;
+  esac
+  if [[ "$1" == job && "$3" == held ]]; then why="$(jstate "$dir" held)"; fi
+  # A lane needs you while an item is blocked, failed, timed out or skipped, also while another item runs
+  # (report_rows lists that item on its own); a held item is in Held already. Its first such item is the reason.
+  if [[ "$1" == lane ]]; then
+    l=""
+    while IFS= read -r x; do
+      c="${x#*  }" && c="${c%% *}"
+      if [[ -n "$x" && "$c" != held ]]; then l="$x" && break; fi
+    done <<<"${9:-}"
+    if [[ -n "$l" ]]; then
+      sec=you lamp=bad why="$(item_why "$l")"
+    elif [[ "$3" == blocked ]]; then
+      sec=held lamp=held
+    fi
+  fi
+  # A feature that needs you: its first blocking member is the reason, not the context.
+  if [[ "$sec/$lamp/$1" == you/bad/feature && -n "$6" ]]; then why="$(item_why "${6%%$'\n'*}")"; fi
+  # A done job whose gate or verify failed needs you, in a lane too, also while it runs (report_rows lists it on its own).
+  case "$1/$sec" in
+    job/done) if checks_failed "$dir"; then fj="$dir"; fi ;;
+    lane/*)
+      while IFS= read -r j; do
+        if [[ -n "$j" && "$(jstate "$j" status)" == "done" && ! -f "$j/held" ]] && checks_failed "$j"; then fj="$j"; fi
+      done <<<"${10}"
+      ;;
+  esac
+  if [[ -n "$fj" ]]; then
+    sec=you lamp=bad c="$(jstate "$fj" gate)"
+    if [[ "$c" =~ ^[1-9] ]]; then why="gate exit $c"; else why="verify: $(jstate "$fj" verify)"; fi
+    if [[ "$1" == lane ]]; then why="$(short_id "$fj" "$P_REPO"): $why"; fi
+    if [[ "$pr" == http* ]]; then btn=fix; fi
+    st="$why"
+  elif [[ "$sec" == "done" && "$1" != gpu ]]; then
+    if pr_missed "$pr"; then
+      sec=you lamp=bad why="$pr" st="$pr"
+    elif [[ "$pr" == http* ]]; then
+      sec=you lamp=you btn=open why="PR #${pr##*/} to review" st="PR #${pr##*/} to review"
+    elif [[ "$1" == job ]]; then
+      btn=archive
+    fi
+  fi
+  if [[ "$1" == job && -n "$(jget "$dir/job" tool)" ]]; then chip="$(jget "$dir/job" tool) · $(tool_place "$dir")"; fi
+  if [[ "$sec" == run && -n "$dir" ]]; then
+    read -r s e <<<"$(job_span "$dir")"
+    if [[ -n "$s" ]]; then el="$(printf '%d:%02d' $(((e - s) / 3600)) $(((e - s) % 3600 / 60)))"; fi
+  fi
+  # The phase bar: a segment per phase line, the running step's name after it.
+  if [[ "$sec" == run && -n "$ph" ]]; then
+    while IFS= read -r l; do
+      case "$l" in "✓ "*) c=' class="ok"' ;; "▶ "*) c=' class="run"' nm="${l#▶ }" ;; "✗ "*) c=' class="bad"' ;; *) c="" ;; esac
+      bar+="<i$c></i>"
+    done <<<"$ph"
+    case "$nm" in R[0-9]*) nm="Review ${nm#R}" ;; esac
+    bar="<span class=\"pbar\" title=\"$(esc "${ph//$'\n'/ · }")\">$bar${nm:+<span>$(esc "$nm")</span>}</span>"
+  fi
+  j="${fj:-$dir}"
+  case "$btn" in
+    # A field: the row's button opens the block, page.js focuses its first field; a lane's card has no Fix field.
+    answer) b="<span class=\"jacts p\"><a class=\"btn go\" href=\"#job-$(esc "$k")\">Answer</a></span>" ;;
+    fix)
+      b="<span class=\"jacts p\"><a class=\"btn go\" href=\"#job-$(esc "$k")\">Fix</a></span>"
+      if [[ "$1" == lane ]]; then pre="<div class=\"jacts\" data-id=\"$(esc "${j##*/}")\" data-pr=\"$(esc "$pr")\">$(act_btn fix)</div>"; fi
+      ;;
+    open) b="<a class=\"btn\" href=\"$(esc "$pr")\" target=\"_blank\" rel=\"noopener\">Open PR</a>" ;;
+    feature-*) b="<span class=\"jacts p\" data-feature=\"$(esc "$2")\">$(act_btn "$btn")</span>" ;;
+    ?*) b="<span class=\"jacts p\" data-id=\"$(esc "${j##*/}")\"${pr:+ data-pr=\"$(esc "$pr")\"}>$(act_btn "$btn")</span>" ;;
+  esac
+  body="$(status_card "$@")"
+  # A lane that ended has no dir: the repo comes from queue_jobs' repo line.
+  if [[ "$pr" == http* && -n "${P_PATH:-}" ]]; then
+    body+="<div class=\"jacts\" data-repo=\"$(esc "$P_PATH")\"><button data-act=\"merge-order\">Merge order</button></div>"
+  fi
+  if [[ "$1" == job ]]; then l="$(jget "$dir/job" branch)"; else l=""; fi
+  for c in "$label" "$l" "$chip" "$el"; do meta+="${c:+${meta:+ · }$c}"; done
+  printf '%s\t<div class="row" data-k="%s"><i class="lamp l-%s"></i><a class="t" href="#job-%s"><b>%s%s</b>%s</a>%s%s%s%s%s</div>\n' \
+    "$sec" "$(esc "$k")" "$lamp" "$(esc "$k")" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${why:+<span class=\"why\">$(esc "$why")</span>}" \
+    "$bar" "${chip:+<span class=\"chip\">$(esc "$chip")</span>}" "${label:+<code class=\"repo\">$(esc "$label")</code>}" \
+    "${el:+<span class=\"el\">$(esc "$el")</span>}" "$b"
+  printf 'blk\t<div class="blk" id="job-%s" hidden><div class="bh"><i class="lamp l-%s"></i><span class="st">%s</span><h2>%s%s</h2>%s</div>%s%s</div>\n' \
+    "$(esc "$k")" "$lamp" "$(esc "$st")" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${meta:+<code class=\"meta\">$(esc "$meta")</code>}" \
+    "$pre" "${body//$'\n'/}"
+}
+
+# page_sections ROWS — of page_row's lines, the Needs-you count on line 1, then the page's sections: Needs you and
+# Running open, then Queued, Held, Triage (triage.md) and Done folded to one line, each only when it has a row.
+page_sections() {
+  local s h you="" run="" que="" held="" dn="" ny=0 nr=0 nq=0 nh=0 nd=0 tri="" nt
+  while IFS=$'\t' read -r s h; do
+    case "$s" in
+      you) you+="$h" ny=$((ny + 1)) ;;
+      run) run+="$h" nr=$((nr + 1)) ;;
+      queued) que+="$h" nq=$((nq + 1)) ;;
+      held) held+="$h" nh=$((nh + 1)) ;;
+      "done") dn+="$h" nd=$((nd + 1)) ;;
+    esac
+  done <<<"$1"
+  echo "$ny"
+  printf '<section class="sec" data-k="you"><h2>Needs you <span class="n">%s</span></h2>%s</section>\n' "$ny" "${you:-<p class=\"none\">Nothing needs you.</p>}"
+  printf '<section class="sec" data-k="run"><h2>Running <span class="n">%s</span></h2>%s</section>\n' "$nr" "${run:-<p class=\"none\">No job runs.</p>}"
+  if ((nq)); then printf '<details class="sec" data-k="queued"><summary>Queued <span class="n">%s</span></summary>%s</details>\n' "$nq" "$que"; fi
+  if ((nh)); then printf '<details class="sec" data-k="held"><summary>Held <span class="n">%s</span></summary>%s</details>\n' "$nh" "$held"; fi
+  if [[ -f "$QROOT/triage.md" ]]; then
+    nt="$(grep -c '^- ' "$QROOT/triage.md" || true)"
+    tri="$(md_html <"$QROOT/triage.md")"
+    printf '<details class="sec" data-k="triage"><summary>Triage <span class="n">%s</span></summary><div class="md">\n%s\n</div></details>\n' "$nt" "$tri"
+  fi
+  if ((nd)); then printf '<details class="sec" data-k="done"><summary>Done <span class="n">%s</span></summary>%s</details>\n' "$nd" "$dn"; fi
+}
+
+# page_status RUNNING HOLDER — the header line: lamp, slots in use, paused, the usage limit or the 5h use, the GPU holder,
+# the render time.
+page_status() {
+  local lamp=ok t="" lim
+  lim="$(limit_line)"
+  if [[ -e "$QROOT/paused" ]]; then lamp=warn t=" · paused"; fi
+  if limited; then
+    # A weekly limit resets days later: the date stays unless it is today.
+    lim="$(at_time "$(head -n 1 "$QROOT/limit")")"
+    if [[ "${lim%% *}" == "$(date +%F)" ]]; then lim="${lim#* }"; fi
+    lamp=bad t+=" · usage limit until $lim"
+  elif [[ -n "$lim" ]]; then
+    t+=" · $lim"
+  fi
+  if [[ -n "$2" ]]; then t+=" · GPU: $2"; fi
+  printf '<i class="lamp l-%s"></i><span>%s of %s slots%s · <span class="updated" data-t="%s">updated %s</span></span>' \
+    "$lamp" "$1" "$(qconf slots 4)" "$(esc "$t")" "$(date +%s)" "$(date '+%H:%M:%S')"
+}
+
+# queue_web — QROOT/web/index.html, page.js and fonts/ from templates/; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r g q p o jobs lim front tools
-  local pulls='https://github.com/pulls?q=is%3Apr+is%3Aopen+label%3Aagent+author%3A%40me'
-  read -r r g q p o <<<"$(queue_counts)"
-  lim="$(limit_line)"
-  jobs="$(queue_jobs status_card)"
-  front="$(queue_front_md)" tools="$(ws_md)"
-  [[ -z "$front" ]] || front="<div class=\"md\">$(md_html <<<"$front")</div>"$'\n'
-  [[ -z "$tools" ]] || tools="<div class=\"md\">$(md_html <<<"$tools")</div>"$'\n'
-  mkdir -p "${f%/*}" || return 1
+  local f="$QROOT/web/index.html" r rows jobs you tab=vibe yn="" x hb hold ws
+  read -r r _ <<<"$(queue_counts)"
+  hold="$(gpu_holder)" ws="$(ws_page "$hold")"
+  rows="$(queue_jobs page_row)"
+  jobs="$(page_sections "$rows")"
+  you="${jobs%%$'\n'*}" jobs="${jobs#*$'\n'}"
+  if ((you > 0)); then tab="($you) vibe" yn="$you"; fi
+  hb='<button data-act="pause">Pause</button>'
+  if [[ -e "$QROOT/paused" ]]; then hb='<button data-act="resume">Resume</button>'; fi
+  if limited; then hb+='<button data-act="unlimit">Clear limit</button>'; fi
+  mkdir -p "${f%/*}/fonts" || return 1
   # The page's only script: CSP script-src 'self' blocks HTML an agent wrote into a note or a triage line.
   cp "$SELF_ROOT/templates/queue-page.js" "$f.js.$$" && mv -f "$f.js.$$" "${f%/*}/page.js" || return 1
+  # Fonts from the page's own origin: the CSP blocks Google Fonts. Copied when the repo's copy is newer.
+  for x in "$SELF_ROOT"/templates/fonts/*; do
+    if [[ "$x" -nt "${f%/*}/fonts/${x##*/}" ]]; then
+      cp "$x" "$f.font.$$" && mv -f "$f.font.$$" "${f%/*}/fonts/${x##*/}" || return 1
+    fi
+  done
   if render_template "$SELF_ROOT/templates/queue-page.html" \
-    '<updated>' "$(date '+%F %H:%M:%S')" \
-    '<counts>' "$(printf '<span class="chip"><b>%s</b> %s</span>' "$r" running "$g" "on the GPU" "$q" queued)$(printf '<span class="chip"><b>%s</b> to review<a href="%s">agent PRs on GitHub</a></span><span class="chip"><b>%s</b> no PR</span>' "$p" "$pulls" "$o")" \
-    '<flags>' "$(esc "$(queue_flags)${lim:+ · $lim}")" \
-    '<actions>' "$(page_buttons)" \
-    '<jobs>' "$front${jobs:-<p>No jobs.</p>}"$'\n'"$tools$(new_work)" \
-    '<config>' "$(config_md | md_html)" >"$f.tmp.$$"; then
+    '<tab>' "$tab" \
+    '<you>' "$yn" \
+    '<status>' "$(page_status "$r" "$hold")" \
+    '<actions>' "$hb" \
+    '<jobs>' "$jobs" \
+    '<wsrail>' "${ws%%$'\n'*}" \
+    '<workspaces>' "${ws#*$'\n'}" \
+    '<config>' "$(config_page)" \
+    '<blocks>' "$(awk -F'\t' '$1 == "blk" { print substr($0, 5) }' <<<"$rows")" \
+    '<new>' "$(new_work)" >"$f.tmp.$$"; then
     mv -f "$f.tmp.$$" "$f"
   else
     rm -f "$f.tmp.$$"
@@ -2874,7 +3243,7 @@ feature_md() {
   printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
-# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report and of the page.
+# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report. The page has its own: page_sections.
 queue_front_md() {
   local d rows=""
   for d in "$QDIR"/*/; do
@@ -3799,12 +4168,31 @@ ws_holder() {
   [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws hold ${1##*/}" ]] && echo "$p"
 }
 
-# ws_state INSTANCE-DIR — waits for the GPU, down with no id file, past limit when limit has passed, else up.
+# ws_gpu INSTANCE-DIR — true when its place is turing and its tool has gpu=yes: it runs under the GPU lock.
+ws_gpu() {
+  local n
+  n="$(ws_name "${1##*/}")" || return 1
+  [[ "$(jstate "$1" place)" == turing && "$(jget "$WS_ROOT/$n/workspace.conf" gpu)" == yes ]]
+}
+
+# ws_stopper INSTANCE-DIR — the pid of its live page stop (`vibe ws down`); fails when none. Same pid check as ws_holder.
+ws_stopper() {
+  local p
+  p="$(jstate "$1" stops)"
+  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws down ${1##*/}" ]] && echo "$p"
+}
+
+# ws_state INSTANCE-DIR — waits for the GPU, starts while its holder runs ws_up, stops while a page stop runs,
+# down with no id file, past limit when limit has passed, else up.
 ws_state() {
   local lim
   lim="$(jstate "$1" limit)"
   if [[ -e "$1/waits" ]] && ws_holder "$1" >/dev/null; then
     echo "waits for the GPU"
+  elif [[ -e "$1/starts" ]] && ws_holder "$1" >/dev/null; then
+    echo starts
+  elif ws_stopper "$1" >/dev/null; then
+    echo stops
   elif [[ ! -s "$1/id" ]]; then
     echo down
   elif [[ "$lim" =~ ^[0-9]+$ ]] && ((lim <= $(date +%s))); then
@@ -3851,11 +4239,6 @@ cmd_ws_status() {
   else
     ws_lines
   fi | awk -F'\t' '{ l = sprintf("%-24s %-10s %-7s %s", $1, $2, $3, $4); sub(/ +$/, "", l); print l }'
-}
-
-# ws_md — the page's tool list: the lines of `vibe ws status` as Markdown; empty with no instance.
-ws_md() {
-  ws_lines | awk -F'\t' 'NR == 1 { print "## Tools\n" } { printf "- **%s** %s · %s%s\n", $1, $2, $3, ($4 == "" ? "" : " · " $4) }'
 }
 
 # ws_dir NAME — the folder of workspace NAME; dies on no such workspace or a conf that breaks the contract.
@@ -3921,6 +4304,8 @@ ws_secrets() {
 ws_up() {
   local st="$WS_STATES/$1" url="" secs="${VIBE_WS_START_SECS:-120}" r=0
   ws_place "$1" up || die "up of $1 failed"
+  # A page or GPU start: `starts` holds `script` from here on, and stop waits for up (ws_stop_cuts).
+  if [[ -e "$st/starts" ]]; then echo script >"$st/starts"; fi
   WS_SECS="$secs" ws_place "$1" exec start || r=$?
   if ((r)); then
     ws_place "$1" down >&2 || true
@@ -3951,59 +4336,85 @@ cmd_ws_build() {
   docker build -t "$(jget "$f" image):$(jget "$f" commit)" --build-arg "COMMIT=$(jget "$f" commit)" "$d"
 }
 
-# vibe ws start NAME — a kind=service tool up at the first of its places.
-# gpu=yes on turing: a detached `gpu-queue lock` runs `vibe ws hold`, which keeps the GPU lock until stop.
+# vibe ws start NAME [--place P] [--hours N] — a kind=service tool up at P (the first of its places) for N hours
+# (its hours=). gpu=yes on turing, or a start from the page (VIBE_WEB: a rented place takes minutes): a detached
+# `vibe ws hold` starts it, under `gpu-queue lock` for the GPU, and keeps the lock until stop.
 cmd_ws_start() {
-  local d f st place pid i
-  (($# == 1)) || die "usage: vibe ws start <name>"
-  d="$(ws_dir "$1")"
-  f="$d/workspace.conf" st="$WS_STATES/$1"
-  [[ "$(jget "$f" kind)" == service ]] || die "$1 is kind=run: the queue runs it as a job"
-  ws_secrets "$1" "$f"
-  [[ "$(ws_state "$st")" == down ]] || die "$1 is $(ws_state "$st") — vibe ws stop $1 first"
-  place="$(jget "$f" places)"
-  place="${place%%,*}"
+  local d f st n="${1:-}" place="" hours="" pid i u="usage: vibe ws start <name> [--place P] [--hours N]"
+  local -a lock=()
+  (($#)) || die "$u"
+  shift
+  while (($#)); do
+    case "$1" in --place=* | --hours=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;; esac
+    (($# >= 2)) || die "$u"
+    case "$1" in
+      --place) place="$2" ;;
+      --hours) hours="$2" ;;
+      *) die "$u" ;;
+    esac
+    shift 2
+  done
+  d="$(ws_dir "$n")"
+  f="$d/workspace.conf" st="$WS_STATES/$n"
+  [[ "$(jget "$f" kind)" == service ]] || die "$n is kind=run: the queue runs it as a job"
+  ws_secrets "$n" "$f"
+  [[ "$(ws_state "$st")" == down ]] || die "$n is $(ws_state "$st") — vibe ws stop $n first"
+  if [[ -z "$place" ]]; then place="$(jget "$f" places)" place="${place%%,*}"; fi
+  [[ "$place" =~ ^[a-z]+$ && ",$(jget "$f" places)," == *",$place,"* ]] || die "$n has no place '$place' — places=$(jget "$f" places)"
+  [[ -z "$hours" || "$hours" =~ ^[1-9][0-9]*$ ]] || die "--hours $hours: a whole number above 0"
   [[ -x "$WS_ROOT/_places/$place" ]] || die "no place script '$place' in $WS_ROOT/_places"
   mkdir -p "$st"
   echo "$place" >"$st/place"
-  rm -f "$st/waits" "$st/holder" "$st/url" "$st/hold.log"
-  if [[ "$place" != turing || "$(jget "$f" gpu)" != yes ]]; then
-    ws_up "$1"
+  rm -f "$st/waits" "$st/starts" "$st/holder" "$st/url" "$st/hold.log"
+  # WS_HOURS: ws_place hands it to the place's up, here or in the detached hold; empty: the conf's hours.
+  if ws_gpu "$st"; then
+    lock=("$SELF_ROOT/bin/gpu-queue" lock --)
+    : >"$st/waits"
+  elif [[ -z "${VIBE_WEB:-}" ]]; then
+    WS_HOURS="$hours" ws_up "$n"
     return 0
   fi
-  : >"$st/waits"
   set -m
-  nohup "$SELF_ROOT/bin/gpu-queue" lock -- "$SELF_ROOT/bin/vibe" ws hold "$1" </dev/null >"$st/hold.log" 2>&1 &
+  WS_HOURS="$hours" nohup ${lock[@]+"${lock[@]}"} "$SELF_ROOT/bin/vibe" ws hold "$n" </dev/null >"$st/hold.log" 2>&1 &
   pid=$!
   set +m
   echo "$pid" >"$st/holder"
   for ((i = 0; ; i++)); do
     if grep -qxF "vibe: holds the GPU" "$st/hold.log"; then
-      ws_up_line "$1"
+      ws_up_line "$n"
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
+      if wait "$pid"; then
+        ws_up_line "$n"
+        return 0
+      fi
       cat "$st/hold.log" >&2
-      die "start of $1 failed — $st/hold.log"
+      die "start of $n failed — $st/hold.log"
     fi
-    if ((i >= 15)) && [[ -e "$st/waits" ]]; then
-      echo "$1 waits for the GPU — vibe ws status $1"
+    # The CLI waits for up, as a script uses the url next; the page and a wait for the lock return.
+    if ((i >= 15)) && [[ -e "$st/waits" || -n "${VIBE_WEB:-}" ]]; then
+      if [[ -e "$st/waits" ]]; then echo "$n waits for the GPU — vibe ws status $n"; else echo "$n starts — vibe ws status $n"; fi
       return 0
     fi
     sleep 0.2
   done
 }
 
-# vibe ws hold INSTANCE — start's command under `gpu-queue lock`: the instance up, then wait until its id file goes.
+# vibe ws hold INSTANCE — start's detached command: the instance up; under the GPU lock, then wait until its id file goes.
 cmd_ws_hold() {
   local st
   (($# == 1)) || die "usage: vibe ws hold <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
   rm -f "$st/waits"
+  : >"$st/starts"
   ws_up "$1"
-  echo "vibe: holds the GPU"
-  while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+  rm -f "$st/starts"
+  if ws_gpu "$st"; then
+    echo "vibe: holds the GPU"
+    while [[ -s "$st/id" ]]; do sleep "${VIBE_WS_POLL:-10}"; done
+  fi
 }
 
 # vibe ws run INSTANCE — a tool job's run (tool_run): up, the run script, down; exit: the run script's.
@@ -4017,9 +4428,13 @@ cmd_ws_run() {
   return "$r"
 }
 
+# ws_stop_cuts INSTANCE-DIR — true while a detached start runs the place's up: before ws_up marks `starts` with `script`.
+ws_stop_cuts() { [[ -e "$1/starts" && "$(jstate "$1" starts)" != script ]]; }
+
 # vibe ws stop INSTANCE — its stop script, then place down; a GPU holder ends then, and the lock is free.
+# From the page (VIBE_WEB) a detached `vibe ws down` does it: vibe-web kills a command after 120 s.
 cmd_ws_stop() {
-  local st pid
+  local st pid s i
   (($# == 1)) || die "usage: vibe ws stop <instance>"
   ws_inst "$1"
   st="$WS_STATES/$1"
@@ -4030,9 +4445,45 @@ cmd_ws_stop() {
     echo "$1 stopped — it waited for the GPU"
     return 0
   fi
+  if [[ -n "$pid" ]] && ws_stop_cuts "$st"; then
+    # Each place's up traps TERM and removes what it made; wait for that, 60 s at most.
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for ((i = 0; i < 300; i++)); do
+      kill -0 -- "-$pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    rm -f "$st/starts" "$st/holder" "$st/hold.log"
+    echo "$1 stopped — its place was not up yet"
+    return 0
+  fi
+  s="$(ws_state "$st")"
+  # A down beside a running start script races it: stop once it is up.
+  [[ "$s" != starts ]] || die "$1 starts — stop it once it is up: vibe ws status $1"
+  [[ "$s" != stops ]] || die "$1 stops already — vibe ws status $1"
   rm -f "$st/waits"
   [[ -s "$st/id" ]] || die "$1 is down"
+  if [[ -n "${VIBE_WEB:-}" ]]; then
+    set -m
+    nohup "$SELF_ROOT/bin/vibe" ws down "$1" </dev/null >"$st/stop.log" 2>&1 &
+    echo "$!" >"$st/stops"
+    set +m
+    echo "$1 stops — vibe ws status $1"
+    return 0
+  fi
   ws_down "$1" || die "down of $1 failed — vibe ws status $1"
+  echo "$1 down"
+}
+
+# vibe ws down INSTANCE — a page stop's detached command: ws_down, then the stops file goes.
+# shortcut: a failed one shows only in stop.log, and the page offers Stop again; show its reason when one fails.
+cmd_ws_down() {
+  local r=0
+  (($# == 1)) || die "usage: vibe ws down <instance>"
+  ws_inst "$1"
+  ws_down "$1" || r=$?
+  rm -f "$WS_STATES/$1/stops"
+  ((r == 0)) || die "down of $1 failed — vibe ws status $1"
+  rm -f "$WS_STATES/$1/stop.log"
   echo "$1 down"
 }
 
@@ -4064,8 +4515,8 @@ cmd_ws_tick() {
   local d i secs="${VIBE_WS_TICK_SECS:-600}"
   for d in "$WS_STATES"/*/; do
     d="${d%/}" i="${d##*/}"
-    if [[ ! -s "$d/id" ]]; then
-      continue
+    if [[ ! -s "$d/id" ]] || ws_stopper "$d" >/dev/null; then
+      continue # down, or its page stop runs ws_down
     elif [[ "$(ws_state "$d")" == "past limit" ]]; then
       ws_down "$i" || warn "down of $i past its limit failed"
     else
@@ -4090,7 +4541,7 @@ cmd_ws() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | status | build | start | stop | tick | hold | run) "cmd_ws_$sub" "$@" ;;
+    list | status | build | start | stop | tick | hold | down | run) "cmd_ws_$sub" "$@" ;;
     *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
   esac
 }

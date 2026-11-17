@@ -26,7 +26,7 @@ VIBE = TOOLS["vibe"][0]
 QROOT = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "vibe")
 QCONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "vibe", "queue.conf")
 PREFIX = "/queue/api"
-# route -> argv; never a shell string. "{x}" at an arg's end: body arg x, checked against ARGS[x].
+# route -> argv; never a shell string. "{x}" at an arg's end: body arg x, checked against ARGS[x]; "{x?}": the arg goes when x is absent.
 ROUTES = {
     "pause": ["vibe", "queue", "pause"],
     "resume": ["vibe", "queue", "resume"],
@@ -41,6 +41,7 @@ ROUTES = {
     "hold": ["vibe", "queue", "hold", "{id}", "{note}"],
     "archive": ["vibe", "queue", "archive", "{id}"],
     "answer": ["vibe", "queue", "answer", "{id}", "{text}"],
+    "steer": ["vibe", "queue", "steer", "{id}", "{text}"],
     "fix": ["vibe", "queue", "fix", "{pr}", "{text}"],
     "merge-order": ["vibe", "queue", "merge-order", "{repo}"],
     "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
@@ -59,6 +60,8 @@ ROUTES = {
     "worktree-remove": ["cleanup.sh", "remove", "{path}"],
     "sync": ["vibe", "sync", "--all"],
     "update-toolkit": ["vibe", "update-toolkit"],
+    "ws-start": ["vibe", "ws", "start", "{name}", "--place={place?}", "--hours={hours?}"],
+    "ws-stop": ["vibe", "ws", "stop", "{name}"],
 }
 ARGS = {
     "id": re.compile(r"[0-9]{8}-[0-9]{6}-[A-Za-z0-9._-]{1,200}"),
@@ -76,6 +79,9 @@ ARGS = {
     "line": re.compile(r"[1-9][0-9]{0,5}"),
     "done": re.compile(r"[^\x00-\x1f\x7f]{1,500}"),
     "task": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
+    "name": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
+    "place": re.compile(r"[a-z]{1,40}"),
+    "hours": re.compile(r"[1-9][0-9]{0,3}"),
 }
 
 
@@ -93,6 +99,10 @@ def argv_of(route, body):
     for a in ROUTES[route]:
         if a.endswith("}"):
             a, k = a[:-1].split("{")
+            if k.endswith("?"):
+                k = k[:-1]
+                if k not in body:
+                    continue
             v = body.get(k)
             if not isinstance(v, str) or not ARGS[k].fullmatch(v):
                 return None
@@ -113,7 +123,8 @@ def qconf(key, default=""):
     return default
 
 
-FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log")  # GET job/<id>/<file>; log: its tail
+# GET job/<id>/<file>; a log: its tail; out/files: a tool's folder result as a list of its files.
+FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log", "tool.log", "out/report.md", "out/files")
 STARTED = os.stat(os.path.realpath(__file__)).st_mtime  # update-toolkit changed it: re-exec after the reply
 TIMEOUT = int(os.environ.get("VIBE_WEB_TIMEOUT") or 120)  # s per command: a hung one must not hold WRITE for ever
 WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
@@ -160,17 +171,31 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, {"error": "no route"})
 
     def job_file(self, parts):
-        """GET job/<id>/<file>: one of FILES of a queued job as text; the log's last 64 KB; a .md with ?html as HTML."""
-        if len(parts) != 3 or not ARGS["id"].fullmatch(parts[1]) or parts[2] not in FILES:
+        """GET job/<id>/<file>: one of FILES of a queued job as text; a log's last 64 KB; a .md with ?html as HTML."""
+        name = "/".join(parts[2:])
+        if len(parts) < 3 or not ARGS["id"].fullmatch(parts[1]) or name not in FILES:
             return self.reply(404, {"error": "no file"})
-        try:  # O_NOFOLLOW: an agent can write the job dir; no symlink out of it
-            with os.fdopen(os.open(os.path.join(QROOT, "queue", parts[1], parts[2]), os.O_RDONLY | os.O_NOFOLLOW), "rb") as f:
-                if parts[2] == "log":
-                    f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
-                data = f.read(1 << 20)
+        fd = None
+        try:  # O_NOFOLLOW on each part: an agent can write the job dir; no symlink out of it
+            fd = os.open(os.path.join(QROOT, "queue", parts[1]), os.O_RDONLY | os.O_DIRECTORY)
+            for p in parts[2:-1]:
+                fd, old = os.open(p, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd), fd
+                os.close(old)
+            if name == "out/files":  # fwalk follows no link, the top one included
+                data = "".join(os.path.join(r, f)[6:] + "\n" for r, _, fs, _ in os.fwalk("files", dir_fd=fd) for f in sorted(fs)).encode(errors="replace")[:1 << 20]
+            else:
+                with os.fdopen(os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd), "rb") as f:
+                    if name in ("log", "tool.log"):  # gate.log from its start: its first lines name the command
+                        f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
+                    data = f.read(1 << 20)
         except OSError:
             return self.reply(404, {"error": "no file"})
-        if parts[2].endswith(".md") and urlsplit(self.path).query == "html":
+        finally:
+            if fd is not None:
+                os.close(fd)
+        if name == "out/files" and not data:
+            return self.reply(404, {"error": "no file"})
+        if name.endswith(".md") and urlsplit(self.path).query == "html":
             return self.reply(200, md_html(data), "text/html; charset=utf-8")
         return self.reply(200, data, "text/plain; charset=utf-8")
 

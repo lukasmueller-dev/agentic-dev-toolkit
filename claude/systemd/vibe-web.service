@@ -10,6 +10,8 @@ Type=simple
 Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
 ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
 ExecStart=%h/bin/vibe-web
+# A restart stops vibe-web only: a detached `vibe ws hold` (the GPU lock) or `vibe ws down` keeps running.
+KillMode=process
 Restart=always
 RestartSec=30
 
