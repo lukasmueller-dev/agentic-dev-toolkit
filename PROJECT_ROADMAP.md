@@ -47,6 +47,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a `tests/hooks.bats` case denies each spelling, `tests/plugin.bats`
       passes, and the `CLAUDE.md` line "No hook covers these yet" is deleted.
 
+- [ ] **[health] `vibe queue answer` runs no repo hook** — `cmd_queue_answer`
+      commits and pushes the job's tree with plain `git`, so a relative
+      `core.hooksPath` runs the agent's hook with your rights (audit of PR #205).
+      Done when a bats test shows a `.githooks/pre-commit` in the job tree does
+      not run on `vibe queue answer`, and the `CLAUDE.md` checks pass.
+
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
 
 - [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
