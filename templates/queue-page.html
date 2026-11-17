@@ -122,6 +122,12 @@ summary::-webkit-details-marker { display: none; }
 .job details { margin: 6px 0 0; color: var(--fg-2); font-size: 13px; }
 .job summary { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; cursor: pointer; }
 .job .phases { color: var(--muted); font-size: 13px; }
+/* Research card: a row per worker; a builds= row is indented by --d. */
+.wks { margin: 12px 0 0; border-top: 1px solid var(--line); }
+.wk { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; margin-left: calc(var(--d, 0) * 16px); padding: 8px 0; border-bottom: 1px solid var(--line); }
+.wk .wh { overflow-wrap: anywhere; }
+.wk .wm { font: 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.wk p { grid-column: 2 / -1; margin: 0; }
 .phases .r { color: var(--fg); }
 .phases .x { color: var(--bad); }
 .job ol { margin: 6px 0 0; padding-left: 22px; }

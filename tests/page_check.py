@@ -1,7 +1,7 @@
-"""page_check.py BROWSER WEB_DIR A B — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
+"""page_check.py BROWSER WEB_DIR A B RESEARCH — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
 
-WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B; it is served under /queue/ and changed
-in place. Prints one line per check; exits 1 when one fails, 77 when the browser does not start (a sandbox that
+WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and the research question RESEARCH
+(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place. Prints one line per check; exits 1 when one fails, 77 when the browser does not start (a sandbox that
 refuses its sockets). Used by tests/vibe-web.bats.
 """
 import functools
@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 
-BROWSER, WEB, A, B = sys.argv[1:5]
+BROWSER, WEB, A, B, R = sys.argv[1:6]
 PAGE = os.path.join(WEB, "index.html")
 signal.alarm(80)  # a hung browser fails the test instead of the suite
 
@@ -159,6 +159,18 @@ try:
     js("document.querySelector('#new .bh select').selectedIndex = 0")
     check("an emptied field lets its block swap", until((ST % A) + " === 'changed'", 13))
     check("a select back at its default lets its block swap", until("document.querySelector('#new h2').textContent === 'New job 2'", 2))
+    # The research card: a row per worker, the builds= row right of its parent, no row wider than the panel, on a desk and a phone.
+    RB = "document.getElementById('job-research/%s')" % R
+    js("location.hash = 'job-research/%s'" % R)
+    check("a research block shows", until("!%s.hidden" % RB, 2))
+    check("a row per worker, a builds= row below its parent", js("[...%s.querySelectorAll('.wk')].map(w => w.dataset.hid).join()" % RB) == "h1,h4,h2,h3")
+    LEFT = "[...%s.querySelectorAll('.wk')].map(w => Math.round(w.getBoundingClientRect().left))" % RB
+    left = js(LEFT)
+    check("a builds= row sits right of its parent", left[1] > left[0] and left[0] == left[2] == left[3])
+    FIT = "(() => { const p = document.getElementById('panel').getBoundingClientRect().right; return [...%s.querySelectorAll('.wk')].every(w => w.getBoundingClientRect().right <= p); })()" % RB
+    check("no worker row is wider than the panel", js(FIT))
+    cdp("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 800, "deviceScaleFactor": 1, "mobile": True})
+    check("no worker row is wider than the panel on a phone", until(FIT, 2) and js("document.documentElement.scrollWidth <= window.innerWidth"))
 finally:
     proc.kill()
     proc.wait()

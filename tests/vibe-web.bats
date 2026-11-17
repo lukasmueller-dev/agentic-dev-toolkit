@@ -203,15 +203,16 @@ post() {
   grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
 }
 
-@test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps" {
+@test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps; a research card fits the panel" {
   local b a=20261104-080000-proj-a c=20261104-080001-proj-c
   b="${VIBE_TEST_BROWSER:-$(command -v chrome-headless-shell chromium chromium-browser google-chrome google-chrome-stable | head -n 1 || true)}"
   [ -n "$b" ] || skip "no headless browser (VIBE_TEST_BROWSER)"
   qjob "$a" blocked
   qjob "$c" blocked
   printf 'repo=%s/proj\nbranch=task-c\n' "$BATS_TEST_TMPDIR" >"$Q/queue/$c/job"
+  research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   "$REPO_ROOT/bin/vibe" queue page
-  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c"
+  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr
   echo "$output"
   [ "$status" -ne 77 ] || skip "$output"
   [ "$status" -eq 0 ]

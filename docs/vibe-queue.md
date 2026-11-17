@@ -214,6 +214,16 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
 
+## Research card
+
+A job with `research=<slug>` is in no repo group: the page shows one card per slug. A coordinator has `question=`, a worker `hid=`. The card reads job files and job dir files, never `RESEARCH.md`.
+
+- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files), `deadline=`, `waits for`.
+- `waits for`, first match: `you (…)` (`paste <hid>`: a blocked worker with `paste.md`; `<hid> blocked`; `coordinator blocked`, `failed`, `timeout`, `skipped`), `GPU` (a worker's run on turing), `coordinator` (queued or running), `nothing`.
+- Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
+- Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
+- A done job with no PR is no `no PR` in the status header.
+
 ## Tool jobs
 
 An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.

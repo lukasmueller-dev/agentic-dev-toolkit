@@ -400,6 +400,80 @@ locked_out() (
   [ "$output" = 0 ]
 }
 
+# rpage — write the page: $XDG_STATE_HOME/vibe/web/index.html.
+rpage() { "$VIBE" queue page >/dev/null; }
+
+@test "page: a research question is one row; its block has the head line, a row per worker, a builds= row below its parent" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  rpage
+  [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
+  grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2/4</span></b><span class="why">h3 paste</span></a><span class="chip">research</span><code class="repo">proj</code></div>' "$f"
+  grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">needs you</span><h2>lr <span class="n">2/4</span></h2><code class="meta">proj · research</code></div><div class="job lane research s-blocked">' "$f"
+  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 paste</p><div class="wks">' "$f"
+  # The order: h4 builds on h1, so it sits below it, one level in.
+  [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
+  grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">queued: run on runpod</p></div>' "$f"
+  grep -qF '<div class="wk" style="--d:1" data-hid="h4"><i class="lamp l-done"></i><span class="wh"><b>h4</b> <span class="n">done · turing</span></span><span class="wm">0.84 · $0.00</span>' "$f"
+  grep -qF '<div class="wk" style="--d:0" data-hid="h3"><i class="lamp l-bad"></i><span class="wh"><b>h3</b> <span class="n">paste · ias</span></span><span class="wm"></span>' "$f"
+  # Its jobs are in no repo group, and a done job with no PR is no `no PR` job: only h3 counts.
+  run grep -c '<h2>proj</h2>' "$f"
+  [ "$output" = 0 ]
+  [[ "$("$VIBE" queue status | head -n 1)" == *" · 1 no PR · "* ]] || false
+}
+
+@test "page: a research question waits for you, the GPU, the coordinator, nothing, in that order" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  # waits <text> <pill> — the page's waits line and the block's state.
+  waits() {
+    rpage
+    grep -qF "<p>waits for $1</p>" "$f"
+    grep -qF "<span class=\"st\">$2</span><h2>lr " "$f"
+  }
+  waits 'you (paste h3)' 'needs you'
+  # A coordinator that needs the user comes first, with its own buttons.
+  echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
+  waits 'you (coordinator blocked, paste h3)' 'needs you'
+  grep -qF '<span class="why">coordinator blocked: name the metric</span>' "$f"
+  grep -qF "<div class=\"jacts\" data-id=\"${c##*/}\">" "$f"
+  echo done >"$c/status"
+  # The paste is back: h3 is done.
+  echo done >"$h/status"
+  waits nothing running
+  sed -i.bak 's/^place=runpod/place=turing/' "$Q"/*-h2/job
+  waits GPU running
+  echo queued >"$c/status"
+  waits GPU running
+  echo done >"$Q"/*-h2/status
+  waits coordinator queued
+  echo done >"$c/status"
+  waits nothing done
+  [[ "$(grep -o '<div class="row" data-k="research/lr">.*' "$f")" == *'<i class="lamp l-done"></i>'* ]] || false
+}
+
+@test "page: a research best follows better=, skips a null metric; session 2 gives the state and adds its cost" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  sed -i.bak 's/^better=higher/better=lower/' "$c/job"
+  rpage
+  grep -qF 'best 0.81 (h1) · ' "$f"
+  echo 'RESULT {"metric": null}' >"$Q/20261117-100100-proj-research-lr-h1/run-result"
+  rpage
+  grep -qF 'best 0.84 (h4) · ' "$f"
+  # Session 2 of h2: a follow-up job on the same hid, queued, with its own cost.
+  rjob "$Q" "${h2##*/}-gpu" queued "$r" research/lr/h2 research=lr hid=h2 place=runpod "idea=wider net" builds=root follow=1 "parent=${h2##*/}"
+  echo 0.30 >"$h2-gpu/cost"
+  echo done >"$h2/status"
+  rpage
+  grep -qF '<span class="n">closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
+  grep -qF '$1.50 of $50' "$f"
+  [ "$(grep -o 'data-hid="h2"' "$f" | wc -l)" -eq 1 ]
+}
+
 @test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
   local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
   r="$(make_repo proj)"

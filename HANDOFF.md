@@ -10,25 +10,27 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card
-- **Last updated:** 2026-11-17 09:58 CET · turing
+- **Last updated:** 2026-11-17 10:50 CET · turing
 
 ## State
 
-Not started. `SPEC.md` holds the milestones; the feature file holds the goal, the decisions and the contract.
-Member of the feature `parallel-research` with `research-run` (this repo) and `research-setup` (safety-critic).
+Milestone 1 is done: `research_row` (`bin/vibe`) reads the job dirs; `queue_jobs` prints a `Research` group; `page_row` and `status_card`/`research_card` render the row and the block; `research_fixture` (`tests/helper.bash`) is the fixture of 1 coordinator and 4 workers.
+`status_line` has no `research` arm yet, so `vibe queue status` prints an empty `Research` header.
 
 ## Next action
 
-Milestone 1 of `SPEC.md`: the `Research` group and its card, on fixture job dirs.
-Done when `bats tests/vibe-queue.bats` and `python3 tests/page_check.py` pass with a fixture of 1 coordinator and 4 workers.
+Milestone 2 of `SPEC.md`: `vibe queue status` and the report.
+Add a `research` arm to `status_line` and a `research_md` table (call it next to `feature_md` in `queue_report_md`): one row per question (`2/4`), the place on each worker row.
+Done when `bats tests/vibe-queue.bats -f research` passes with a status test on `research_fixture`.
 
 ## Blockers
 
-_What is stopping progress, and what would unblock it._
+None.
 
 ## Gotchas (unpromoted)
 
-- `research-run` writes the job keys and job dir files; this branch has no writer → build each fixture job dir by hand from the contract.
-- The card never reads `RESEARCH.md`: each value comes from a job file or a job dir file.
-- The CSP runs only `page.js`: the copy buttons go into `templates/queue-page.js`.
-- `vibe queue stop --research <slug> [--now]` does not exist on this branch → test the route's argv only.
+- `research_row` sets `R_PILL R_PROGRESS R_QUESTION R_PR R_DIR R_HEAD R_ITEMS R_WORKERS`; a worker line is `HID DEPTH STATE PLACE LAST METRIC USD IDEA DIR` joined by `\037`. `research_head`-style text is built in `research_card`: reuse it for status.
+- Worker state words: `queued`, `coding`, `running` (status `gpu`), `closing`, `paste`, `infra`, else the job status.
+- The full `bats tests/vibe-queue.bats` takes 11+ min and longer under load; run `-f '^(feature|page|status|report|count|header|research)'` (2.5 min).
+- Browser test: `VIBE_TEST_BROWSER=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell bats tests/vibe-web.bats`, set in the same Bash call.
+- A bats run started with `&` inside a sandboxed Bash call is invisible and may die with the call: run it in the foreground (`timeout` 595000).
