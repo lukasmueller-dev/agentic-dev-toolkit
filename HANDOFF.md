@@ -10,20 +10,16 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card
-- **Last updated:** 2026-11-17 11:05 CET · turing
+- **Last updated:** 2026-11-17 11:25 CET · turing
 
 ## State
 
-Milestones 1 and 2 are done: the card, `vibe queue status` (`status_line` research arm) and the report (`research_md`).
-`research_head` and `research_workers` build the text lines; `research_card` builds the block.
+Milestones 1 to 3 are done: card, status and report, paste panel, `research-stop` and `research-stop-now` routes.
 
 ## Next action
 
-Milestone 3 of `SPEC.md`: paste panel and stop.
-In `research_card` (`bin/vibe`) a worker in state `paste` shows the steps of its `paste.md` with a copy button each, and one field that posts to `answer` with that worker's job dir id (the `DIR` field of the worker line). Copy handling goes into `templates/queue-page.js`: the CSP runs only `page.js`.
-`Stop question` and `Stop now ✓` post to the new routes `research-stop` and `research-stop-now` in `bin/vibe-web`: `vibe queue stop --research <slug> [--now]` (the command is `research-run`'s: test the argv only). Add a `research` ARGS pattern for the slug.
-Add 3 rows to the Page actions table in `docs/vibe-queue.md`: Copy, Stop question ✓, Stop now ✓.
-Done when `bats tests/vibe-web.bats` passes with a test per route's argv.
+Milestone 4 of `SPEC.md`, the end action: move each decision to `pr.md`, then `git rm SPEC.md HANDOFF.md` and commit.
+Done when `git ls-files SPEC.md HANDOFF.md` prints nothing.
 
 ## Blockers
 

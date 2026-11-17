@@ -2659,16 +2659,32 @@ research_workers() {
   done <<<"$1"
 }
 
-# research_card DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS, R_WORKERS): the
-# head line, what the question waits for, a line per job that needs you, the coordinator's buttons until it is done,
-# then a row per worker: lamp, hid, state, place, metric, USD, idea, last step. A builds= row is indented by its depth.
+# research_paste DIR — a blocked worker's paste.md as steps: a line each, its list marker and fence lines dropped, a Copy
+# button per step (page.js), then the field that answers the worker with the RESULT line. DIR: the worker's job dir.
+research_paste() {
+  local l steps
+  steps="$(sed -E -e '/^[[:space:]]*```/d' -e 's/^[[:space:]]*([0-9]+[.)]|[-*])[[:space:]]+//' -e '/^[[:space:]]*$/d' "$1/paste.md" 2>/dev/null || true)"
+  printf '<div class="paste"><ol>'
+  while IFS= read -r l; do
+    if [[ -n "$l" ]]; then printf '<li><code>%s</code><button type="button" data-copy>Copy</button></li>' "$(esc "$l")"; fi
+  done <<<"$steps"
+  printf '</ol><div class="jacts" data-id="%s">%s</div></div>' "$(esc "${1##*/}")" "$(ask answer text 'The RESULT line from IAS: the worker closes its run with it' 'Send answer')"
+}
+
+# research_card SLUG PILL DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS,
+# R_WORKERS): the head line, what the question waits for, a line per job that needs you, the coordinator's buttons until
+# it is done, the two stop buttons until the question is done, then a row per worker: lamp, hid, state, place, metric,
+# USD, idea, last step, and for a worker in `paste` its steps. A builds= row is indented by its depth.
 research_card() {
   local l w h dp s pl lt m u idea lamp mu rows=""
-  rows="<p class=\"stats\">$(esc "$(research_head "$2")")</p><p>waits for $(esc "${2##*|}")</p>"
+  rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>waits for $(esc "${4##*|}")</p>"
   while IFS= read -r l; do
     if [[ -n "$l" ]]; then rows+="<p>$(esc "$(item_why "$l")")</p>"; fi
-  done <<<"$3"
-  if [[ -n "$1" && "$(jstate "$1" status)" != "done" ]]; then rows+="$(job_buttons "$1")"; fi
+  done <<<"$5"
+  if [[ -n "$3" && "$(jstate "$3" status)" != "done" ]]; then rows+="$(job_buttons "$3")"; fi
+  if [[ "$2" != "done" ]]; then
+    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(btn_rows '<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>' '<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>')</div>"
+  fi
   rows+='<div class="wks">'
   while IFS=$'\037' read -r h dp s pl lt m u idea w; do
     [[ -n "$h" ]] || continue
@@ -2681,8 +2697,8 @@ research_card() {
     esac
     mu="$m"
     if [[ -n "$u" ]]; then mu+="${mu:+ · }\$$u"; fi
-    rows+="<div class=\"wk\" style=\"--d:$dp\" data-hid=\"$(esc "$h")\"><i class=\"lamp l-$lamp\"></i><span class=\"wh\"><b>$(esc "$h")</b> <span class=\"n\">$(esc "$s${pl:+ · $pl}")</span></span><span class=\"wm\">$(esc "$mu")</span><p>$(esc "$idea")</p><p class=\"stats\">$(esc "$lt")</p></div>"
-  done <<<"$4"
+    rows+="<div class=\"wk\" style=\"--d:$dp\" data-hid=\"$(esc "$h")\"><i class=\"lamp l-$lamp\"></i><span class=\"wh\"><b>$(esc "$h")</b> <span class=\"n\">$(esc "$s${pl:+ · $pl}")</span></span><span class=\"wm\">$(esc "$mu")</span><p>$(esc "$idea")</p><p class=\"stats\">$(esc "$lt")</p>$(if [[ "$s" == paste && -s "$w/paste.md" ]]; then research_paste "$w"; fi)</div>"
+  done <<<"$6"
   printf '%s</div>' "$rows"
 }
 
@@ -2711,7 +2727,7 @@ status_card() {
       ;;
     research)
       pill="$3" txt="$5" pr="$6" cls=" lane research" name="$2${4:+ · $4}"
-      extra="$(research_card "$7" "$8" "$9" "${10}")"
+      extra="$(research_card "$2" "$3" "$7" "$8" "$9" "${10}")"
       ;;
   esac
   if [[ "$1" != job && "$1" != lane && "$1" != feature && "$1" != research && "$1" != gpu ]]; then return 0; fi

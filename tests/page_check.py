@@ -171,6 +171,12 @@ try:
     check("no worker row is wider than the panel", js(FIT))
     cdp("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 800, "deviceScaleFactor": 1, "mobile": True})
     check("no worker row is wider than the panel on a phone", until(FIT, 2) and js("document.documentElement.scrollWidth <= window.innerWidth"))
+    # The paste panel of h3: a Copy per step writes its step to the clipboard, a field answers, the stop buttons are in the block.
+    js("window.copied = null; Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.copied = t; return Promise.resolve(); } }, configurable: true })")
+    js("%s.querySelectorAll('.paste button[data-copy]')[1].click()" % RB)
+    check("Copy writes its step, without the list marker", until("window.copied === 'sbatch runs/h3/job.sbatch'", 2))
+    check("the button names the copy", until("%s.querySelectorAll('.paste button[data-copy]')[1].textContent === 'Copied'" % RB, 2))
+    check("a paste field and both stop buttons are in the block", js("!!%s.querySelector('.wk[data-hid=\"h3\"] .paste textarea[name=text]') && %s.querySelectorAll('button[data-act^=research-stop]').length === 2" % (RB, RB)))
 finally:
     proc.kill()
     proc.wait()
