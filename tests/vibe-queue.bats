@@ -3025,7 +3025,7 @@ refused() {
   [ ! -e "$st/id" ]
 }
 
-# coord_wt REPO [ROW] — REPO's worktree research-q1 with RESEARCH.md committed: items h1, h2 (builds on h1), h3; the
+# coord_wt REPO [ROW] — REPO's worktree research-q1 with RESEARCH.md committed: items h1, h2 (builds on h1), h3, h4; the
 # ledger holds ROW, by default a baseline row. Echoes its path.
 coord_wt() {
   local w="$1/.claude/worktrees/research-q1"
@@ -3033,7 +3033,7 @@ coord_wt() {
   {
     printf '# Research — proj / research-q1\n\n## Backlog\n\n### h1 wider net — open\n\n- Idea: a wider net fits.\n\n'
     # shellcheck disable=SC2016  # literal backticks in RESEARCH.md
-    printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n## Ledger\n\n'
+    printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n### h4 batch — open\n\n## Ledger\n\n'
     printf '| id | commit | run | cost | result | verdict | evidence |\n| --- | --- | --- | --- | --- | --- | --- |\n'
     printf '%s\n' "${2-| baseline | 0123abc | 1 | 0 | 0.50 | baseline | runs/baseline/log |}"
   } >"$w/RESEARCH.md"
@@ -3244,6 +3244,21 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$Q/02-w/fan")" = "${c##*/}" ]
   grep -qx parent=01-c "$c/job"
   [ "$(cat "$c/status")" = "done" ]
+}
+
+@test "worker: 4 calls at once at workers=3 queue 3 workers; the lock is gone after them" {
+  local r w h pids=() p
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w" workers=3
+  for h in h1 h2 h3 h4; do
+    VIBE_JOB_DIR="$Q/01-c" "$VIBE" queue worker "$h" >"$BATS_TEST_TMPDIR/$h.out" 2>&1 &
+    pids+=($!)
+  done
+  for p in "${pids[@]}"; do wait "$p" || true; done
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-research-q1-h*' | wc -l | tr -d ' ')" = 3 ]
+  [ "$(cat "$BATS_TEST_TMPDIR"/h*.out | grep -c '^vibe: workers=3: .* run — start the next one after a worker ends$')" = 1 ]
+  [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
 # two_findings — the stub reviewer's first answer: two findings.

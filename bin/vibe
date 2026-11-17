@@ -2398,6 +2398,10 @@ cmd_queue_worker() {
   k="$(jget "$d/job" workers)"
   k="${k:-3}"
   [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"
+  # One start at a time, from the count to the queued job: an agent can send several calls at once. In the queue dir:
+  # the agent's sandbox writes there.
+  mkdir_lock "$QDIR/.workers" || exit 1
+  trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
   # Live: a worker of this research with a job that has not ended (session 2 is queued before session 1 ends).
   for j in "$QDIR"/*/; do
     x="$(jget "${j}job" hid)"
