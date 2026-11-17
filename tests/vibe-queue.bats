@@ -257,7 +257,7 @@ putfeature() {
 # par_set_pr DIR — DIR/f.md has 8 members; 8 parallel feature_set_pr calls each give one a PR URL.
 par_set_pr() {
   local i pid pids=()
-  eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  eval "$(sed -n '/^mkdir_lock() {/,/^}/p; /^feature_set_pr() {/,/^}/p' "$VIBE")"
   {
     printf '## Members\n\n'
     for i in 1 2 3 4 5 6 7 8; do echo "- r$i b$i"; done
@@ -280,7 +280,7 @@ par_set_pr() {
 # locked_out ARGS — feature_set_pr where mkdir always fails (a read-only directory, a stuck FILE.reap), in a subshell.
 # shellcheck disable=SC2317  # the stubs run inside the eval'd feature_set_pr
 locked_out() (
-  eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
+  eval "$(sed -n '/^mkdir_lock() {/,/^}/p; /^feature_set_pr() {/,/^}/p' "$VIBE")"
   mkdir() { return 1; }
   find() { :; }
   sleep() { :; }
@@ -2884,6 +2884,9 @@ refused() {
   [ "$(cat "$Q/01-a/cost")" = 0 ]
   [ ! -e "$Q/01-a/infra" ]
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  # A lock a killed runner left in the gate: over 1 min old, the next gate breaks it.
+  mkdir "$XDG_STATE_HOME/vibe/usd.lock"
+  touch -t 200001010000 "$XDG_STATE_HOME/vibe/usd.lock"
   mkjob 02-b "$r" task-b place research=q1 usd=3
   drain
   [ "$(cat "$Q/02-b/run/exit")" = 0 ]

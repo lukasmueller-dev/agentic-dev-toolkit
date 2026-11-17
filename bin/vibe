@@ -2221,9 +2221,9 @@ place_run() {
 
 # place_gate JOB INST — run/price: the USD per hour of INST's place (its exit 3: 0). With usd= in JOB/job, a start
 # is refused when spent (the cost of each live or archived job of JOB's research=) + hours × price is above usd.
-# A start writes cost = hours × price: a run counts at its full hours while it runs. Exit 1: refused, 2: no price.
+# A start writes cost = hours × price: a run counts at its full hours while it runs. Exit 1: refused, 2: no price or no lock.
 place_gate() {
-  local d="$1" h p u r s=0 j rc=0 n=0 l="$QROOT/usd.lock" m=""
+  local d="$1" h p u r s=0 j rc=0 l="$QROOT/usd" m=""
   h="$(jget "$WS_STATES/$2/in/repo/.claude/research/workspace.conf" hours)"
   p="$(WS_SECS=60 ws_place "$2" price)" || rc=$?
   if ((rc == 3)); then
@@ -2233,15 +2233,8 @@ place_gate() {
     return 2
   fi
   echo "$p" >"$d/run/price"
-  # One gate at a time: a run that starts in the same pass sees this one's cost. A lock held 10 s is stale.
-  until mkdir "$l" 2>/dev/null; do
-    n=$((n + 1))
-    if ((n >= 50)); then
-      rmdir "$l" 2>/dev/null || true
-      n=0
-    fi
-    sleep 0.2
-  done
+  # One gate at a time: a run that starts in the same pass sees this one's cost.
+  mkdir_lock "$l" || return 2
   u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)"
   if [[ -n "$r" ]]; then
     s="$(for j in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
@@ -2255,12 +2248,12 @@ place_gate() {
     m="spent $s + $h h × $p USD/h is above usd=$u"
   fi
   if [[ -n "$m" ]]; then
-    rmdir "$l" 2>/dev/null || true
+    rmdir "$l.lock" 2>/dev/null || true
     echo "usd gate: $m: no start"
     return 1
   fi
   awk -v h="$h" -v p="$p" 'BEGIN { printf "%.2f\n", h * p }' >"$d/cost"
-  rmdir "$l" 2>/dev/null || true
+  rmdir "$l.lock" 2>/dev/null || true
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
@@ -3625,12 +3618,11 @@ feature_row() {
   F_PROGRESS="$ok/$n"
 }
 
-# feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
-# Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
-feature_set_pr() {
-  local t rc=0 tries=0
-  # shortcut: a lock over 1 min old is a killed job's; the waiter that gets FILE.reap removes it. A reaper killed
-  # inside that step leaves FILE.reap and blocks the removal; a waiter fails after 3 min. flock is not on macOS.
+# mkdir_lock NAME — take the NAME.lock directory; fails with a message after 3 min. Free it with rmdir NAME.lock.
+mkdir_lock() {
+  local tries=0
+  # shortcut: a lock over 1 min old is a killed holder's; the waiter that gets NAME.reap removes it. A reaper killed
+  # inside that step leaves NAME.reap and blocks the removal; a waiter fails after 3 min. flock is not on macOS.
   until mkdir "$1.lock" 2>/dev/null; do
     tries=$((tries + 1))
     if ((tries > 1800)); then
@@ -3643,6 +3635,13 @@ feature_set_pr() {
     fi
     sleep 0.1
   done
+}
+
+# feature_set_pr FILE REPO BRANCH URL — the member line of REPO's BRANCH in FILE ends in URL.
+# Two jobs of one feature end together: the read-and-write runs under a FILE.lock directory.
+feature_set_pr() {
+  local t rc=0
+  mkdir_lock "$1" || return 1
   t="$(mktemp "$1.XXXXXX")" && awk -v r="${2%/}" -v b="$3" -v u="$4" '
     /^## / { m = ($0 == "## Members") }
     m && /^- / { x = $2; sub(/\/$/, "", x); if (x == r && $3 == b) $0 = "- " $2 " " $3 " " u }
