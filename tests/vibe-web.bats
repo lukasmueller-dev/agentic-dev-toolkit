@@ -721,13 +721,13 @@ optin() {
   no_slot "$n/prompt.md"
   run act opt-in "{\"repo\": \"$r\", \"job\": \"nosuch\"}"
   [[ "${lines[0]}" == *'"code": 1'*"no recurring job 'nosuch'"* ]] || false
-  optin "$r" repo-review
-  run act opt-in "{\"repo\": \"$r\", \"job\": \"repo-review\"}"
+  optin "$r" lean-audit
+  run act opt-in "{\"repo\": \"$r\", \"job\": \"lean-audit\"}"
   [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"roadmap\">Roadmap</button><button data-act=\"worktrees\">Worktrees</button><button data-act=\"new\" data-ask=\"task done branch\"" "$Q/web/index.html"
   grep -q 'data-act="opt-in" data-ask="job" title="Recurring job to opt in: [^"]*stale-state' "$Q/web/index.html"
-  run grep -q 'opt in: [^"]*repo-review' "$Q/web/index.html"
+  run grep -q 'opt in: [^"]*lean-audit' "$Q/web/index.html"
   [ "$status" -eq 1 ]
 }
 
