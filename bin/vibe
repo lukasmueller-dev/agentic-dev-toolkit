@@ -64,8 +64,7 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines;
-#                                   an ended job whose PR is merged or closed to the archive (the hourly timer)
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines; archive merged
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
 # shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
