@@ -495,7 +495,10 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
   [[ "$("$VIBE" queue status)" == *$'    needs you: coordinator blocked: name the metric\n    needs you: h3 paste'* ]] || false
   run "$VIBE" queue report
-  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 ias paste | you (coordinator blocked, paste h3) |' <<<"$output"
+  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 ias paste | you (coordinator blocked, paste h3) |  |' <<<"$output"
+  # The coordinator's PR is in the row: its done job has no row of its own.
+  echo https://example.com/pull/5 >"$c/pr"
+  [[ "$("$VIBE" queue report)" == *'| [PR](https://example.com/pull/5) |'* ]] || false
   # A done worker has no row of its own; the one that needs you has.
   [[ "$output" != *research-lr-h1* && "$output" != *research-lr-h4* && "$output" == *research-lr-h3* ]] || false
 }

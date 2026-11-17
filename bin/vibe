@@ -3333,9 +3333,9 @@ feature_md() {
 }
 
 # research_md — the report's Research table: per question its pill, done/workers, the question, the head line,
-# each worker as `hid place state`, what it waits for. No question, no table.
+# each worker as `hid place state`, what it waits for, the coordinator's PR. No question, no table.
 research_md() {
-  local slug w rows="" h dp s pl _x
+  local slug w rows="" h dp s pl _x pr
   while IFS= read -r slug; do
     [[ -n "$slug" ]] || continue
     research_row "$slug"
@@ -3343,10 +3343,12 @@ research_md() {
     while IFS=$'\037' read -r h dp s pl _x; do
       if [[ -n "$h" ]]; then w+="${w:+ · }$h ${pl:--} $s"; fi
     done <<<"$R_WORKERS"
-    rows+="| $slug | $R_PILL | $R_PROGRESS | ${R_QUESTION//|//} | $(research_head "$R_HEAD") | $w | ${R_HEAD##*|} |"$'\n'
+    pr=""
+    case "$R_PR" in http*) pr="[PR]($R_PR)" ;; esac
+    rows+="| $slug | $R_PILL | $R_PROGRESS | ${R_QUESTION//|//} | $(research_head "$R_HEAD") | $w | ${R_HEAD##*|} | $pr |"$'\n'
   done < <(research_slugs)
   [[ -n "$rows" ]] || return 0
-  printf '\n## Research\n\n| Research | State | Done | Question | Best, USD | Workers | Waits for |\n| --- | --- | --- | --- | --- | --- | --- |\n%s' "$rows"
+  printf '\n## Research\n\n| Research | State | Done | Question | Best, USD | Workers | Waits for | Links |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
 # queue_front_md — held jobs under "Yours", then the triage lines: the top of the report. The page has its own: page_sections.

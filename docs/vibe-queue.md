@@ -224,7 +224,7 @@ A job with `research=<slug>` is in no repo group: the page shows one card per sl
 - A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. The card shows Stop question and Stop now until the question is done.
 - Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
 - Status and the report: a `Research` group after `Features`, a line (report: a row) per question, `hid · place  state  metric · USD` per worker. A done worker keeps no report row of its own.
-- A done job with no PR is no `no PR` in the status header.
+- The `no PR` count of the status header skips a done research job with no PR.
 
 ## Tool jobs
 
