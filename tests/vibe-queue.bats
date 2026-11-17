@@ -272,6 +272,7 @@ par_set_pr() {
 }
 
 # locked_out ARGS — feature_set_pr where mkdir always fails (a read-only directory, a stuck FILE.reap), in a subshell.
+# shellcheck disable=SC2317 # the stubs run inside the eval'd feature_set_pr
 locked_out() (
   eval "$(sed -n '/^feature_set_pr() {/,/^}/p' "$VIBE")"
   mkdir() { return 1; }
@@ -397,6 +398,24 @@ locked_out() (
   [ "$output" = 0 ]
 }
 
+@test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
+  local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
+  r="$(make_repo proj)"
+  mkdir "$tk" && cp -R "$REPO_ROOT/bin" "$REPO_ROOT/skills" "$REPO_ROOT/claude" "$REPO_ROOT/templates" "$tk"
+  mkjob 01-a "$r" task-a seq
+  "$tk/bin/vibe" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for i in $(seq 1 100); do
+    [ ! -s "$Q/01-a/pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$Q/01-a/pid" ]
+  { head -n 1 "$tk/bin/vibe" && echo '# a line the running vibe never reads, long enough to move its end offset' && tail -n +2 "$tk/bin/vibe"; } >"$BATS_TEST_TMPDIR/vibe.new"
+  cat "$BATS_TEST_TMPDIR/vibe.new" >"$tk/bin/vibe"
+  wait "$pid" || { cat "$BATS_TEST_TMPDIR/run.out" && false; }
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
 @test "report: a Features table before the repos; a done member job leaves the repo tables, a blocked one stays" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
@@ -470,6 +489,19 @@ locked_out() (
   [ "$status" -ne 0 ]
   [[ "$output" == *"./bridge is not an absolute path"* ]] || false
   [ ! -e "$F/rel.md" ]
+}
+
+@test "feature add: refuses a member path that is not canonical and names the one to write" {
+  local r1 r2 p
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  for p in "$r1/../bridge" "$(dirname "$r1")//bridge"; do
+    run "$VIBE" feature add "$(mkfeature dots "$p sticks" "$r2 gamepad")"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"$p is not the path jobs store as their repo — write $r1"* ]] || false
+    [ ! -e "$XDG_STATE_HOME/vibe/features/dots.md" ]
+  done
 }
 
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {

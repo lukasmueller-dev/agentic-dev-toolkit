@@ -59,6 +59,7 @@
 #   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
+# shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
 script_dir() {
@@ -3101,7 +3102,7 @@ feature_body() {
 
 # vibe feature add FILE — check FILE, copy it to FROOT/<name>.md and fill in the open PRs.
 cmd_feature_add() {
-  local src="${1:-}" name dst r b p f t n=0 seen=$'\n'
+  local src="${1:-}" name dst r b p f t c n=0 seen=$'\n'
   [[ $# -eq 1 && -f "$src" ]] || die "usage: vibe feature add <file>"
   name="$(basename "$src" .md)"
   [[ -n "$name" && "$(slug "$name")" == "$name" ]] || die "'$name' is not a slug — name the file <slug>.md"
@@ -3113,6 +3114,8 @@ cmd_feature_add() {
     [[ "$seen" != *$'\n'"$r#$b"$'\n'* ]] || die "$r $b is listed twice"
     seen+="$r#$b"$'\n'
     git -C "$r" rev-parse --git-dir >/dev/null 2>&1 || die "$r is not a git repo"
+    c="$(cd "$r" && pwd)"
+    [[ "$c" == "$r" ]] || die "$r is not the path jobs store as their repo — write $c"
     git -C "$r" rev-parse -q --verify "refs/heads/$b" >/dev/null ||
       git -C "$r" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null || die "no branch '$b' in $r"
     f="$(feature_of "$r" "$b")"
@@ -4053,34 +4056,38 @@ cmd_ws() {
   esac
 }
 
-case "${1:-}" in
-  queue)
-    shift
-    cmd_queue "$@"
-    ;;
-  job)
-    shift
-    cmd_job "$@"
-    ;;
-  feature)
-    shift
-    cmd_feature "$@"
-    ;;
-  ws)
-    shift
-    cmd_ws "$@"
-    ;;
-  update-toolkit)
-    shift
-    cmd_update_toolkit "$@"
-    ;;
-  start | sync | status)
-    cmd="$1"
-    shift
-    # sync fetches every repo anyway, so its check never uses the cache.
-    if [[ "$cmd" == sync ]]; then VIBE_FETCH_INTERVAL=0 toolkit_check; else toolkit_check; fi
-    "cmd_$cmd" "$@"
-    ;;
-  -h | --help | help) usage ;;
-  *) die "unknown command '${1:-}' — vibe help" ;;
-esac
+# One group ending in exit: bash never reads this file again after the command (an edit mid-run made vibe exit 2).
+{
+  case "${1:-}" in
+    queue)
+      shift
+      cmd_queue "$@"
+      ;;
+    job)
+      shift
+      cmd_job "$@"
+      ;;
+    feature)
+      shift
+      cmd_feature "$@"
+      ;;
+    ws)
+      shift
+      cmd_ws "$@"
+      ;;
+    update-toolkit)
+      shift
+      cmd_update_toolkit "$@"
+      ;;
+    start | sync | status)
+      cmd="$1"
+      shift
+      # sync fetches every repo anyway, so its check never uses the cache.
+      if [[ "$cmd" == sync ]]; then VIBE_FETCH_INTERVAL=0 toolkit_check; else toolkit_check; fi
+      "cmd_$cmd" "$@"
+      ;;
+    -h | --help | help) usage ;;
+    *) die "unknown command '${1:-}' — vibe help" ;;
+  esac
+  exit
+}
