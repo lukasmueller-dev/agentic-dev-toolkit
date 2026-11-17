@@ -1,16 +1,17 @@
-/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
+/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The render's age by the server's clock; over 2 min: Runner stopped.
    Panel: a hidden block per row (#job-<key>); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
+   Activity: GET job/<id>/activity when its block shows, again after the block swaps; agent text only through textContent.
    Buttons: a paste step's Copy writes its text to the clipboard; /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
+   Args: the data-* of the nearest .jacts, then each named field of the button's .ask after its data-pre, empty only with data-opt and a button without data-need; ⌘↵ in a field sends, Esc clears it.
    Output: .pout under the block; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   /* The real nodes, held at load; in a fetched page, a path from body: a .md in #queue can hold any class, never a child of main. */
-  const main = $('body > main'), queue = $('body > main > #queue'), panel = $('body > #panel'), blocks = $('body > #panel > .pblocks');
-  const pout = $('body > #panel > .pout'), none = $('body > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
+  const main = $('body > main'), jobs = $('body > main > #jobs'), panel = $('body > main > #panel'), blocks = $('body > main > #panel > .pblocks');
+  const pout = $('body > main > #panel > .pout'), none = $('body > main > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
   /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. */
-  const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces'].map(s => [s, $(s), $(s).innerHTML]);
+  const parts = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > #workspaces', 'body > main > #recurring'].map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
   /* A select's default: the option marked selected, else the first. */
@@ -56,23 +57,41 @@
   let last = '', busy = false, again = false, base = Date.now(), cur = '', view = 0;
   setInterval(() => {
     const u = $('.updated', parts[1][1]), s = Math.max(0, Math.round((Date.now() - base) / 1000));
-    u.textContent = `updated ${s} s ago`; u.classList.toggle('stale', s > 120);
+    u.classList.toggle('stale', s > 120);
   }, 1000);
   const api = '/queue/api/', wide = matchMedia('(min-width: 1200px)');
-  const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) document.body.classList.add('can'); }).catch(() => {});
+  const who = () => fetch(api + 'whoami', { cache: 'no-store' }).then(r => (r.ok ? r.json() : {})).then(j => { if (j.login) { document.body.classList.add('can'); show(); } }).catch(() => {});
+  const el = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
+  /* The Activity of a shown block, once per block node: a swap brings a new node, which loads again. */
+  const acts = new WeakSet();
+  const activity = blk => {
+    const a = blk && $('.act', blk);
+    if (!a || acts.has(a) || !document.body.classList.contains('can')) return;
+    acts.add(a);
+    fetch(api + 'job/' + encodeURIComponent(a.dataset.id) + '/activity', { cache: 'no-store' }).then(r => (r.ok ? r.json() : [])).catch(() => []).then(rows => {
+      const ol = $('ol', a);
+      if (!Array.isArray(rows) || !rows.length) return a.replaceChildren(el('h3', 'Activity'), el('p', 'No step yet.'));
+      ol.replaceChildren(...rows.map(x => {
+        const li = el('li'); if (x.kind === 'Agent') li.className = 'ag';
+        li.append(el('span', String(x.time || '')), el('span', String(x.kind || '')), el('span', String(x.text || '')));
+        return li;
+      }));
+    });
+  };
   /* The block the hash names, its row marked; another block drops the output. Under 1200 px the modal opens only for a block or an output. */
   const show = () => {
     let id = '', blk = null;
     try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { /* a bad % escape: no block */ }
     for (const b of blocks.children) { b.hidden = b.id !== id; if (!b.hidden) blk = b; }
-    queue.querySelectorAll('.row').forEach(r => r.classList.toggle('sel', 'job-' + r.dataset.k === id));
+    jobs.querySelectorAll('.row').forEach(r => r.classList.toggle('sel', 'job-' + r.dataset.k === id));
+    activity(blk);
     if ((blk ? blk.id : '') !== cur) { cur = blk ? blk.id : ''; pout.hidden = true; view++; }
     none.hidden = !!blk || !pout.hidden;
     if (wide.matches || (!blk && pout.hidden)) { if (panel.open) panel.close(); } /* wide: CSS shows it; show() would take the focus */
     else if (!panel.open) panel.showModal();
     return blk;
   };
-  const shut = () => { pout.hidden = true; if (/^#job-/.test(location.hash)) history.pushState(null, '', '#queue'); show(); };
+  const shut = () => { pout.hidden = true; if (/^#job-/.test(location.hash)) history.pushState(null, '', '#jobs'); show(); };
   const poll = async () => {
     if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
     if (busy || $('button.armed')) return; /* a swap would un-arm a confirm button */
@@ -114,8 +133,7 @@
     return ++view; /* the newest output: an older answer must not fill it */
   };
   const say = (t, bad) => { msg.textContent = t; msg.classList.toggle('bad', !!bad); };
-  const el = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
-  $('body > #panel > .close').addEventListener('click', shut);
+  $('body > main > #panel > .close').addEventListener('click', shut);
   panel.addEventListener('cancel', e => { e.preventDefault(); shut(); }); /* Esc on the modal */
   panel.addEventListener('click', e => { /* the backdrop; a tap on the sheet's empty part has the same target */
     const r = panel.getBoundingClientRect();
@@ -133,19 +151,19 @@
     }
     /* j/k: the next or the previous visible row; no single key writes. */
     if (e.metaKey || e.ctrlKey || e.altKey || (e.key !== 'j' && e.key !== 'k')) return;
-    const list = [...queue.querySelectorAll('.row')].filter(r => r.offsetParent), i = list.findIndex(r => r.classList.contains('sel'));
+    const list = [...jobs.querySelectorAll('.row')].filter(r => r.offsetParent), i = list.findIndex(r => r.classList.contains('sel'));
     const r = list[i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (e.key === 'j' ? 1 : -1)))];
     if (!r) return;
     history.replaceState(null, '', '#job-' + r.dataset.k);
     show(); r.scrollIntoView({ block: 'nearest' });
   });
   document.addEventListener('click', async e => {
-    const g = e.target.closest('a.go');
-    if (g && main.contains(g)) { /* Answer or Fix in a row: its block, the first field focused */
+    const g = e.target.closest('a.go, a.t');
+    if (g && jobs.contains(g) && !e.metaKey && !e.ctrlKey) { /* a row or its Answer: its block, no jump of the page; Answer focuses the first field */
       e.preventDefault();
       history.pushState(null, '', g.getAttribute('href'));
       const blk = show();
-      if (blk) [...blk.querySelectorAll('textarea, input')].find(f => f.offsetParent)?.focus();
+      if (blk && g.matches('.go')) [...blk.querySelectorAll('textarea, input')].find(f => f.offsetParent)?.focus({ preventScroll: true });
       return;
     }
     const c = e.target.closest('button[data-copy]');
@@ -158,7 +176,7 @@
     if (f && blocks.contains(f)) {
       e.preventDefault();
       const md = f.href.endsWith('.md');
-      const v = out(f.textContent, f.closest('.jacts').dataset.id);
+      const v = out(f.textContent, f.closest('[data-id]').dataset.id);
       try {
         const r = await fetch(f.href + (md ? '?html' : ''), { cache: 'no-store' }), t = await r.text();
         if (v !== view) return;
@@ -174,7 +192,7 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* main and the blocks only: their text is escaped; a .md (Triage, Tools, Config, a file) carries agent-written Markdown. */
+    /* main and the blocks only: their text is escaped; a .md (PR problems, a file) carries agent-written Markdown. */
     const b = e.target.closest('button[data-act]');
     if (!b || b.closest('.md') || !(main.contains(b) || blocks.contains(b))) return;
     if (b.disabled || !document.body.classList.contains('can')) return;
@@ -182,9 +200,9 @@
     const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};
     for (const x of fields) {
       const v = x.value.trim().replace(/\s*\n\s*/g, ' '); /* one line: a route refuses control characters */
-      if (!v && 'opt' in x.dataset) continue; /* an optional field left empty: its arg is not sent */
+      if (!v && 'opt' in x.dataset && !('need' in b.dataset)) continue; /* an optional field left empty: its arg is not sent */
       if (!v) { x.focus(); return; }
-      vals[x.name] = v;
+      vals[x.name] = (x.dataset.pre || '') + v; /* Slots: slots=<n> */
     }
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;
