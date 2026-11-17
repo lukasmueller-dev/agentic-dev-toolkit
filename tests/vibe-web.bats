@@ -141,12 +141,13 @@ post() {
   grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
-  # The panel after main: the column right of the list.
-  [ "$(grep -n '<dialog id="panel"' "$Q/web/index.html" | cut -d: -f1)" -gt "$(grep -n '<div id="queue" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
+  # The panel last in main: the column right of the list.
+  [ "$(grep -n '<dialog id="panel"' "$Q/web/index.html" | cut -d: -f1)" -gt "$(grep -n '<section id="settings" class="page">' "$Q/web/index.html" | cut -d: -f1)" ]
+  [ "$(grep -n '<dialog id="panel"' "$Q/web/index.html" | cut -d: -f1)" -lt "$(grep -n '^</main>' "$Q/web/index.html" | cut -d: -f1)" ]
   # The poll writes only to nodes held at load, found in the fetched page by a path from body: a .md can hold any class.
   grep -qF "const [s, live, was] = p, h = \$(s, n).innerHTML;" "$Q/web/page.js"
   grep -qF "live.innerHTML = h; p[2] = h;" "$Q/web/page.js"
-  grep -qF "const parts = ['body > nav > .q > .n', 'body > main > .head > .stat', 'body > main > .head > .jacts', 'body > main > #queue', 'body > main > #config', 'body > #panel > .pblocks', 'body > nav > .wsl', 'body > main > #workspaces']" "$Q/web/page.js"
+  grep -qF "const parts = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > #workspaces', 'body > main > #recurring']" "$Q/web/page.js"
   [ "$(grep -oE '[$][(][^)]*, n[)]' "$Q/web/page.js" | grep -vcF -e "\$(s, n)" -e "\$('body > ")" = 0 ]
   grep -qF "if (busy) again = true; else await poll();" "$Q/web/page.js"
   # The page's age comes from the server's clock alone (Date header minus data-t): a skewed browser clock cannot fake it.
@@ -182,7 +183,8 @@ post() {
   grep -qF "else if (e.key === 'Escape' && f.value && f.tagName !== 'SELECT') { e.preventDefault(); f.value = ''; }" "$js"
   # Args: each named field of the button's .ask after the card's data; an empty field sends nothing.
   grep -qF "const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};" "$js"
-  grep -qF "if (!v && 'opt' in x.dataset) continue;" "$js"
+  grep -qF "if (!v && 'opt' in x.dataset && !('need' in b.dataset)) continue;" "$js"
+  grep -qF "vals[x.name] = (x.dataset.pre || '') + v;" "$js"
   grep -qF "if (!v) { x.focus(); return; }" "$js"
   grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
   # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
@@ -205,8 +207,19 @@ post() {
   b="${VIBE_TEST_BROWSER:-$(command -v chrome-headless-shell chromium chromium-browser google-chrome google-chrome-stable | head -n 1 || true)}"
   [ -n "$b" ] || skip "no headless browser (VIBE_TEST_BROWSER)"
   qjob "$a" blocked
+  printf '{"type":"system"}\n' >"$Q/queue/$a/log"
+  echo "exit 1" >"$Q/queue/$a/gate.log"
+  echo "blocked: which port does the bridge use?" >"$Q/queue/$a/note"
   qjob "$c" blocked
   printf 'repo=%s/proj\nbranch=task-c\n' "$BATS_TEST_TMPDIR" >"$Q/queue/$c/job"
+  # A running, a done and a queued job, each on its own branch: every section of the list has a row.
+  for j in 070000-run:running 060000-pr:done 090000-next:; do
+    qjob "20261104-${j%:*}" "${j#*:}"
+    printf 'repo=%s/proj\nbranch=%s\n' "$BATS_TEST_TMPDIR" "${j%:*}" >"$Q/queue/20261104-${j%:*}/job"
+  done
+  printf '{"type":"system"}\n' >"$Q/queue/20261104-070000-run/log"
+  date '+%F %T' >"$Q/queue/20261104-070000-run/started"
+  echo https://example.com/pull/9 >"$Q/queue/20261104-060000-pr/pr"
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   "$REPO_ROOT/bin/vibe" queue page
   run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr
@@ -229,26 +242,34 @@ post() {
   [ "$status" -eq 1 ]
 }
 
-@test "vibe queue page: Workspaces page and rail from the state files alone: Start, or a place and hours form; Open UI, Stop and time left when up; run tools in one line" {
-  local w="$BATS_TEST_TMPDIR/workspaces" st="$Q/workspaces" f="$Q/web/index.html" now
+@test "vibe queue page: Workspaces from the state files alone: a card per service, Start or a place and hours form, Open UI, Stop and time left when up; a card per run tool with its job and last run; a tab dot while one runs" {
+  local w="$BATS_TEST_TMPDIR/workspaces" st="$Q/workspaces" f="$Q/web/index.html" now a="$Q/archive/2026-11/20261103-080000-proj-loop1"
   printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
   chmod +x "$STUBS/docker"
   wsfold
   mkdir -p "$w/one" "$w/loop"
   printf '%s\n' kind=service places=turing "role=One place." >"$w/one/workspace.conf"
-  printf '%s\n' label=Loop kind=run places=turing result=folder >"$w/loop/workspace.conf"
+  printf '%s\n' label=Loop kind=run places=turing result=folder "role=Runs a loop." >"$w/loop/workspace.conf"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<a class="w" href="#workspaces">Workspaces</a><div class="wsl"><a href="#ws-one"><i class="lamp l-off"></i>one</a><a href="#ws-svc"><i class="lamp l-off"></i>Svc</a></div><a class="c" href="#config">Config</a>' "$f"
-  grep -qF '<div class="wrow" id="ws-svc"><i class="lamp l-off"></i><div class="t"><b>Svc <span class="role">· Serves one thing.</span></b><span class="why">Off · places: turing, runpod · default 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
-  grep -qF '<span class="why">Off · places: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
-  grep -qF '<p class="note">Loop run as queue jobs.</p>' "$f"
+  grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
+  grep -qF '<div class="wrow" id="ws-svc"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>Svc</b><span class="role">Serves one thing.</span><span class="meta">Runs on: turing, runpod · 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
+  grep -qF '<div class="wrow" id="ws-one"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>one</b><span class="role">One place.</span><span class="meta">Runs on: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
+  grep -qF '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards"><div class="wrow" id="ws-loop"><div class="t"><span class="why"><i class="lamp l-off"></i>Idle · no run yet</span><b>Loop</b><span class="role">Runs a loop.</span><span class="meta">Runs on: turing</span></div></div></div></section>' "$f"
+  # A run tool: its live job, else Idle; its last ended job, live or archived, with the date of its id.
+  qjob 20261104-080000-proj-loop running
+  echo tool=loop >>"$Q/queue/20261104-080000-proj-loop/job"
+  mkdir -p "$a" && printf 'repo=%s/proj\nbranch=loop1\ntool=loop\n' "$BATS_TEST_TMPDIR" >"$a/job" && echo "done" >"$a/status" && echo "done: wrote 3 files" >"$a/note"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<span class="why"><i class="lamp l-ok"></i>Running · loop · last run 2026-11-03: wrote 3 files</span><b>Loop</b>' "$f"
+  grep -qF '<a class="tw" href="#workspaces">Workspaces <i class="lamp l-ok"></i></a>' "$f"
+  rm -r "$Q/queue/20261104-080000-proj-loop"
   # No hours= in the conf: an optional Hours field; page.js sends no hours, the start has no limit.
   sed -i.bak '/^hours=/d' "$w/svc/workspace.conf"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="why">Off · places: turing, runpod</span>' "$f"
+  grep -qF '<span class="meta">Runs on: turing, runpod</span>' "$f"
   grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
+  grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
   printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
-  grep -qF '<h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1>' "$f"
   now="$(date +%s)"
   mkdir -p "$st/svc" "$st/one"
   echo runpod >"$st/svc/place"
@@ -259,18 +280,18 @@ post() {
   echo turing >"$st/one/place"
   echo "vibe: start of one failed — it is down again" >"$st/one/hold.log"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<a href="#ws-svc"><i class="lamp l-ok"></i>Svc</a>' "$f"
-  grep -qF '<span class="why">runpod · up 0:35 · <span class="warn">20m left</span></span></div><a class="btn ui" href="http://100.64.0.1:8080" target="_blank" rel="noopener">Open UI ↗</a><span class="jacts p" data-name="svc"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
-  grep -qF '<span class="why">Off · places: turing · <span class="bad">vibe: start of one failed — it is down again</span></span>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-ok"></i>Up on runpod · 0:35 · <span class="warn">20m left</span></span><b>Svc</b>' "$f"
+  grep -qF '</div><a class="btn ui" href="http://100.64.0.1:8080" target="_blank" rel="noopener">Open UI ↗</a><span class="jacts p" data-name="svc"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-off"></i>Off · <span class="bad">vibe: start of one failed — it is down again</span></span><b>one</b>' "$f"
+  grep -qF '<a class="tw" href="#workspaces">Workspaces <i class="lamp l-ok"></i></a>' "$f"
   echo $((now + 7230)) >"$st/svc/limit"
   echo c2 >"$st/one/id"
   echo $((now - 60)) >"$st/one/limit"
   echo 'javascript:alert(1)' >"$st/one/url"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="why">runpod · up 0:35 · 2h' "$f"
-  grep -qF '<div class="wrow" id="ws-one"><i class="lamp l-bad"></i><div class="t"><b>one <span class="role">· One place.</span></b><span class="why">turing · past limit: the next tick stops it</span></div><span class="jacts p" data-name="one"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-ok"></i>Up on runpod · 0:35 · 2h' "$f"
+  grep -qF '<div class="wrow" id="ws-one"><div class="t"><span class="why"><i class="lamp l-bad"></i>Past its limit on turing: the next tick stops it</span><b>one</b><span class="role">One place.</span><span class="meta">Runs on: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-stop" data-confirm>Stop</button></span></div>' "$f"
   [ "$(grep -c 'javascript:' "$f")" = 0 ]
-  [ "$(grep -c '## Tools' "$f")" = 0 ]
   [ ! -e "$STUBS/docker.log" ]
 }
 
@@ -572,7 +593,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   qjob "$ID" blocked
   echo "$wt" >"$Q/queue/$ID/worktree"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button>' "$Q/web/index.html"
+  grep -qF '<textarea name="note" rows="3"></textarea></label><button data-act="retry">Run again</button>' "$Q/web/index.html"
   run act answer "{\"id\": \"$ID\", \"text\": \"Plan B.\"}"
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
@@ -746,7 +767,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   rm "$Q/queue/20261117-100300-proj-research-lr-h3/paste.md"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="n">blocked · ias</span>' "$f"
+  grep -qF '<span class="n">Has a question · ias</span>' "$f"
   grep -qF '<div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>Your answer: the job runs again with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
   run grep -c 'class="paste"' "$f"
   [ "$output" = 0 ]
@@ -1050,8 +1071,7 @@ optin() {
   ln -s "$u/claude-rc@thesis.service" "$u/default.target.wants/claude-rc@thesis.service"
   ln -s "$u/claude-rc@.service" "$u/default.target.wants/claude-rc@agentic-dev-toolkit.service"
   run "$REPO_ROOT/bin/vibe" queue page
-  [ "$(grep -o 'data-server="[^"]*"><button data-act="server-restart" data-confirm>Restart [^<]*' "$Q/web/index.html" | paste -sd, -)" = \
-    'data-server="agentic-dev-toolkit"><button data-act="server-restart" data-confirm>Restart agentic-dev-toolkit,data-server="thesis"><button data-act="server-restart" data-confirm>Restart thesis' ]
+  [ "$(grep -o '<code>[^<]*</code></b><p></p></div><div class="jacts" data-server="[^"]*"><button data-act="server-restart" data-confirm>Restart</button>' "$Q/web/index.html" | sed 's/.*data-server="//; s/".*//' | paste -sd, -)" = agentic-dev-toolkit,thesis ]
 }
 
 # get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
@@ -1084,8 +1104,8 @@ get() {
   run req GET "/job/$ID/report.md"
   [ "${lines[1]}" = 403 ]
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -q "href=\"/queue/api/job/$ID/report.md\">report.md</a>" "$Q/web/index.html"
-  grep -q "href=\"/queue/api/job/$ID/log\">log</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/report.md\">Report</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/log\">Full log</a>" "$Q/web/index.html"
 }
 
 @test "route job/<id>/tool.log, out/report.md, out/files: the log's tail, the report, the file list; a link out of the job dir is 404" {
@@ -1116,9 +1136,9 @@ get() {
   run get "/queue/api/job/$ID/gate.log"
   [ "${lines[0]}" = '$ make test' ]
   "$REPO_ROOT/bin/vibe" queue page
-  grep -q "href=\"/queue/api/job/$ID/tool.log\">tool.log</a>" "$Q/web/index.html"
-  grep -q "href=\"/queue/api/job/$ID/out/report.md\">out/report.md</a>" "$Q/web/index.html"
-  grep -q "href=\"/queue/api/job/$ID/out/files\">out/files/</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/tool.log\">Tool log</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/out/report.md\">Tool report</a>" "$Q/web/index.html"
+  grep -q "href=\"/queue/api/job/$ID/out/files\">Output files</a>" "$Q/web/index.html"
   echo hidden >"$BATS_TEST_TMPDIR/secret/report.md"
   rm -rf "$d/out/files"
   ln -s "$BATS_TEST_TMPDIR/secret" "$d/out/files"
