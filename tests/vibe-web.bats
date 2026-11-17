@@ -542,6 +542,24 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "$(cat "$n/worktree")" = "$wt" ]
 }
 
+@test "vibe queue answer: a relative core.hooksPath runs no hook of the job's tree on the commit and the push" {
+  local r wt m="$BATS_TEST_TMPDIR/hooked"
+  r="$(make_repo proj)" wt="$BATS_TEST_TMPDIR/wt"
+  hook_files "$r" "$m" pre-commit commit-msg post-commit pre-push
+  git -C "$r" config core.hooksPath .githooks
+  git -C "$r" worktree add -q -b task "$wt"
+  printf '# Handoff\n\n## Next action\n\nPick a plan.\n' >"$wt/HANDOFF.md"
+  git -C "$wt" add HANDOFF.md && git -C "$wt" -c core.hooksPath=/dev/null commit -q -m "docs: handoff"
+  git -C "$wt" -c core.hooksPath=/dev/null push -q origin task
+  qjob "$ID" blocked
+  echo "$wt" >"$Q/queue/$ID/worktree"
+  run "$REPO_ROOT/bin/vibe" queue answer "$ID" "Plan B."
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$wt" log -1 --format=%s)" = "docs(handoff): $ID unblocked" ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse task)" = "$(git -C "$wt" rev-parse HEAD)" ]
+  [ ! -e "$m" ]
+}
+
 @test "vibe queue answer: refuses a done job, a queued job on the branch, and a job without HANDOFF.md" {
   qjob "$ID" "done"
   run "$REPO_ROOT/bin/vibe" queue answer "$ID" yes
