@@ -744,6 +744,8 @@ denied() {
     "git fetch --upload-pack=x origin" "git fetch --upl=x origin" "git ls-remote --upload-pack=x origin" "git ls-remote --exec=x origin" \
     "git ls-remote --u=x origin" "git clone --upload-pack=x url" "git clone --up=x url" \
     "git clone -u x url" "git clone url -u x" "git clone -ux url" \
+    "git clone -qu x url" "git clone url -qu x" "git clone -vu x url" "git clone -nu x url" \
+    "git clone -lu x url" "git clone -su x url" "git clone -4u x url" "git clone -6u x url" \
     "git clone --template=x url" "git clone --template x url" "git clone url --te=x" \
     "git push --receive-pack=x origin b" "git push --exec=x origin b" "git push --receive=x origin b" \
     "git push --ex=x origin b" "git push origin b --e=x" \
@@ -768,6 +770,7 @@ denied() {
     "git pull --ff-only" "git pull --rebase origin main" "git fetch --prune origin" \
     "git ls-remote --exit-code origin main" "git ls-remote --heads origin" \
     "git clone https://github.com/a/my-utils" "git clone --depth 1 -b main url dir" "git clone --recurse-submodules url" "git clone --tags url" \
+    "git clone -q https://github.com/a/utils" "git clone -qb main url" \
     "git push -u origin b" "git push --recurse-submodules=check origin b" "git push --set-upstream origin b" \
     "git status --untracked-files=no" "git diff --exit-code" "git log --exclude=x" "git ls-files --exclude-standard" \
     "git grep -n foo" "git grep -e Output" "git grep --extended-regexp foo" "git commit -m fix" \

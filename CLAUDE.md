@@ -293,7 +293,7 @@ things about permission rules that are easy to get wrong:
     A commit message, a branch like `feature--env` and a file like `build-Setup.tar` pass.
   - `cmd* -X*` also matches a sibling command (`ssh-keygen -F host`). For a short flag of `ssh`, write `ssh -X*` and `ssh * -X*`.
   - Git and `sort` accept any unique prefix of a long flag: test the shortest that runs.
-  - A glob misses a short flag in a cluster (`rsync -ave`, `git clone -qu`, `ssh -vF`),
+  - A glob misses a short flag in a cluster (`rsync -ave`, `git clone -qvu`, `ssh -vF`),
     a quoted flag, a flag behind `$VAR`, and a keyword in other case (`ssh -o proxycommand=`). No hook covers these yet; the roadmap queues one.
   - A remote command that holds the flag (`ssh h 'grep -F x'`) is denied. Spell the long flag.
 - **A leading `/` in a path rule anchors to the settings file's own

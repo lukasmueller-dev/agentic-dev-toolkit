@@ -39,7 +39,7 @@ staged straight from it. Order matters within a track; tracks are independent.
 
 - [ ] **[health] Hook for the program-flag spellings a deny glob misses** — the
       deny rules in `claude/settings.json` match a flag as a word, so
-      `git clone -qu <cmd>`, `rsync -ave <cmd>`, `scp -rS <cmd>`, `git grep -nO<cmd>`,
+      `git clone -qvu <cmd>`, `rsync -ave <cmd>`, `scp -rS <cmd>`, `git grep -nO<cmd>`,
       `ssh -vF <cfg>`, `ssh -o proxycommand=<cmd>` and a quoted flag still run a
       program outside the sandbox. Add a `PreToolUse` hook beside
       `claude/hooks/deny-push-force-cluster.sh`, wired in `claude/settings.json`
