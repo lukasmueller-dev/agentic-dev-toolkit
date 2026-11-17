@@ -521,6 +521,7 @@ at_due() {
 }
 
 # vibe queue add [--now|--at HH:MM] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify=, deadline= or usd=.
+# A research coordinator's prompt (research=, no hid=) gets the block of fill-queue's references/research.md.
 cmd_queue_add() {
   local now=0 at="" dirs=() d use="usage: vibe queue add [--now|--at HH:MM] <dir>..."
   while (($#)); do
@@ -546,6 +547,12 @@ cmd_queue_add() {
     [[ "$(jget "$d/job" usd)" =~ ^([0-9]+([.][0-9]+)?)?$ ]] || die "$d: usd=$(jget "$d/job" usd) — a number of USD or empty"
   done
   for d in "${dirs[@]}"; do
+    if [[ -n "$(jget "$d/job" research)" && -z "$(jget "$d/job" hid)" ]]; then
+      {
+        echo
+        cat "$SELF_ROOT/skills/fill-queue/references/research.md"
+      } >>"$d/prompt.md"
+    fi
     d="$(queue_add "$d" "$now" "$at")"
     echo "queued ${d##*/}${at:+ — starts $at}"
   done
@@ -2373,6 +2380,7 @@ follow_ready() {
 # item `### HID <name>` of the worktree's committed RESEARCH.md, on a new branch research/<slug>/<hid> from HEAD.
 # Its job: the coordinator's repo, model, effort, timeout, research=, usd=, deadline=; hid=, place= (turing), idea=
 # (the item's name), builds= (its `Builds on:`, else root), after= (no review). The runner pushes it, no PR.
+# Its prompt: job-prompt.md, then the block of fill-queue's references/research-worker.md.
 # One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
 cmd_queue_worker() {
   local d="${VIBE_JOB_DIR:-}" h="" p=turing s k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|ias]"
@@ -2430,10 +2438,14 @@ cmd_queue_worker() {
     printf 'branch=%s\ncontext=Research worker %s: %s\nhid=%s\nplace=%s\nidea=%s\nbuilds=%s\nafter=\n' \
       "$wb" "$h" "${it%%$'\t'*}" "$h" "$p" "${it%%$'\t'*}" "${it#*$'\t'}"
   } >"$t/job"
-  job_prompt "Research worker $h: ${it%%$'\t'*}" \
-    "Item \`$h\` of \`RESEARCH.md\`, research \`$s\`: one run at $p. Session 1: the code, the smoke check, the run in the queue, \`queued:\`. Session 2: close the run, \`done:\`." \
-    "\`runs/$h/row.md\` holds the ledger row of the run and the path of its evidence" \
-    "\`RESEARCH.md\` item \`$h\`" gpu "$(jget "$d/job" repo)" "$wb" "$(job_timeout "$d")" >"$t/prompt.md"
+  {
+    job_prompt "Research worker $h: ${it%%$'\t'*}" \
+      "Item \`$h\` of \`RESEARCH.md\`, research \`$s\`: one run at $p. Session 1: the code, the smoke check, the run in the queue, \`queued:\`. Session 2: close the run, \`done:\`." \
+      "\`runs/$h/row.md\` holds the ledger row of the run and the path of its evidence" \
+      "\`RESEARCH.md\` item \`$h\`" gpu "$(jget "$d/job" repo)" "$wb" "$(job_timeout "$d")"
+    echo
+    cat "$SELF_ROOT/skills/fill-queue/references/research-worker.md"
+  } >"$t/prompt.md"
   t="$(queue_add "$t")"
   echo "queued ${t##*/}: worker $h at $p on $wb"
 }

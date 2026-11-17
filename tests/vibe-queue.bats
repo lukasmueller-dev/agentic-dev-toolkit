@@ -3109,6 +3109,31 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
+@test "research prompts: add appends the coordinator block to a research= job with no hid=; a worker prompt ends in the worker block" {
+  local r w a b c j n
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a" b="$BATS_TEST_TMPDIR/b" c="$BATS_TEST_TMPDIR/c"
+  mkprep "$a" "$r" rq
+  echo research=q1 >>"$a/job"
+  mkprep "$b" "$r" plain
+  mkprep "$c" "$r" rw
+  printf 'research=q1\nhid=h9\n' >>"$c/job"
+  run "$VIBE" queue add "$a" "$b" "$c"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$(qjob -proj-rq)/prompt.md")" = "$(printf 'Do the task.\nMODE=ok\n\n' && cat "$REPO_ROOT/skills/fill-queue/references/research.md")" ]
+  [ "$(cat "$(qjob -proj-plain)/prompt.md")" = "$(printf 'Do the task.\nMODE=ok')" ]
+  [ "$(cat "$(qjob -proj-rw)/prompt.md")" = "$(printf 'Do the task.\nMODE=ok')" ]
+  w="$(coord_wt "$r")"
+  coord "$r" "$w"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h1
+  [ "$status" -eq 0 ]
+  j="$(qjob -research-q1-h1)"
+  n="$(wc -l <"$REPO_ROOT/skills/fill-queue/references/research-worker.md")"
+  [ "$(tail -n "$((n + 1))" "$j/prompt.md")" = "$(echo && cat "$REPO_ROOT/skills/fill-queue/references/research-worker.md")" ]
+  grep -qxF '# Agent job: Research worker h1: wider net' "$j/prompt.md"
+  [ "$(grep -c '^## Research' "$j/prompt.md")" = 1 ]
+}
+
 @test "worker: refused at workers= live workers; an ended worker or another research counts not; one hid runs once" {
   local r w n
   r="$(make_repo proj)"
