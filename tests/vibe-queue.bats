@@ -2773,7 +2773,7 @@ refused() {
   [ "$out" = "vibe: $2" ]
 }
 
-@test "gpu --place: a bad conf, a place it lacks, a missing secret, no run script, an uncommitted folder or a second run is one error line; nothing is queued" {
+@test "gpu --place: a bad conf, a place it lacks, a missing secret, no run script, an uncommitted folder or file, or a second run is one error line; nothing is queued" {
   local r c f=.claude/research good e="$HOME/.config/vibe/workspaces/research-proj.env"
   places
   r="$(research_repo)"
@@ -2812,6 +2812,10 @@ refused() {
   [ ! -e "$Q/01-a/run" ]
   [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
   git -C "$r" checkout -q -- "$f"
+  echo "# changed" >>"$r/train.sh"
+  refused runpod "commit your changes first: the run takes the worktree's HEAD"
+  git -C "$r" checkout -q -- train.sh
+  echo scratch >"$r/scratch.txt"
   mkdir "$Q/01-a/run"
   refused runpod "this job queued its run already ($Q/01-a/run): one run per session"
   [ -z "$(ls "$Q/01-a/run")" ]

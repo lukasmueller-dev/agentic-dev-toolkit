@@ -2160,6 +2160,8 @@ place_queue() {
   [[ -x "$WS_ROOT/_places/$p" ]] || die "no place script '$p' in $WS_ROOT/_places"
   [[ -f "$wt/$f/run" && -x "$wt/$f/run" ]] || die "$f/run is missing or not executable: the place runs it"
   [[ -z "$(agent_git -C "$wt" status --porcelain -- "$f")" ]] || die "commit $f/ first: the run takes the worktree's HEAD"
+  # Tracked files only: the sandbox puts untracked placeholder files in the worktree root.
+  [[ -z "$(agent_git -C "$wt" status --porcelain -uno)" ]] || die "commit your changes first: the run takes the worktree's HEAD"
   [[ ! -e "$d/run" ]] || die "this job queued its run already ($d/run): one run per session"
   t="$(mktemp -d "$d/.run.XXXXXX")"
   echo "$p" >"$t/place"
