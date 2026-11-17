@@ -3,12 +3,12 @@
 # vibe-job.sh WORKTREE NAME MODEL PROMPT [EFFORT] [SESSION] [MAX_TURNS] — `vibe queue run` hook: one
 # headless Claude session in WORKTREE, prompt from the file PROMPT; SESSION resumes that
 # session; MAX_TURNS caps its turns. Nothing answers a permission prompt; vibe-job-settings.json keeps it sandboxed.
-# A FIFO at $VIBE_JOB_DIR/steer (queue.conf steer=1): each NUL-ended text in it is one more user message.
+# A FIFO at $VIBE_STEER (queue.conf steer=1): each NUL-ended text in it is one more user message.
 set -euo pipefail
 
 dir="$1" name="$2" model="${3:-sonnet}" prompt="$4" effort="${5:-}" session="${6:-}" turns="${7:-}"
 here="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fifo="${VIBE_JOB_DIR:?}/steer"
+fifo="${VIBE_STEER:-}"
 
 cd "$dir"
 extra=()
@@ -18,7 +18,7 @@ if [[ -n "$turns" ]]; then extra+=(--max-turns "$turns"); fi
 args=(-p --model "$model" "${extra[@]+"${extra[@]}"}" --name "$name"
   --permission-mode auto --permission-prompts none
   --settings "$here/vibe-job-settings.json"
-  --add-dir "$VIBE_JOB_DIR"
+  --add-dir "${VIBE_JOB_DIR:?}"
   --output-format stream-json --verbose)
 if [[ ! -p "$fifo" ]]; then exec claude "${args[@]}" <"$prompt"; fi
 

@@ -26,9 +26,7 @@
       "allowWrite": [
         "~/.cache/huggingface",
         "~/.cache/pip",
-        "~/.cache/uv",
-        "~/.local/state/gpu-queue",
-        "~/.local/state/vibe/queue"
+        "~/.cache/uv"
       ]
     }
   }
