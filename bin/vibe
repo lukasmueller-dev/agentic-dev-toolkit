@@ -329,7 +329,7 @@ cmd_status() {
 }
 
 cmd_update_toolkit() {
-  local t="$TOOLKIT" def units before after rbefore rafter wbefore wafter
+  local t="$TOOLKIT" def units before after rbefore rafter wbefore wafter ud
   [[ $# -eq 0 ]] || die "usage: vibe update-toolkit"
   git -C "$t" rev-parse --git-dir >/dev/null 2>&1 || die "$t is not a git checkout"
   def="$(default_branch "$t")"
@@ -349,6 +349,17 @@ cmd_update_toolkit() {
   if [[ "$before" != "$after" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     systemctl --user daemon-reload
     echo "units reloaded; a changed claude-rc@ unit takes effect after: systemctl --user restart 'claude-rc@*' (stops running sessions)"
+    # Triage left vibe-jobs.service for vibe-triage.timer: a server with vibe-jobs.timer enabled gets it once.
+    # A triage timer already linked, enabled or not, stays as it is.
+    ud="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+    if [[ -L "$ud/timers.target.wants/vibe-jobs.timer" && ! -e "$ud/vibe-triage.timer" && ! -L "$ud/vibe-triage.timer" ]]; then
+      if systemctl --user link "$HOME/.claude/systemd/vibe-triage.service" "$HOME/.claude/systemd/vibe-triage.timer" &&
+        systemctl --user enable --now vibe-triage.timer; then
+        echo "triage timer enabled: vibe-triage.timer"
+      else
+        warn "vibe-triage.timer not enabled: docs/vibe-jobs.md step 2"
+      fi
+    fi
   fi
   # The runner holds bin/vibe and the lib in memory; running jobs survive (KillMode=process).
   if [[ "$rbefore" != "$rafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
