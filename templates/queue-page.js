@@ -1,8 +1,8 @@
 /* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
-   Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
+   Panel: a hidden block per row (#job-<key>); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: a paste step's Copy writes its text to the clipboard; /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
-   Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
-   Output: .pout under the block; Roadmap and Worktrees as rows, each with its own button; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
+   Args: the data-* of the nearest .jacts, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
+   Output: .pout under the block; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
@@ -72,7 +72,7 @@
     else if (!panel.open) panel.showModal();
     return blk;
   };
-  const shut = () => { pout.hidden = true; if (/^#(job-|new$)/.test(location.hash)) history.pushState(null, '', '#queue'); show(); };
+  const shut = () => { pout.hidden = true; if (/^#job-/.test(location.hash)) history.pushState(null, '', '#queue'); show(); };
   const poll = async () => {
     if (!document.body.classList.contains('can')) who(); /* no buttons yet: the server may be back */
     if (busy || $('button.armed')) return; /* a swap would un-arm a confirm button */
@@ -115,29 +115,6 @@
   };
   const say = (t, bad) => { msg.textContent = t; msg.classList.toggle('bad', !!bad); };
   const el = (tag, text) => { const n = document.createElement(tag); if (text) n.textContent = text; return n; };
-  /* **bold** and `code` as nodes: the text stays text. */
-  const inline = (n, s) => { s.split(/(\*\*[^*]+\*\*|`[^`]+`)/).forEach((p, i) => n.append(i % 2 === 0 ? p : p[0] === '*' ? el('b', p.slice(2, -2)) : el('code', p.slice(1, -1)))); return n; };
-  const row = (data, title, lines, button) => {
-    const r = el('div'); r.className = 'prow'; Object.assign(r.dataset, data);
-    r.append(inline(el('b'), title));
-    lines.filter(Boolean).forEach(l => r.append(inline(el('p'), l)));
-    if (button) r.append(button);
-    return r;
-  };
-  const rows = (list, empty) => { const d = el('div'); d.className = 'prows'; d.append(...list); pbody.replaceChildren(list.length ? d : el('pre', empty)); };
-  const action = (text, act, data) => { const b = el('button', text); b.type = 'button'; b.dataset.act = act; Object.assign(b.dataset, data); return b; };
-  const ask = (name, label, b) => { const s = el('span'), l = el('label', label), f = el('input'); s.className = 'ask'; f.name = name; l.append(f); s.append(l, b); return s; };
-  const views = {
-    roadmap: (txt, a) => rows(txt.split('\n').flatMap(l => {
-      const m = /^(\d+): (.*)$/.exec(l); if (!m) return [];
-      const t = /^\*\*(.+?)\*\*\s*(?:— )?(.*)$/.exec(m[2]) || [0, m[2], ''], k = t[2].search(/\b[Dd]one when\b/);
-      return row({ repo: a.repo, line: m[1] }, t[1], k < 0 ? [t[2]] : [t[2].slice(0, k), t[2].slice(k)], ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {})));
-    }), 'No open roadmap item.'),
-    worktrees: txt => rows(txt.split('\n').flatMap(l => {
-      const [state, path, branch, why] = l.split('\t'); if (!why) return [];
-      return row({ path }, branch === '-' ? path : branch, [`${state}: ${why}`], /^(merged|prunable)$/.test(state) ? action('Remove', 'worktree-remove', { confirm: '' }) : null);
-    }), 'No linked worktree.'),
-  };
   $('body > #panel > .close').addEventListener('click', shut);
   panel.addEventListener('cancel', e => { e.preventDefault(); shut(); }); /* Esc on the modal */
   panel.addEventListener('click', e => { /* the backdrop; a tap on the sheet's empty part has the same target */
@@ -197,11 +174,11 @@
       } catch (err) { if (v === view) say('no answer from /queue/api', true); }
       return;
     }
-    /* main, the blocks and the rows rows() built only: their text is escaped; a .md (Triage, Tools, Config, a file) carries agent-written Markdown. */
+    /* main and the blocks only: their text is escaped; a .md (Triage, Tools, Config, a file) carries agent-written Markdown. */
     const b = e.target.closest('button[data-act]');
-    if (!b || b.closest('.md') || !(main.contains(b) || blocks.contains(b) || b.closest('.prows')?.parentNode === pbody)) return;
+    if (!b || b.closest('.md') || !(main.contains(b) || blocks.contains(b))) return;
     if (b.disabled || !document.body.classList.contains('can')) return;
-    const card = b.closest('.jacts, .prow'), inner = pout.contains(b), box = b.closest('.ask');
+    const card = b.closest('.jacts'), box = b.closest('.ask');
     const fields = box ? [...box.querySelectorAll('[name]')] : [], vals = {};
     for (const x of fields) {
       const v = x.value.trim().replace(/\s*\n\s*/g, ' '); /* one line: a route refuses control characters */
@@ -216,11 +193,10 @@
       return;
     }
     b.classList.remove('armed'); /* the poll after the write may swap again */
-    /* data-id, data-pr, data-repo, data-feature, data-job; a row: data-line, data-path; then the fields */
+    /* data-id, data-pr, data-repo, data-feature, data-job, data-server, data-name; then the fields */
     const args = Object.assign({}, card && card.dataset, vals);
     b.disabled = true;
-    const v = inner ? view : out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || args.name || '');
-    if (inner) say('…');
+    const v = out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || args.name || args.server || '');
     let done = false;
     try {
       const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
@@ -228,11 +204,9 @@
       if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; }); /* a field at its default frees its part for the swap */
       if (v !== view) { /* a newer view is open */ }
       else if (!r.ok) say(`refused: ${j.error}`, true);
-      else if (inner) say((done ? '' : `exit ${j.code}\n`) + j.out, !done);
-      else if (done && views[b.dataset.act]) { say(''); views[b.dataset.act](j.out, args); }
       else { say(done ? '' : `exit ${j.code}`, !done); pbody.replaceChildren(el('pre', j.out || 'Done.')); }
     } catch (err) { if (v === view) say('no answer from /queue/api', true); }
-    b.disabled = inner ? done : false; /* a row that worked stays off: its item is queued, its worktree gone */
+    b.disabled = false;
     if (busy) again = true; else await poll();
   });
 })();

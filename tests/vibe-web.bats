@@ -60,7 +60,7 @@ post() {
     -H 'Content-Type: application/json' -d '{}' "$@"
 }
 
-@test "vibe-web: the right login pauses and resumes; one log line per write; the page shows it" {
+@test "vibe-web: the right login pauses and resumes; one log line per write; the page shows the new state" {
   run post /queue/api/pause
   [ "${lines[1]}" = 200 ]
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
@@ -68,7 +68,6 @@ post() {
   [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
   grep -q $'\tme@example.com\tvibe queue pause\t0$' "$Q/actions.log"
   grep -q 'data-act="resume"' "$Q/web/index.html"
-  grep -q 'vibe queue pause' "$Q/web/index.html"
   run post /resume
   [ "${lines[1]}" = 200 ]
   [ ! -e "$Q/paused" ]
@@ -138,7 +137,7 @@ post() {
   grep -qF "if (!document.body.classList.contains('can')) who();" "$Q/web/page.js"
   grep -qF "if (busy || \$('button.armed')) return;" "$Q/web/page.js"
   # Raw HTML in a .md can repeat any id or class chain: a guard compares nodes, and no .md button works.
-  grep -qF "main.contains(b) || blocks.contains(b) || b.closest('.prows')?.parentNode === pbody" "$Q/web/page.js"
+  grep -qF "if (!b || b.closest('.md') || !(main.contains(b) || blocks.contains(b))) return;" "$Q/web/page.js"
   grep -qF "b.closest('.md') ||" "$Q/web/page.js"
   run grep -F "'#queue " "$Q/web/page.js"
   [ "$status" -eq 1 ]
@@ -192,15 +191,13 @@ post() {
   grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
   grep -qF "if (held(live)) { if (swapIn(live, \$(s, n))) kept = true; else p[2] = h; continue; }" "$js"
   grep -qF "if (r.ok && !kept) last = t;" "$js"
-  # The roadmap rows get a Branch slug field, not a prompt.
-  grep -qF "ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {}))" "$js"
-  # The panel: Close, the empty note, the blocks with New job last, the output.
+  # The panel: Close, the empty note, the blocks, the output; no New job.
   grep -qF '<dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">' "$Q/web/index.html"
   # From 1200 px Close shows only with a button's output: the column itself never closes.
   grep -qF '#panel:has(> .pout[hidden]) > .close { display: none; }' "$Q/web/index.html"
-  grep -qF '<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>' "$Q/web/index.html"
   grep -qF '</div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>' "$Q/web/index.html"
-  grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
+  run grep -c 'id="new"\|href="#new"' "$Q/web/index.html"
+  [ "$output" = 0 ]
 }
 
 @test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps; a research card fits the panel" {
@@ -615,16 +612,16 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   grep -qx 'Answer: Use the cache.' "$n/prompt.md"
 }
 
-@test "route fix: a follow-up job on the PR's branch, also from an archived job; refuses while one is queued or running" {
+@test "vibe queue fix: a follow-up job on the PR's branch, also from an archived job; refuses while one is queued or running" {
   local n
   qjob "$ID" "done"
   echo "$URL" >"$Q/queue/$ID/pr"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "data-pr=\"$URL\"><span class=\"ask\"><label>Fix job: what to change on the PR<textarea name=\"text\" rows=\"3\"></textarea></label><button data-act=\"fix\">" "$Q/web/index.html"
+  run grep -c 'data-act="fix"' "$Q/web/index.html"
+  [ "$output" = 0 ]
   "$REPO_ROOT/bin/vibe" queue archive "$ID" >/dev/null
-  run act fix "{\"pr\": \"$URL\", \"text\": \"Rename foo to bar.\"}"
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue fix "$URL" Rename foo to bar.
+  [ "$status" -eq 0 ]
   n="$(newjob)"
   grep -qx branch=task "$n/job"
   grep -qF "Fix on $URL (the task above is done; do only this): Rename foo to bar." "$n/prompt.md"
@@ -638,8 +635,6 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   run "$REPO_ROOT/bin/vibe" queue fix https://github.com/o/proj/pull/99 x
   [ "$status" -eq 1 ]
   [[ "$output" == *"no job has PR"* ]] || false
-  run act fix '{"pr": "https://evil.example.com/pull/7", "text": "x"}'
-  [ "${lines[1]}" = 400 ]
 }
 
 @test "vibe queue ready: refuses a failing check and SPEC.md, RESEARCH.md or HANDOFF.md in the diff; then marks no PR ready" {
@@ -761,8 +756,8 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
 }
 
-@test "route merge-order: smallest first; each PR names the later ones that share a file; a bad repo is 400" {
-  local r b
+@test "vibe queue merge-order: smallest first; each PR names the later ones that share a file" {
+  local r
   r="$(make_repo proj)"
   printf '30\t12\n5\t14\n100\t15\n' >"$STUBS/prs"
   printf 'a.txt\nb.txt\n' >"$STUBS/files-12"
@@ -772,16 +767,6 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ "$status" -eq 0 ]
   [ "$output" = "$(printf '1. #14 — 5 lines — can conflict: #12\n2. #12 — 30 lines\n3. #15 — 100 lines')" ]
   grep -q -- '^pr list --state open --limit 1000 ' "$STUBS/gh.log"
-  qjob "$ID" "done"
-  echo https://github.com/o/proj/pull/12 >"$Q/queue/$ID/pr"
-  run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><button data-act=\"merge-order\">" "$Q/web/index.html"
-  run act merge-order "{\"repo\": \"$r\"}"
-  [[ "${lines[0]}" == *'1. #14'* ]] || false
-  for b in '{"repo": "rel/path"}' '{"repo": "/a/../b"}' '{"repo": "/-x"}'; do
-    run act merge-order "$b"
-    [ "${lines[1]}" = 400 ]
-  done
   : >"$STUBS/prs"
   run "$REPO_ROOT/bin/vibe" queue merge-order "$r"
   [ "$output" = "no ready PR in proj" ]
@@ -843,20 +828,6 @@ no_slot() {
   [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
 }
 
-@test "route new: queues the job; an absent done-when or a bad branch is 400" {
-  local r
-  r="$(make_repo proj)"
-  run act new "{\"repo\": \"$r\", \"branch\": \"feat-y\", \"done\": \"grep -q y y.txt\", \"task\": \"Write y.\"}"
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
-  grep -qx branch=feat-y "$(qnew)/job"
-  run act new "{\"repo\": \"$r\", \"branch\": \"feat-z\", \"done\": \"\", \"task\": \"Write z.\"}"
-  [ "${lines[1]}" = 400 ]
-  run act new "{\"repo\": \"$r\", \"branch\": \"-x\", \"done\": \"d\", \"task\": \"t\"}"
-  [ "${lines[1]}" = 400 ]
-  [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
-}
-
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
 @test "vibe queue roadmap: without --full each item is its title, a long one cut at 80; a bad flag is refused" {
   local r long
@@ -873,28 +844,27 @@ no_slot() {
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
-@test "route roadmap: the open items of origin's PROJECT_ROADMAP.md with their line; roadmap-new queues one" {
+@test "vibe queue roadmap --full: the open items of origin's PROJECT_ROADMAP.md with their line; new --line queues one" {
   local r n
   r="$(make_repo proj)"
   printf '# Roadmap\n\n## Items\n\n- [ ] **Item one** — do it.\n      Done when `make check` passes.\n- [x] **Old** — gone.\n- [ ] Item two has no done-when.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
   printf '# Roadmap\n\n- [ ] **Local only** — not pushed.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" commit -q -am local
-  run act roadmap "{\"repo\": \"$r\"}"
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'5: **Item one** '*'Done when `make check` passes.\n8: Item two has no done-when.'* ]] || false
-  [[ "${lines[0]}" != *'Local only'* ]] || false
-  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"8\", \"branch\": \"item-two\"}"
-  [[ "${lines[0]}" == *'"code": 1'*'no done-when'* ]] || false
-  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"5\", \"branch\": \"item-one\"}"
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue roadmap --full "$r"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'5: **Item one** '*'Done when `make check` passes.'$'\n''8: Item two has no done-when.'* ]] || false
+  [[ "$output" != *'Local only'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue new --line 8 "$r" item-two
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'no done-when'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue new --line 5 "$r" item-one
+  [ "$status" -eq 0 ]
   n="$(qnew)"
   no_slot "$n/prompt.md"
   grep -qxF -- '- **Source:** `PROJECT_ROADMAP.md:5`' "$n/prompt.md"
   grep -qxF -- '- **Done when:** `make check` passes.' "$n/prompt.md"
   grep -qx 'context=Item one' "$n/job"
-  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"0\", \"branch\": \"x\"}"
-  [ "${lines[1]}" = 400 ]
 }
 
 # optin REPO JOB — REPO opts into the catalogue JOB, committed.
@@ -909,10 +879,10 @@ optin() {
   r="$(make_repo proj)"
   optin "$r" codebase-health
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "data-job=\"codebase-health\"><button data-act=\"run\">codebase-health</button></div>" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button></div>" "$Q/web/index.html"
   mkdir -p "${f%/*}" && echo 2 >"$f"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<button data-act="reset">Reset codebase-health</button>' "$Q/web/index.html"
+  grep -qF "<td>stopped</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"reset\">Reset</button></div>" "$Q/web/index.html"
   run "$REPO_ROOT/bin/vibe" job list "$r"
   [[ "$output" == *"vibe job reset proj codebase-health"* ]] || false
   run "$REPO_ROOT/bin/vibe" job reset proj codebase-health
@@ -936,72 +906,55 @@ optin() {
   grep -qx recurring=codebase-health "$(qnew)/job"
 }
 
-@test "route triage: vibe job triage writes its lines" {
-  local r
-  r="$(make_repo proj)"
-  printf '7\037%s\037task\037main\037MERGEABLE\037lint\0370\n' "$URL" >"$STUBS/prs"
-  run act triage '{}'
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
-  grep -q 'CI red: lint' "$Q/triage.md"
-  grep -q '^pr list --label agent' "$STUBS/gh.log"
-  grep -q '<button data-act="triage">' "$Q/web/index.html"
-}
-
 # shellcheck disable=SC2016  # a literal $PWD in the prompt
-@test "route opt-in: a new job on opt-in-<job> that runs vibe job add; refuses an unknown or opted-in job" {
+@test "vibe queue new --opt-in: a new job on opt-in-<job> that runs vibe job add; refuses an unknown or opted-in job" {
   local r n
   r="$(make_repo proj)"
-  run act opt-in "{\"repo\": \"$r\", \"job\": \"stale-state\"}"
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue new --opt-in stale-state "$r"
+  [ "$status" -eq 0 ]
   n="$(qnew)"
   grep -qx branch=opt-in-stale-state "$n/job"
   grep -qF 'vibe job add "$PWD" stale-state' "$n/prompt.md"
   no_slot "$n/prompt.md"
-  run act opt-in "{\"repo\": \"$r\", \"job\": \"nosuch\"}"
-  [[ "${lines[0]}" == *'"code": 1'*"no recurring job 'nosuch'"* ]] || false
-  optin "$r" lean-audit
-  run act opt-in "{\"repo\": \"$r\", \"job\": \"lean-audit\"}"
-  [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
-  "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<option value=\"$r\">proj</option></select></label><label>Task<textarea name=\"task\" rows=\"3\"></textarea></label><label>Done when: a command that checks it<input name=\"done\"></label><label>Branch slug<input name=\"branch\"></label><button data-act=\"new\">Queue job</button>" "$Q/web/index.html"
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\"><span class=\"lbl\">proj</span><button data-act=\"roadmap\">Roadmap</button><span class=\"ask\"><label>Recurring job<select name=\"job\">" "$Q/web/index.html"
-  grep -qF '<option>stale-state</option>' "$Q/web/index.html"
-  run grep -qF '<option>lean-audit</option>' "$Q/web/index.html"
+  run "$REPO_ROOT/bin/vibe" queue new --opt-in nosuch "$r"
   [ "$status" -eq 1 ]
+  [[ "$output" == *"no recurring job 'nosuch'"* ]] || false
+  optin "$r" lean-audit
+  run "$REPO_ROOT/bin/vibe" queue new --opt-in lean-audit "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'already has'* ]] || false
 }
 
 # shellcheck disable=SC2016  # Markdown backticks, not expansions
-@test "roadmap-new: takes the item you listed, at its line on origin now; refuses one changed since" {
+@test "vibe queue new --line: takes the item you listed, at its line on origin now; refuses one changed since" {
   local r n
   r="$(make_repo proj)"
   printf -- '- [ ] **A** — a. Done when `a` passes.\n- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
-  run act roadmap "{\"repo\": \"$r\"}"
-  [[ "${lines[0]}" == *'1: **A** '*'2: **B** '* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue roadmap --full "$r"
+  [[ "$output" == *'1: **A** '*'2: **B** '* ]] || false
   # A merged PR deletes the finished item A: B moves up to line 1.
   printf -- '- [ ] **B** — b. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" commit -q -am "drop A" && git -C "$r" push -q origin main
-  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"2\", \"branch\": \"item-b\"}"
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue new --line 2 "$r" item-b
+  [ "$status" -eq 0 ]
   n="$(qnew)"
   grep -qx 'context=B' "$n/job"
   grep -qxF -- '- **Source:** `PROJECT_ROADMAP.md:1`' "$n/prompt.md"
   printf -- '- [ ] **B** — b, changed. Done when `b` passes.\n' >"$r/PROJECT_ROADMAP.md"
   git -C "$r" commit -q -am "change B" && git -C "$r" push -q origin main
-  run act roadmap-new "{\"repo\": \"$r\", \"line\": \"2\", \"branch\": \"item-b2\"}"
-  [[ "${lines[0]}" == *'"code": 1'*'changed or left origin'* ]] || false
+  run "$REPO_ROOT/bin/vibe" queue new --line 2 "$r" item-b2
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'changed or left origin'* ]] || false
   [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
 }
 
 @test "routes: a long output keeps its first and its last lines" {
-  local r i
-  r="$(make_repo proj)"
-  for i in $(seq 1 400); do printf -- '- [ ] Item %03d %s\n' "$i" "$(printf '%070d' 0)"; done >"$r/PROJECT_ROADMAP.md"
-  git -C "$r" add PROJECT_ROADMAP.md && git -C "$r" commit -q -m roadmap && git -C "$r" push -q origin main
-  run act roadmap "{\"repo\": \"$r\"}"
-  [[ "${lines[0]}" == *'"out": "1: Item 001 '* ]] || false
-  [[ "${lines[0]}" == *'400: Item 400 '* ]] || false
+  printf '#!/bin/sh\nfor i in $(seq 1 400); do printf "Line %%03d %%070d\\n" "$i" 0; done\n' >"$STUBS/systemctl"
+  run act restart '{}'
+  [[ "${lines[0]}" == *'"out": "Line 001 '* ]] || false
+  [[ "${lines[0]}" == *'Line 400 '* ]] || false
+  [[ "${lines[0]}" != *'Line 200 '* ]] || false
 }
 
 @test "queue.conf: a trailing # comment, as in the docs, is no part of the value" {
@@ -1056,10 +1009,8 @@ optin() {
   [ ! -e "$Q/queue/$ID-gpu" ]
 }
 
-@test "routes servers and server-restart: systemctl restarts claude-rc@<name>; a glob or option is 400" {
-  run act servers '{}'
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'*"role: server"* ]] || false
+@test "route server-restart: systemctl restarts claude-rc@<name>; a glob or option is 400; a Restart per unit file" {
+  local u="$XDG_CONFIG_HOME/systemd/user"
   run act server-restart '{"server": "agentic-dev-toolkit"}'
   [ "${lines[1]}" = 200 ]
   grep -qx -- '--user restart claude-rc@agentic-dev-toolkit' "$STUBS/systemctl.log"
@@ -1068,72 +1019,14 @@ optin() {
     [ "${lines[1]}" = 400 ]
   done
   [ "$(grep -c restart "$STUBS/systemctl.log")" = 1 ]
+  # The servers: an instance unit file in the user dir or a *.wants/ of it, each once; the template is none.
+  mkdir -p "$u/default.target.wants"
+  touch "$u/claude-rc@.service" "$u/claude-rc@thesis.service"
+  ln -s "$u/claude-rc@thesis.service" "$u/default.target.wants/claude-rc@thesis.service"
+  ln -s "$u/claude-rc@.service" "$u/default.target.wants/claude-rc@agentic-dev-toolkit.service"
   run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="ask"><label>Server to restart (Servers lists them)<input name="server"></label><button data-act="server-restart" data-confirm>Restart server</button></span>' "$Q/web/index.html"
-}
-
-@test "routes worktrees and worktree-remove: a merged one goes; dirty, unpushed and locked stay" {
-  local r w
-  r="$(make_repo proj)"
-  w="$r/.claude/worktrees"
-  for b in merged dirty unpushed locked; do git -C "$r" worktree add -q -b "$b" "$w/$b"; done
-  echo x >"$w/dirty/x.txt"
-  git -C "$w/unpushed" commit -q --allow-empty -m "local work"
-  git -C "$r" worktree lock "$w/locked"
-  run act worktrees "{\"repo\": \"$r\"}"
-  [ "${lines[1]}" = 200 ]
-  for b in merged dirty unpushed locked; do
-    [[ "${lines[0]}" == *"$b\\t$w/$b"* ]] || false
-  done
-  for b in dirty unpushed locked; do
-    run act worktree-remove "{\"path\": \"$w/$b\"}"
-    [ "${lines[1]}" = 200 ]
-    [[ "${lines[0]}" == *'"code": 1'*"skip $w/$b: $b"* ]] || false
-    [ -d "$w/$b" ]
-  done
-  run act worktree-remove "{\"path\": \"$w/merged\"}"
-  [[ "${lines[0]}" == *'"code": 0'* ]] || false
-  [ ! -e "$w/merged" ]
-  run act worktree-remove "{\"path\": \"$w/../../x\"}"
-  [ "${lines[1]}" = 400 ]
-  echo "$r" >"$XDG_CONFIG_HOME/vibe/repos"
-  run "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "action('Remove', 'worktree-remove', { confirm: '' })" "$Q/web/page.js"
-  grep -qF "<label>Repo<select name=\"repo\"><option value=\"$r\">proj</option></select></label><button data-act=\"worktrees\">Worktrees</button>" "$Q/web/index.html"
-}
-
-@test "route sync: vibe sync --all pushes a worktree's new branch" {
-  local r
-  r="$(make_repo proj)"
-  git -C "$r" worktree add -q -b feat "$r/.claude/worktrees/feat"
-  git -C "$r/.claude/worktrees/feat" commit -q --allow-empty -m "feat work"
-  run act sync '{}'
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'*pushed*feat* ]] || false
-  git -C "$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify refs/heads/feat
-  grep -q $'\tvibe sync --all\t0$' "$Q/actions.log"
-}
-
-@test "route update-toolkit: pulls, installs; a changed endpoint is not restarted under the request" {
-  local t o
-  t="$(make_repo kit)"
-  printf '#!/bin/sh\necho "install $*" >>"%s/install.log"\n' "$STUBS" >"$t/install.sh"
-  chmod +x "$t/install.sh"
-  git -C "$t" add install.sh && git -C "$t" commit -q -m installer && git -C "$t" push -q origin main
-  o="$(clone_repo kit kit-other)"
-  mkdir -p "$o/bin" && echo new >"$o/bin/vibe-web"
-  git -C "$o" add bin && git -C "$o" commit -q -m endpoint && git -C "$o" push -q origin main
-  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
-  VIBE_TOOLKIT="$t" web_start
-  run act update-toolkit '{}'
-  [ "${lines[1]}" = 200 ]
-  [[ "${lines[0]}" == *'"code": 0'*"page endpoint restarts after this reply"* ]] || false
-  [ "$(git -C "$t" rev-parse HEAD)" = "$(git -C "$o" rev-parse HEAD)" ]
-  [ "$(cat "$STUBS/install.log")" = "$(printf 'install \ninstall doctor')" ]
-  run grep vibe-web "$STUBS/systemctl.log"
-  [ "$status" -ne 0 ]
-  run "$REPO_ROOT/bin/vibe" queue page
-  grep -q 'data-act="update-toolkit" data-confirm' "$Q/web/index.html"
+  [ "$(grep -o 'data-server="[^"]*"><button data-act="server-restart" data-confirm>Restart [^<]*' "$Q/web/index.html" | paste -sd, -)" = \
+    'data-server="agentic-dev-toolkit"><button data-act="server-restart" data-confirm>Restart agentic-dev-toolkit,data-server="thesis"><button data-act="server-restart" data-confirm>Restart thesis' ]
 }
 
 # get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
@@ -1239,6 +1132,20 @@ get() {
   mv "$d/log" "$d/log.real" && ln -s "$d/log.real" "$d/log"
   run get "/job/$ID/activity"
   [ "${lines[1]}" = 404 ]
+}
+
+@test "vibe-web: no route the page dropped is left in ROUTES; a post to one is 404" {
+  local r
+  run python3 -c 'import importlib.machinery, importlib.util, sys
+l = importlib.machinery.SourceFileLoader("vw", sys.argv[1]); m = importlib.util.module_from_spec(importlib.util.spec_from_loader("vw", l)); l.exec_module(m)
+print(" ".join(sorted(m.ROUTES)))' "$REPO_ROOT/bin/vibe-web"
+  [ "$status" -eq 0 ]
+  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-restart steer stop unlimit ws-start ws-stop' ]
+  for r in fix merge-order new roadmap roadmap-new opt-in triage servers worktrees worktree-remove sync update-toolkit; do
+    run act "$r" '{"id": "20261104-080000-proj-task", "repo": "/x", "pr": "https://github.com/o/p/pull/1", "text": "x"}'
+    [ "${lines[1]}" = 404 ]
+  done
+  [ ! -e "$Q/actions.log" ]
 }
 
 @test "route job/<id>/<file>?html: a .md through pandoc under the API's CSP; without pandoc escaped; other files stay text" {

@@ -47,7 +47,7 @@ body:has(.s-running, .s-gpu) .rail svg .run { display: inline; }
 @keyframes gen { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { body:has(.s-running, .s-gpu) .rail svg .mark { display: inline; } body:has(.s-running, .s-gpu) .rail svg .run { display: none; } }
 main { flex: 1 1 auto; min-width: 0; max-width: 1016px; padding: 24px 28px 48px; }
-/* Header: lamp, slots, limit, GPU holder, updated; Pause or Resume, Clear limit, New job. */
+/* Header: lamp, slots, limit, GPU holder, updated; Pause or Resume, Clear limit. */
 .head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 0 0 20px; }
 .head h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
 .head h1 span:not(.hq), body:has(#config:target, #workspaces:target, #workspaces :target) .hq { display: none; }
@@ -55,8 +55,6 @@ body:has(#config:target) .hc, body:has(#workspaces:target, #workspaces :target) 
 .stat { display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: 13px; }
 .updated.stale { color: var(--bad); }
 .updated.stale::after { content: " · stale"; }
-.head .new { display: none; }
-body.can .head .new { display: inline-flex; }
 /* Pages: #queue, else #config or #workspaces when the URL hash names it or a node in it. */
 .page { display: none; }
 #queue, .page:target, .page:has(:target) { display: block; }
@@ -109,7 +107,6 @@ summary::-webkit-details-marker { display: none; }
 .blk > .job { padding: 4px 24px 16px; }
 .blk > .job > .top { display: none; }
 .blk > .jacts { padding: 0 24px 16px; }
-#new > .jacts { padding: 16px 24px; border-bottom: 1px solid var(--line); }
 .job .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 10px 0 0; }
 .job .top b { font-weight: 500; }
 .pill { color: var(--muted); font-size: 13px; }
@@ -144,7 +141,7 @@ body.can .head .jacts { margin: 0 0 0 auto; }
 body.can .jacts .jacts { display: contents; }
 button, .btn { display: inline-flex; flex: none; align-items: center; justify-content: center; height: 32px; min-width: 84px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; color: var(--fg); font: 14px var(--sans); text-decoration: none; cursor: pointer; }
 @media (hover: hover) { button:hover:not(:disabled), .btn:hover { background: var(--surface-2); } }
-.head .new, .btn.ui { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
+.btn.ui { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 500; }
 button[data-confirm] { border-color: var(--bad-line); color: var(--bad); }
 button.armed, button.armed:hover { background: var(--lamp-bad); border-color: var(--lamp-bad); color: #fff; }
 button:disabled { opacity: .5; cursor: default; }
@@ -167,11 +164,11 @@ textarea { resize: vertical; }
 .md code { padding: 1px 4px; background: var(--surface-2); border-radius: 4px; font-size: 12px; }
 .md pre { padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; font: 12px/1.55 var(--mono); white-space: pre-wrap; }
 .md pre code { padding: 0; background: none; }
-.md table { width: 100%; border-collapse: collapse; }
-.md th { color: var(--muted); font-size: 13px; font-weight: 600; }
-.md th, .md td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+.md table, .sec table { width: 100%; border-collapse: collapse; }
+.md th, .sec th { color: var(--muted); font-size: 13px; font-weight: 600; }
+.md th, .md td, .sec th, .sec td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
 #queue > .md { margin: 0 0 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-/* Config: Settings, Actions, Recurring jobs, Page actions; each a section. */
+/* Config: Settings, Actions, Recurring jobs; each a section. */
 .sec > .jacts { padding: 0 16px 14px; }
 /* Workspaces: a row per service, lamp, label and role, state line, Open UI and Stop, or Start; a place and hours form below. */
 .wrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 16px; }
@@ -183,7 +180,7 @@ textarea { resize: vertical; }
 .why .bad { color: var(--bad); }
 body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px 16px; background: var(--surface-2); border-radius: 8px; }
 .note { margin: 0; color: var(--muted); font-size: 13px; }
-/* Panel: the block the URL hash names (#job-<key>, #new), then a button's output or a file. A right column from 1200 px;
+/* Panel: the block the URL hash names (#job-<key>), then a button's output or a file. A right column from 1200 px;
    under it a modal over the list, on a phone a bottom sheet. */
 #panel { position: fixed; inset: 0 0 0 auto; width: min(480px, 100%); height: 100%; max-width: none; max-height: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 0; border-left: 1px solid var(--line); color: var(--fg); }
 #panel::backdrop { background: rgba(0,0,0,.3); }
@@ -198,14 +195,6 @@ body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px
 .pmsg.bad { color: var(--bad); }
 .pbody > pre { margin: 0; padding: 14px 24px; color: var(--fg-2); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 #panel .md { padding: 0 24px 20px; }
-.prow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: start; padding: 12px 24px; }
-.prow + .prow { border-top: 1px solid var(--line); }
-.prow b { font-weight: 600; overflow-wrap: anywhere; }
-.prow p { grid-column: 1; margin: 0; color: var(--fg-2); font-size: 13px; overflow-wrap: anywhere; }
-.prow p + p { color: var(--muted); }
-.prow code { padding: 1px 4px; background: var(--surface-2); font-size: 12px; }
-.prow > button { grid-area: 1 / 2 / span 3; }
-.prow > .ask { grid-column: 1 / -1; }
 @media (min-width: 1200px) {
   #panel { position: sticky; inset: 0 auto auto; display: block; flex: 0 0 clamp(400px, 32vw, 560px); width: auto; height: 100vh; margin-left: auto; }
   #panel:has(> .pout[hidden]) > .close { display: none; } /* Close only while a button's output shows */
@@ -238,7 +227,7 @@ body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px
 <body>
 <nav class="rail" aria-label="Main"><a class="brand" href="#queue"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe</span></a><a class="q" href="#queue">Queue <span class="n"><you></span></a><a class="w" href="#workspaces">Workspaces</a><div class="wsl"><wsrail></div><a class="c" href="#config">Config</a></nav>
 <main>
-<header class="head"><h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1><span class="stat"><status></span><span class="jacts"><actions></span><a class="btn new" href="#new">New job</a></header>
+<header class="head"><h1><span class="hq">Queue</span><span class="hw">Workspaces</span><span class="hc">Config</span></h1><span class="stat"><status></span><span class="jacts"><actions></span></header>
 <div id="queue" class="page">
 <jobs>
 </div>
@@ -251,9 +240,6 @@ body.can .wrow > div.jacts { flex-basis: 100%; margin: 0 0 0 26px; padding: 14px
 </main>
 <dialog id="panel" aria-label="Details"><button class="close" type="button">Close</button><p class="pnone">Pick a row: its details show here.</p><div class="pblocks">
 <blocks>
-<div class="blk" id="new" hidden><div class="bh"><h2>New job</h2></div>
-<new>
-</div>
 </div><div class="pout" hidden><div class="ph"><strong></strong><span></span></div><p class="pmsg"></p><div class="pbody"></div></div></dialog>
 <script src="/queue/page.js"></script>
 </body>

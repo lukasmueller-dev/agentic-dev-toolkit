@@ -20,7 +20,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 TOOLS = {  # argv[0] of a route -> how to run it from this checkout
     "vibe": [os.path.join(ROOT, "bin", "vibe")],
     "gpu-queue": [os.path.join(ROOT, "bin", "gpu-queue")],
-    "cleanup.sh": ["bash", os.path.join(ROOT, "skills", "worktree-cleanup", "cleanup.sh")],
 }
 VIBE = TOOLS["vibe"][0]
 QROOT = os.path.join(os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "vibe")
@@ -42,27 +41,15 @@ ROUTES = {
     "archive": ["vibe", "queue", "archive", "{id}"],
     "answer": ["vibe", "queue", "answer", "{id}", "{text}"],
     "steer": ["vibe", "queue", "steer", "{id}", "{text}"],
-    "fix": ["vibe", "queue", "fix", "{pr}", "{text}"],
-    "merge-order": ["vibe", "queue", "merge-order", "{repo}"],
     "feature-ready": ["vibe", "queue", "ready", "--feature", "{feature}"],
     "feature-archive": ["vibe", "feature", "archive", "{feature}"],
     "research-archive": ["vibe", "queue", "archive", "--research", "{research}"],
     "research-stop": ["vibe", "queue", "stop", "--research", "{research}"],
     "research-stop-now": ["vibe", "queue", "stop", "--research", "{research}", "--now"],
-    "new": ["vibe", "queue", "new", "{repo}", "{branch}", "{done}", "{task}"],
-    "roadmap": ["vibe", "queue", "roadmap", "--full", "{repo}"],
-    "roadmap-new": ["vibe", "queue", "new", "--line", "{line}", "{repo}", "{branch}"],
-    "opt-in": ["vibe", "queue", "new", "--opt-in", "{job}", "{repo}"],
     "run": ["vibe", "job", "run", "{repo}", "{job}"],
     "reset": ["vibe", "job", "reset", "{repo}", "{job}"],
-    "triage": ["vibe", "job", "triage"],
     "gpu-cancel": ["gpu-queue", "cancel", "{gpu}"],
-    "servers": ["vibe", "status", "--claude"],
     "server-restart": ["systemctl", "--user", "restart", "claude-rc@{server}"],
-    "worktrees": ["cleanup.sh", "scan", "{repo}"],
-    "worktree-remove": ["cleanup.sh", "remove", "{path}"],
-    "sync": ["vibe", "sync", "--all"],
-    "update-toolkit": ["vibe", "update-toolkit"],
     "ws-start": ["vibe", "ws", "start", "{name}", "--place={place?}", "--hours={hours?}"],
     "ws-stop": ["vibe", "ws", "stop", "{name}"],
 }
@@ -71,18 +58,12 @@ ARGS = {
     "set": re.compile(r"[a-z_]{1,40}=[A-Za-z0-9.%_-]{0,40}"),
     "note": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
     "text": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
-    "pr": re.compile(r"https://github\.com/[A-Za-z0-9._-]{1,100}/[A-Za-z0-9._-]{1,100}/pull/[0-9]{1,9}"),
     "repo": re.compile(r"(/[A-Za-z0-9_][A-Za-z0-9._-]{0,100}){1,20}"),  # absolute, no .. or option
-    "path": re.compile(r"(/(?!\.\.?(/|$))[A-Za-z0-9_.][A-Za-z0-9._-]{0,100}){1,20}"),  # absolute; .claude, not . or ..
     "gpu": re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{1,10}-[A-Za-z0-9._-]{1,200}"),
     "server": re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,100}"),
     "feature": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
     "research": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
-    "branch": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
     "job": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
-    "line": re.compile(r"[1-9][0-9]{0,5}"),
-    "done": re.compile(r"[^\x00-\x1f\x7f]{1,500}"),
-    "task": re.compile(r"[^\x00-\x1f\x7f]{1,2000}"),
     "name": re.compile(r"[a-z0-9][a-z0-9._-]{0,100}"),
     "place": re.compile(r"[a-z]{1,40}"),
     "hours": re.compile(r"[1-9][0-9]{0,3}"),
@@ -159,7 +140,6 @@ def qconf(key, default=""):
 
 # GET job/<id>/<file>; a log: its tail; out/files: a tool's folder result as a list of its files; activity: from log, as JSON.
 FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log", "tool.log", "out/report.md", "out/files", "activity")
-STARTED = os.stat(os.path.realpath(__file__)).st_mtime  # update-toolkit changed it: re-exec after the reply
 TIMEOUT = int(os.environ.get("VIBE_WEB_TIMEOUT") or 120)  # s per command: a hung one must not hold WRITE for ever
 WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
 
@@ -280,9 +260,6 @@ class Handler(BaseHTTPRequestHandler):
         if len(out) > 16000:  # a listing leads with its first item, an error ends the output: keep both ends
             out = out[:12000] + "\n…\n" + out[-4000:]
         self.reply(200, {"code": r.returncode, "out": out})
-        if argv[1:2] == ["update-toolkit"] and os.stat(os.path.realpath(__file__)).st_mtime != STARTED:
-            self.wfile.flush()
-            os.execv(sys.executable, [sys.executable] + sys.argv)  # the new code; sockets close on exec
 
     def log_message(self, fmt, *args):
         sys.stderr.write("vibe-web: %s\n" % (fmt % args))
