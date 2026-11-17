@@ -3186,12 +3186,6 @@ tool_steers() {
   [[ -x "$f" ]] && ! grep -qx 'exit 3' "$f"
 }
 
-# tool_tail FILE — its last 10 non-blank lines from the last 8 KB: ANSI codes and control characters gone, a `\r` a line break.
-tool_tail() {
-  local esc=$'\033'
-  tail -c 8192 "$1" 2>/dev/null | tr '\r' '\n' | sed -E "s/$esc\[[0-9;?]*[A-Za-z]//g" | tr '\001-\011\013-\037\177' ' ' | awk 'NF' | tail -n 10 || true
-}
-
 # job_buttons JOB — the card's fields and write buttons by status, data-confirm ones last; routes in bin/vibe-web, shown after whoami.
 # Failed, timeout or skipped: one note field, optional for Run again, needed for Put on hold (data-need); blocked: needed for both.
 job_buttons() {
@@ -3274,6 +3268,33 @@ st_label() {
     "no job") echo "No job" ;;
     finished) echo Finished ;;
     *) echo "$1" ;;
+  esac
+}
+
+# st_tip LABEL — the one-sentence tooltip of a state label; empty for another.
+st_tip() {
+  case "$1" in
+    Queued) echo "It waits for a free slot or for its start time." ;;
+    Running) echo "An agent works on it now." ;;
+    "On the GPU") echo "It waits for its GPU run to end." ;;
+    "On hold") echo "You put it aside with a note; nothing runs until you act." ;;
+    "Has a question") echo "The agent stopped on a question: answer it in the note, then Run again." ;;
+    Failed) echo "It ended with an error: Run again, Put on hold or Archive." ;;
+    "Ran out of time") echo "It hit its time limit: Run again to go on from where it stopped." ;;
+    Skipped*) echo "The runner did not start it, for the reason given." ;;
+    Done) echo "It ended without an error." ;;
+    "Waits for the GPU") echo "The run starts once the GPU is free." ;;
+    "Test it yourself") echo "Every member PR passed its checks: test the feature, then Test passed." ;;
+    "Ready to merge") echo "Every member PR is ready: merge them, then Archive." ;;
+    "Needs you") echo "One of its items needs your answer or your check." ;;
+    "No job") echo "No queued job works on this branch." ;;
+    Finished) echo "The GPU run ended with exit 0." ;;
+    Cancelled) echo "A cancel stopped the GPU run." ;;
+    "Failed, exit"*) echo "The GPU run ended with an error." ;;
+    "PR #"*) echo "It opened a draft PR: review it on GitHub." ;;
+    *"Checks failed"*) echo "The checks of the repo (.vibe-jobs/gate) failed: read the Checks log." ;;
+    *"Verify: "*) echo "The verify agent did not pass the change." ;;
+    "push failed"* | "PR not created"*) echo "The runner could not push the branch or open the PR." ;;
   esac
 }
 
@@ -3461,8 +3482,14 @@ status_card() {
     "$cls" "$(esc "$st")" "$(esc "$name")" "$(esc "$pill")" "$ph" "$(esc "$txt")" "$link" "$extra" "$details"
 }
 
-# gpu_exit CODE — a finished GPU run's state: Finished, or Failed, exit CODE.
-gpu_exit() { if [[ "$1" == 0 ]]; then echo Finished; else echo "Failed, exit $1"; fi; }
+# gpu_exit CODE — a finished GPU run's state: Finished, Cancelled, or Failed, exit CODE.
+gpu_exit() {
+  case "$1" in
+    0) echo Finished ;;
+    cancelled) echo Cancelled ;;
+    *) echo "Failed, exit $1" ;;
+  esac
+}
 
 # group_prog N/M [DIRS] — a lane, feature or research progress as the page names it: `N of M items`; a branch of jobs
 # with no lane= (DIRS, one per line): the milestone of its SPEC.md, else `N of M jobs`.
@@ -3711,7 +3738,7 @@ page_row() {
     lane) prog="$(group_prog "$4" "${10}")" why="$7" pr="$6" dir="$8" ph="${11:-}" k="$P_REPO/$2" ;;
     feature) prog="$(group_prog "$4")" why="$(st_label "$3")${5:+ · $5}" k="feature/$2" chip=Feature label="" ;;
     research) prog="$(group_prog "$4")" why="$5" pr="$6" k="research/$2" chip=Research label="" ;;
-    gpu) k="$2" t="GPU run · ${2#*-*-*-}" el="$4" why="${8:-$5}" label="${5##*/}" ;;
+    gpu) k="$2" t="GPU run · ${2#*-*-*-}" el="$4" why="${8:-}" label="${5##*/}" ;;
     *) return 0 ;;
   esac
   case "$1/$3" in
@@ -3809,8 +3836,9 @@ page_row() {
   printf '%s\t<div class="row" data-k="%s"><i class="lamp l-%s"></i><a class="t" href="#job-%s"><b>%s%s</b>%s</a>%s%s</div>\n' \
     "$sec" "$(esc "$k")" "$lamp" "$(esc "$k")" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${sub:+<span class=\"why\">$(esc "$sub")</span>}" \
     "${el:+<span class=\"el\">$(esc "$el")</span>}" "$b"
-  printf 'blk\t<div class="blk" id="job-%s" hidden><div class="bh"><i class="lamp l-%s"></i><span class="st">%s</span><h2>%s%s</h2>%s</div>%s%s</div>\n' \
-    "$(esc "$k")" "$lamp" "$(esc "$st")" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${meta:+<code class=\"meta\">$(esc "$meta")</code>}" \
+  x="$(st_tip "$st")"
+  printf 'blk\t<div class="blk" id="job-%s" hidden><div class="bh"><i class="lamp l-%s"></i><span class="st"%s>%s</span><h2>%s%s</h2>%s</div>%s%s</div>\n' \
+    "$(esc "$k")" "$lamp" "${x:+ title=\"$(esc "$x")\"}" "$(esc "$st")" "$(esc "$t")" "${prog:+ <span class=\"n\">$(esc "$prog")</span>}" "${meta:+<code class=\"meta\">$(esc "$meta")</code>}" \
     "${body//$'\n'/}" "$act"
 }
 

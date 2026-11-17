@@ -430,7 +430,7 @@ locked_out() (
   [ "$status" -eq 0 ]
   grep -qF '<div class="row" data-k="feature/teleop"><i class="lamp l-you"></i><a class="t" href="#job-feature/teleop"><b>teleop <span class="n">3 of 3 items</span></b><span class="why">Test it yourself · The gamepad drives the robot. · Feature</span></a><span class="jacts p" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button></span></div>' "$f"
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
-  grep -qF '<div class="blk" id="job-feature/teleop" hidden><div class="bh"><i class="lamp l-you"></i><span class="st">Test it yourself</span><h2>teleop <span class="n">3 of 3 items</span></h2><code class="meta">Feature</code></div><div class="job lane feature s-held">' "$f"
+  grep -qF '<div class="blk" id="job-feature/teleop" hidden><div class="bh"><i class="lamp l-you"></i><span class="st" title="Every member PR passed its checks: test the feature, then Test passed.">Test it yourself</span><h2>teleop <span class="n">3 of 3 items</span></h2><code class="meta">Feature</code></div><div class="job lane feature s-held">' "$f"
   grep -qF '<div class="job lane feature s-held"><div class="top"><b>teleop · 3 of 3 items</b><span class="pill">Test it yourself</span></div><p>The gamepad drives the robot.</p><div class="jacts" data-feature="teleop"><button data-act="feature-ready" data-confirm title="Your human test passed: mark every member PR ready">Test passed</button></div><details class="stack"><summary>3 branches</summary>' "$f"
   grep -qF '<div class="job lane s-done"><div class="top"><b>bridge · lane-x</b><span class="pill">2 of 2 items</span></div><p class="steps">' "$f"
   grep -qF '<p>Sticks <a href="https://example.com/pull/1">PR</a></p>' "$f"
@@ -452,7 +452,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   rpage
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
   grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2 of 4 items</span></b><span class="why">h3 · paste · Research · proj</span></a></div>' "$f"
-  grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">Needs you</span><h2>lr <span class="n">2 of 4 items</span></h2><code class="meta">proj · Research</code></div><div class="job lane research s-blocked">' "$f"
+  grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="One of its items needs your answer or your check.">Needs you</span><h2>lr <span class="n">2 of 4 items</span></h2><code class="meta">proj · Research</code></div><div class="job lane research s-blocked">' "$f"
   grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
   # The order: h4 builds on h1, so it sits below it, one level in.
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
@@ -473,7 +473,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   waits() {
     rpage
     grep -qF "<p>waits for $1</p>" "$f"
-    grep -qF "<span class=\"st\">$2</span><h2>lr " "$f"
+    grep -qE "<span class=\"st\" title=\"[^\"]+\">$2</span><h2>lr " "$f"
   }
   waits 'you (paste h3)' 'Needs you'
   # A coordinator that needs the user comes first, with its own buttons.
@@ -1896,7 +1896,8 @@ gpuq_end() {
   [ "$(sed -n 5p <<<"$output")" = "    $(cd "$dir" && pwd)" ]
   run "$VIBE" queue page
   [ "$status" -eq 0 ]
-  grep -qF "<section class=\"sec\" data-k=\"run\"><h2>Running <span class=\"n\">1</span></h2><div class=\"row\" data-k=\"$id\"><i class=\"lamp l-ok\"></i><a class=\"t\" href=\"#job-$id\"><b>$id</b><span class=\"why\">$(cd "$dir" && pwd)</span></a><span class=\"chip\">GPU</span><code class=\"repo\">sc-962d4a2</code></div>" "$XDG_STATE_HOME/vibe/web/index.html"
+  grep -qF "<section class=\"sec\" data-k=\"run\"><h2>Running <span class=\"n\">1</span></h2><div class=\"card\"><div class=\"row\" data-k=\"$id\"><i class=\"lamp l-ok\"></i><a class=\"t\" href=\"#job-$id\"><b>GPU run · t43</b><span class=\"why\">sc-962d4a2</span></a></div>" "$XDG_STATE_HOME/vibe/web/index.html"
+  grep -qF "<p>$(cd "$dir" && pwd)</p>" "$XDG_STATE_HOME/vibe/web/index.html"
 }
 
 @test "status: a gpu-queue run a vibe job's gpu-job names counts once; an outside queued run is added" {
@@ -1996,8 +1997,8 @@ gpuq_end() {
   [ "$status" -eq 0 ]
   [[ "$(sec queued)" == *"data-k=\"$q\""* ]] || false
   [[ "$(sec held)" == *"data-k=\"$h\""*"data-k=\"$p\""* ]] || false
-  grep -qF '<span class="pill">held</span>' "$html"
-  grep -qF '<span class="pill">parked</span>' "$html"
+  grep -qF '<span class="pill">On hold</span>' "$html"
+  grep -qF '<span class="pill">Waits for the GPU</span>' "$html"
   [ "$(grep -o 'class="job s-held"' "$html" | wc -l)" -eq 2 ]
 }
 
@@ -2023,9 +2024,10 @@ gpuq_end() {
   run "$VIBE" queue page
   [ "$status" -eq 0 ]
   [ "$(sec "done" | grep -o '<div class="row"' | wc -l)" -eq 3 ]
-  grep -qF "<div class=\"row\" data-k=\"$id3\"><i class=\"lamp l-done\"></i><a class=\"t\" href=\"#job-$id3\"><b>$id3</b><span class=\"why\">exit 1 · 2026-11-13 12:03</span></a><span class=\"chip\">GPU</span></div>" "$html"
-  grep -qF '<span class="pill">exit 1</span></div><p>2026-11-13 12:03</p>' "$html"
-  grep -qF '<span class="pill">exit cancelled</span></div><p>2026-11-14 12:04</p>' "$html"
+  grep -qF "<div class=\"row\" data-k=\"$id3\"><i class=\"lamp l-done\"></i><a class=\"t\" href=\"#job-$id3\"><b>GPU run · ${id3#*-*-*-}</b><span class=\"why\">Failed, exit 1 · 2026-11-13 12:03</span></a></div>" "$html"
+  grep -qF '<span class="pill">Failed, exit 1</span></div><p>2026-11-13 12:03</p>' "$html"
+  grep -qF '<span class="pill">Finished</span></div><p>2026-11-12 12:02</p>' "$html"
+  grep -qF '<span class="pill">Cancelled</span></div><p>2026-11-14 12:04</p>' "$html"
   [ "$(grep -cE "$id1|$own|$arch" "$html")" -eq 0 ]
 }
 
@@ -2240,7 +2242,7 @@ pandoc_stub() {
   # shellcheck disable=SC2016  # a literal $ in the expected text
   grep -qF '<p class="stats">≈$1.50 API · 7 turns · 2m</p>' "$f"
   grep -qF '<div class="row" data-k="proj/lane-x"><i class="lamp l-bad"></i><a class="t" href="#job-proj/lane-x"><b>lane-x <span class="n">1 of 3 items</span></b><span class="why">02-b · Has a question: beta needs a decision → lane-x-beta · proj</span></a></div>' "$f"
-  grep -qF '<div class="blk" id="job-proj/lane-x" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">Needs you</span><h2>lane-x <span class="n">1 of 3 items</span></h2><code class="meta">proj</code></div><div class="job lane s-blocked">' "$f"
+  grep -qF '<div class="blk" id="job-proj/lane-x" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="One of its items needs your answer or your check.">Needs you</span><h2>lane-x <span class="n">1 of 3 items</span></h2><code class="meta">proj</code></div><div class="job lane s-blocked">' "$f"
 }
 
 # acts_of LINE — the buttons, empty rows, labels and file lines of one button group, in page order.
@@ -2289,8 +2291,8 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   run grep -c '<details class="row"\|<summary><i class="lamp' "$f"
   [ "$output" = 0 ]
   # The head: lamp, state, title, meta line; the reason a done job needs you is its state.
-  grep -qF '<div class="blk" id="job-09-rev" hidden><div class="bh"><i class="lamp l-you"></i><span class="st">PR #9 to review</span><h2>09-rev</h2><code class="meta">proj · b09</code></div>' "$f"
-  grep -qF '<div class="blk" id="job-07-pus" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">push failed</span>' "$f"
+  grep -qF '<div class="blk" id="job-09-rev" hidden><div class="bh"><i class="lamp l-you"></i><span class="st" title="It opened a draft PR: review it on GitHub.">PR #9 to review</span><h2>09-rev</h2><code class="meta">proj · b09</code></div>' "$f"
+  grep -qF '<div class="blk" id="job-07-pus" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="The runner could not push the branch or open the PR.">push failed</span>' "$f"
   # Put on hold shares the note field of a failed, timed-out, skipped or blocked job; a done or a held job has none.
   grep -qF '<div class="jacts" data-id="02-fai"><span class="ask note"><label>Note: optional for Run again, needed for Put on hold<textarea name="note" rows="3" data-opt></textarea></label><button data-act="retry">Run again</button><button data-act="hold" data-need>Put on hold</button></span>' "$f"
   grep -qF '<div class="jacts" data-id="01-blk"><span class="ask note"><label>Note: your answer to its question<textarea name="note" rows="3"></textarea></label>' "$f"
@@ -2443,7 +2445,7 @@ prim() {
   grep -qF '<a class="btn" href="https://example.com/pull/9" target="_blank" rel="noopener">Open PR ↗</a></div>' "$f"
   grep -qF '<span class="jacts p" data-feature="ft"><button data-act="feature-ready" data-confirm' "$f"
   # The block keeps the card's buttons; no Merge order.
-  grep -qF '<div class="blk" id="job-12-que" hidden><div class="bh"><i class="lamp l-off"></i><span class="st">Queued</span><h2>12-que</h2><code class="meta">proj · b12</code></div><div class="job s-queued"><div class="top"><b>12-que</b><span class="pill">Queued</span></div><p class="steps">' "$f"
+  grep -qF '<div class="blk" id="job-12-que" hidden><div class="bh"><i class="lamp l-off"></i><span class="st" title="It waits for a free slot or for its start time.">Queued</span><h2>12-que</h2><code class="meta">proj · b12</code></div><div class="job s-queued"><div class="top"><b>12-que</b><span class="pill">Queued</span></div><p class="steps">' "$f"
   grep -qF '○ PR</span></p><p>Waits for a free slot.</p><div class="jacts" data-id="12-que"><button data-act="now">' "$f"
   run grep -c 'merge-order' "$f"
   [ "$output" = 0 ]
@@ -2476,7 +2478,7 @@ prim() {
   putfeature fx "$r2 b17"
   "$VIBE" queue page >/dev/null
   grep -qF '<div class="row" data-k="proj/b15"><i class="lamp l-bad"></i><a class="t" href="#job-proj/b15"><b>b15 <span class="n">2 of 2 jobs</span></b><span class="why">15-gat: Checks failed (exit 2) · proj</span></a><a class="btn" href="https://example.com/pull/15" target="_blank" rel="noopener">Open PR ↗</a></div>' "$f"
-  grep -qF '<div class="blk" id="job-proj/b15" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">15-gat: Checks failed (exit 2)</span><h2>b15 <span class="n">2 of 2 jobs</span></h2><code class="meta">proj</code></div><div class="job lane' "$f"
+  grep -qF '<div class="blk" id="job-proj/b15" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="The checks of the repo (.vibe-jobs/gate) failed: read the Checks log.">15-gat: Checks failed (exit 2)</span><h2>b15 <span class="n">2 of 2 jobs</span></h2><code class="meta">proj</code></div><div class="job lane' "$f"
   [[ "$(sec you)" == *'data-k="proj/b15"'* ]] || false
   grep -qF '<div class="row" data-k="proj/b16"><i class="lamp l-bad"></i><a class="t" href="#job-proj/b16"><b>b16 <span class="n">1 of 2 items</span></b><span class="why">16-b · Failed: tests red · proj</span>' "$f"
   grep -qF '<div class="row" data-k="feature/fx"><i class="lamp l-bad"></i><a class="t" href="#job-feature/fx"><b>fx <span class="n">0 of 1 items</span></b><span class="why">cmdr · b17 · Has a question: which port? · Feature</span>' "$f"
@@ -2521,8 +2523,8 @@ prim() {
   grep -qF '<b>06-f</b><span class="why">proj · Checks</span></a><span class="el">1:15</span></div>' "$f"
   grep -qF '<b>08-t</b><span class="why">proj · Work · kapso · turing</span></a></div>' "$f"
   # The block's meta line: repo, branch, tool, run time; the result line: since when it runs.
-  grep -qF '<div class="blk" id="job-08-t" hidden><div class="bh"><i class="lamp l-ok"></i><span class="st">Running</span><h2>08-t</h2><code class="meta">proj · task-t · kapso · turing</code>' "$f"
-  grep -qE '<div class="blk" id="job-06-f" hidden><div class="bh"><i class="lamp l-ok"></i><span class="st">Running</span><h2>06-f</h2><code class="meta">proj · [a-z0-9-]+ · 1:15</code>' "$f"
+  grep -qF '<div class="blk" id="job-08-t" hidden><div class="bh"><i class="lamp l-ok"></i><span class="st" title="An agent works on it now.">Running</span><h2>08-t</h2><code class="meta">proj · task-t · kapso · turing</code>' "$f"
+  grep -qE '<div class="blk" id="job-06-f" hidden><div class="bh"><i class="lamp l-ok"></i><span class="st" title="An agent works on it now.">Running</span><h2>06-f</h2><code class="meta">proj · [a-z0-9-]+ · 1:15</code>' "$f"
   grep -qF "<p>Runs since $(cut -c 12-16 "$Q/06-f/started").</p>" "$f"
   [ "$(grep -c 'class="pbar"' "$f")" = 0 ]
 }
