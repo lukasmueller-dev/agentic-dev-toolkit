@@ -25,9 +25,9 @@ tests the milestone names.
 
 ## Blockers
 
-Queue the job only after #207, #208 and #209 merge: #208 changes the same
-page files (+603 lines).
+None.
 
 ## Gotchas (unpromoted)
 
+- The branch is stacked on `ptest/parallel-research` (main + #209 + #208). The PR diff shows their commits until they merge.
 - The page's Research card comes from #208; restyle it, keep its content.
