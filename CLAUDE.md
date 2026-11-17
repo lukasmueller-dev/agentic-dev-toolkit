@@ -288,9 +288,13 @@ things about permission rules that are easy to get wrong:
   read-only subcommands individually.
 - **A program flag needs its own deny rule.** `git pull *` in `excludedCommands`
   or `git grep:*` in the allow list lets `--upload-pack=<cmd>` or `-O<cmd>` run
-  `<cmd>`. Add the deny rule and a case to the program-flag test in
-  `tests/install.bats`. A glob misses the flag inside a short cluster
-  (`rsync -ave <cmd>`), behind `$VAR`, and a keyword in other case (`ssh -o proxycommand=`).
+  `<cmd>`. Add the rule and a case to the program-flag test in `tests/install.bats`.
+  - Start the rule at the command (`git pull *--upl*`) so a commit message that names the flag passes.
+  - Put a space before a short flag (`scp * -S*`) so a file name like `build-Setup.tar` passes.
+  - Git and `sort` accept any unique prefix of a long flag: test the shortest that runs.
+  - A glob misses a short flag in a cluster (`rsync -ave`, `git clone -qu`, `ssh -vF`),
+    a flag behind `$VAR`, and a keyword in other case (`ssh -o proxycommand=`). A hook closes those.
+  - A remote command that holds the flag (`ssh h 'grep -F x'`) is denied. Spell the long flag.
 - **A leading `/` in a path rule anchors to the settings file's own
   directory**, not the project. In user settings, `Read(/secrets/**)` protects
   `~/.claude/secrets`, not anything in your repo. Use `**/` patterns.
