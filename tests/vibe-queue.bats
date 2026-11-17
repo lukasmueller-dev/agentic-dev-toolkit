@@ -5,6 +5,7 @@
 # under $STUBS. The stub prints a system/init event (session id sess-<job id>)
 # unless $STUBS/no-init exists. With --input-format stream-json it reads its prompt
 # from the first message and ends with a result event. The runner runs with --drain, so each test ends.
+# A coordinator prompt with fewer `## Worker finished` blocks than $STUBS/coord-blocks (default 1) ends `queued:`.
 
 load helper
 
@@ -42,7 +43,7 @@ case "\$prompt" in
 esac
 [ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"## Worker finished"* | *"Agent job: Research worker"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"## Worker finished"*) mode=ok && [ "\$(printf '%s\n' "\$prompt" | grep -c '^## Worker finished\$')" -ge "\$(cat "$STUBS/coord-blocks" 2>/dev/null || echo 1)" ] || mode=wait ;; *"Agent job: Research worker"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
@@ -55,6 +56,7 @@ case "\$mode" in
     "$VIBE" queue gpu --place "\${p:-runpod}" -- sh train.sh >>"$STUBS/queue-gpu.out" 2>&1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
+  wait) echo "queued: workers run" >"\$VIBE_JOB_DIR/result" ;;
   workers)
     "$VIBE" queue worker h1 >>"$STUBS/worker.out" 2>&1
     "$VIBE" queue worker h2 --place runpod >>"$STUBS/worker.out" 2>&1
@@ -3158,6 +3160,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   r="$(make_repo proj)"
   w="$(coord_wt "$r")"
   c0="$(git -C "$w" rev-parse HEAD)"
+  echo 2 >"$STUBS/coord-blocks"
   mkjob 01-c "$r" research-q1 workers research=q1
   drain
   [ "$status" -eq 0 ]
@@ -3225,7 +3228,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
 @test "worker: a worker end waits while the coordinator session runs" {
   local r pid run c
   r="$(make_repo proj)"
-  mkjob 01-c "$r" research-q1 ok research=q1
+  mkjob 01-c "$r" research-q1 wait research=q1
   sleep 30 3>&- &
   pid=$!
   echo running >"$Q/01-c/status"
@@ -3259,6 +3262,34 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-research-q1-h*' | wc -l | tr -d ' ')" = 3 ]
   [ "$(cat "$BATS_TEST_TMPDIR"/h*.out | grep -c '^vibe: workers=3: .* run — start the next one after a worker ends$')" = 1 ]
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
+}
+
+@test "worker: a blocked coordinator holds the wake until a session is queued; a timed-out one gets a follow-up" {
+  local r c
+  r="$(make_repo proj)"
+  mkjob 01-c "$r" research-q1 ok research=q1
+  mkjob 02-k "$r" research-q2 ok research=q2
+  mkjob 03-w "$r" research/q1/h1 ok research=q1 hid=h1
+  mkjob 04-w "$r" research/q2/h1 ok research=q2 hid=h1
+  for c in 01-c:blocked 02-k:timeout 03-w:done 04-w:done; do
+    echo "${c#*:}" >"$Q/${c%:*}/status"
+    date '+%F %T' >"$Q/${c%:*}/ended"
+  done
+  drain
+  [ "$status" -eq 0 ]
+  [ ! -e "$Q/03-w/fan" ]
+  c="$(qjob -proj-research-q2)"
+  [ "$(cat "$Q/04-w/fan")" = "${c##*/}" ]
+  grep -qx parent=02-k "$c/job"
+  grep -qxF -- '- Worker: h1 · job 04-w · branch research/q2/h1' "$c/prompt.md"
+  [ "$(cat "$Q/02-k/status")" = timeout ]
+  mkjob 05-c "$r" research-q1 ok research=q1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/03-w/fan")" = 05-c ]
+  grep -qxF -- '- Worker: h1 · job 03-w · branch research/q1/h1' "$Q/05-c/prompt.md"
+  [ "$(cat "$Q/05-c/status")" = "done" ]
+  [ "$(cat "$Q/01-c/status")" = blocked ]
 }
 
 # two_findings — the stub reviewer's first answer: two findings.

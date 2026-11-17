@@ -224,7 +224,10 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - `vibe queue worker <hid> [--place turing|runpod|vast|ias]`, from inside the coordinator job (`research=`, no `hid=`), queues a worker for item `### <hid> <name>` of the committed `RESEARCH.md`. Its branch `research/<slug>/<hid>` starts at the worktree's HEAD.
 - The worker job: the coordinator's `repo=` `model=` `effort=` `timeout=` `research=` `usd=` `deadline=`, then `hid=` `place=` (default `turing`) `idea=` (the item's name) `builds=` (the first word of its `Builds on:` line, else `root`) and `after=`. The runner pushes it and opens no PR.
 - Each refusal is one error line, and nothing is queued: past `deadline=`; `workers=` (default 3) workers of the research with a job that has not ended; no ledger row with the id `baseline`; no such item; a branch git refuses (it exists, or a branch `research/<slug>` does). A rerun takes a new hid.
-- A worker end wakes the coordinator, once per worker job (`fan`). The end: the job is final and has no `<id>-gpu` session 2. The coordinator's newest job gets a `## Worker finished` block when it is queued, else a follow-up job with it. A session that waits (`gpu`, after `queued:`) ends `done`. While a session runs, the wake waits.
+- A worker end wakes the coordinator, once per worker job (`fan`). The end: the job is final and has no `<id>-gpu` session 2.
+- The coordinator's newest job decides the wake. Queued: it gets a `## Worker finished` block. `gpu` (it ended `queued:`) or `timeout`: a follow-up job gets the block, and a `gpu` one ends `done`.
+- Running, `blocked`, `failed` or `skipped`: the wake waits for its end, `vibe queue answer` or `retry`. `done` or archived: no wake.
+- `vibe queue worker` counts and queues under the lock `queue/.workers.lock`, so parallel calls respect `workers=`.
 - shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.
 
 ## Tool jobs
@@ -319,7 +322,7 @@ Add a route or a button:
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
 | `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `price` (USD per hour), `log`, `exit` |
 | `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
-| `queue/<id>/fan` | [research](#research-jobs) worker: the coordinator job its end woke, `follow-up <id>-gpu`, or `no coordinator` |
+| `queue/<id>/fan` | [research](#research-jobs) worker: the coordinator job its end woke, `follow-up <id>-gpu`, `no wake: <id> done\|archived`, or `no coordinator` |
 | `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
 | `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
 | `queue/<id>/start`, `side`, `lane-pr.md` | lane job: branch tip at start; `<branch>-<item>` after it left the lane; the lane PR so far |

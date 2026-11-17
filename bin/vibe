@@ -2451,9 +2451,10 @@ research_item() {
     END { if (f) print n "\t" (b == "" ? "root" : b) }' <<<"$1"
 }
 
-# fan_in JOB — a research worker's end wakes its coordinator once (JOB/fan): a `## Worker finished` block on the
-# coordinator's newest job when it is queued, else a follow-up of that job; a session that waits (`gpu`) ends done.
-# Not while that session runs; never for a worker with a follow-up session (JOB-gpu). The runner, each pass.
+# fan_in JOB — a research worker's end wakes its coordinator once (JOB/fan). The coordinator's newest job: queued, it
+# gets a `## Worker finished` block; `gpu` (ends done) or `timeout`, a follow-up with it. Running, blocked, failed or
+# skipped: wait for its end or the user's answer or retry. Done or archived: no wake. Never for a worker with a session 2
+# (JOB-gpu). The runner, each pass.
 fan_in() {
   local d="$1" c="" f st t
   if [[ -z "$(jget "$d/job" hid)" || -e "$d/fan" ]] || ! job_settled "$d"; then return 0; fi
@@ -2469,9 +2470,12 @@ fan_in() {
   st="$(jstate "$c" status)"
   if [[ -z "$c" ]]; then
     echo "no coordinator" >"$d/fan"
-  elif [[ "$st" == running ]]; then
+  elif [[ "$c" != "$QDIR/"* || "$st" == "done" ]]; then
+    if [[ "$c" != "$QDIR/"* ]]; then st=archived; fi
+    echo "no wake: ${c##*/} $st" >"$d/fan"
+  elif [[ "$st" =~ ^(running|blocked|failed|skipped)$ ]]; then
     return 0
-  elif [[ "$c" == "$QDIR/"* ]] && is_queued "$c"; then
+  elif is_queued "$c"; then
     worker_block "$d" >>"$c/prompt.md"
     echo "${c##*/}" >"$d/fan"
   else

@@ -30,7 +30,7 @@ None.
 
 - The formats `vibe queue worker` parses, which milestone 4's template and blocks must use: item heading `### <hid> <name> — <state>`, a `Builds on: <hid>` line, a ledger row with the id `baseline`. A hid is a lowercase slug.
 - `cmd_queue_worker` renders the worker prompt from `job-prompt.md` with a one-line task (`job_prompt`). Milestone 4 appends `references/research-worker.md` there.
-- A coordinator session that started workers must end `queued:` (status `gpu`). A worker end then ends it `done` and queues the next session. A `done:` result starts the review rounds.
+- A coordinator session that started workers must end `queued:` (status `gpu`). A worker end then ends it `done` and queues the next session. A `done:` result starts the review rounds, and a later worker end wakes no one (`fan_in`).
 - A worker end appends a `## Worker finished` block (hid, job, branch, end, run-result) to the coordinator's prompt. The coordinator block must say which block it closes now.
 - A rerun of an item takes a new hid: `vibe queue worker` refuses a branch that exists.
 - A `blocked` worker is final: it does not count against `workers=`, and its end wakes the coordinator. IAS (milestone 5) may need it live.
