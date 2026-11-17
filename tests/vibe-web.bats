@@ -1214,6 +1214,33 @@ get() {
   [[ "$output" == *$'\n404' ]] || false
 }
 
+# shellcheck disable=SC2016  # literal JSON
+@test "route job/<id>/activity: the last 5 agent texts and 5 tool calls of the stream-json log, newest first; no subagent; no log or a link is 404" {
+  local d="$Q/queue/$ID" i
+  qjob "$ID" running
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
+  TZ=UTC web_start
+  run get "/job/$ID/activity"
+  [ "${lines[1]}" = 404 ]
+  {
+    echo 'not json'
+    printf '{"type":"system","subtype":"init"}\n'
+    for i in 1 2 3 4 5 6; do
+      printf '{"type":"assistant","timestamp":"2026-11-17T09:0%s:30.000Z","parent_tool_use_id":null,"message":{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"Text  %s\\nmore"},{"type":"tool_use","name":"Bash","input":{"command":"make t%s","description":""}}]}}\n' "$i" "$i" "$i"
+      printf '{"type":"user","message":{"content":[{"type":"tool_result","content":"out %s"}]}}\n' "$i"
+    done
+    printf '{"type":"assistant","timestamp":"2026-11-17T09:07:00.000Z","parent_tool_use_id":"tu_1","message":{"content":[{"type":"text","text":"Sub text"},{"type":"tool_use","name":"Read","input":{"file_path":"/sub"}}]}}\n'
+    printf '{"type":"assistant","timestamp":"2026-11-17T09:08:00.000Z","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"bin/vibe","description":"Fix the gate"}}]}}\n'
+  } >"$d/log"
+  run get "/job/$ID/activity"
+  [ "${lines[1]}" = 200 ]
+  run python3 -c 'import json, sys; print("|".join("%s %s %s" % (r["time"], r["kind"], r["text"]) for r in json.loads(sys.argv[1])))' "${lines[0]}"
+  [ "$output" = '09:08 Edit Fix the gate|09:06 Bash make t6|09:06 Agent Text 6 more|09:05 Bash make t5|09:05 Agent Text 5 more|09:04 Bash make t4|09:04 Agent Text 4 more|09:03 Bash make t3|09:03 Agent Text 3 more|09:02 Agent Text 2 more' ]
+  mv "$d/log" "$d/log.real" && ln -s "$d/log.real" "$d/log"
+  run get "/job/$ID/activity"
+  [ "${lines[1]}" = 404 ]
+}
+
 @test "route job/<id>/<file>?html: a .md through pandoc under the API's CSP; without pandoc escaped; other files stay text" {
   local d="$Q/queue/$ID" bin="$BATS_TEST_TMPDIR/nopandoc"
   qjob "$ID" "done"

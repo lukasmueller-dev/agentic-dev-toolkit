@@ -97,6 +97,36 @@ def md_html(data):
         return b"<pre>" + html.escape(data.decode("utf-8", "replace")).encode() + b"</pre>"
 
 
+def activity(data):
+    """The last 5 agent texts and the last 5 tool calls of a stream-json log tail, newest first; a subagent's left out."""
+    texts, tools = [], []
+    for line in data.decode("utf-8", "replace").splitlines():
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue  # a cut first line, or no JSON
+        if not isinstance(m, dict) or m.get("type") != "assistant" or m.get("parent_tool_use_id") or not isinstance(m.get("message"), dict):
+            continue
+        try:
+            at = datetime.datetime.fromisoformat(str(m.get("timestamp")).replace("Z", "+00:00")).astimezone().strftime("%H:%M")
+        except ValueError:
+            at = ""
+        for c in m["message"].get("content") or []:
+            if not isinstance(c, dict):
+                continue
+            if c.get("type") == "text" and isinstance(c.get("text"), str) and c["text"].strip():
+                texts.append((len(texts) + len(tools), at, "Agent", c["text"]))
+            elif c.get("type") == "tool_use" and isinstance(c.get("name"), str):
+                i = c.get("input") if isinstance(c.get("input"), dict) else {}
+                t = next((i[k] for k in ("description", "command", "file_path", "pattern", "path", "url") if isinstance(i.get(k), str) and i[k].strip()), "")
+                tools.append((len(texts) + len(tools), at, c["name"][:40], t))
+    out = []
+    for _, at, kind, text in sorted(texts[-5:] + tools[-5:], reverse=True):
+        text = " ".join(text.split())
+        out.append({"time": at, "kind": kind, "text": text[:300] + ("…" if len(text) > 300 else "")})
+    return out
+
+
 def argv_of(route, body):
     """The argv of ROUTE with BODY's args filled in; None when an arg is absent or bad."""
     argv = []
@@ -127,8 +157,8 @@ def qconf(key, default=""):
     return default
 
 
-# GET job/<id>/<file>; a log: its tail; out/files: a tool's folder result as a list of its files.
-FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log", "tool.log", "out/report.md", "out/files")
+# GET job/<id>/<file>; a log: its tail; out/files: a tool's folder result as a list of its files; activity: from log, as JSON.
+FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log", "tool.log", "out/report.md", "out/files", "activity")
 STARTED = os.stat(os.path.realpath(__file__)).st_mtime  # update-toolkit changed it: re-exec after the reply
 TIMEOUT = int(os.environ.get("VIBE_WEB_TIMEOUT") or 120)  # s per command: a hung one must not hold WRITE for ever
 WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
@@ -175,7 +205,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(404, {"error": "no route"})
 
     def job_file(self, parts):
-        """GET job/<id>/<file>: one of FILES of a queued job as text; a log's last 64 KB; a .md with ?html as HTML."""
+        """GET job/<id>/<file>: one of FILES of a queued job as text; a log's last 64 KB; a .md with ?html as HTML; activity as JSON."""
         name = "/".join(parts[2:])
         if len(parts) < 3 or not ARGS["id"].fullmatch(parts[1]) or name not in FILES:
             return self.reply(404, {"error": "no file"})
@@ -188,15 +218,17 @@ class Handler(BaseHTTPRequestHandler):
             if name == "out/files":  # fwalk follows no link, the top one included
                 data = "".join(os.path.join(r, f)[6:] + "\n" for r, _, fs, _ in os.fwalk("files", dir_fd=fd) for f in sorted(fs)).encode(errors="replace")[:1 << 20]
             else:
-                with os.fdopen(os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd), "rb") as f:
-                    if name in ("log", "tool.log"):  # gate.log from its start: its first lines name the command
-                        f.seek(max(0, os.fstat(f.fileno()).st_size - 65536))
+                with os.fdopen(os.open("log" if name == "activity" else parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd), "rb") as f:
+                    if name in ("log", "tool.log", "activity"):  # gate.log from its start: its first lines name the command
+                        f.seek(max(0, os.fstat(f.fileno()).st_size - (1 << 20 if name == "activity" else 65536)))
                     data = f.read(1 << 20)
         except OSError:
             return self.reply(404, {"error": "no file"})
         finally:
             if fd is not None:
                 os.close(fd)
+        if name == "activity":
+            return self.reply(200, activity(data))
         if name == "out/files" and not data:
             return self.reply(404, {"error": "no file"})
         if name.endswith(".md") and urlsplit(self.path).query == "html":
