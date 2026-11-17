@@ -36,6 +36,8 @@ case "$1 $2" in
     echo '{"deleted":true,"id":"pod123"}' ;;
   "ssh info")
     echo '{"id":"pod123","ip":"203.0.113.7","port":22022,"ssh_key":{"path":"/keys/rp","exists":true}}' ;;
+  "gpu list")
+    echo '[{"gpuId":"NVIDIA A40","securePricePerHr":0.4,"communityPricePerHr":null},{"gpuId":"NVIDIA GeForce RTX 4090","securePricePerHr":0.69,"communityPricePerHr":0.34}]' ;;
   *) exit 2 ;;
 esac
 EOF
@@ -78,6 +80,36 @@ pod_up() {
   mkdir -p "$WS_STATE"
   echo pod123 >"$WS_STATE/id"
   touch "$STUB/pod"
+}
+
+@test "price: the on-demand USD per hour of RUNPOD_GPU_ID in its cloud type, out of stock too; no price fails; no pod" {
+  local env="$HOME/.config/vibe/places/runpod.env"
+  run "$PLACE" price
+  [ "$status" -eq 0 ]
+  [ "$output" = 0.69 ]
+  grep -qx 'gpu list --include-unavailable --output json' "$STUB/runpodctl.log"
+  echo RUNPOD_CLOUD_TYPE=COMMUNITY >>"$env"
+  run "$PLACE" price
+  [ "$output" = 0.34 ]
+  echo 'RUNPOD_GPU_ID=NVIDIA A40' >>"$env"
+  run "$PLACE" price
+  [ "$status" -eq 1 ]
+  [ "$output" = "runpod: runpodctl gpu list has no communityPricePerHr for NVIDIA A40" ]
+  echo 'RUNPOD_GPU_ID=NVIDIA H100' >>"$env"
+  run "$PLACE" price
+  [ "$status" -eq 1 ]
+  [ "$(grep -vc '^gpu list' "$STUB/runpodctl.log")" -eq 0 ]
+  [ ! -e "$WS_STATE/id" ]
+}
+
+@test "up: WS_NAME names the env file it sends, not the folder name" {
+  local e="$HOME/.config/vibe/workspaces/research-proj.env"
+  echo HF_TOKEN=hf-proj >"$e"
+  chmod 600 "$e"
+  WS_NAME=research-proj run "$PLACE" up
+  [ "$status" -eq 0 ]
+  grep -qx HF_TOKEN=hf-proj "$STUB/ssh.stdin"
+  [ "$(grep -c sk-secret-token "$STUB/ssh.stdin")" -eq 0 ]
 }
 
 @test "up: a pod that never runs, or fails a copy, is deleted" {

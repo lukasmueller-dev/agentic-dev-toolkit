@@ -796,3 +796,23 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   run "$VIBE" ws status svc
   [[ "$output" == "svc "*" down "*" turing" ]] || false
 }
+
+@test "ws status and tick: an instance with a dir file (a research run) uses that folder, not one under workspaces/" {
+  local f="$BATS_TEST_TMPDIR/repo/.claude/research" st="$STATES/research-01-a"
+  cp "$REPO_ROOT/workspaces/_places/turing" "$VIBE_WORKSPACES/_places/turing"
+  chmod +x "$VIBE_WORKSPACES/_places/turing"
+  mkdir -p "$f" "$st"
+  printf '%s\n' kind=run runs=host places=turing result=folder hours=1 >"$f/workspace.conf"
+  # shellcheck disable=SC2016  # the stop script expands it
+  printf '#!/bin/sh\necho "stop in $WS_NAME" >"%s/stopped"\n' "$BATS_TEST_TMPDIR" >"$f/stop"
+  chmod +x "$f/stop"
+  echo turing >"$st/place"
+  echo "$f" >"$st/dir"
+  echo host >"$st/id"
+  echo 1 >"$st/limit"
+  run "$VIBE" ws status research-01-a
+  [[ "$output" == "research-01-a "*"past limit turing"* ]] || false
+  "$VIBE" ws tick
+  [ "$(cat "$BATS_TEST_TMPDIR/stopped")" = "stop in research" ]
+  [ ! -e "$st/id" ]
+}

@@ -360,7 +360,7 @@ success — green, having linted none of the skills you shipped.
 
 **Inside a sandboxed agent job, `.claude/` placeholder files in the worktree root
 fail 3 `install.bats` tests, `shfmt -f .` and `git add -A`.** Run the lint and that
-suite in a `git clone` under `$TMPDIR`; add files by name.
+suite in a `git clone` in `mktemp -d` (other sessions share `$TMPDIR`); add files by name.
 
 **`bats -j 8` fails 5 review and verify tests in `vibe-queue.bats` and the gpu=yes lock-wait test in `vibe-ws.bats` under load.**
 Run those two files without `-j`.
@@ -370,6 +370,9 @@ Set `VIBE_TEST_BROWSER` to the Playwright `chrome-headless-shell` under `~/.cach
 For a screenshot, serve a dir that holds a copy of `web/` as `queue/` (`python3 -m http.server`) in the same Bash call.
 
 **A bare `wait` in `vibe-web.bats` hangs: setup's `vibe-web` is a background job too.** Wait on a pid.
+
+**Research tests in `vibe-queue.bats` take the wrong stub mode when a prompt block holds `## GPU run finished` or `## Worker finished`.**
+The stub `claude` picks its mode from those lines; keep them out of `skills/fill-queue/references/research*.md`.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
 It is the sandbox's mount point for its write-deny on `.git/config`; no setting
