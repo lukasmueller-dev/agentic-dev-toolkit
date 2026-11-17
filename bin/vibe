@@ -33,7 +33,8 @@
 #                                   a tool job's run: its stop script, then down
 #   vibe queue steer <id> <text>    a running job: the text to its session (steer=1 in queue.conf);
 #                                   a tool job's run: to its steer script; exit 3 there: not supported
-#   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
+#   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived;
+#                                   an IAS worker: the output of its run, then its session 2
 #   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
 #   vibe queue ready <pr-url>...|--feature <slug>
 #                                   no failing check, no SPEC.md, RESEARCH.md or HANDOFF.md: mark each PR ready
@@ -1847,6 +1848,11 @@ follow_dir() {
   echo "$tmp"
 }
 
+# ias_waits JOB — an IAS worker that ended blocked with paste.md: its run is out on IAS until `vibe queue answer`.
+ias_waits() {
+  [[ -n "$(jget "$1/job" hid)" && "$(jget "$1/job" place)" == ias && "$(jstate "$1" status)" == blocked && -f "$1/paste.md" ]]
+}
+
 # task_append PROMPT LINE... — the lines end the `## Task` section of PROMPT.
 task_append() {
   local f="$1" t
@@ -1861,6 +1867,7 @@ task_append() {
 
 # vibe queue answer ID TEXT... — /review-jobs' requeue: the answer in place of Next action and Blockers of the job's HANDOFF.md (commit,
 # push) or, for a lane side job, in a retry prompt; a follow-up job is queued, the original archived.
+# An IAS worker (ias_waits): TEXT is its run's output, ias.log; its RESULT line the run-result; session 2 closes the run.
 cmd_queue_answer() {
   local d tmp side item n st text wt branch t
   (($# >= 2)) || die "usage: vibe queue answer <id> <answer>"
@@ -1869,6 +1876,15 @@ cmd_queue_answer() {
   text="$*" side="$(jstate "$d" side)" branch="$(jget "$d/job" branch)"
   st="$(jstate "$d" status)"
   case "$st" in blocked | failed | timeout) ;; *) die "${d##*/} is ${st:-queued} — answer takes blocked, failed or timeout" ;; esac
+  if ias_waits "$d"; then
+    printf '%s\n' "$text" | fresh "$d/ias.log" || die "${d##*/}/ias.log not written"
+    run_result "$d/ias.log" "$d"
+    # A typo must not lose the run: no RESULT line is a failed run, a bad one is refused.
+    if [[ ! -s "$d/run-result" ]] && grep -q '^RESULT {' "$d/ias.log"; then die 'bad RESULT line — RESULT {"metric": <a finite number>}'; fi
+    GPUQ_EXIT=ias GPUQ_LOG="$d/ias.log" cmd_queue_follow "$d"
+    echo "queued session 2 of ${d##*/} — result: $(cat "$d/run-result" 2>/dev/null || echo none)"
+    return 0
+  fi
   if [[ -z "$side" ]]; then
     branch_idle "$d"
     wt="$(jstate "$d" worktree)"
@@ -2443,11 +2459,12 @@ cmd_queue_worker() {
   # the agent's sandbox writes there.
   mkdir_lock "$QDIR/.workers" || exit 1
   trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
-  # Live: a worker of this repo's research with a job that has not ended (session 2 is queued before session 1 ends).
+  # Live: a worker of this repo's research with a job that has not ended (session 2 is queued before session 1 ends),
+  # or whose run is out on IAS.
   for j in "$QDIR"/*/; do
     x="$(jget "${j}job" hid)"
     if [[ -n "$x" && " $live " != *" $x "* && "$(jget "${j}job" research)" == "$s" && "$(jget "${j}job" repo)" == "$g" ]] &&
-      ! job_final "${j%/}"; then
+      { ! job_final "${j%/}" || ias_waits "${j%/}"; }; then
       live+="${live:+ }$x" n=$((n + 1))
     fi
   done
@@ -2501,10 +2518,10 @@ research_item() {
 # fan_in JOB — a research worker's end wakes its coordinator once (JOB/fan). The coordinator's newest job: queued, it
 # gets a `## Worker finished` block; `gpu` (ends done) or `timeout`, a follow-up with it. Running, blocked, failed or
 # skipped: wait for its end or the user's answer or retry. Done or archived: no wake. Never for a worker with a session 2
-# (JOB-gpu). The runner, each pass, with errexit off: each failure returns 1.
+# (JOB-gpu), nor while its run is out on IAS. The runner, each pass, with errexit off: each failure returns 1.
 fan_in() {
   local d="$1" c="" f st t
-  if [[ -z "$(jget "$d/job" hid)" || -e "$d/fan" ]] || ! job_settled "$d"; then return 0; fi
+  if [[ -z "$(jget "$d/job" hid)" || -e "$d/fan" ]] || ! job_settled "$d" || ias_waits "$d"; then return 0; fi
   if [[ -e "$d-gpu" ]]; then
     echo "follow-up ${d##*/}-gpu" >"$d/fan"
     return 0

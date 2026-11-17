@@ -57,6 +57,12 @@ case "\$mode" in
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   wait) echo "queued: workers run" >"\$VIBE_JOB_DIR/result" ;;
+  ias)
+    h="\$(sed -n 's/^hid=//p' "\$VIBE_JOB_DIR/job")"
+    mkdir -p "runs/\$h" && echo '#SBATCH --time=1:00:00' >"runs/\$h/job.sbatch" && git add runs && git commit -q -m "feat: \$h sbatch"
+    printf '1. git fetch\n2. sbatch\n3. the RESULT line\n' >"\$VIBE_JOB_DIR/paste.md"
+    echo "blocked: \$h waits for its IAS run — paste.md" >"\$VIBE_JOB_DIR/result"
+    ;;
   workers)
     "$VIBE" queue worker h1 >>"$STUBS/worker.out" 2>&1
     "$VIBE" queue worker h2 --place runpod >>"$STUBS/worker.out" 2>&1
@@ -3432,6 +3438,70 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$Q/01-c/status")" = blocked ]
 }
 
+@test "answer: an IAS worker waits blocked: it counts at workers= and wakes no one; its answer writes run-result and queues session 2" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w" workers=1
+  # Not gpu: a drain waits for a gpu job, and nothing wakes this one while the IAS run is out.
+  echo blocked >"$Q/01-c/status"
+  date '+%F %T' >"$Q/01-c/ended"
+  mkjob 02-w "$r" research/q1/h1 ias research=q1 hid=h1 place=ias
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-w/status")" = blocked ]
+  [ -s "$Q/02-w/paste.md" ]
+  git --git-dir="$BATS_TEST_TMPDIR/proj.git" cat-file -e research/q1/h1:runs/h1/job.sbatch
+  [ ! -e "$Q/02-w/fan" ]
+  [ "$(ls "$Q")" = "$(printf '%s\n' 01-c 02-w)" ]
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: workers=1: h1 run — start the next one after a worker ends" ]
+  run "$VIBE" queue answer 02-w 'RESULT {"metric": 0.8'
+  [ "$status" -ne 0 ]
+  [ "$output" = 'vibe: bad RESULT line — RESULT {"metric": <a finite number>}' ]
+  [ ! -e "$Q/02-w-gpu" ]
+  [ "$(cat "$Q/02-w/status")" = blocked ]
+  run "$VIBE" queue answer 02-w 'RESULT {"metric": 0.8}'
+  [ "$status" -eq 0 ]
+  [ "$output" = 'queued session 2 of 02-w — result: {"metric":0.8}' ]
+  [ "$(cat "$Q/02-w/run-result")" = '{"metric":0.8}' ]
+  [ "$(cat "$Q/02-w/cost")" = 0 ]
+  [ "$(cat "$Q/02-w/status")" = "done" ]
+  grep -qxF -- '- Exit: ias' "$Q/02-w-gpu/prompt.md"
+  grep -qxF -- "- Log: $Q/02-w/ias.log" "$Q/02-w-gpu/prompt.md"
+  grep -qxF -- "- Result: {\"metric\":0.8} ($Q/02-w/run-result)" "$Q/02-w-gpu/prompt.md"
+  grep -qx 'hid=h1' "$Q/02-w-gpu/job"
+  [ ! -e "$Q/02-w/HANDOFF.md" ]
+}
+
+@test "close: past deadline= and over usd=, an IAS worker's session 2 and the coordinator's close session still run" {
+  local r c
+  r="$(make_repo proj)"
+  mkjob 02-w "$r" research/q1/h1 ias research=q1 hid=h1 place=ias usd=1 "deadline=2000-01-01 08:00"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-w/status")" = blocked ]
+  VIBE_JOB_DIR="$Q/02-w" run "$VIBE" queue gpu -- true
+  [ "$status" -ne 0 ]
+  # The coordinator waits for its worker (gpu); its research spent 5 USD of usd=1.
+  mkjob 01-c "$r" research-q1 ok research=q1 usd=1 "deadline=2000-01-01 08:00"
+  echo gpu >"$Q/01-c/status"
+  date '+%F %T' >"$Q/01-c/ended"
+  echo 5.00 >"$Q/01-c/cost"
+  "$VIBE" queue answer 02-w 'RESULT {"metric": 0.9}' >/dev/null
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-w-gpu/status")" = "done" ]
+  [ "$(cat "$Q/02-w/fan")" = "follow-up 02-w-gpu" ]
+  c="$(qjob -proj-research-q1)"
+  [ "$(cat "$Q/02-w-gpu/fan")" = "${c##*/}" ]
+  grep -qxF -- '- Worker: h1 · job 02-w-gpu · branch research/q1/h1' "$c/prompt.md"
+  grep -qxF -- "- Result: {\"metric\":0.9} ($Q/02-w/run-result)" "$c/prompt.md"
+  [ "$(cat "$c/status")" = "done" ]
+  [ "$(cat "$Q/01-c/status")" = "done" ]
+}
+
 # two_findings — the stub reviewer's first answer: two findings.
 two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
@@ -3999,7 +4069,7 @@ phase_jobs() {
 # steer-exit: steer's exit.
 tool() {
   local w="$BATS_TEST_TMPDIR/workspaces"
-  export VIBE_WORKSPACES="$w" VIBE_WS_POLL=0.1
+  export VIBE_WORKSPACES="$w"
   mkdir -p "$w/_places" "$w/$1" "$GPU_QUEUE_DIR"
   cp "$REPO_ROOT/workspaces/_places/turing" "$w/_places/turing"
   printf '%s\n' kind=run runs=host places=turing hours=2 "result=$2" "${@:3}" >"$w/$1/workspace.conf"
