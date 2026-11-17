@@ -217,7 +217,7 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
 - Prompt: `job-prompt.md` plus a block. `vibe queue add` appends [`references/research.md`](../skills/fill-queue/references/research.md) to a coordinator (`research=`, no `hid=`); `vibe queue worker` appends [`references/research-worker.md`](../skills/fill-queue/references/research-worker.md).
-- The coordinator queues the baseline run itself (`vibe queue gpu`), then starts up to `workers=` workers at a time. A session ends `queued:` while a worker runs; each worker end wakes it.
+- The coordinator asks for the baseline run itself (`vibe queue gpu`), then starts up to `workers=` workers at a time. A session ends `queued:` while a worker runs; each worker end wakes it.
 - A worker: session 1 writes the code, runs the smoke check and queues one run; session 2 commits `runs/<hid>/row.md`, the ledger row the coordinator checks against `run-result`.
 - `vibe queue gpu --place runpod|vast -- <cmd>` runs on a rented place. The workspace folder is the repo's `.claude/research/` (`kind=run`, `result=folder`, `hours=`, `image=`, `commit=`, an executable `run`). The run takes the worktree's HEAD, so the folder and every tracked file must be committed. Each refusal is one error line.
 - Secrets and `VAST_*` settings: `~/.config/vibe/workspaces/research-<repo folder>.env`, mode 600, one file per repo. `vibe queue gpu --place` refuses a run when it lacks a `secrets=` name of the conf.
@@ -227,7 +227,7 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 - After each run the runner writes `run-result`: the JSON of the last `RESULT {` line of the run log, on turing too. With no such line, bad JSON or a metric that is no finite number (`NaN`, `Infinity`), there is no `run-result` and the run failed.
 - A failed `price` or `up` writes `infra` with the reason, and the follow-up gets `Exit: infra`. A run whose process died (a reboot) gets `infra` too; its instance goes down at its limit.
 - The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
-- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
+- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` asks for nothing, and the runner queues no run from a session that started past it. The next session ends the job. `vibe queue add` refuses another format.
 - The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason. `vibe queue add` refuses a `usd=` that is no number.
@@ -239,7 +239,7 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 - A worker end wakes the coordinator, once per worker job (`fan`). The end: the job is final and has no `<id>-gpu` session 2.
 - The newest coordinator job with the worker's `repo=` and `research=` decides the wake. Queued: it gets a `## Worker finished` block. `gpu` (it ended `queued:`) or `timeout`: a follow-up job gets the block, and a `gpu` one ends `done`.
 - Running, `blocked`, `failed` or `skipped`: the wake waits for its end, `vibe queue answer` or `retry`. `done` or archived: no wake.
-- `vibe queue worker` counts and queues under the lock `queue/.workers.lock`, so parallel calls respect `workers=`.
+- In a job, `vibe queue gpu --place` and `vibe queue worker` only check and ask: `agent/run/`, `agent/workers`. After a `queued:` session the runner takes the run (`place_take`) and queues each worker under the lock `queue/.workers.lock`, as of the session start. A refusal goes to `workers.log`; when each asked worker is refused, the job fails.
 - A `place=ias` worker's session 1 commits `runs/<hid>/job.sbatch` (from the repo's `.claude/research/job.sbatch`), writes `paste.md` and ends `blocked:`. The runner pushes its branch. Until the answer it wakes no coordinator.
 - `vibe queue answer <id> '<output>'` on that worker writes the text to `ias.log` and its last `RESULT` line to `run-result`, then queues session 2 (`<id>-gpu`, `Exit: ias`). No `RESULT` line: the run failed. A `RESULT {` line that does not parse is refused.
 - `vibe queue stop --research <slug>` writes `drain` to each job of the research in the queue; a follow-up job copies it. Drain: `vibe queue worker` refuses, and each run finishes.
@@ -330,17 +330,19 @@ Add a route or a button:
 | `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `research=` `usd=` `workers=` `hid=` `place=` `idea=` `builds=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
-| `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`) |
+| `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; copies of `job`, `base`, `lane-pr.md`, `worktree`, `drain`, fresh each session; the asks `run/` and `workers` ([research](#research-jobs)); a tool job's closing session also gets `in/`, `out/`, `tool.log`, `tool-exit` |
+| `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`). The runner copies them, `verdicts`, `gpu-cmd` and `paste.md` from `agent/` after each session, plain files only |
 | `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
-| `queue/<id>/held`, `gpu-job` | `vibe queue hold` note; the `gpu-queue` job id |
+| `queue/<id>/held`, `gpu-cmd`, `gpu-job` | `vibe queue hold` note; the run `vibe queue gpu` asked for (NUL-ended args); the `gpu-queue` job id |
 | `queue/<id>/session` | the agent's `session_id`; a timeout, a usage-limit retry and a review fix resume it |
 | `queue/<id>/agent-pid`, `stop` | the running agent's pid; `vibe queue stop` asked to stop it |
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
-| `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
-| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `price` (USD per hour), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
+| `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `agent/evidence/` (screenshots, logs) |
+| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd` (from `agent/run/`); the runner adds `pid`, `price` (USD per hour), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
 | `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
 | `queue/<id>/drain`, `paste.md`, `ias.log` | [research](#research-jobs): `drain` or `now` (`vibe queue stop --research`); an IAS worker's steps; the output its answer gave |
+| `queue/<id>/workers.log` | [research](#research-jobs) coordinator: the output of each worker the runner queued or refused |
 | `queue/<id>/fan` | [research](#research-jobs) worker: the coordinator job its end woke, `follow-up <id>-gpu`, `no wake: <id> done\|archived`, or `no coordinator` |
 | `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |
 | `workspaces/<instance>/`, `workspaces/tick.log` | a tool's state ([workspaces](workspaces.md#state-on-turing)); the log of `vibe ws tick` |
@@ -353,15 +355,16 @@ Add a route or a button:
 | `actions.log` | page writes: time, login, command, exit code (`bin/vibe-web`) |
 | `limit` | reset epoch of the last usage limit; no starts before it |
 
-The job finds its dir in `$VIBE_JOB_DIR`. Job settings:
+The job finds its dir in `$VIBE_JOB_DIR` (`queue/<id>/agent/`). Job settings:
 [`claude/vibe-job-settings.json`](../claude/vibe-job-settings.json) — no
 unsandboxed retry, no push to `main`/`master`, no `gh pr merge`. File tools
 (Write, Edit, NotebookEdit) are fenced to the worktree and the job dir by
 `blockWritesOutsideWorkingDirectories`; the runners pass `--add-dir "$VIBE_JOB_DIR"`.
+The sandbox may not write `queue/` or `~/.local/state/gpu-queue`: the runner runs git in `worktree` and TERMs `agent-pid` unsandboxed.
 
-GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` queues the run in
-[`bin/gpu-queue`](../bin/gpu-queue) (status `gpu`). After the run, job
-`<id>-gpu` continues on the same branch with the exit code and log.
+GPU jobs: the agent commits, then `vibe queue gpu -- <cmd>` asks for the run (`agent/gpu-cmd`).
+After the session ends `queued:`, the runner queues it in [`bin/gpu-queue`](../bin/gpu-queue), cwd the worktree (status `gpu`).
+After the run, job `<id>-gpu` continues on the same branch with the exit code and log.
 A `gpu-queue` run that no job's `gpu-job` names (a manual `submit`) shows in a `GPU` block of `vibe queue status`: elapsed time, dir, last log line, command, `then`, wandb link.
 The block adds the 3 latest `finished/` runs (exit code, end time) and the `held/` and `parked/` runs (`gpu-queue` does not write those dirs yet); only running and queued runs count in "on the GPU".
 On the page each such run is a row in Running, Queued or Held, and the 3 latest finished runs are rows in Done.

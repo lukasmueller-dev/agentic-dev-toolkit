@@ -42,13 +42,17 @@ case "\$prompt" in
     exit 0
     ;;
 esac
-[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${VIBE_JOB_DIR##*/}"'"}'
+jd="\${VIBE_JOB_DIR%/agent}" # the runner's job dir: \$VIBE_JOB_DIR is its agent/
+[ -f "$STUBS/no-init" ] || echo '{"type":"system","subtype":"init","session_id":"sess-'"\${jd##*/}"'"}'
 mode="\$(printf '%s\n' "\$prompt" | sed -n 's/^MODE=//p')"
-case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"## Worker finished"*) mode=ok && [ "\$(printf '%s\n' "\$prompt" | grep -c '^## Worker finished\$')" -ge "\$(cat "$STUBS/coord-blocks" 2>/dev/null || echo 1)" ] || mode=wait ;; *"Agent job: Research worker"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
+case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${jd%-gpu}/ended" ] && echo ended || echo open; } >"$STUBS/parent-at-follow" ;; *"## Worker finished"*) mode=ok && [ "\$(printf '%s\n' "\$prompt" | grep -c '^## Worker finished\$')" -ge "\$(cat "$STUBS/coord-blocks" 2>/dev/null || echo 1)" ] || mode=wait ;; *"Agent job: Research worker"*) mode=ok ;; *"The time limit stopped"*) mode=handoff ;; *"A reviewer found problems"*) mode=fix ;; esac
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt; cat $STUBS/gpu-result 2>/dev/null; true'
+    [ ! -f "$STUBS/gpu-forge" ] || printf 'true\0' >"\$VIBE_JOB_DIR/gpu-cmd"
+    [ ! -f "$STUBS/gpu-started" ] || cp "$STUBS/gpu-started" "\$jd/started"
+    ls "\$GPU_QUEUE_DIR/queued" >"$STUBS/gpu-in-session" 2>/dev/null || true
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   place)
@@ -64,15 +68,30 @@ case "\$mode" in
     printf '1. git fetch\n2. sbatch\n3. the RESULT line\n' >"\$VIBE_JOB_DIR/paste.md"
     echo "blocked: \$h waits for its IAS run — paste.md" >"\$VIBE_JOB_DIR/result"
     ;;
+  askworkers)
+    cat "$STUBS/workers-ask" >>"\$VIBE_JOB_DIR/workers"
+    echo "queued: workers" >"\$VIBE_JOB_DIR/result"
+    ;;
   workers)
     "$VIBE" queue worker h1 >>"$STUBS/worker.out" 2>&1
     "$VIBE" queue worker h2 --place runpod >>"$STUBS/worker.out" 2>&1
     echo "queued: workers h1 h2" >"\$VIBE_JOB_DIR/result"
     ;;
+  leak)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    ln -s "$STUBS/secret" "\$VIBE_JOB_DIR/pr.md"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
+  forge)
+    for f in "$STUBS"/forge/*; do rm -f "\$VIBE_JOB_DIR/\${f##*/}" && cp "\$f" "\$VIBE_JOB_DIR/"; done
+    if [ -f "$STUBS/forge-sleep" ]; then touch "$STUBS/forged" && sleep 30; fi
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
+    ;;
   gpurace)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- true
-    GPUQ_EXIT=0 "$VIBE" queue follow "\$VIBE_JOB_DIR"
+    GPUQ_EXIT=0 "$VIBE" queue follow "\$jd"
     sleep 1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
@@ -586,7 +605,7 @@ locked_out() (
   mkjob 01-a "$r" task-a ok
   drain
   [ "$status" -eq 0 ]
-  grep -q -- "--add-dir $Q/01-a " "$STUBS/claude.log"
+  grep -q -- "--add-dir $Q/01-a/agent " "$STUBS/claude.log"
   wt="$(cat "$Q/01-a/worktree")"
   : >"$STUBS/claude.log"
   VIBE_JOB_DIR="$Q/01-a-review1" run bash "$REPO_ROOT/claude/vibe-review.sh" "$wt" proj-task-a-review1 sonnet high main
@@ -754,8 +773,8 @@ locked_out() (
   drain
   [ "$status" -eq 0 ]
   # the third item was handed the lane so far: alpha's TL;DR and beta out of the lane
-  grep -q '^\*\*Changed:\*\* alpha.txt added.$' "$Q/03-c/seen-lane-pr.md"
-  grep -q '^- beta → lane-x-beta$' "$Q/03-c/seen-lane-pr.md"
+  grep -q '^\*\*Changed:\*\* alpha.txt added.$' "$Q/03-c/agent/seen-lane-pr.md"
+  grep -q '^- beta → lane-x-beta$' "$Q/03-c/agent/seen-lane-pr.md"
   grep -q '^\*\*Changed:\*\* gamma.txt added.$' "$Q/03-c/pr-body.md"
   grep -q '^- beta → lane-x-beta$' "$Q/03-c/pr-body.md"
   run grep -c 'alpha.txt added' "$Q/03-c/pr-body.md"
@@ -1530,6 +1549,74 @@ EOF
   [ "$rc" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = failed ]
   [ "$(cat "$Q/01-a/note")" = stopped ]
+}
+
+# The job sandbox may write its worktree and $VIBE_JOB_DIR; the stub writes there what a hostile job would.
+@test "trust: a job-written worktree and base are not used by the runner's gate and push" {
+  local r e
+  r="$(make_repo proj)"
+  e="$BATS_TEST_TMPDIR/evil"
+  git init -q "$e"
+  git -C "$e" remote add origin "$e"
+  git -C "$e" config remote.origin.uploadpack "touch '$BATS_TEST_TMPDIR/pwned'; git-upload-pack"
+  git -C "$e" config remote.origin.receivepack "touch '$BATS_TEST_TMPDIR/pwned'; git-receive-pack"
+  mkdir -p "$STUBS/forge"
+  echo "$e" >"$STUBS/forge/worktree"
+  echo nope >"$STUBS/forge/base"
+  mkjob 01-a "$r" task-a forge
+  drain
+  [ "$status" -eq 0 ]
+  [ ! -e "$BATS_TEST_TMPDIR/pwned" ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(git -C "$BATS_TEST_TMPDIR/proj.git" show task-a:work.txt)" = work ]
+  # A copy, not a link: Write and Edit run outside the sandbox and could follow a link.
+  [ ! -L "$Q/01-a/agent/job" ]
+  cmp "$Q/01-a/job" "$Q/01-a/agent/job"
+}
+
+@test "trust: a job-written agent-pid is not what vibe queue stop TERMs" {
+  local r victim runner
+  r="$(make_repo proj)"
+  sleep 60 3>&- &
+  victim=$!
+  mkdir -p "$STUBS/forge"
+  echo "$victim" >"$STUBS/forge/agent-pid"
+  touch "$STUBS/forge-sleep"
+  mkjob 01-a "$r" task-a forge
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/runner.log" 2>&1 3>&- &
+  runner=$!
+  for _ in $(seq 100); do
+    if [ -e "$STUBS/forged" ]; then break; fi
+    sleep 0.1
+  done
+  "$VIBE" queue stop 01-a >/dev/null
+  SECONDS=0
+  wait "$runner"
+  [ "$SECONDS" -lt 15 ] # the forging agent sleeps 30 s: the runner TERMed it, not the victim
+  kill -0 "$victim"
+  kill "$victim"
+  [ "$(cat "$Q/01-a/note")" = stopped ]
+}
+
+@test "trust: the job sandbox may not write the queue or gpu-queue" {
+  # An entry that names either, or holds ~/.local/state, lets a job forge the runner's files or a GPU run.
+  jq -e '[.sandbox.filesystem.allowWrite[] | rtrimstr("/") as $e
+    | select(($e | contains("vibe") or contains("gpu-queue")) or ("~/.local/state/" | startswith($e + "/")))] == []' \
+    "$REPO_ROOT/claude/vibe-job-settings.json"
+}
+
+@test "trust: a link the job leaves as pr.md is not copied back or published" {
+  local r
+  r="$(make_repo proj)"
+  echo "host secret" >"$STUBS/secret"
+  mkjob 01-a "$r" task-a leak
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$Q/01-a/pr.md" ]
+  [ -f "$Q/01-a/pr-body.md" ]
+  run grep -q "host secret" "$Q/01-a/pr-body.md"
+  [ "$status" -eq 1 ]
 }
 
 @test "report: a done job whose push failed or whose PR was not created is under Needs you with its note, not under Done" {
@@ -2487,6 +2574,8 @@ endedjob() {
   done
   [ "$(cat "$Q/01-a/status")" = gpu ]
   [ "$(cat "$Q/01-a/pr")" = "https://example.com/pull/1" ]
+  [ ! -s "$STUBS/gpu-in-session" ] # vibe queue gpu only asks; the runner submits after the session
+  [ "$(cat "$GPU_QUEUE_DIR/queued/$(cat "$Q/01-a/gpu-job")/dir")" = "$(cd "$r/.claude/worktrees/task-a" && pwd)" ]
   "$REPO_ROOT/bin/gpu-queue" run --once
   wait "$pid"
   [ "$(cat "$Q/01-a/status")" = "done" ]
@@ -2608,22 +2697,55 @@ gpurace() {
   VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu --help
   [ "$status" -eq 0 ]
   [[ "$output" == *"vibe queue status"* ]] || false
-  [ ! -e "$Q/01-a/gpu-job" ]
+  [ ! -e "$Q/01-a/gpu-cmd" ]
 }
 
-@test "gpu: past the job's deadline= it queues no run; before it the run goes through" {
+@test "gpu: past the job's deadline= it asks for no run; before it the run is asked for" {
   local r
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok "deadline=2000-01-01 08:00"
   VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu -- true
   [ "$status" -ne 0 ]
   [[ "$output" == *"past this job's deadline (2000-01-01 08:00)"* ]] || false
+  [ ! -e "$Q/01-a/gpu-cmd" ]
+  mkjob 02-b "$r" task-b ok "deadline=2999-01-01 08:00"
+  VIBE_JOB_DIR="$Q/02-b" run "$VIBE" queue gpu -- echo "a b"
+  [ "$status" -eq 0 ]
+  [ "$(tr '\0' '|' <"$Q/02-b/gpu-cmd")" = "echo|a b|" ]
+  [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
+}
+
+@test "gpu: past the job's deadline= the runner queues no run a job asked for by hand; the job fails" {
+  local r
+  r="$(make_repo proj)"
+  touch "$STUBS/gpu-forge"
+  mkjob 01-a "$r" task-a gpu "deadline=2000-01-01 08:00"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = failed ]
+  [[ "$(cat "$Q/01-a/note")" == "failed: no GPU run asked for"* ]] || false
+  [ "$(cat "$Q/01-a/result")" = "$(cat "$Q/01-a/note")" ]
   [ ! -e "$Q/01-a/gpu-job" ]
   [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
-  mkjob 02-b "$r" task-b ok "deadline=2999-01-01 08:00"
-  VIBE_JOB_DIR="$Q/02-b" run "$VIBE" queue gpu -- true
-  [ "$status" -eq 0 ]
-  [ -s "$Q/02-b/gpu-job" ]
+}
+
+@test "gpu: a run asked for in a session that started before deadline= is queued, though the session ends past it" {
+  local r pid
+  r="$(make_repo proj)"
+  touch "$STUBS/gpu-forge"                         # the ask the session made before the deadline
+  echo "2000-01-01 07:55:00" >"$STUBS/gpu-started" # the stub plays the clock: the session started at 07:55
+  mkjob 01-a "$r" task-a gpu "deadline=2000-01-01 08:00"
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$Q/01-a/status" 2>/dev/null)" != gpu ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-a/status")" = gpu ]
+  [ -d "$GPU_QUEUE_DIR/queued/$(cat "$Q/01-a/gpu-job")" ]
+  "$REPO_ROOT/bin/gpu-queue" cancel "$(cat "$Q/01-a/gpu-job")" 2>/dev/null
+  wait "$pid"
+  [ "$(cat "$Q/01-a/note")" = "GPU run cancelled" ]
 }
 
 @test "add, gpu: a deadline= that is not YYYY-MM-DD HH:MM is refused; add refuses a usd= that is no number" {
@@ -3287,7 +3409,9 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   mkjob 01-c "$r" research-q1 workers research=q1
   drain
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^queued .*: worker h[12] at ' "$STUBS/worker.out")" = 2 ]
+  [ "$(grep -c '^asked for worker h[12] at ' "$STUBS/worker.out")" = 2 ]
+  [ "$(grep -c '^queued .*: worker h[12] at ' "$Q/01-c/workers.log")" = 2 ]
+  [ ! -e "$Q/01-c/agent/workers" ]
   for h in h1 h2; do
     [ "$(cat "$(qjob "-research-q1-$h")/status")" = "done" ]
     [ ! -e "$(qjob "-research-q1-$h")/pr" ]
@@ -3307,6 +3431,26 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$c/status")" = "done" ]
   grep -qF -- '- Worker: h1 · ' "$c/prompt.md"
   grep -qF -- '- Worker: h2 · ' "$c/prompt.md"
+}
+
+@test "worker: the runner queues each ask of a session and logs each refusal; a session whose every ask is refused fails" {
+  local r
+  r="$(make_repo proj)"
+  coord_wt "$r" >/dev/null
+  printf 'h9 turing\nh1 turing\n' >"$STUBS/workers-ask"
+  mkjob 01-c "$r" research-q1 askworkers research=q1
+  drain
+  [ "$status" -eq 0 ]
+  grep -qF "vibe: no item '### h9 <name>' in RESEARCH.md at HEAD" "$Q/01-c/workers.log"
+  grep -q '^queued .*: worker h1 at turing on research/q1/h1$' "$Q/01-c/workers.log"
+  [ -n "$(qjob -research-q1-h1)" ]
+  [ -z "$(qjob -research-q1-h9)" ]
+  printf 'h9 turing\n' >"$STUBS/workers-ask"
+  mkjob 05-c "$r" research-q1b askworkers research=q2
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/05-c/status")" = failed ]
+  [[ "$(cat "$Q/05-c/note")" == "failed: each worker this session asked for was refused — vibe: no "* ]] || false
 }
 
 @test "worker: two worker ends queue one coordinator follow-up with both; the waiting session ends done; a worker with a session 2 wakes none" {
@@ -3497,7 +3641,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$status" -ne 0 ]
   VIBE_JOB_DIR="$Q/02-w" run "$VIBE" queue gpu -- true
   [ "$status" -eq 0 ]
-  [ -s "$Q/02-w/gpu-job" ]
+  [ -s "$Q/02-w/gpu-cmd" ]
   GPUQ_EXIT=0 GPUQ_LOG=/dev/null run "$VIBE" queue follow "$Q/02-w"
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/02-w-gpu/drain")" = drain ]
@@ -4394,7 +4538,7 @@ gpu_free() { kill -TERM -- "-$holdpid" 2>/dev/null || true; }
   [[ "$output" == *"01-a takes no steer now"* ]] || false
   drain
   [ "$status" -eq 0 ]
-  [ "$(cat "$STUBS/claude.log")" = "-p --model sonnet --name proj-task-a --permission-mode auto --permission-prompts none --settings $REPO_ROOT/claude/vibe-job-settings.json --add-dir $Q/01-a --output-format stream-json --verbose" ]
+  [ "$(cat "$STUBS/claude.log")" = "-p --model sonnet --name proj-task-a --permission-mode auto --permission-prompts none --settings $REPO_ROOT/claude/vibe-job-settings.json --add-dir $Q/01-a/agent --output-format stream-json --verbose" ]
   [ ! -e "$Q/01-a/steer" ]
 }
 

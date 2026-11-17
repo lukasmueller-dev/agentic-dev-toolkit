@@ -11,7 +11,7 @@ Session 1: the code and the run.
 1. **Build the least.** New behavior sits behind a switch that is off by default. Run the repo's tests for what you touch.
 2. **Test yourself.** Run the Smoke check of the `## Research` section on the code path of the run. The run starts only when it passes.
 3. **Commit.** The run takes the commit at HEAD.
-4. **Queue one run.** `place=turing`: `vibe queue gpu -- <command>`. `place=runpod` or `vast`: `vibe queue gpu --place <place> -- <command>`. The last line of the run's output is `RESULT {"metric": <number>}`.
+4. **Ask for one run, last.** `place=turing`: `vibe queue gpu -- <command>`. `place=runpod` or `vast`: `vibe queue gpu --place <place> -- <command>`. The runner queues it once you exit. The last line of the run's output is `RESULT {"metric": <number>}`.
 5. **Exit:** write `result` as `queued: <hid> at <place>`.
 
 `place=ias`: you queue no run, because the user starts it on IAS.

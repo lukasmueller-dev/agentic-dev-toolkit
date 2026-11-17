@@ -485,11 +485,15 @@ deadline_of() {
   echo "$e"
 }
 
-# deadline_gate JOB WHAT — dies past JOB's deadline=, the hard stop of a research job's budget: WHAT, finish the task.
+# coordinator JOB — true for a research coordinator job: research=, no hid=.
+coordinator() { [[ -n "$(jget "$1/job" research)" && -z "$(jget "$1/job" hid)" ]]; }
+
+# deadline_gate JOB WHAT — dies past JOB's deadline= (at VIBE_AT, else now), the hard stop of a research job's budget:
+# WHAT, finish the task.
 deadline_gate() {
   local dl
   dl="$(deadline_of "$1/job")" || exit 1
-  if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
+  if [[ -n "$dl" ]] && ((${VIBE_AT:-$(date +%s)} >= dl)); then
     die "past this job's deadline ($(jget "$1/job" deadline)): $2, finish the task"
   fi
 }
@@ -966,19 +970,37 @@ secs() {
 }
 
 # agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
-# timeout(1), JOB as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
+# timeout(1), JOB/agent as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
+# The sandbox writes only JOB/agent: copies of job, base, lane-pr.md, worktree, drain in, the agent's outputs (plain files)
+# back to JOB after; its asks for a place run and workers: place_take, workers_take.
 agent_exec() {
-  local d="$1" t="$2" s="$3" rc=0 start="$SECONDS"
+  local d="$1" t="$2" s="$3" rc=0 start="$SECONDS" x
   shift 3
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
+  agent_copy "$d" job base lane-pr.md worktree drain
+  VIBE_JOB_DIR="$d/agent" VIBE_STEER="$d/steer" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
   echo "$!" >"$d/agent-pid"
   wait "$!" || rc=$?
   rm -f "$d/agent-pid"
+  # A link would read host files, a FIFO blocks a read.
+  for x in result pr.md report.md verdicts gpu-cmd paste.md; do
+    if [[ -f "$d/agent/$x" && ! -L "$d/agent/$x" ]]; then cp "$d/agent/$x" "$d/$x"; fi
+  done
   # timeout(1) exits 137 too, when TERM left the agent running past --kill-after.
   if ((rc == 137 && ${#TIMEOUT_CMD[@]})) && ((SECONDS - start >= $(secs "$t"))); then rc=124; fi
   return "$rc"
+}
+
+# agent_copy JOB NAME... — fresh copies of JOB/NAME in JOB/agent. No links: Write and Edit run unsandboxed.
+agent_copy() {
+  local d="$1" x
+  shift
+  mkdir -p "$d/agent"
+  for x in "$@"; do
+    rm -rf "${d:?}/agent/$x"
+    if [[ -e "$d/$x" ]]; then cp -R "$d/$x" "$d/agent/$x"; fi
+  done
 }
 
 # job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
@@ -1002,7 +1024,7 @@ job_handoff() {
     echo "The time limit stopped this job."
     echo "Overwrite HANDOFF.md in the worktree root with State, Next action and Blockers."
     echo "Commit it with any work in progress."
-    echo "If $d/result does not exist, write it: failed: out of time — <what is left>."
+    echo "If $d/agent/result does not exist, write it: failed: out of time — <what is left>."
   } >"$d/resume.md"
   job_agent "$d" 10m "$d/resume.md" "$(jstate "$d" session)" 5 || true
 }
@@ -1091,7 +1113,7 @@ review_fix() {
     echo
     cat "$d/findings"
     echo
-    echo "Write $d/verdicts, one line per finding:"
+    echo "Write $d/agent/verdicts, one line per finding:"
     echo "<number>=fixed <commit sha>, <number>=rejected <reason>, or <number>=open."
     echo "Do not change result or pr.md. Do not push."
   } >"$d/fix.md"
@@ -1471,8 +1493,11 @@ job_run() {
   if [[ -n "$(jget "$d/job" tool)" ]]; then
     tool_job "$d" || return 0
     p="$d/close.md"
+    agent_copy "$d" in out tool.log tool-exit
   fi
   job_agent "$d" "$t" "$p" "$(jstate "$d" session)" || rc=$?
+  # A tool's in/ and out/ can be large: only the closing session gets copies.
+  if [[ "$p" == "$d/close.md" ]]; then rm -rf "$d/agent/in" "$d/agent/out"; fi
   job_session "$d"
   if stopped "$d"; then return 0; fi
   result="$(jstate "$d" result)"
@@ -1497,7 +1522,17 @@ job_run() {
     case "$result" in
       "done:"*) st="done" ;;
       "blocked:"*) st=blocked ;;
-      "queued:"*) st=gpu ;;
+      "queued:"*)
+        # A research coordinator waits for its workers: it ends queued: with no run of its own.
+        st=gpu
+        if ! workers_take "$d"; then
+          st=failed result="failed: each worker this session asked for was refused — $(tail -n 1 "$d/workers.log")"
+          echo "$result" >"$d/result"
+        elif ! place_take "$d" && ! gpu_submit "$d" && ! coordinator "$d"; then
+          st=failed result="failed: no GPU run asked for (vibe queue gpu), or the session started past deadline="
+          echo "$result" >"$d/result"
+        fi
+        ;;
       *) st=failed note="no result line" ;;
     esac
   fi
@@ -1609,7 +1644,7 @@ cmd_queue_run() {
             running=$((running + 1)) busy+=" $(branch_key "$d")"
             if tool_gpu "$d"; then gpu_tool=1; fi
             # vibe queue stop: TERM the agent; job_run then ends the job.
-            # agent-pid is agent-writable: only a positive pid, else `kill 0` TERMs the runner's own group.
+            # Only a positive pid: `kill 0` TERMs the runner's own group.
             apid="$(jstate "$d" agent-pid)"
             if [[ -e "$d/stop" && "$apid" =~ ^[1-9][0-9]*$ ]]; then kill "$apid" 2>/dev/null || true; fi
           elif stopped "$d"; then
@@ -2159,12 +2194,11 @@ cmd_queue_page() {
   echo "wrote $QROOT/web/index.html"
 }
 
-# vibe queue gpu [--place P] -- CMD... — from inside a job: queue CMD on the GPU
-# (cwd: the worktree); when it ends, a follow-up job continues the task.
-# --place runpod|vast: the runner runs CMD there in the repo's .claude/research/ (place_run).
-# Past the job's deadline= it queues nothing: the hard stop of a research job's budget.
+# vibe queue gpu [--place P] -- CMD... — from inside a job: ask for CMD on the GPU in $VIBE_JOB_DIR/gpu-cmd; the runner
+# submits it (gpu_submit). --place runpod|vast: ask for a run there in $VIBE_JOB_DIR/run/ (place_queue); the runner takes
+# it (place_take) and runs it in the repo's .claude/research/ (place_run). Past the job's deadline= it asks for nothing.
 cmd_queue_gpu() {
-  local d="${VIBE_JOB_DIR:-}" id p="" u="usage: vibe queue gpu [--place P] -- CMD..."
+  local d="${VIBE_JOB_DIR:-}" p="" u="usage: vibe queue gpu [--place P] -- CMD..."
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
   case "${1:-}" in --place=*) set -- --place "${1#*=}" "${@:2}" ;; esac
   if [[ "${1:-}" == --place ]]; then
@@ -2184,14 +2218,66 @@ cmd_queue_gpu() {
     place_queue "$d" "$p" "$@"
     return 0
   fi
-  id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
-    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
+  printf '%s\0' "$@" >"$d/gpu-cmd"
+  echo "asked for — now write result 'queued: <what runs>' and exit; the runner queues the run"
+}
+
+# gpu_submit JOB — after a session that ended `queued:`: queue JOB/gpu-cmd in gpu-queue (cwd: the
+# worktree), its id in JOB/gpu-job; when it ends, a follow-up job continues the task. False with no
+# gpu-cmd, or a session that started past deadline= (the hard stop of a research job's budget).
+# The session start, not gpu-cmd's mtime: the agent can set that. The job sandbox cannot write gpu-queue.
+gpu_submit() {
+  local d="$1" id a
+  local -a argv=()
+  [[ -s "$d/gpu-cmd" ]] || return 1
+  if session_late "$d"; then return 1; fi
+  while IFS= read -r -d '' a; do argv+=("$a"); done <"$d/gpu-cmd"
+  ((${#argv[@]})) || return 1
+  id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$(jstate "$d" worktree)" \
+    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "${argv[@]}")" || return 1
   echo "$id" >"$d/gpu-job"
-  echo "queued $id — now write result 'queued: <what runs>' and exit"
+}
+
+# session_late JOB — true when JOB's session started past its deadline=, or the deadline does not parse.
+# The session start, not a file's mtime: the agent can set that.
+session_late() {
+  local dl s
+  dl="$(deadline_of "$1/job")" || return 0
+  s="$(epoch_of "$(jstate "$1" started)")"
+  [[ -n "$dl" ]] && ((${s:-$(date +%s)} >= dl))
+}
+
+# place_take JOB — after a session that ended `queued:`: JOB/agent/run/ (place_queue) to JOB/run/, plain files only;
+# the next pass starts it (place_pass). False with no ask, a run taken before, or a session that started past deadline=.
+place_take() {
+  local d="$1" a="$1/agent/run" t x
+  if [[ ! -d "$a" || -L "$a" || -e "$d/run" ]] || session_late "$d"; then return 1; fi
+  t="$(mktemp -d "$d/.run.XXXXXX")" || return 1
+  for x in place commit cmd; do
+    if [[ -f "$a/$x" && ! -L "$a/$x" ]]; then cp "$a/$x" "$t/$x"; fi
+  done
+  mv "$t" "$d/run"
+}
+
+# workers_take JOB — after a session that ended `queued:`: `vibe queue worker` with JOB as its job dir for each
+# `<hid> <place>` line of JOB/agent/workers, as of the session start (VIBE_AT). Each refusal goes to JOB/workers.log.
+# False when the session asked for workers and none was queued.
+workers_take() {
+  local d="$1" h p e n=0 ok=0
+  [[ -f "$d/agent/workers" && ! -L "$d/agent/workers" ]] || return 0
+  while read -r h p; do
+    n=$((n + 1))
+    if e="$(VIBE_JOB_DIR="$d" VIBE_AT="$(epoch_of "$(jstate "$d" started)")" "$SELF_ROOT/bin/vibe" queue worker "$h" --place "$p" 2>&1)"; then
+      ok=$((ok + 1))
+    fi
+    echo "$e" >>"$d/workers.log"
+  done <"$d/agent/workers"
+  rm -f "$d/agent/workers"
+  ((ok || !n))
 }
 
 # place_queue JOB PLACE CMD... — vibe queue gpu --place: JOB/run/ gets place, commit (the worktree's HEAD) and cmd
-# (CMD as a bash script); the runner's pass starts the run (place_pass). One error line when the folder cannot run there.
+# (CMD as a bash script); after the session the runner takes it (place_take), its next pass starts it (place_pass). One error line when the folder cannot run there.
 # The secrets: ~/.config/vibe/workspaces/research-<repo folder>.env, one file per repo.
 place_queue() {
   local d="$1" p="$2" wt f=.claude/research c t r
@@ -2218,7 +2304,7 @@ place_queue() {
   agent_git -C "$wt" rev-parse HEAD >"$t/commit"
   printf '#!/usr/bin/env bash\n%s\n' "$(printf '%q ' "$@")" >"$t/cmd"
   mv "$t" "$d/run"
-  echo "queued a run at $p — now write result 'queued: <what runs>' and exit"
+  echo "asked for a run at $p — now write result 'queued: <what runs>' and exit; the runner starts it"
 }
 
 # fresh FILE — stdin to FILE as a new file, never through a link: an agent can write every job dir. rm drops a link
@@ -2475,6 +2561,8 @@ follow_ready() {
 # (the item's name), builds= (its `Builds on:`, else root), after= (no review). The runner pushes it, no PR.
 # Its prompt: job-prompt.md, then the block of fill-queue's references/research-worker.md.
 # One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
+# In a job ($VIBE_JOB_DIR is JOB/agent: the sandbox writes no queue), the checks, then the ask: `<hid> <place>` in
+# JOB/agent/workers. The runner then runs this command with JOB as the job dir (workers_take), under the lock.
 cmd_queue_worker() {
   local d="${VIBE_JOB_DIR:-}" h="" p=turing s g k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|ias]"
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue worker runs inside a queue job (VIBE_JOB_DIR)"
@@ -2504,10 +2592,11 @@ cmd_queue_worker() {
   k="$(jget "$d/job" workers)"
   k="${k:-3}"
   [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"
-  # One start at a time, from the count to the queued job: an agent can send several calls at once. In the queue dir:
-  # the agent's sandbox writes there.
-  mkdir_lock "$QDIR/.workers" || exit 1
-  trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
+  # One start at a time, from the count to the queued job.
+  if [[ "$d" != */agent ]]; then
+    mkdir_lock "$QDIR/.workers" || exit 1
+    trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
+  fi
   # Live: a worker of this repo's research with a job that has not ended (session 2 is queued before session 1 ends),
   # or whose run is out on IAS.
   for j in "$QDIR"/*/; do
@@ -2517,6 +2606,12 @@ cmd_queue_worker() {
       live+="${live:+ }$x" n=$((n + 1))
     fi
   done
+  # The asks of this session count as live.
+  if [[ "$d" == */agent && -f "$d/workers" ]]; then
+    while read -r x _; do
+      if [[ -n "$x" ]]; then live+="${live:+ }$x" n=$((n + 1)); fi
+    done <"$d/workers"
+  fi
   [[ " $live " != *" $h "* ]] || die "worker $h runs already"
   ((n < k)) || die "workers=$k: $live run — start the next one after a worker ends"
   wt="$(jstate "$d" worktree)"
@@ -2526,9 +2621,15 @@ cmd_queue_worker() {
   [[ -n "$it" ]] || die "no item '### $h <name>' in RESEARCH.md at HEAD: commit it first"
   wb="research/$s/$h"
   branch_ok "$wb" || die "research=$s is no slug: no worker branch"
+  if [[ "$d" == */agent ]]; then
+    ! agent_git -C "$wt" rev-parse -q --verify "refs/heads/$wb" >/dev/null || die "no branch $wb: it exists — a rerun takes a new hid"
+    echo "$h $p" >>"$d/workers"
+    echo "asked for worker $h at $p — the runner queues it once you exit; write result 'queued: <hids> run'"
+    return 0
+  fi
   e="$(agent_git -C "$wt" branch --no-track "$wb" HEAD 2>&1)" || die "no branch $wb: ${e%%$'\n'*}"
   # In the queue dir, so the move into the queue is one rename: the runner never sees half a job.
-  t="$(mktemp -d "$QDIR/.worker.XXXXXX")"
+  t="$(mktemp -d "$QDIR/.worker.XXXXXX")" || die "no temp dir in $QDIR"
   {
     grep -E '^(repo|model|effort|timeout|research|usd|deadline)=' "$d/job" || true
     printf 'branch=%s\ncontext=Research worker %s: %s\nhid=%s\nplace=%s\nidea=%s\nbuilds=%s\nafter=\n' \
