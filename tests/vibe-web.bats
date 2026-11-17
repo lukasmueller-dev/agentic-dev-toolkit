@@ -407,6 +407,30 @@ ID=20261104-080000-proj-task
   [[ "$output" == *"is done — retry takes blocked, failed, timeout or skipped"* ]] || false
 }
 
+@test "route retry with a note and a HANDOFF.md: a failed job keeps its plan, the note ends the task; a blocked job gets the answer" {
+  local r wt n h
+  r="$(make_repo proj)" wt="$BATS_TEST_TMPDIR/wt"
+  git -C "$r" worktree add -q -b task "$wt"
+  printf '# Handoff\n\n## Next action\n\nImplement the parser, then run the gate.\n\n## Blockers\n\nNone.\n' >"$wt/HANDOFF.md"
+  git -C "$wt" add HANDOFF.md && git -C "$wt" commit -q -m "docs: handoff" && git -C "$wt" push -q origin task
+  h="$(git -C "$wt" rev-parse HEAD)"
+  qjob "$ID" timeout
+  echo "$wt" >"$Q/queue/$ID/worktree"
+  run act retry "{\"id\": \"$ID\", \"note\": \"Also run the linter.\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -qx 'Implement the parser, then run the gate.' "$wt/HANDOFF.md"
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$h" ]
+  n="$(newjob)"
+  [ "$(cat "$n/prompt.md")" = "$(printf 'task\n\nNote: Also run the linter.')" ]
+  [ "$(cat "$n/worktree")" = "$wt" ]
+  # The follow-up stops on a question: Run again with a note answers it in HANDOFF.md.
+  echo blocked >"$n/status"
+  run act retry "{\"id\": \"${n##*/}\", \"note\": \"Plan B.\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ "$(sed -n '/^## Next action/,/^## Blockers/p' "$wt/HANDOFF.md")" = "$(printf '## Next action\n\nAnswer: Plan B.\n\n## Blockers')" ]
+  [ "$(git -C "$wt" log -1 --format=%s)" = "docs(handoff): ${n##*/} unblocked" ]
+}
+
 @test "route cancel: a queued job ends skipped; the card asks for a second tap" {
   qjob "$ID"
   run "$REPO_ROOT/bin/vibe" queue page
