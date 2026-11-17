@@ -1347,13 +1347,19 @@ tool_run() {
   done
   wait "$pid" || rc=$?
   if [[ -e "$d/stop" && -s "$st/id" ]]; then WS_HOURS="$h" ws_down "$inst" >>"$d/tool.log" 2>&1 || true; fi
-  if [[ -d "$st/out" ]]; then
-    cp -R "$st/out" "$d/out" >>"$d/tool.log" 2>&1 || true
-    find "$d/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$d/out"
-  fi
+  copy_out "$st" "$d" "$d/tool.log"
   # Last: a job process that dies before it runs the tool again.
   echo "$rc" >"$d/tool-exit"
   if [[ ! -s "$st/id" ]]; then rm -rf "$st"; fi
+}
+
+# copy_out ST JOB LOG — ST/out to JOB/out with no link or special file: a rented machine can plant one.
+copy_out() {
+  if [[ -d "$1/out" ]]; then
+    rm -rf "$2/out"
+    cp -R "$1/out" "$2/out" >>"$3" 2>&1 || true
+    find "$2/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$2/out"
+  fi
 }
 
 # tool_unsafe WT — the first path FETCH_HEAD adds, changes or deletes against WT's HEAD in agent or git
@@ -2201,11 +2207,7 @@ place_run() {
     ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
     ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
   fi
-  if [[ -d "$st/out" ]]; then
-    rm -rf "$d/out"
-    cp -R "$st/out" "$d/out" >>"$d/run/log" 2>&1 || true
-    find "$d/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$d/out"
-  fi
+  copy_out "$st" "$d" "$d/run/log"
   if [[ ! -s "$st/id" ]]; then
     # The instance is gone: cost is price × the time from up to now. A live one keeps hours × price (down at its limit).
     if [[ -n "$t0" ]]; then
