@@ -1,5 +1,5 @@
 ---
-# repo-review in agentic-dev-toolkit. A key here overrides the catalogue; remove a key to keep its default.
+# lean-audit in agentic-dev-toolkit. A key here overrides the catalogue; remove a key to keep its default.
 # schedule: weekly | daily | monthly
 # day: sun
 # output: pr | report
