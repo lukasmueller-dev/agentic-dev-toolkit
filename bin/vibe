@@ -1562,6 +1562,8 @@ cmd_queue_run() {
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
     ws_tick_bg
+    # Before the scan: a follow-up a place run makes this pass is in it.
+    for d in "$QDIR"/*/; do place_pass "${d%/}"; done
     running=0 waiting=0 busy="" queued=() gpu_tool=0
     for d in "$QDIR"/*/; do
       d="${d%/}"
@@ -2081,26 +2083,125 @@ cmd_queue_page() {
   echo "wrote $QROOT/web/index.html"
 }
 
-# vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
+# vibe queue gpu [--place P] -- CMD... — from inside a job: queue CMD on the GPU
 # (cwd: the worktree); when it ends, a follow-up job continues the task.
+# --place runpod|vast: the runner runs CMD there in the repo's .claude/research/ (place_run).
 # Past the job's deadline= it queues nothing: the hard stop of a research job's budget.
 cmd_queue_gpu() {
-  local d="${VIBE_JOB_DIR:-}" id dl
+  local d="${VIBE_JOB_DIR:-}" id dl p="" u="usage: vibe queue gpu [--place P] -- CMD..."
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
+  case "${1:-}" in --place=*) set -- --place "${1#*=}" "${@:2}" ;; esac
+  if [[ "${1:-}" == --place ]]; then
+    (($# >= 2)) || die "$u"
+    p="$2"
+    shift 2
+  fi
   case "${1:-}" in
     -h | --help) usage ;;
     --) shift ;;
-    -*) die "usage: vibe queue gpu -- CMD..." ;;
+    -*) die "$u" ;;
   esac
-  (($#)) || die "usage: vibe queue gpu -- CMD..."
+  (($#)) || die "$u"
   dl="$(deadline_of "$d/job")" || exit 1
   if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
     die "past this job's deadline ($(jget "$d/job" deadline)): queue no run, finish the task"
+  fi
+  if [[ -n "$p" && "$p" != turing ]]; then
+    place_queue "$d" "$p" "$@"
+    return 0
   fi
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
     --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
   echo "$id" >"$d/gpu-job"
   echo "queued $id — now write result 'queued: <what runs>' and exit"
+}
+
+# place_queue JOB PLACE CMD... — vibe queue gpu --place: JOB/run/ gets place, commit (the worktree's HEAD) and cmd
+# (CMD as a bash script); the runner's pass starts the run (place_pass). One error line when the folder cannot run there.
+place_queue() {
+  local d="$1" p="$2" wt f=.claude/research c t
+  shift 2
+  wt="$(jstate "$d" worktree)"
+  c="$wt/$f/workspace.conf"
+  [[ -d "$wt/$f" ]] || die "no $f/ in $wt: --place $p runs the repo's research folder — docs/vibe-queue.md#research-jobs"
+  t="$(ws_check "$wt/$f")"
+  [[ "$t" == ok ]] || die "$f/workspace.conf: $t"
+  [[ "$(jget "$c" kind) $(jget "$c" result)" == "run folder" ]] || die "$f/workspace.conf needs kind=run and result=folder"
+  [[ ",$(jget "$c" places)," == *",$p,"* ]] || die "$f/workspace.conf has no place '$p' — places=$(jget "$c" places)"
+  [[ -n "$(jget "$c" hours)" ]] || die "$f/workspace.conf needs hours=: the limit of a run"
+  [[ -n "$(jget "$c" image)" && -n "$(jget "$c" commit)" ]] || die "$f/workspace.conf needs image= and commit=: $p rents that image"
+  [[ -x "$WS_ROOT/_places/$p" ]] || die "no place script '$p' in $WS_ROOT/_places"
+  [[ -z "$(agent_git -C "$wt" status --porcelain -- "$f")" ]] || die "commit $f/ first: the run takes the worktree's HEAD"
+  [[ ! -e "$d/run" ]] || die "this job queued its run already ($d/run): one run per session"
+  t="$(mktemp -d "$d/.run.XXXXXX")"
+  echo "$p" >"$t/place"
+  agent_git -C "$wt" rev-parse HEAD >"$t/commit"
+  printf '#!/usr/bin/env bash\n%s\n' "$(printf '%q ' "$@")" >"$t/cmd"
+  mv "$t" "$d/run"
+  echo "queued a run at $p — now write result 'queued: <what runs>' and exit"
+}
+
+# place_pass JOB — the runner pass for JOB/run/: start place_run once. A run whose process died before
+# run/exit (a reboot) ends as infra; its instance goes down at its limit (vibe ws tick).
+place_pass() {
+  local d="$1" p
+  if [[ ! -f "$d/job" || ! -f "$d/run/place" || -e "$d/run/exit" ]]; then return 0; fi
+  p="$(jstate "$d/run" pid)"
+  if [[ -z "$p" ]]; then
+    place_run "$d" >>"$d/runner.log" 2>&1 &
+    echo "$!" >"$d/run/pid"
+  elif ! kill -0 "$p" 2>/dev/null && [[ ! -e "$d/run/exit" ]]; then
+    echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" >"$d/infra"
+    echo infra >"$d/run/exit"
+    (GPUQ_EXIT=infra GPUQ_LOG="$d/run/log" cmd_queue_follow "$d") >>"$d/runner.log" 2>&1 || true
+  fi
+}
+
+# place_run JOB — JOB's run in instance research-<id>: in/repo a clone at run/commit, in/cmd, the clone's
+# .claude/research/ as the folder. up, exec run until the stop bound before the limit, then exec stop, pull, down.
+# All output to run/log; /ws/out to JOB/out/. A failed up (or clone) writes JOB/infra. Then run/exit and the follow-up.
+place_run() {
+  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0
+  st="$WS_STATES/$inst"
+  mkdir -p "$st/in"
+  jstate "$d/run" place >"$st/place"
+  echo "$st/in/repo/.claude/research" >"$st/dir"
+  {
+    cp "$d/run/cmd" "$st/in/cmd" && chmod +x "$st/in/cmd" &&
+      agent_git clone -q --no-checkout "$(jstate "$d" worktree)" "$st/in/repo" &&
+      agent_git -C "$st/in/repo" checkout -q --detach "$(jstate "$d/run" commit)" &&
+      ws_place "$inst" up
+  } >>"$d/run/log" 2>&1 || rc=infra
+  if [[ "$rc" == infra ]]; then
+    tail -n 1 "$d/run/log" >"$d/infra"
+  else
+    lim="$(jstate "$st" limit)" secs=""
+    # The stop script runs before the limit: its RESULT line lands in run/log, not in a tick's log.
+    if [[ "$lim" =~ ^[0-9]+$ ]]; then secs=$((lim - $(date +%s) - stop)); fi
+    if [[ -n "$secs" ]] && ((secs < 1)); then secs=1; fi
+    WS_SECS="$secs" ws_place "$inst" exec run >>"$d/run/log" 2>&1 || rc=$?
+    if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$d/run/log" 2>&1 || true; fi
+    ws_place "$inst" pull >>"$d/run/log" 2>&1 || true
+    ws_place "$inst" down >>"$d/run/log" 2>&1 || echo "vibe: down of $inst failed — vibe ws status $inst" >>"$d/run/log"
+  fi
+  if [[ -d "$st/out" ]]; then
+    rm -rf "$d/out"
+    cp -R "$st/out" "$d/out" >>"$d/run/log" 2>&1 || true
+    find "$d/out" ! -type f ! -type d -delete 2>/dev/null || rm -rf "$d/out"
+  fi
+  if [[ ! -s "$st/id" ]]; then rm -rf "$st"; fi
+  echo "$rc" >"$d/run/exit"
+  GPUQ_EXIT="$rc" GPUQ_LOG="$d/run/log" cmd_queue_follow "$d"
+}
+
+# run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
+# or its metric is no number.
+run_result() {
+  local j
+  rm -f "$2/run-result"
+  j="$(grep -a '^RESULT {' "$1" 2>/dev/null | tail -n 1)" || true
+  j="$(printf '%s' "${j#RESULT }" | jq -ce 'select(.metric | type == "number")' 2>/dev/null)" || j=""
+  if [[ -n "$j" ]]; then echo "$j" >"$2/run-result"; fi
 }
 
 # follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
@@ -2122,12 +2223,18 @@ follow_job() {
 # with the run's exit code and log (GPUQ_EXIT, GPUQ_LOG). It sorts right
 # after JOB, so it runs before later jobs. GPUQ_EXIT=cancelled: JOB ends failed, no follow-up.
 cmd_queue_follow() {
-  local p="${1:?usage: vibe queue follow <job dir>}" f n=1
+  local p="${1:?usage: vibe queue follow <job dir>}" f n=1 r=""
   p="${p%/}"
   [[ -f "$p/job" ]] || die "no job at $p"
   if [[ "${GPUQ_EXIT:-}" == cancelled ]]; then
     job_end "$p" failed "GPU run cancelled"
     return 0
+  fi
+  run_result "${GPUQ_LOG:-}" "$p"
+  if [[ -s "$p/run-result" ]]; then
+    r="$(cat "$p/run-result") ($p/run-result)"
+  elif [[ -n "$(jget "$p/job" research)" || -d "$p/run" ]]; then
+    r="none — no RESULT line: the run failed"
   fi
   f="$p-gpu"
   while [[ -e "$f" ]]; do
@@ -2137,7 +2244,10 @@ cmd_queue_follow() {
   mkdir -p "$f"
   {
     cat "$p/prompt.md"
-    printf '\n## GPU run finished\n\n- Exit: %s\n- Log: %s\n\n' "${GPUQ_EXIT:-?}" "${GPUQ_LOG:-?}"
+    printf '\n## GPU run finished\n\n- Exit: %s\n- Log: %s\n' "${GPUQ_EXIT:-?}" "${GPUQ_LOG:-?}"
+    if [[ -n "$r" ]]; then printf -- '- Result: %s\n' "$r"; fi
+    if [[ -s "$p/infra" ]]; then printf -- '- Infra: %s\n' "$(head -n 1 "$p/infra")"; fi
+    echo
     echo "An earlier session prepared and queued this run; its commits are on the branch."
     echo "Read the log and the outputs, check the done-when, finish the task."
   } >"$f/prompt.md"
@@ -4261,20 +4371,25 @@ ws_name() {
 }
 
 # ws_place INSTANCE VERB [ARG...] — the place script of INSTANCE with WS_* and WS_CONF_<KEY> set (docs/workspaces.md).
+# The folder: the instance's dir file (a research run), else its workspace under WS_ROOT.
 # A subshell with errexit off when tested: each lookup has its own `|| die`.
 ws_place() {
   local inst="$1"
   shift
   (
-    n="$(ws_name "$inst")" || die "no workspace for instance $inst"
+    w="$(jstate "$WS_STATES/$inst" dir)"
+    if [[ -z "$w" ]]; then
+      n="$(ws_name "$inst")" || die "no workspace for instance $inst"
+      w="$WS_ROOT/$n"
+    fi
     p="$(jstate "$WS_STATES/$inst" place)"
     [[ -n "$p" && "$(slug "$p")" == "$p" && -f "$WS_ROOT/_places/$p" && -x "$WS_ROOT/_places/$p" ]] ||
       die "no place script '$p' for $inst"
     while IFS= read -r l; do export "WS_CONF_$l"; done < <(
-      awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$WS_ROOT/$n/workspace.conf"
+      awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$w/workspace.conf"
     )
     # A WS_HOURS the caller set (a tool job's hours=) wins over the conf's.
-    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$WS_ROOT/$n" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$w" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
     # WS_SECS set: timeout(1) ends the call after WS_SECS, exit 124; no timeout(1) means no bound.
     if [[ -n "${WS_SECS:-}" ]] && t="$(command -v timeout || command -v gtimeout)"; then
       exec "$t" -k 10 "$WS_SECS" "$WS_ROOT/_places/$p" "$@"

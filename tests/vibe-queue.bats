@@ -46,7 +46,13 @@ case "\$prompt" in *"## GPU run finished"*) mode=ok && { [ -e "\${VIBE_JOB_DIR%-
 case "\$mode" in
   gpu)
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
-    "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt'
+    "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt; cat $STUBS/gpu-result 2>/dev/null; true'
+    echo "queued: training" >"\$VIBE_JOB_DIR/result"
+    ;;
+  place)
+    git commit -q --allow-empty -m "feat: train"
+    p="\$(sed -n 's/^place=//p' "\$VIBE_JOB_DIR/job")"
+    "$VIBE" queue gpu --place "\${p:-runpod}" -- sh train.sh >>"$STUBS/queue-gpu.out" 2>&1
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   gpurace)
@@ -2624,6 +2630,184 @@ gpurace() {
   printf 'repo=%s\nbranch=x\ndeadline=2999-01-01 08:00\n' "$r" >"$a/job"
   run "$VIBE" queue add "$a"
   [ "$status" -eq 0 ]
+}
+
+# places — stub places runpod and vast: each verb but tick to $STUBS/place.log; exec runs the folder's script
+# with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up.
+places() {
+  local w="$BATS_TEST_TMPDIR/workspaces"
+  export VIBE_WORKSPACES="$w"
+  mkdir -p "$w/_places"
+  cat >"$w/_places/runpod" <<EOF
+#!/usr/bin/env bash
+v="\$1"
+shift
+[ "\$v" != tick ] || exit 0
+echo "\${0##*/} \$v\${*:+ \$*} hours=\$WS_HOURS folder=\${WS_DIR#"\$WS_STATE"/}" >>"$STUBS/place.log"
+case "\$v" in
+  up)
+    if [ -e "$STUBS/fail-up" ]; then echo "\${0##*/}: no machine free" >&2 && exit 1; fi
+    echo pod-1 >"\$WS_STATE/id"
+    if [ -e "$STUBS/short-limit" ]; then echo \$((\$(date +%s) + 3)); else echo \$((\$(date +%s) + WS_HOURS * 3600)); fi >"\$WS_STATE/limit"
+    ;;
+  exec)
+    [ -x "\$WS_DIR/\$1" ] || exit 3
+    WS_IN="\$WS_STATE/in" exec "\$WS_DIR/\$@"
+    ;;
+  pull) mkdir -p "\$WS_STATE/out" && echo pulled >"\$WS_STATE/out/note" ;;
+  down) rm -f "\$WS_STATE/id" ;;
+esac
+EOF
+  cp "$w/_places/runpod" "$w/_places/vast"
+  chmod +x "$w/_places/runpod" "$w/_places/vast"
+}
+
+# research_repo — a repo whose main holds .claude/research/ (runpod, vast; hours=2) and train.sh; echoes its path.
+# $STUBS/run-sleep: train.sh waits 30 s first.
+research_repo() {
+  local r
+  r="$(make_repo proj)"
+  mkdir -p "$r/.claude/research"
+  printf '%s\n' kind=run result=folder places=runpod,vast hours=2 image=ghcr.io/x/research commit=0123456789abcdef0123456789abcdef01234567 >"$r/.claude/research/workspace.conf"
+  # shellcheck disable=SC2016  # the script expands it
+  printf '#!/bin/sh\ncd "${WS_IN:-/ws/in}/repo" && exec "${WS_IN:-/ws/in}/cmd"\n' >"$r/.claude/research/run"
+  printf '#!/bin/sh\necho %s\n' "'RESULT {\"metric\": 0.1, \"partial\": true}'" >"$r/.claude/research/stop"
+  chmod +x "$r/.claude/research/run" "$r/.claude/research/stop"
+  cat >"$r/train.sh" <<EOF
+echo "in \${PWD##*/} at \$(git rev-parse HEAD)"
+[ ! -e "$STUBS/run-sleep" ] || sleep 30
+echo 'RESULT {"metric": 0.5}'
+echo 'RESULT {"metric": 0.7, "seed": 1}'
+echo "a last line"
+EOF
+  git -C "$r" add -A && git -C "$r" commit -q -m "feat: research folder" && git -C "$r" push -q origin main
+  printf '%s' "$r"
+}
+
+@test "gpu --place: up, exec run, pull, down at runpod or vast, in the repo's .claude/research/, hours from its conf; then the follow-up" {
+  local r p
+  places
+  r="$(research_repo)"
+  mkjob 01-a "$r" task-a place place=runpod
+  mkjob 02-b "$r" task-b place place=vast
+  drain
+  [ "$status" -eq 0 ]
+  for p in runpod vast; do
+    [ "$(grep "^$p " "$STUBS/place.log")" = "$(printf '%s %s hours=2 folder=in/repo/.claude/research\n' "$p" up "$p" 'exec run' "$p" pull "$p" down)" ]
+  done
+  [ "$(cat "$Q/01-a/run/place")" = runpod ]
+  grep -qx "in repo at $(cat "$Q/01-a/run/commit")" "$Q/01-a/run/log"
+  [ "$(cat "$Q/01-a/run/exit")" = 0 ]
+  [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
+  grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a/out/note")" = pulled ]
+  [ ! -e "$Q/01-a/gpu-job" ]
+  [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
+  [ "$(cat "$Q/01-a/note")" = "GPU run exit 0 → 01-a-gpu" ]
+  grep -qF -- "- Log: $Q/01-a/run/log" "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  [ "$(cat "$Q/02-b-gpu/status")" = "done" ]
+}
+
+@test "gpu --place: the run is cut before the limit; the stop script's RESULT line ends the log, then pull and down" {
+  local r
+  command -v timeout >/dev/null || command -v gtimeout >/dev/null || skip "no timeout(1): no bound"
+  places
+  r="$(research_repo)"
+  touch "$STUBS/short-limit" "$STUBS/run-sleep"
+  export VIBE_WS_STOP_SECS=2
+  mkjob 01-a "$r" task-a place
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cut -d' ' -f2,3 "$STUBS/place.log")" = "$(printf '%s\n' 'up hours=2' 'exec run' 'exec stop' 'pull hours=2' 'down hours=2')" ]
+  [ "$(cat "$Q/01-a/run/exit")" = 124 ]
+  [ "$(tail -n 1 "$Q/01-a/run/log")" = 'RESULT {"metric": 0.1, "partial": true}' ]
+  [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.1,"partial":true}' ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu --place: no .claude/research/ in the repo is one error line; nothing is queued" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  echo "$r" >"$Q/01-a/worktree"
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu --place runpod -- sh train.sh
+  [ "$status" -ne 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [[ "$output" == "vibe: no .claude/research/ in $r: --place runpod runs the repo's research folder"* ]] || false
+  [ ! -e "$Q/01-a/run" ]
+  [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
+}
+
+@test "gpu: run-result holds the last RESULT line of the run log, on turing too" {
+  local r pid
+  r="$(make_repo proj)"
+  printf 'RESULT {"metric": 1}\nRESULT {"metric": 2.5, "seed": 3}\nbye\n' >"$STUBS/gpu-result"
+  mkjob 01-a "$r" task-a gpu research=q1
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$Q/01-a/status" 2>/dev/null)" != gpu ] || break
+    sleep 0.1
+  done
+  "$REPO_ROOT/bin/gpu-queue" run --once
+  wait "$pid"
+  [ "$(cat "$Q/01-a/run-result")" = '{"metric":2.5,"seed":3}' ]
+  grep -qF -- "- Result: {\"metric\":2.5,\"seed\":3} ($Q/01-a/run-result)" "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu: no RESULT line, one that does not parse or a metric that is no number means failed; a plain GPU job has no Result line" {
+  local r log="$BATS_TEST_TMPDIR/run.log" i
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok research=q1
+  for i in 'loss 0.3' 'RESULT {"metric": "high"}' 'RESULT {"metric": 1'; do
+    echo '{"metric":9}' >"$Q/01-a/run-result"
+    printf '%s\n' "$i" >"$log"
+    rm -rf "$Q/01-a-gpu"
+    GPUQ_EXIT=0 GPUQ_LOG="$log" "$VIBE" queue follow "$Q/01-a" >/dev/null
+    [ ! -e "$Q/01-a/run-result" ]
+    grep -qF -- '- Result: none — no RESULT line: the run failed' "$Q/01-a-gpu/prompt.md"
+  done
+  mkjob 02-b "$r" task-b ok
+  GPUQ_EXIT=0 GPUQ_LOG="$log" "$VIBE" queue follow "$Q/02-b" >/dev/null
+  run grep -c 'Result:' "$Q/02-b-gpu/prompt.md"
+  [ "$output" = 0 ]
+}
+
+@test "gpu --place: a failed up writes infra, runs nothing more there; the follow-up gets Exit: infra and the reason" {
+  local r
+  places
+  r="$(research_repo)"
+  touch "$STUBS/fail-up"
+  mkjob 01-a "$r" task-a place
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/place.log")" = "runpod up hours=2 folder=in/repo/.claude/research" ]
+  [ "$(cat "$Q/01-a/infra")" = "runpod: no machine free" ]
+  [ "$(cat "$Q/01-a/run/exit")" = infra ]
+  [ ! -e "$Q/01-a/run-result" ]
+  [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
+  grep -qF -- '- Exit: infra' "$Q/01-a-gpu/prompt.md"
+  grep -qF -- '- Infra: runpod: no machine free' "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+}
+
+@test "gpu --place: a run whose process died before its end is infra too; the follow-up gets the reason" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok
+  mkdir -p "$Q/01-a/run"
+  echo runpod >"$Q/01-a/run/place"
+  echo 999999 >"$Q/01-a/run/pid"
+  echo gpu >"$Q/01-a/status"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/run/exit")" = infra ]
+  grep -qF 'the run process died' "$Q/01-a/infra"
+  grep -qF -- '- Infra: the run process died' "$Q/01-a-gpu/prompt.md"
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
 # two_findings — the stub reviewer's first answer: two findings.
