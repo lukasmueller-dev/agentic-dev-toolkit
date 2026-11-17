@@ -36,6 +36,8 @@ sum="$(if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; f
 
 # TAG: the settings name the tag compose runs, not the tag of the working tree.
 make -C "$HLOOP_REPO" -s render-settings TAG="$TAG"
+# render-settings writes it 600, and metrics-service (uid 65532) cannot read it then. It holds no secret.
+chmod 644 "$HLOOP_REPO/controlplane/settings/.hypothesisloop.rendered.yaml"
 for image in control-service metrics-service; do
   docker image inspect "$HL_REGISTRY/hypothesisloop-$image:$TAG" >/dev/null 2>&1 ||
     hl_die "no image $HL_REGISTRY/hypothesisloop-$image:$TAG on this host: build it by docs/workspaces/hypothesisloop.md"
@@ -50,5 +52,12 @@ hl_compose up -d postgres greptimedb memgraph minio control-service metrics-serv
 if ! curl -fs -o /dev/null --max-time 5 --retry 45 --retry-delay 1 --retry-max-time 45 --retry-all-errors "$HL_HEALTH"; then
   hl_compose logs --tail 20 control-service || true
   hl_die "the control service did not answer $HL_HEALTH within 45 s: its last log lines are above"
+fi
+# A crash-looping metrics-service leaves the API healthy: 5 s lets its first crash show.
+sleep 5
+running="$(hl_compose ps --services --status running || true)"
+if ! grep -qx metrics-service <<<"$running"; then
+  hl_compose logs --tail 20 metrics-service || true
+  hl_die "metrics-service is not running: its last log lines are above"
 fi
 trap - EXIT

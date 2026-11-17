@@ -33,6 +33,8 @@ case " $* " in *" up "*)
   if [ -n "${DOCKER_UP_SLEEP:-}" ]; then sleep 30; fi
   ;;
 esac
+# compose ps lists metrics-service as running, except under DOCKER_METRICS_DOWN.
+case " $* " in *" ps "*) [ -n "${DOCKER_METRICS_DOWN:-}" ] || echo metrics-service ;; esac
 exit 0
 EOF
   # make fails on stderr under MAKE_FAIL.
@@ -40,7 +42,16 @@ EOF
 #!/bin/sh
 echo "make $*" >>"$LOG"
 if [ -n "${MAKE_FAIL:-}" ]; then echo "render-settings: .env does not set UI_ORIGIN" >&2 && exit 1; fi
+# render-settings writes the rendered settings as mode 600.
+f="$2/controlplane/settings/.hypothesisloop.rendered.yaml"
+: >"$f" && chmod 600 "$f"
 exit 0
+EOF
+  # sleep 5 (start's wait on metrics-service) returns at once; any other sleep is real.
+  cat >"$BATS_TEST_TMPDIR/bin/sleep" <<'EOF'
+#!/bin/sh
+[ "$1" = 5 ] && exit 0
+exec /bin/sleep "$@"
 EOF
   # tmux logs its argv, so no test ends a real session.
   cat >"$BATS_TEST_TMPDIR/bin/tmux" <<'EOF'
@@ -189,7 +200,21 @@ write_env() {
   run "$WS/start"
   [ "$status" -eq 0 ]
   [ "$(sed -n 1p "$LOG")" = "make -C $HL -s render-settings TAG=abc123" ]
-  [ "$(grep 'docker compose' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 GOOGLE=/dev/null API=8081 METRICS=8084" ]
+  [ "$(grep 'docker compose .* up -d ' "$LOG")" = "docker compose -f $HL/localdev/controlplane/docker-compose.yml -f $WS/compose.tailnet.yml up -d postgres greptimedb memgraph minio control-service metrics-service TAG=abc123 REGISTRY=localhost:5000 BIND=100.64.0.9 PUBLISH=100.64.0.9 GOOGLE=/dev/null API=8081 METRICS=8084" ]
+}
+
+@test "start makes the rendered settings readable by metrics-service" {
+  run "$WS/start"
+  [ "$status" -eq 0 ]
+  [ -n "$(find "$HL/controlplane/settings/.hypothesisloop.rendered.yaml" -perm -044)" ]
+}
+
+@test "start shows the metrics-service log and takes the stack down when it is not running" {
+  DOCKER_METRICS_DOWN=1 run "$WS/start"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"error — metrics-service is not running"* ]] || false
+  [ "$(grep 'docker compose' "$LOG" | tail -n 2 | head -n 1 | grep -c ' logs --tail 20 metrics-service ')" -eq 1 ]
+  [ "$(grep 'docker compose' "$LOG" | tail -n 1 | grep -c ' down TAG=')" -eq 1 ]
 }
 
 @test "start mounts the Google identity for the gcp registry only" {
@@ -197,11 +222,11 @@ write_env() {
   mkdir -p "${google%/*}" && echo '{}' >"$google"
   run "$WS/start"
   [ "$status" -eq 0 ]
-  [ "$(grep -c 'docker compose .* GOOGLE=/dev/null ' "$LOG")" -eq 1 ]
+  [ "$(grep -c 'docker compose .* up -d .* GOOGLE=/dev/null ' "$LOG")" -eq 1 ]
   echo "CONTAINER_REGISTRY_PROVIDER='gcp'" >>"$HL/.env"
   run "$WS/start"
   [ "$status" -eq 0 ]
-  [ "$(grep -c "docker compose .* GOOGLE=$google " "$LOG")" -eq 1 ]
+  [ "$(grep -c "docker compose .* up -d .* GOOGLE=$google " "$LOG")" -eq 1 ]
 }
 
 @test "start waits on the health check, and with no answer shows the control service log and takes the stack down" {
