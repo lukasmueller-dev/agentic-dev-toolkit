@@ -2639,7 +2639,7 @@ gpurace() {
 
 # places — stub places runpod and vast: each verb but tick to $STUBS/place.log; exec runs the folder's script
 # with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up; price: what price prints,
-# none: price exits 3.
+# none: price exits 3; out-links: pull leaves a link and a FIFO in out/.
 places() {
   local w="$BATS_TEST_TMPDIR/workspaces"
   export VIBE_WORKSPACES="$w"
@@ -2660,7 +2660,10 @@ case "\$v" in
     [ -x "\$WS_DIR/\$1" ] || exit 3
     WS_IN="\$WS_STATE/in" exec "\$WS_DIR/\$@"
     ;;
-  pull) mkdir -p "\$WS_STATE/out" && echo pulled >"\$WS_STATE/out/note" ;;
+  pull)
+    mkdir -p "\$WS_STATE/out" && echo pulled >"\$WS_STATE/out/note"
+    if [ -e "$STUBS/out-links" ]; then ln -sfn "\$HOME" "\$WS_STATE/out/home" && mkfifo "\$WS_STATE/out/fifo"; fi
+    ;;
   down) rm -f "\$WS_STATE/id" ;;
   price) if [ -e "$STUBS/price" ]; then cat "$STUBS/price"; else exit 3; fi ;;
 esac
@@ -2696,6 +2699,7 @@ EOF
   local r p
   places
   r="$(research_repo)"
+  touch "$STUBS/out-links"
   mkjob 01-a "$r" task-a place place=runpod
   mkjob 02-b "$r" task-b place place=vast
   drain
@@ -2711,6 +2715,9 @@ EOF
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a/out/note")" = pulled ]
+  # A link or FIFO the rented machine leaves in out/ never reaches the job dir.
+  [ "$(ls -A "$Q/01-a/out")" = note ]
+  [ "$(ls -A "$Q/02-b/out")" = note ]
   [ ! -e "$Q/01-a/gpu-job" ]
   [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
   [ "$(cat "$Q/01-a/note")" = "GPU run exit 0 → 01-a-gpu" ]
