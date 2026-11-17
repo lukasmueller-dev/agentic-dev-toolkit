@@ -3243,7 +3243,7 @@ feature_md() {
   printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
-# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report and of the page.
+# queue_front_md — held jobs under "Yours", then the triage lines: the top of the report. The page has its own: page_sections.
 queue_front_md() {
   local d rows=""
   for d in "$QDIR"/*/; do
