@@ -1111,6 +1111,147 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
+# epoch_at 'YYYY-MM-DD HH:MM' — epoch seconds, GNU or BSD date.
+epoch_at() { date -d "$1:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1:00" +%s; }
+
+# mkprep DIR REPO BRANCH — a prepared job dir for `vibe queue add`.
+mkprep() {
+  mkdir -p "$1"
+  printf 'repo=%s\nbranch=%s\nmodel=sonnet\ncontext=night work\n' "$2" "$3" >"$1/job"
+  printf 'Do the task.\nMODE=ok\n' >"$1/prompt.md"
+}
+
+@test "add --at: writes the next HH:MM as at=; a bad time, a missing time or --now with it queues nothing" {
+  local r a now at e t
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  for t in 25:00 24:00 23:60 9:5 noon; do
+    run "$VIBE" queue add --at "$t" "$a"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad time '$t'"* ]] || false
+  done
+  run "$VIBE" queue add --at
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue add --now --at 03:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--now and --at"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # The current minute has passed: the next one is tomorrow.
+  now="$(date +%s)"
+  run "$VIBE" queue add --at "$(date +%H:%M)" "$a"
+  [ "$status" -eq 0 ]
+  [ ! -e "$a" ]
+  at="$(sed -n 's/^at=//p' "$Q"/*-proj-x/job)"
+  [[ "$at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]] || false
+  e="$(epoch_at "$at")"
+  [ "$e" -gt $((now + 80000)) ]
+  [ "$e" -le $((now + 90000)) ]
+  [[ "$output" == *"starts $at"* ]] || false
+}
+
+@test "run: a job added with --at does not start before its time, starts after it; status shows the start" {
+  local r a j pid at
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  at="$(sed -n 's/^at=//p' "$j/job")"
+  [[ "$at" == *" 03:30" ]] || false
+  run "$VIBE" queue status
+  [[ "$output" == *"starts $at · night work"* ]] || false
+  # A job with no at= is the clock: once it is done, the runner has scanned the waiting one.
+  mkjob 01-ctl "$r" ctl ok
+  timeout 60 "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 1 150); do
+    [ "$(cat "$Q/01-ctl/status" 2>/dev/null)" != "done" ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-ctl/status")" = "done" ]
+  sleep 1
+  [ ! -e "$j/status" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 0 ]
+  # The time has come: at= is in the past.
+  sed 's/^at=.*/at=2000-01-01 03:30/' "$j/job" >"$j/job.tmp" && mv "$j/job.tmp" "$j/job"
+  wait "$pid"
+  [ "$(cat "$j/status")" = "done" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 1 ]
+  run "$VIBE" queue status
+  [[ "$output" != *"starts "* ]] || false
+}
+
+@test "run: a job with now=1 starts although its at= is ahead" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok "at=2999-01-01 03:30" now=1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
+# clockdate DAY NOW — a `date` in $BATS_TEST_TMPDIR/clock that fakes `date +%F` (DAY), `date +%s` (NOW) and tomorrow; the rest is the real date.
+clockdate() {
+  mkdir -p "$BATS_TEST_TMPDIR/clock"
+  cat >"$BATS_TEST_TMPDIR/clock/date" <<EOF
+#!/bin/sh
+case "\$*" in
+  "+%F") echo $1 ;;
+  "+%s") echo $2 ;;
+  "-d +1 day +%F") echo 2026-03-29 ;;
+  *) exec /bin/date "\$@" ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/clock/date"
+}
+
+@test "add --at: refuses a time the spring clock change skips, tonight and today; the next real time passes" {
+  local r a
+  [ -e /usr/share/zoneinfo/Europe/Berlin ] || skip "no tz database"
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  export TZ=Europe/Berlin
+  # 2026-03-28 20:00 CET: 02:30 has passed, and 2026-03-29 02:30 does not exist.
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # 2026-03-29 01:00 CET: 02:30 today does not exist, and no arithmetic error shows.
+  clockdate 2026-03-29 1774742400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [[ "$output" != *"syntax error"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 03:30 "$a"
+  [ "$status" -eq 0 ]
+  grep -qx 'at=2026-03-29 03:30' "$Q"/*-proj-x/job
+}
+
+@test "retry: a cancelled job that waited on at= comes back without it, and starts" {
+  local r a j id new
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  id="${j##*/}"
+  grep -q '^at=' "$j/job"
+  "$VIBE" queue cancel "$id"
+  run "$VIBE" queue retry "$id"
+  [ "$status" -eq 0 ]
+  new="$(echo "$Q"/*-proj-task-a)"
+  [ "$new" != "$j" ]
+  [ "$(grep -c '^at=' "$new/job")" = 0 ]
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$new/status")" = "done" ]
+}
+
 @test "milestones: a SPEC.md job that ticks one queues the next; the last one ends the chain" {
   local r
   r="$(make_repo proj)"
@@ -1128,6 +1269,23 @@ died_job() {
   git -C "$r/.claude/worktrees/spec" commit -q -am "docs(spec): three"
   drain
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
+}
+
+@test "milestones: a job started by now=1 over a future at= queues the next milestone without at=, and it starts" {
+  local r d n
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" spec >/dev/null 2>&1
+  printf '# Spec\n\n- [ ] one\n- [ ] two\n' >"$r/.claude/worktrees/spec/SPEC.md"
+  git -C "$r/.claude/worktrees/spec" add SPEC.md
+  git -C "$r/.claude/worktrees/spec" commit -q -m "docs(spec): x"
+  mkjob 01-a "$r" spec milestone "at=2999-01-01 03:30" now=1
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2 ]
+  for d in "$Q"/*/; do [ "$(cat "$d/status")" = "done" ]; done
+  n="$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-proj-spec')"
+  [ -n "$n" ]
+  [ "$(grep -c '^at=' "$n/job")" = 0 ]
 }
 
 @test "conf: sets one key in queue.conf; refuses an unknown key and a bad value" {

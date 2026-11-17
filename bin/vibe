@@ -8,7 +8,9 @@
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
 #   vibe queue status               the queue: running, queued, PRs to review, jobs with no PR; two lines per job by repo
-#   vibe queue add [--now] <dir>... queue prepared job dirs (job, prompt.md); --now starts them first
+#   vibe queue add [--now|--at HH:MM] <dir>...
+#                                   queue prepared job dirs (job, prompt.md); --now starts them first,
+#                                   --at holds them until that local time (the next one if it passed)
 #   vibe queue new [--now] [--model M] [--timeout T] [--kind code|gpu] <repo> <branch> <done-when> <task>...
 #                                   queue a job rendered from fill-queue's job-prompt.md
 #   vibe queue new --line <n> <repo> <branch>
@@ -432,10 +434,10 @@ branch_ok() {
   [[ "$1" != jobs/*/* && -n "$b" && "$(slug "$b")" == "$b" ]]
 }
 
-# queue_add DIR [NOW] — move a prepared job dir (`job`, `prompt.md`) into the
-# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 starts it first.
+# queue_add DIR [NOW] [AT] — move a prepared job dir (`job`, `prompt.md`) into the
+# queue as <YYYYMMDD-HHMMSS>-<repo>-<branch>; NOW=1 starts it first; AT (`YYYY-MM-DD HH:MM`) holds it until then.
 queue_add() {
-  local src="${1%/}" now="${2:-0}" repo branch ts d
+  local src="${1%/}" now="${2:-0}" at="${3:-}" repo branch ts d
   [[ -f "$src/job" ]] || die "no job file in $src"
   repo="$(jget "$src/job" repo)" branch="$(jget "$src/job" branch)"
   [[ -n "$repo" && -n "$branch" ]] || die "$src/job needs repo= and branch="
@@ -449,6 +451,7 @@ queue_add() {
   done
   d="$QDIR/$ts-$(basename "$repo")-$(echo "$branch" | tr / -)"
   if ((now)); then echo now=1 >>"$src/job"; fi
+  if [[ -n "$at" ]]; then echo "at=$at" >>"$src/job"; fi
   # A copy lands complete or not at all: the runner never sees half a job.
   if ! mv "$src" "$d" 2>/dev/null; then
     cp -R "$src" "$QROOT/incoming/${d##*/}" && mv "$QROOT/incoming/${d##*/}" "$d" && rm -rf "$src"
@@ -477,26 +480,62 @@ deadline_of() {
   echo "$e"
 }
 
-# vibe queue add [--now] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify= or deadline=.
+# at_exists DAY HH:MM — true when that local time exists: a clock change skips an hour; GNU date refuses it, BSD date moves it.
+at_exists() {
+  local e
+  e="$(epoch_of "$1 $2:00")"
+  [[ -n "$e" && "$(at_time "$e")" == "$1 $2" ]]
+}
+
+# next_at HH:MM — `YYYY-MM-DD HH:MM` of the next HH:MM in local time: today while it is ahead, else tomorrow; dies on a bad time or one a clock change skips.
+next_at() {
+  local day
+  [[ "$1" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || die "bad time '$1' — HH:MM, 00:00 to 23:59"
+  day="$(date +%F)"
+  at_exists "$day" "$1" || die "$1 does not exist on $day (clock change)"
+  if (($(epoch_of "$day $1:00") <= $(date +%s))); then
+    day="$(date -d '+1 day' +%F 2>/dev/null || date -v+1d +%F)"
+    at_exists "$day" "$1" || die "$1 does not exist on $day (clock change)"
+  fi
+  echo "$day $1"
+}
+
+# at_due JOB — false while the job's at= (`YYYY-MM-DD HH:MM`, local time) is ahead; a job with now=1 is always due.
+at_due() {
+  local a e
+  a="$(jget "$1/job" at)"
+  if [[ -z "$a" || "$(jget "$1/job" now)" == 1 ]]; then return 0; fi
+  e="$(epoch_of "$a:00")"
+  [[ -z "$e" || "$e" -le "$(date +%s)" ]]
+}
+
+# vibe queue add [--now|--at HH:MM] DIR... — queue prepared job dirs, in argument order; refuses them all on a bad after=, verify= or deadline=.
 cmd_queue_add() {
-  local now=0 dirs=() d
-  for d in "$@"; do
-    case "$d" in
+  local now=0 at="" dirs=() d use="usage: vibe queue add [--now|--at HH:MM] <dir>..."
+  while (($#)); do
+    case "$1" in
       --now) now=1 ;;
+      --at)
+        (($# > 1)) || die "$use"
+        shift
+        at="$(next_at "$1")"
+        ;;
       -h | --help) usage ;;
-      -*) die "usage: vibe queue add [--now] <dir>..." ;;
-      *) dirs+=("$d") ;;
+      -*) die "$use" ;;
+      *) dirs+=("$1") ;;
     esac
+    shift
   done
-  ((${#dirs[@]})) || die "usage: vibe queue add [--now] <dir>..."
+  ((${#dirs[@]})) || die "$use"
+  ((!now)) || [[ -z "$at" ]] || die "--now and --at do not go together"
   for d in "${dirs[@]}"; do
     [[ "$(jget "$d/job" after)" =~ ^(review|code)?$ ]] || die "$d: after=$(jget "$d/job" after) — review, code or empty"
     verify_ok "$d"
     deadline_of "$d/job" >/dev/null
   done
   for d in "${dirs[@]}"; do
-    d="$(queue_add "$d" "$now")"
-    echo "queued ${d##*/}"
+    d="$(queue_add "$d" "$now" "$at")"
+    echo "queued ${d##*/}${at:+ — starts $at}"
   done
 }
 
@@ -862,7 +901,7 @@ job_chain() {
   [[ -n "$before" && -n "$after" ]] || return 0
   ((after > 0 && after < before)) || return 0
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
-  grep -v '^now=' "$d/job" >"$tmp/job" || true
+  grep -Ev '^(now|at)=' "$d/job" >"$tmp/job" || true
   cp "$d/prompt.md" "$tmp/prompt.md"
   echo "next milestone → $(basename "$(queue_add "$tmp")")"
 }
@@ -1557,7 +1596,7 @@ cmd_queue_run() {
           ;;
         gpu) waiting=$((waiting + 1)) ;;
         "" | queued)
-          if follow_ready "$d"; then queued+=("$d"); else waiting=$((waiting + 1)); fi
+          if follow_ready "$d" && at_due "$d"; then queued+=("$d"); else waiting=$((waiting + 1)); fi
           ;;
       esac
     done
@@ -1755,7 +1794,7 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, follow=, review=), prompt.md and in/; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, at=, follow=, review=), prompt.md and in/; echoes it.
 # A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
@@ -1763,9 +1802,9 @@ follow_dir() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")"
   r="$(jget "$1/job" review)"
   if [[ -z "$r" ]]; then
-    grep -Ev '^(now|follow)=' "$1/job" >"$tmp/job" || true
+    grep -Ev '^(now|at|follow)=' "$1/job" >"$tmp/job" || true
   else
-    grep -Ev '^(now|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
+    grep -Ev '^(now|at|follow|review|timeout)=' "$1/job" >"$tmp/job" || true
     t="$(jget "$(review_base "$1")/job" timeout)"
     if [[ -n "$t" ]]; then echo "timeout=$t" >>"$tmp/job"; fi
   fi
@@ -2398,7 +2437,7 @@ branch_card() {
 job_card() {
   local st txt
   st="$(jstate "$2" status)" txt="$(jget "$2/job" context)"
-  if job_final "$2"; then txt="$(jstate "$2" note)"; fi
+  if job_final "$2"; then txt="$(jstate "$2" note)"; elif is_queued "$2" && ! at_due "$2"; then txt="starts $(jget "$2/job" at) · $txt"; fi
   [[ ! -f "$2/held" ]] || st="held"
   "$1" job "$3" "${st:-queued}" "$txt$(side_suffix "$2")" "$(jstate "$2" pr)" "$2" "${4:-}"
 }
