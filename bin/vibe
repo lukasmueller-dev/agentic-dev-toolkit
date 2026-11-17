@@ -547,7 +547,8 @@ cmd_queue_add() {
     [[ "$(jget "$d/job" usd)" =~ ^([0-9]+([.][0-9]+)?)?$ ]] || die "$d: usd=$(jget "$d/job" usd) — a number of USD or empty"
   done
   for d in "${dirs[@]}"; do
-    if [[ -n "$(jget "$d/job" research)" && -z "$(jget "$d/job" hid)" ]]; then
+    # Once: an add that failed after the append leaves the block in the dir.
+    if [[ -n "$(jget "$d/job" research)" && -z "$(jget "$d/job" hid)" ]] && ! grep -qx '## Research job' "$d/prompt.md" 2>/dev/null; then
       {
         echo
         cat "$SELF_ROOT/skills/fill-queue/references/research.md"

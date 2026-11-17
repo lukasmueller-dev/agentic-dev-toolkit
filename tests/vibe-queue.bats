@@ -3118,12 +3118,15 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
-@test "research prompts: add appends the coordinator block to a research= job with no hid=; a worker prompt ends in the worker block" {
+@test "research prompts: add appends the coordinator block once to a research= job with no hid=; a worker prompt ends in the worker block" {
   local r w a b c j n
   r="$(make_repo proj)"
   a="$BATS_TEST_TMPDIR/a" b="$BATS_TEST_TMPDIR/b" c="$BATS_TEST_TMPDIR/c"
-  mkprep "$a" "$r" rq
+  mkprep "$a" "$r" Bad-Branch
   echo research=q1 >>"$a/job"
+  run "$VIBE" queue add "$a"
+  [ "$status" -ne 0 ]
+  sed -i.bak 's/^branch=.*/branch=rq/' "$a/job" && rm "$a/job.bak"
   mkprep "$b" "$r" plain
   mkprep "$c" "$r" rw
   printf 'research=q1\nhid=h9\n' >>"$c/job"
