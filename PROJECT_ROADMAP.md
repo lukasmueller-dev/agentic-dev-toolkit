@@ -37,14 +37,6 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when a smoke job's Write outside its worktree and job dir is
       refused, and its `result` and `report.md` still land.
 
-- [ ] **[health] Deny the program flags of unsandboxed commands** — `git clone|pull|push *`,
-      `rsync *`, `scp *` and `ssh *` run outside the sandbox with no prompt, and a flag
-      of each runs any program (`--upload-pack`, `--receive-pack`, `--exec`, `-e`/`--rsh`,
-      `-S`, `ProxyCommand`/`LocalCommand`). So do `git grep -O`, `sort --compress-program`
-      and `rg --pre` on the allow list (audit of PR #205).
-      Done when a bats test matches each new deny rule against its flag, and `jq`
-      parses `claude/settings.json` and `claude/vibe-job-settings.json`.
-
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
 
 - [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
