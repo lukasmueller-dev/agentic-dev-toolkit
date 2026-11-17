@@ -55,7 +55,8 @@ Check `vibe queue status` and the gate. Then fill the draft:
 - Small: add the harvest (decisions, rejected options, files, first step) to the Task section of the prompt.
 - Big: the full `SPEC.md` from `templates/SPEC.md`. Take each section from the conversation. Run the `grilling` skill on the sections it left open, and on those only. The gate applies to each milestone.
 - Research: the full `RESEARCH.md` from `templates/RESEARCH.md`. Take each section from the conversation; grill only the open sections.
-  Each backlog item has its pass criterion in the draft. Kind `gpu`. `deadline=`: the deadline of its Budget section.
+  Read the `## Research` section of the repo's instruction file first; its lines: [`research.md`](../fill-queue/references/research.md). It fills Metric, How a run is made, the `usd` of Budget and each item's `Place:`. No section: each Place is `turing`.
+  Each backlog item has its pass criterion, `Place:` and `Builds on:` in the draft. Kind `gpu`. `deadline=`: the deadline of its Budget section.
 - Feature: the feature file and each member's `SPEC.md`, per the reference's step 1; grill only the open sections.
 - Tool run: the tool, its place (default: the first of its `places`), `hours` (default: its `hours`), the brief and the args.
   The brief is the goal for the tool. Args are `key=value` lines, only the keys of its recipe `docs/workspaces/<name>.md`.
@@ -81,8 +82,8 @@ commit `docs(research): <slug>`. Feature: the reference's steps 2 and 3.
 Write one job dir (`mktemp -d`) as `fill-queue` Phase 6 describes: `job` and
 `prompt.md` from `skills/fill-queue/references/job-prompt.md`, every `<…>`
 filled; `after=` and `verify=` as `fill-queue` Phase 6 says for the draft's review and verify. Tool run: add `tool=<name>`, `place=<place>` and `hours=<n>`
-to `job`; write the brief to `in/brief.md` and the args to `in/args` in the job dir. Research: append
-`skills/fill-queue/references/research.md` to `prompt.md`, and add `deadline=YYYY-MM-DD HH:MM` to `job`. A feature: one job dir per member with a `SPEC.md`. Then, outside the
+to `job`; write the brief to `in/brief.md` and the args to `in/args` in the job dir. Research: add
+`research=<branch>`, `question=<the Question, one line>`, `usd=` (the Cost limit; `0` with no `## Research` section, as empty is no limit), `workers=` (default 3), `better=higher|lower` and `deadline=YYYY-MM-DD HH:MM` to `job`; `vibe queue add` appends the coordinator block. A feature: one job dir per member with a `SPEC.md`. Then, outside the
 sandbox: `vibe queue add <dir>...`. Add `--now` only when the user asked for it.
 
 ## Done

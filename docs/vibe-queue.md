@@ -202,12 +202,22 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 
 ## Research jobs
 
-An open question with a metric, a budget and a backlog of experiments runs as one job. The agent picks each next run from the last result.
+An open question with a metric, a budget and a backlog of experiments runs as a coordinator job and parallel workers. The coordinator picks the next runs from the last results.
 `/enqueue` makes one: route Research. `/fill-queue` proposes up to 3 from each repo's open questions and metric items; a picked one goes through that route.
 
+| Contract | Holds |
+| -------- | ----- |
+| Coordinator job keys | `research=<slug>` `question=` `usd=` `workers=` (default 3) `better=higher\|lower` `deadline=` |
+| Worker job keys | `research=` `hid=` `place=` `idea=` `builds=<hid\|root>` |
+| Worker job dir files | `run-result` (the `RESULT` JSON), `cost` (USD), `paste.md` (an IAS worker's steps), `infra` |
+| The repo's `.claude/research/` | `workspace.conf` (`kind=run`, `result=folder`), `Dockerfile`, `run`, `stop`, `job.sbatch` (the IAS job); [workspace contract](workspaces.md) |
+| A run | the command `/ws/in/cmd` runs in `/ws/in/repo`; its last output line is `RESULT {"metric": <number>}`; `stop` adds `"partial": true` |
+| `## Research` in the repo's instruction file | Places, Metric command, Smoke check, Data, Tracker, Cost limit: [`research.md`](../skills/fill-queue/references/research.md) |
+
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
-- Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.
-- The loop is the GPU chain: each session ends `queued:` after `vibe queue gpu`; the follow-up session closes that run and queues the next one.
+- Prompt: `job-prompt.md` plus a block. `vibe queue add` appends [`references/research.md`](../skills/fill-queue/references/research.md) to a coordinator (`research=`, no `hid=`); `vibe queue worker` appends [`references/research-worker.md`](../skills/fill-queue/references/research-worker.md).
+- The coordinator queues the baseline run itself (`vibe queue gpu`), then starts up to `workers=` workers at a time. A session ends `queued:` while a worker runs; each worker end wakes it.
+- A worker: session 1 writes the code, runs the smoke check and queues one run; session 2 commits `runs/<hid>/row.md`, the ledger row the coordinator checks against `run-result`.
 - `vibe queue gpu --place runpod|vast -- <cmd>` runs on a rented place. The workspace folder is the repo's `.claude/research/` (`kind=run`, `result=folder`, `hours=`, `image=`, `commit=`, an executable `run`). The run takes the worktree's HEAD, so the folder and every tracked file must be committed. Each refusal is one error line.
 - Secrets and `VAST_*` settings: `~/.config/vibe/workspaces/research-<repo folder>.env`, mode 600, one file per repo. `vibe queue gpu --place` refuses a run when it lacks a `secrets=` name of the conf.
 - The runner fetches only the worktree's HEAD (depth 1) to `/ws/in/repo` and writes the command to `/ws/in/cmd`. In instance `research-<id>` it runs `up`, `exec run`, `pull` and `down`, then the follow-up job.
