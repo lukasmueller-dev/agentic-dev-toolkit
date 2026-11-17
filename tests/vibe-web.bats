@@ -401,7 +401,7 @@ ID=20261104-080000-proj-task
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
   n="$(find "$Q/queue" -mindepth 1 -maxdepth 1)"
   [ "$(cat "$n/prompt.md")" = "$(printf 'task\n\nNote: Use plan B.')" ]
-  echo done >"$n/status"
+  echo "done" >"$n/status"
   run "$REPO_ROOT/bin/vibe" queue retry "${n##*/}" x
   [ "$status" -eq 1 ]
   [[ "$output" == *"is done — retry takes blocked, failed, timeout or skipped"* ]] || false
@@ -949,6 +949,7 @@ optin() {
   [ "$(qnew | wc -l | tr -d ' ')" = 1 ]
 }
 
+# shellcheck disable=SC2016  # the stub's own $i and $(seq)
 @test "routes: a long output keeps its first and its last lines" {
   printf '#!/bin/sh\nfor i in $(seq 1 400); do printf "Line %%03d %%070d\\n" "$i" 0; done\n' >"$STUBS/systemctl"
   run act restart '{}'

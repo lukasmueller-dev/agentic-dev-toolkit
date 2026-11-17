@@ -465,21 +465,21 @@ ended() {
 }
 
 @test "job triage: archives each ended job whose PR is merged or closed, one gh call per PR; open, held, running, feature member and other repo stay" {
-  local r a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)" d
-  r="$(make_repo proj)"
+  local r a d
+  r="$(make_repo proj)" a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)"
   echo '[]' >"$STUBS/prs.json"
   echo MERGED >"$STUBS/state-1" && echo CLOSED >"$STUBS/state-2" && echo OPEN >"$STUBS/state-3"
-  ended 20261117-010000-proj-a lane done 1
-  ended 20261117-010001-proj-b lane done 1
+  ended 20261117-010000-proj-a lane "done" 1
+  ended 20261117-010001-proj-b lane "done" 1
   ended 20261117-010002-proj-c c failed 2
-  ended 20261117-010003-proj-d d done 3
-  ended 20261117-010004-proj-e e done 1
+  ended 20261117-010003-proj-d d "done" 3
+  ended 20261117-010004-proj-e e "done" 1
   echo "test it on the robot" >"$Q/20261117-010004-proj-e/held"
   ended 20261117-010005-proj-f f running 1
-  ended 20261117-010006-proj-g g done 1
+  ended 20261117-010006-proj-g g "done" 1
   mkdir -p "$XDG_STATE_HOME/vibe/features"
   printf '# Feature\n\n## Members\n\n- %s g https://github.com/o/proj/pull/1\n' "$r" >"$XDG_STATE_HOME/vibe/features/teleop.md"
-  ended 20261117-010007-other-h h done 1 "$BATS_TEST_TMPDIR/other"
+  ended 20261117-010007-other-h h "done" 1 "$BATS_TEST_TMPDIR/other"
   run "$VIBE" job triage "$r"
   echo "$output"
   [ "$status" -eq 0 ]
