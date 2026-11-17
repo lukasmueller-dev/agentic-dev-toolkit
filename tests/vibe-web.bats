@@ -190,7 +190,7 @@ post() {
   grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));" "$js"
   # A send resets a select to its default option too, so its part swaps again.
   grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
-  grep -qF "if (held(live)) { kept = true; continue; }" "$js"
+  grep -qF "if (held(live)) { if (swapIn(live, \$(s, n))) kept = true; else p[2] = h; continue; }" "$js"
   grep -qF "if (r.ok && !kept) last = t;" "$js"
   # The roadmap rows get a Branch slug field, not a prompt.
   grep -qF "ask('branch', 'Branch slug', action('Queue', 'roadmap-new', {}))" "$js"

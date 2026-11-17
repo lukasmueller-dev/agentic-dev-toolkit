@@ -1,4 +1,4 @@
-/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed, unless a field in it has focus or a changed value; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
+/* At load and every 10 s: fetch this page (8 s limit) and swap each part that changed; in a part with a field in focus or with a changed value, each child swaps, down to the field; the panel swaps block by block. Open folds stay. The header counts the render's age by the server's clock; over 2 min: stale.
    Panel: a hidden block per row (#job-<key>) and New job (#new); the URL hash names the one it shows, j/k move it. From 1200 px a column, always open; under it a modal (a bottom sheet on a phone) while it shows a block or an output.
    Buttons: /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts or .prow, then each named field of the button's .ask, empty only with data-opt; ⌘↵ in a field sends, Esc clears it.
@@ -35,6 +35,23 @@
     }
     return kept;
   };
+  /* A part with a field in use, child by child: one unchanged stays, one without a field in use swaps, one with it recurses;
+     a field stays. A changed child list waits for the next poll. True when one stayed. */
+  const swapIn = (live, got) => {
+    const a = [...live.children], b = [...got.children];
+    if (a.length !== b.length || a.some((x, i) => x.tagName !== b[i].tagName || x.id !== b[i].id)) return true;
+    let kept = false;
+    a.forEach((x, i) => {
+      const f = b[i], h = f.outerHTML;
+      if (src.get(x) === h || x.outerHTML === h) { src.set(x, h); return; }
+      if (x.matches('input, textarea, select')) { kept = true; return; }
+      if (held(x)) { if (swapIn(x, f)) kept = true; return; }
+      const open = [...x.querySelectorAll('details[open]')].map(key);
+      src.set(f, h); x.replaceWith(f);
+      f.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
+    });
+    return kept;
+  };
   /* base: the browser time at which the render was 0 s old; the browser clock only ever measures a span. */
   let last = '', busy = false, again = false, base = Date.now(), cur = '', view = 0;
   setInterval(() => {
@@ -69,7 +86,7 @@
           const [s, live, was] = p, h = $(s, n).innerHTML;
           if (h === was) continue;
           if (live === blocks) { if (swapBlocks($(s, n))) kept = true; else p[2] = h; continue; }
-          if (held(live)) { kept = true; continue; } /* the next poll tries again */
+          if (held(live)) { if (swapIn(live, $(s, n))) kept = true; else p[2] = h; continue; } /* kept: the next poll tries again */
           const open = [...live.querySelectorAll('details[open]')].map(key);
           live.innerHTML = h; p[2] = h;
           live.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });

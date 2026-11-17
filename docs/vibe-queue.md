@@ -97,7 +97,7 @@ sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a 
 - Workspaces Start: a place and hours form for a tool with 2+ places, else one button. While the lock is held, the turing option names the GPU holder for a `gpu=yes` tool.
 - The panel: from 1200 px a right column, always open, with Close only under a button's output; under it a modal over the list; on a phone a bottom sheet. On a phone the rail is a top bar.
 - `j`/`k` move the selection; no single key writes. In a field, `⌘↵` or `Ctrl↵` sends and `Esc` clears.
-- The page fetches itself every 10 s and swaps each part that changed; open folds stay. A part or panel block with a field in focus or with text stays as it is. Without JS it needs a reload.
+- The page fetches itself every 10 s and swaps each part that changed; open folds stay. A field in focus or with a changed value stays as it is, and so does its panel block; the rest of its part swaps. Without JS it needs a reload.
 - The tab title is `(N) vibe`, N the Needs-you count. The rail's glider moves while a job runs, except with reduced motion. Light and dark follow the system.
 
 Buttons, server only: `bin/vibe-web` runs one fixed command per route; `web_login` in `queue.conf` first.

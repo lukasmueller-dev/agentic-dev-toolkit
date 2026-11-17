@@ -42,6 +42,11 @@ def state(job, text):
     return lambda h: re.sub(r'(id="job-%s" hidden><div class="bh"><i class="lamp l-[a-z]+"></i><span class="st">)[^<]*' % re.escape(job), r"\g<1>" + text, h)
 
 
+# Two service rows, the first with a Place form.
+ROW = '<div class="wrow" id="ws-%s"><i class="lamp l-off"></i><div class="t"><b>%s</b><span class="why">Off</span></div>%s</div>'
+FORM = '<div class="jacts" data-name="one"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><button data-act="ws-start">Start</button></span></div>'
+edit(lambda h: re.sub(r'(<section id="workspaces" class="page">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
+
 # An old render: the runner stopped writing an hour ago.
 edit(lambda h: re.sub(r'data-t="[0-9]+"', 'data-t="%d"' % (time.time() - 3600), h))
 
@@ -129,16 +134,22 @@ try:
     check("another row shows its block", until("!document.getElementById('job-%s').hidden" % B, 2))
     # A select in New job set to its second option, then left: no field has focus.
     js("(() => { const s = document.createElement('select'); s.add(new Option('a')); s.add(new Option('b')); s.selectedIndex = 1; document.querySelector('#new .bh').append(s); })()")
+    # One's Place set to runpod, then left.
+    js("document.querySelector('#ws-one select').selectedIndex = 1")
     # The runner writes a new page: A and B change, a new block C, a new Needs-you count, a fresh render.
     edit(lambda h: state(B, "changed")(state(A, "changed")(h)))
     edit(lambda h: h.replace('<div class="blk" id="new" hidden>', '<div class="blk" id="job-C" hidden><div class="bh"><h2>C</h2></div></div>\n<div class="blk" id="new" hidden>', 1))
     edit(lambda h: re.sub(r'(<h2>Needs you <span class="n">)[0-9]+', r"\g<1>3", h))
     edit(lambda h: h.replace('<h2>New job</h2>', '<h2>New job 2</h2>', 1))
+    edit(lambda h: h.replace('<span class="why">Off</span>', '<span class="why">up</span>'))
     edit(lambda h: re.sub(r'data-t="[0-9]+"', 'data-t="%d"' % time.time(), h))
     check("the block without a field in use swaps", until((ST % B) + " === 'changed'", 13))
     check("a block with text in a field stays", js(ST % A) == "blocked" and js("document.querySelector('#job-%s textarea').value" % A) == "half")
     check("a block with a changed select and no focus stays", js("document.querySelector('#new h2').textContent") == "New job" and js("document.querySelector('#new .bh select').selectedIndex") == 1)
     check("a new block arrives", js("!!document.getElementById('job-C')"))
+    WHY = "document.querySelector('#ws-%s .why').textContent"
+    check("a changed select holds only itself: the other row and its own row's text swap", js(WHY % "two") == "up" and js(WHY % "one") == "up")
+    check("the changed select keeps its value", js("document.querySelector('#ws-one select').selectedIndex") == 1)
     check("the list swaps", js("document.querySelector('[data-k=\"you\"] h2 .n').textContent") == "3")
     check("a fresh render is not stale", js("!document.querySelector('.updated').classList.contains('stale')"))
     js("location.hash = 'job-C'")
