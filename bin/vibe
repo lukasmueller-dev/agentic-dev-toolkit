@@ -2114,14 +2114,14 @@ cmd_queue_gpu() {
 # gpu-cmd, or past deadline= (the hard stop of a research job's budget). The job sandbox cannot write gpu-queue.
 gpu_submit() {
   local d="$1" id dl a
-  local -a cmd=()
+  local -a argv=()
   [[ -s "$d/gpu-cmd" ]] || return 1
   dl="$(deadline_of "$d/job")" || return 1
   if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then return 1; fi
-  while IFS= read -r -d '' a; do cmd+=("$a"); done <"$d/gpu-cmd"
-  ((${#cmd[@]})) || return 1
+  while IFS= read -r -d '' a; do argv+=("$a"); done <"$d/gpu-cmd"
+  ((${#argv[@]})) || return 1
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$(jstate "$d" worktree)" \
-    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "${cmd[@]}")" || return 1
+    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "${argv[@]}")" || return 1
   echo "$id" >"$d/gpu-job"
 }
 

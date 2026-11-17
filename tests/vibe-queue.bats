@@ -1566,12 +1566,13 @@ EOF
 }
 
 @test "trust: the job sandbox may not write the queue or gpu-queue" {
-  local e
+  local e p
   # An allowWrite entry (~/…) that covers one of these lets a job forge the runner's files or a GPU run.
   while IFS= read -r e; do
     e="${e#\~}"
-    case "/.local/state/vibe/queue/<id>/worktree" in "${e%/}/"*) false ;; esac
-    case "/.local/state/gpu-queue/queued/<id>/cmd" in "${e%/}/"*) false ;; esac
+    for p in /.local/state/vibe/queue/id/worktree /.local/state/gpu-queue/queued/id/cmd; do
+      case "$p" in "${e%/}/"*) false ;; esac
+    done
   done < <(jq -r '.sandbox.filesystem.allowWrite[]' "$REPO_ROOT/claude/vibe-job-settings.json")
 }
 
