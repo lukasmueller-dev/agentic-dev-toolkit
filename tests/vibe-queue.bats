@@ -2674,7 +2674,7 @@ research_repo() {
   printf '#!/bin/sh\necho %s\n' "'RESULT {\"metric\": 0.1, \"partial\": true}'" >"$r/.claude/research/stop"
   chmod +x "$r/.claude/research/run" "$r/.claude/research/stop"
   cat >"$r/train.sh" <<EOF
-echo "in \${PWD##*/} at \$(git rev-parse HEAD)"
+echo "in \${PWD##*/} at \$(git rev-parse HEAD), commits: \$(git rev-list --all | wc -l | tr -d ' ')"
 [ ! -e "$STUBS/run-sleep" ] || sleep 30
 echo 'RESULT {"metric": 0.5}'
 echo 'RESULT {"metric": 0.7, "seed": 1}'
@@ -2696,7 +2696,7 @@ EOF
     [ "$(grep "^$p " "$STUBS/place.log")" = "$(printf '%s %s hours=2 folder=in/repo/.claude/research\n' "$p" up "$p" 'exec run' "$p" pull "$p" down)" ]
   done
   [ "$(cat "$Q/01-a/run/place")" = runpod ]
-  grep -qx "in repo at $(cat "$Q/01-a/run/commit")" "$Q/01-a/run/log"
+  grep -qx "in repo at $(cat "$Q/01-a/run/commit"), commits: 1" "$Q/01-a/run/log"
   [ "$(cat "$Q/01-a/run/exit")" = 0 ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
@@ -2739,6 +2739,48 @@ EOF
   [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
 }
 
+# refused PLACE MESSAGE — vibe queue gpu --place PLACE in job 01-a stops with the one line `vibe: MESSAGE`.
+refused() {
+  local out
+  if out="$(VIBE_JOB_DIR="$Q/01-a" "$VIBE" queue gpu --place "$1" -- sh train.sh 2>&1)"; then return 1; fi
+  printf '%s\n' "$out"
+  [ "$out" = "vibe: $2" ]
+}
+
+@test "gpu --place: a bad conf, a place it lacks, no run script, an uncommitted folder or a second run is one error line; nothing is queued" {
+  local r c f=.claude/research good
+  places
+  r="$(research_repo)"
+  c="$r/$f/workspace.conf"
+  good="$(cat "$c")"
+  mkjob 01-a "$r" task-a ok
+  echo "$r" >"$Q/01-a/worktree"
+  sed -i.bak 's/^places=.*/places=runpod,mars/' "$c"
+  refused runpod "$f/workspace.conf: unknown place mars"
+  sed -i.bak 's/^result=.*/result=branch/; s/^places=.*/places=runpod,vast/' "$c"
+  refused runpod "$f/workspace.conf needs kind=run and result=folder"
+  printf '%s\n' "$good" | sed 's/^places=.*/places=runpod/' >"$c"
+  refused vast "$f/workspace.conf has no place 'vast' — places=runpod"
+  printf '%s\n' "$good" | grep -v '^hours=' >"$c"
+  refused runpod "$f/workspace.conf needs hours=: the limit of a run"
+  printf '%s\n' "$good" | grep -v '^commit=' >"$c"
+  refused runpod "$f/workspace.conf needs image= and commit=: runpod rents that image"
+  printf '%s\n' "$good" >"$c"
+  rm "$c.bak" "$BATS_TEST_TMPDIR/workspaces/_places/vast"
+  refused vast "no place script 'vast' in $BATS_TEST_TMPDIR/workspaces/_places"
+  chmod -x "$r/$f/run"
+  refused runpod "$f/run is missing or not executable: the place runs it"
+  chmod +x "$r/$f/run"
+  echo "# changed" >>"$r/$f/run"
+  refused runpod "commit $f/ first: the run takes the worktree's HEAD"
+  [ ! -e "$Q/01-a/run" ]
+  [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
+  git -C "$r" checkout -q -- "$f"
+  mkdir "$Q/01-a/run"
+  refused runpod "this job queued its run already ($Q/01-a/run): one run per session"
+  [ -z "$(ls "$Q/01-a/run")" ]
+}
+
 @test "gpu: run-result holds the last RESULT line of the run log, on turing too" {
   local r pid
   r="$(make_repo proj)"
@@ -2757,11 +2799,11 @@ EOF
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
-@test "gpu: no RESULT line, one that does not parse or a metric that is no number means failed; a plain GPU job has no Result line" {
+@test "gpu: no RESULT line, one that does not parse or a metric that is no finite number means failed; a plain GPU job has no Result line" {
   local r log="$BATS_TEST_TMPDIR/run.log" i
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok research=q1
-  for i in 'loss 0.3' 'RESULT {"metric": "high"}' 'RESULT {"metric": 1'; do
+  for i in 'loss 0.3' 'RESULT {"metric": "high"}' 'RESULT {"metric": 1' 'RESULT {"metric": NaN}' 'RESULT {"metric": -Infinity}'; do
     echo '{"metric":9}' >"$Q/01-a/run-result"
     printf '%s\n' "$i" >"$log"
     rm -rf "$Q/01-a-gpu"

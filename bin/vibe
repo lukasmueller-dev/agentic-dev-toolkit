@@ -2131,6 +2131,7 @@ place_queue() {
   [[ -n "$(jget "$c" hours)" ]] || die "$f/workspace.conf needs hours=: the limit of a run"
   [[ -n "$(jget "$c" image)" && -n "$(jget "$c" commit)" ]] || die "$f/workspace.conf needs image= and commit=: $p rents that image"
   [[ -x "$WS_ROOT/_places/$p" ]] || die "no place script '$p' in $WS_ROOT/_places"
+  [[ -f "$wt/$f/run" && -x "$wt/$f/run" ]] || die "$f/run is missing or not executable: the place runs it"
   [[ -z "$(agent_git -C "$wt" status --porcelain -- "$f")" ]] || die "commit $f/ first: the run takes the worktree's HEAD"
   [[ ! -e "$d/run" ]] || die "this job queued its run already ($d/run): one run per session"
   t="$(mktemp -d "$d/.run.XXXXXX")"
@@ -2157,9 +2158,10 @@ place_pass() {
   fi
 }
 
-# place_run JOB — JOB's run in instance research-<id>: in/repo a clone at run/commit, in/cmd, the clone's
-# .claude/research/ as the folder. up, exec run until the stop bound before the limit, then exec stop, pull, down.
-# All output to run/log; /ws/out to JOB/out/. A failed up (or clone) writes JOB/infra. Then run/exit and the follow-up.
+# place_run JOB — JOB's run in instance research-<id>: in/repo holds run/commit alone (depth 1: no other branch
+# leaves turing), in/cmd the command, in/repo/.claude/research/ the folder. up, exec run until the stop bound
+# before the limit, then exec stop, pull, down. All output to run/log; /ws/out to JOB/out/.
+# A failed up (or fetch) writes JOB/infra. Then run/exit and the follow-up.
 place_run() {
   local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0
   st="$WS_STATES/$inst"
@@ -2168,8 +2170,9 @@ place_run() {
   echo "$st/in/repo/.claude/research" >"$st/dir"
   {
     cp "$d/run/cmd" "$st/in/cmd" && chmod +x "$st/in/cmd" &&
-      agent_git clone -q --no-checkout "$(jstate "$d" worktree)" "$st/in/repo" &&
-      agent_git -C "$st/in/repo" checkout -q --detach "$(jstate "$d/run" commit)" &&
+      agent_git init -q "$st/in/repo" &&
+      agent_git -C "$st/in/repo" fetch -q --depth 1 "$(jstate "$d" worktree)" "$(jstate "$d/run" commit)" &&
+      agent_git -C "$st/in/repo" checkout -q --detach FETCH_HEAD &&
       ws_place "$inst" up
   } >>"$d/run/log" 2>&1 || rc=infra
   if [[ "$rc" == infra ]]; then
@@ -2195,12 +2198,13 @@ place_run() {
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
-# or its metric is no number.
+# or its metric is no finite number.
 run_result() {
   local j
   rm -f "$2/run-result"
   j="$(grep -a '^RESULT {' "$1" 2>/dev/null | tail -n 1)" || true
-  j="$(printf '%s' "${j#RESULT }" | jq -ce 'select(.metric | type == "number")' 2>/dev/null)" || j=""
+  # jq 1.7 reads NaN and Infinity as numbers: a diverged run must not pass.
+  j="$(printf '%s' "${j#RESULT }" | jq -ce 'select(.metric | type == "number" and (isnan | not) and (isinfinite | not))' 2>/dev/null)" || j=""
   if [[ -n "$j" ]]; then echo "$j" >"$2/run-result"; fi
 }
 

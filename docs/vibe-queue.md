@@ -208,10 +208,10 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
 - Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.
 - The loop is the GPU chain: each session ends `queued:` after `vibe queue gpu`; the follow-up session closes that run and queues the next one.
-- `vibe queue gpu --place runpod|vast -- <cmd>` runs on a rented place. The workspace folder is the repo's `.claude/research/` (`kind=run`, `result=folder`, `hours=`, `image=`, `commit=`). With no folder, the command prints one error line.
-- The runner clones the worktree's HEAD to `/ws/in/repo` and writes the command to `/ws/in/cmd`. In instance `research-<id>` it runs `up`, `exec run`, `pull` and `down`, then the follow-up job.
+- `vibe queue gpu --place runpod|vast -- <cmd>` runs on a rented place. The workspace folder is the repo's `.claude/research/` (`kind=run`, `result=folder`, `hours=`, `image=`, `commit=`, an executable `run`). It must be committed. Each refusal is one error line.
+- The runner fetches only the worktree's HEAD (depth 1) to `/ws/in/repo` and writes the command to `/ws/in/cmd`. In instance `research-<id>` it runs `up`, `exec run`, `pull` and `down`, then the follow-up job.
 - The run stops 300 s (`VIBE_WS_STOP_SECS`) before the limit of its `hours`. Then the `stop` script runs, then `pull` and `down`.
-- After each run the runner writes `run-result`: the JSON of the last `RESULT {` line of the run log, on turing too. With no such line, bad JSON or a metric that is no number, there is no `run-result` and the run failed.
+- After each run the runner writes `run-result`: the JSON of the last `RESULT {` line of the run log, on turing too. With no such line, bad JSON or a metric that is no finite number (`NaN`, `Infinity`), there is no `run-result` and the run failed.
 - A failed `up` writes `infra` with the reason, and the follow-up gets `Exit: infra`. A run whose process died (a reboot) gets `infra` too; its instance goes down at its limit.
 - The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
 - `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` queues nothing, so the next session ends the job. `vibe queue add` refuses another format.
