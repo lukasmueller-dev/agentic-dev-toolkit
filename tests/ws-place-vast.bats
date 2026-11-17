@@ -91,6 +91,11 @@ EOF
     [ "$output" = "vast: no price for: gpu_name=RTX_4090 verified=true rentable=true datacenter=True" ]
   done
   [ ! -e "$WS_STATE/id" ]
+  # A research run names its env file per repo (WS_NAME), not after its folder.
+  echo VAST_QUERY=gpu_name=A100 >"$HOME/.config/vibe/workspaces/research-proj.env"
+  WS_NAME=research-proj run "$PLACE" price
+  [ "$status" -eq 0 ]
+  [ "$(tail -n 1 "$STUBS/vastai.argv")" = 'search offers gpu_name=A100 verified=true rentable=true datacenter=True -o dph --storage 50 --raw' ]
 }
 
 @test "up, exec, pull, down: a datacenter on-demand offer; no secret value in any stub's argv" {

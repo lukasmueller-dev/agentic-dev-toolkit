@@ -102,6 +102,16 @@ pod_up() {
   [ ! -e "$WS_STATE/id" ]
 }
 
+@test "up: WS_NAME names the env file it sends, not the folder name" {
+  local e="$HOME/.config/vibe/workspaces/research-proj.env"
+  echo HF_TOKEN=hf-proj >"$e"
+  chmod 600 "$e"
+  WS_NAME=research-proj run "$PLACE" up
+  [ "$status" -eq 0 ]
+  grep -qx HF_TOKEN=hf-proj "$STUB/ssh.stdin"
+  [ "$(grep -c sk-secret-token "$STUB/ssh.stdin")" -eq 0 ]
+}
+
 @test "up: a pod that never runs, or fails a copy, is deleted" {
   echo initializing >"$STUB/status"
   run "$PLACE" up

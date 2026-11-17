@@ -89,7 +89,8 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 
 ## Place verbs
 
-`workspaces/_places/<place> <verb>` with env `WS_INSTANCE`, `WS_STATE`, `WS_DIR` and `WS_CONF_<KEY>` per conf key.
+`workspaces/_places/<place> <verb>` with env `WS_INSTANCE`, `WS_STATE`, `WS_DIR`, `WS_NAME` and `WS_CONF_<KEY>` per conf key.
+`WS_NAME` names the env file; empty, the place takes the folder name.
 
 | Verb | Does |
 | --- | --- |
@@ -108,6 +109,7 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 - A page stop adds `stops` (the pid of `vibe ws down`) and `stop.log`; a failed one keeps `stop.log`.
 - Instance: `<name>` for a service, `<name>-<job id>` for a run, `research-<job id>` for a [research run](vibe-queue.md#research-jobs).
 - A research run adds `dir`: its folder, the clone's `.claude/research/`. The place verbs use that folder, not one under `workspaces/`.
+- It adds `name` too: `research-<repo folder>`, so each repo has its own env file.
 - After `exec run` it adds `owner`, its job dir. Its run then stops, pulls and downs the instance; `vibe ws tick` skips it while that run's process lives.
 - Secrets: `~/.config/vibe/workspaces/<name>.env`, mode 600, `KEY=VALUE`.
 

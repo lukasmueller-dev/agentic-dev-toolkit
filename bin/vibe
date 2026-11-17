@@ -2125,8 +2125,9 @@ cmd_queue_gpu() {
 
 # place_queue JOB PLACE CMD... — vibe queue gpu --place: JOB/run/ gets place, commit (the worktree's HEAD) and cmd
 # (CMD as a bash script); the runner's pass starts the run (place_pass). One error line when the folder cannot run there.
+# The secrets: ~/.config/vibe/workspaces/research-<repo folder>.env, one file per repo.
 place_queue() {
-  local d="$1" p="$2" wt f=.claude/research c t
+  local d="$1" p="$2" wt f=.claude/research c t r
   shift 2
   wt="$(jstate "$d" worktree)"
   c="$wt/$f/workspace.conf"
@@ -2137,6 +2138,8 @@ place_queue() {
   [[ ",$(jget "$c" places)," == *",$p,"* ]] || die "$f/workspace.conf has no place '$p' — places=$(jget "$c" places)"
   [[ -n "$(jget "$c" hours)" ]] || die "$f/workspace.conf needs hours=: the limit of a run"
   [[ -n "$(jget "$c" image)" && -n "$(jget "$c" commit)" ]] || die "$f/workspace.conf needs image= and commit=: $p rents that image"
+  r="$(jget "$d/job" repo)"
+  ws_secrets "research-$(basename "$r")" "$c"
   [[ -x "$WS_ROOT/_places/$p" ]] || die "no place script '$p' in $WS_ROOT/_places"
   [[ -f "$wt/$f/run" && -x "$wt/$f/run" ]] || die "$f/run is missing or not executable: the place runs it"
   [[ -z "$(agent_git -C "$wt" status --porcelain -- "$f")" ]] || die "commit $f/ first: the run takes the worktree's HEAD"
@@ -2183,6 +2186,7 @@ place_run() {
   mkdir -p "$st/in"
   echo "$p" >"$st/place"
   echo "$st/in/repo/.claude/research" >"$st/dir"
+  echo "research-$(basename "$(jget "$d/job" repo)")" >"$st/name"
   # The agent can write its job dir: a commit git reads as an option, or a host place, runs outside the sandbox.
   if [[ ! "$p" =~ ^(runpod|vast)$ || ! "$c" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
     echo "vibe: run/place must be runpod or vast and run/commit a commit id, not '$p' '$c'" >>"$d/run/log"
@@ -4453,6 +4457,7 @@ ws_name() {
 
 # ws_place INSTANCE VERB [ARG...] — the place script of INSTANCE with WS_* and WS_CONF_<KEY> set (docs/workspaces.md).
 # The folder: the instance's dir file (a research run), else its workspace under WS_ROOT.
+# WS_NAME: the instance's name file (a research run's env file name), else empty: the place takes the folder name.
 # A subshell with errexit off when tested: each lookup has its own `|| die`.
 ws_place() {
   local inst="$1"
@@ -4463,14 +4468,14 @@ ws_place() {
       n="$(ws_name "$inst")" || die "no workspace for instance $inst"
       w="$WS_ROOT/$n"
     fi
-    p="$(jstate "$WS_STATES/$inst" place)"
+    p="$(jstate "$WS_STATES/$inst" place)" nm="$(jstate "$WS_STATES/$inst" name)"
     [[ -n "$p" && "$(slug "$p")" == "$p" && -f "$WS_ROOT/_places/$p" && -x "$WS_ROOT/_places/$p" ]] ||
       die "no place script '$p' for $inst"
     while IFS= read -r l; do export "WS_CONF_$l"; done < <(
       awk '/^[a-z]+=/ { i = index($0, "="); print toupper(substr($0, 1, i - 1)) substr($0, i) }' "$w/workspace.conf"
     )
     # A WS_HOURS the caller set (a tool job's hours=) wins over the conf's.
-    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$w" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
+    export WS_INSTANCE="$inst" WS_STATE="$WS_STATES/$inst" WS_DIR="$w" WS_NAME="$nm" WS_HOURS="${WS_HOURS:-${WS_CONF_HOURS:-}}"
     # WS_SECS set: timeout(1) ends the call after WS_SECS, exit 124; no timeout(1) means no bound.
     if [[ -n "${WS_SECS:-}" ]] && t="$(command -v timeout || command -v gtimeout)"; then
       exec "$t" -k 10 "$WS_SECS" "$WS_ROOT/_places/$p" "$@"

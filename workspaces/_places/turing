@@ -10,7 +10,7 @@ die() {
 
 : "${WS_INSTANCE:?}" "${WS_STATE:?}" "${WS_DIR:?}"
 name="${WS_DIR%/}"
-name="${name##*/}"
+name="${WS_NAME:-${name##*/}}" # the env file's name; a research run sets it per repo
 hours="${WS_HOURS:-${WS_CONF_HOURS:-}}"
 id="$(cat "$WS_STATE/id" 2>/dev/null || true)"
 c="ws-$WS_INSTANCE"

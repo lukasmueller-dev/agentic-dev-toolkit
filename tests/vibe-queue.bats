@@ -2654,6 +2654,7 @@ case "\$v" in
   up)
     if [ -e "$STUBS/fail-up" ]; then echo "\${0##*/}: no machine free" >&2 && exit 1; fi
     echo pod-1 >"\$WS_STATE/id"
+    echo "\$WS_NAME" >"$STUBS/ws-name"
     if [ -e "$STUBS/short-limit" ]; then echo \$((\$(date +%s) + 3)); else echo \$((\$(date +%s) + WS_HOURS * 3600)); fi >"\$WS_STATE/limit"
     ;;
   exec)
@@ -2715,6 +2716,7 @@ EOF
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
   [ "$(cat "$Q/01-a/out/note")" = pulled ]
+  [ "$(cat "$STUBS/ws-name")" = research-proj ]
   # A link or FIFO the rented machine leaves in out/ never reaches the job dir.
   [ "$(ls -A "$Q/01-a/out")" = note ]
   [ "$(ls -A "$Q/02-b/out")" = note ]
@@ -2764,8 +2766,8 @@ refused() {
   [ "$out" = "vibe: $2" ]
 }
 
-@test "gpu --place: a bad conf, a place it lacks, no run script, an uncommitted folder or a second run is one error line; nothing is queued" {
-  local r c f=.claude/research good
+@test "gpu --place: a bad conf, a place it lacks, a missing secret, no run script, an uncommitted folder or a second run is one error line; nothing is queued" {
+  local r c f=.claude/research good e="$HOME/.config/vibe/workspaces/research-proj.env"
   places
   r="$(research_repo)"
   c="$r/$f/workspace.conf"
@@ -2782,6 +2784,16 @@ refused() {
   refused runpod "$f/workspace.conf needs hours=: the limit of a run"
   printf '%s\n' "$good" | grep -v '^commit=' >"$c"
   refused runpod "$f/workspace.conf needs image= and commit=: runpod rents that image"
+  printf '%s\n' "$good" secrets=HF_TOKEN >"$c"
+  refused runpod "research-proj needs HF_TOKEN: write KEY=VALUE lines to $e, mode 600"
+  mkdir -p "${e%/*}"
+  echo OTHER=1 >"$e"
+  chmod 644 "$e"
+  refused runpod "$e: others can read it — chmod 600 $e"
+  chmod 600 "$e"
+  refused runpod "$e does not set: HF_TOKEN"
+  echo HF_TOKEN=hf-x >>"$e"
+  refused runpod "commit $f/ first: the run takes the worktree's HEAD"
   printf '%s\n' "$good" >"$c"
   rm "$c.bak" "$BATS_TEST_TMPDIR/workspaces/_places/vast"
   refused vast "no place script 'vast' in $BATS_TEST_TMPDIR/workspaces/_places"
