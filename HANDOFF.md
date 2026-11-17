@@ -32,6 +32,8 @@ None.
 - Help ↗ links `docs/vibe-queue.md#page-words` on GitHub (`gh_url`): the heading must read `## Page words`.
 - Parts table (`docs/vibe-queue.md` near line 76): Rail, Header, Queue, Row, Panel, Workspaces, Config rows describe the old page; the phase bar, the steps fold and the tool.log tail are gone.
 - Page actions table: Retry → Run again (note optional, needed when blocked); Hold → Put on hold, only failed, timeout, skipped or blocked; Send answer now only on the research card; Clear usage limit sits in Settings; Steer → Message to.
+- "Add a route or a button" (`docs/vibe-queue.md` near line 317): `TOOLS` has no `cleanup.sh` now; page.js also reads `data-need` (a button that needs an optional field) and `data-pre` (a prefix on a field's value).
+- `docs/vibe-jobs.md` near line 100: the page shows triage lines in the Jobs tab's "PR problems" fold, not a Queue tab under `## Triage`.
 - Progress: `N of M items` for a lane, feature or research question; a branch of jobs without `lane=` shows its SPEC.md milestone, else `N of M jobs`.
 - Run `bats` and the lint in a `git clone` in `$TMPDIR`: the sandbox's device files in the worktree root break `install.bats` and `shfmt -f .`.
 - Browser test: `VIBE_TEST_BROWSER=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`; `PAGE_SHOTS=<dir>` writes screenshots.
