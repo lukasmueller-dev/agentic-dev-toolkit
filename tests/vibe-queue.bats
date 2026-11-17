@@ -1152,7 +1152,7 @@ mkprep() {
   [[ "$output" == *"starts $at"* ]] || false
 }
 
-@test "run: a job added with --at does not start before its time, starts after it; status shows the start" {
+@test "run: a job added with --at does not start before its time, starts after it; status and page show the start" {
   local r a j pid at
   r="$(make_repo proj)"
   a="$BATS_TEST_TMPDIR/a"
@@ -1163,6 +1163,8 @@ mkprep() {
   [[ "$at" == *" 03:30" ]] || false
   run "$VIBE" queue status
   [[ "$output" == *"starts $at · night work"* ]] || false
+  "$VIBE" queue page >/dev/null
+  grep -qF "<span class=\"why\">starts $at · night work</span>" "$XDG_STATE_HOME/vibe/web/index.html"
   # A job with no at= is the clock: once it is done, the runner has scanned the waiting one.
   mkjob 01-ctl "$r" ctl ok
   timeout 60 "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
