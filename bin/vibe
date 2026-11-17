@@ -942,16 +942,23 @@ secs() {
 }
 
 # agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
-# timeout(1), JOB as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
+# timeout(1), JOB/agent as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
+# The sandbox writes only JOB/agent: links to JOB's inputs in, the agent's outputs (plain files) back to JOB after.
 agent_exec() {
-  local d="$1" t="$2" s="$3" rc=0 start="$SECONDS"
+  local d="$1" t="$2" s="$3" rc=0 start="$SECONDS" x
   shift 3
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
-  VIBE_JOB_DIR="$d" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
+  mkdir -p "$d/agent"
+  for x in job base lane-pr.md in out tool.log tool-exit; do ln -s "../$x" "$d/agent/$x" 2>/dev/null || true; done
+  VIBE_JOB_DIR="$d/agent" VIBE_STEER="$d/steer" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
   echo "$!" >"$d/agent-pid"
   wait "$!" || rc=$?
   rm -f "$d/agent-pid"
+  # A link would read host files, a FIFO blocks a read.
+  for x in result pr.md report.md verdicts gpu-cmd; do
+    if [[ -f "$d/agent/$x" && ! -L "$d/agent/$x" ]]; then cp "$d/agent/$x" "$d/$x"; fi
+  done
   # timeout(1) exits 137 too, when TERM left the agent running past --kill-after.
   if ((rc == 137 && ${#TIMEOUT_CMD[@]})) && ((SECONDS - start >= $(secs "$t"))); then rc=124; fi
   return "$rc"
@@ -978,7 +985,7 @@ job_handoff() {
     echo "The time limit stopped this job."
     echo "Overwrite HANDOFF.md in the worktree root with State, Next action and Blockers."
     echo "Commit it with any work in progress."
-    echo "If $d/result does not exist, write it: failed: out of time — <what is left>."
+    echo "If $d/agent/result does not exist, write it: failed: out of time — <what is left>."
   } >"$d/resume.md"
   job_agent "$d" 10m "$d/resume.md" "$(jstate "$d" session)" 5 || true
 }
@@ -1067,7 +1074,7 @@ review_fix() {
     echo
     cat "$d/findings"
     echo
-    echo "Write $d/verdicts, one line per finding:"
+    echo "Write $d/agent/verdicts, one line per finding:"
     echo "<number>=fixed <commit sha>, <number>=rejected <reason>, or <number>=open."
     echo "Do not change result or pr.md. Do not push."
   } >"$d/fix.md"
@@ -1467,7 +1474,9 @@ job_run() {
     case "$result" in
       "done:"*) st="done" ;;
       "blocked:"*) st=blocked ;;
-      "queued:"*) st=gpu ;;
+      "queued:"*)
+        if gpu_submit "$d"; then st=gpu; else st=failed result="" note="queued: but no GPU run asked for (vibe queue gpu), or past deadline="; fi
+        ;;
       *) st=failed note="no result line" ;;
     esac
   fi
@@ -1573,7 +1582,7 @@ cmd_queue_run() {
             running=$((running + 1)) busy+=" $(branch_key "$d")"
             if tool_gpu "$d"; then gpu_tool=1; fi
             # vibe queue stop: TERM the agent; job_run then ends the job.
-            # agent-pid is agent-writable: only a positive pid, else `kill 0` TERMs the runner's own group.
+            # Only a positive pid: `kill 0` TERMs the runner's own group.
             apid="$(jstate "$d" agent-pid)"
             if [[ -e "$d/stop" && "$apid" =~ ^[1-9][0-9]*$ ]]; then kill "$apid" 2>/dev/null || true; fi
           elif stopped "$d"; then
@@ -2081,11 +2090,10 @@ cmd_queue_page() {
   echo "wrote $QROOT/web/index.html"
 }
 
-# vibe queue gpu -- CMD... — from inside a job: queue CMD on the GPU
-# (cwd: the worktree); when it ends, a follow-up job continues the task.
-# Past the job's deadline= it queues nothing: the hard stop of a research job's budget.
+# vibe queue gpu -- CMD... — from inside a job: ask for CMD on the GPU in $VIBE_JOB_DIR/gpu-cmd;
+# the runner submits it (gpu_submit). Past the job's deadline= it asks for nothing.
 cmd_queue_gpu() {
-  local d="${VIBE_JOB_DIR:-}" id dl
+  local d="${VIBE_JOB_DIR:-}" dl
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue gpu runs inside a queue job (VIBE_JOB_DIR)"
   case "${1:-}" in
     -h | --help) usage ;;
@@ -2097,10 +2105,24 @@ cmd_queue_gpu() {
   if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
     die "past this job's deadline ($(jget "$d/job" deadline)): queue no run, finish the task"
   fi
-  id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$PWD" \
-    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "$@")" || die "gpu-queue submit failed"
+  printf '%s\0' "$@" >"$d/gpu-cmd"
+  echo "asked for — now write result 'queued: <what runs>' and exit; the runner queues the run"
+}
+
+# gpu_submit JOB — after a session that ended `queued:`: queue JOB/gpu-cmd in gpu-queue (cwd: the
+# worktree), its id in JOB/gpu-job; when it ends, a follow-up job continues the task. False with no
+# gpu-cmd, or past deadline= (the hard stop of a research job's budget). The job sandbox cannot write gpu-queue.
+gpu_submit() {
+  local d="$1" id dl a
+  local -a cmd=()
+  [[ -s "$d/gpu-cmd" ]] || return 1
+  dl="$(deadline_of "$d/job")" || return 1
+  if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then return 1; fi
+  while IFS= read -r -d '' a; do cmd+=("$a"); done <"$d/gpu-cmd"
+  ((${#cmd[@]})) || return 1
+  id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$(jstate "$d" worktree)" \
+    --then "$(printf '%q ' "$SELF_ROOT/bin/vibe" queue follow "$d")" -- "${cmd[@]}")" || return 1
   echo "$id" >"$d/gpu-job"
-  echo "queued $id — now write result 'queued: <what runs>' and exit"
 }
 
 # follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
