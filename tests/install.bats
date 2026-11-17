@@ -760,6 +760,9 @@ denied() {
     "scp -S x a h:b" "scp -Sx a h:b" "scp a h:b -S x" \
     "scp -F x a h:b" "scp a h:b -F x" "ssh -F x h" "ssh -p 22 -F x h" \
     "ssh -o KnownHostsCommand=x h" "scp -o KnownHostsCommand=x a h:b" \
+    "scp -D x a h:b" "scp a h:b -D x" "scp -Dx a h:b" \
+    "ssh -I x h" "ssh -p 22 -I x h" "ssh -Ix h" "ssh -o PKCS11Provider=x h" "scp -o PKCS11Provider=x a h:b" \
+    "ssh -o SecurityKeyProvider=x h" "scp -o SecurityKeyProvider=x a h:b" \
     "scp -o ProxyCommand=x a h:b" "scp -oProxyCommand=x a h:b" "scp -o LocalCommand=x a h:b" \
     "ssh -o ProxyCommand=x h" "ssh -o'ProxyCommand x' h" "ssh -o ProxyCommand=x h true" \
     "ssh -o PermitLocalCommand=yes -o LocalCommand=x h" \
@@ -783,7 +786,7 @@ denied() {
     "rsync -a --existing a h:b" "rsync -a my-extra.txt h:b" \
     "scp -r a h:b" "scp -P 22 a h:b" "scp -o BatchMode=yes a h:b" "scp a.txt user@host:my-dir" \
     "ssh h true" "ssh -o BatchMode=yes h true" "ssh -p 22 -i key h" \
-    "ssh-keygen -F github.com" \
+    "ssh-keygen -F github.com" "ssh-keygen -s ca -I id key.pub" "scp a.txt h:my-Dir" \
     "sort -u f" "sort -k2 f" "sort --check f" "sort -T /tmp f" \
     "rg foo" "rg -n --glob '*.sh' foo" "rg --hidden foo" "rg --pretty foo" "rg --pre-glob '*.gz' foo" \
     "git grep Access-Control-Allow-Origin" "git commit -m 'deny --upload-pack flags'" "git log --grep=--exec" \
