@@ -15,7 +15,9 @@ setup() {
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$STUBS/vastai.argv"
 case "$1 $2" in
-  "search offers") echo '[{"id": 111, "dph_total": 0.4}, {"id": 222, "dph_total": 0.9}]' ;;
+  "search offers")
+    if [ -n "${VAST_OFFERS:-}" ]; then echo "$VAST_OFFERS"; else echo '[{"id": 111, "dph_total": 0.4}, {"id": 222, "dph_total": 0.9}]'; fi
+    ;;
   "create instance")
     if [ -n "${VAST_CREATE_FAIL:-}" ]; then echo '{"success": false}'; else echo '{"success": true, "new_contract": 4242}'; fi
     ;;
@@ -77,12 +79,26 @@ EOF
   chmod 600 "$HOME/.config/vibe/workspaces/demo.env"
 }
 
+@test "price: the dph_total of the offer up rents, with VAST_DISK of disk; no offer fails; no instance" {
+  echo VAST_DISK=80 >>"$HOME/.config/vibe/workspaces/demo.env"
+  run "$PLACE" price
+  [ "$status" -eq 0 ]
+  [ "$output" = 0.4 ]
+  [ "$(cat "$STUBS/vastai.argv")" = 'search offers gpu_name=RTX_4090 verified=true rentable=true datacenter=True -o dph --storage 80 --raw' ]
+  for o in '[]' '[{"id": 111}]' '{"success": false}'; do
+    VAST_OFFERS="$o" run "$PLACE" price
+    [ "$status" -eq 1 ]
+    [ "$output" = "vast: no price for: gpu_name=RTX_4090 verified=true rentable=true datacenter=True" ]
+  done
+  [ ! -e "$WS_STATE/id" ]
+}
+
 @test "up, exec, pull, down: a datacenter on-demand offer; no secret value in any stub's argv" {
   mkdir -p "$WS_STATE"
   : >"$WS_STATE/tunnel.sock" # a dead master's socket, left by a reboot
   run "$PLACE" up
   [ "$status" -eq 0 ]
-  grep -q '^search offers gpu_name=RTX_4090 verified=true rentable=true datacenter=True -o dph --raw$' "$STUBS/vastai.argv"
+  grep -q '^search offers gpu_name=RTX_4090 verified=true rentable=true datacenter=True -o dph --storage 50 --raw$' "$STUBS/vastai.argv"
   grep -q "^create instance 111 --image $WS_CONF_IMAGE:$WS_CONF_COMMIT --disk 50 .*--cancel-unavail" "$STUBS/vastai.argv"
   [ "$(grep -c -- --bid_price "$STUBS/vastai.argv")" -eq 0 ]
   [ "$(cat "$WS_STATE/id")" = 4242 ]

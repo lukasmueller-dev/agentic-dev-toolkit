@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# workspaces/_places/vast up|exec|pull|url|down|tick — the place contract on a Vast.ai datacenter host.
+# workspaces/_places/vast up|exec|price|pull|url|down|tick — the place contract on a Vast.ai datacenter host.
 # Env: WS_INSTANCE, WS_STATE, WS_DIR, WS_CONF_<KEY>. VAST_QUERY, VAST_DISK, VAST_WAIT: the workspace env file.
 # Trap: vastai exits 0 on an HTTP error, so every call is judged by its JSON.
 set -euo pipefail
@@ -24,6 +24,11 @@ setting() {
   if [ -r "$env_file" ]; then v="$(sed -n "s/^$1=//p" "$env_file" | tail -n 1)"; fi
   printf '%s' "${v:-$2}"
 }
+
+query="$(setting VAST_QUERY 'num_gpus=1 cpu_arch=amd64') verified=true rentable=true datacenter=True"
+
+# offers — the offers of query, cheapest first; dph_total holds VAST_DISK GB of disk.
+offers() { vastai search offers "$query" -o dph --storage "$(setting VAST_DISK 50)" --raw; }
 
 # epoch FILE — the number in FILE; 0 when it is missing or not a number.
 epoch() {
@@ -125,7 +130,7 @@ undo_up() {
 }
 
 cmd_up() {
-  local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" query offer id t
+  local image="${WS_CONF_IMAGE:?}" commit="${WS_CONF_COMMIT:?}" offer id t
   case "$hours" in '' | *[!0-9]* | 0) die "hours must be a whole number above 0, not '$hours'" ;; esac
   mkdir -p "$WS_STATE"
   # One up per instance: a second one would rent a machine that no id records.
@@ -133,8 +138,7 @@ cmd_up() {
   trap 'rmdir "$WS_STATE/up.lock" || true' EXIT
   trap 'exit 1' INT TERM
   if [ -s "$WS_STATE/id" ]; then die "instance $(cat "$WS_STATE/id") is recorded in $WS_STATE: run down first"; fi
-  query="$(setting VAST_QUERY 'num_gpus=1 cpu_arch=amd64') verified=true rentable=true datacenter=True"
-  offer="$(vastai search offers "$query" -o dph --raw | jq -r '.[0].id // empty')" || offer=""
+  offer="$(offers | jq -r '.[0].id // empty')" || offer=""
   [ -n "$offer" ] || die "no offer for: $query"
   trap undo_up EXIT # a failed up leaves nothing behind
   # No --bid_price: on-demand, so no bid can interrupt the run.
@@ -151,6 +155,13 @@ cmd_up() {
   trap - EXIT INT TERM
   rmdir "$WS_STATE/up.lock"
   echo "vast: instance $id is up; limit $(cat "$WS_STATE/limit") (epoch)"
+}
+
+# cmd_price — the on-demand USD per hour of the offer up rents now.
+cmd_price() {
+  local p
+  p="$(offers | jq -er '.[0].dph_total | numbers' 2>/dev/null)" || die "no price for: $query"
+  printf '%s\n' "$p"
 }
 
 cmd_exec() {
@@ -218,12 +229,13 @@ verb="${1:-}"
 case "$verb" in
   up) cmd_up ;;
   exec) cmd_exec "$@" ;;
+  price) cmd_price ;;
   pull) cmd_pull ;;
   url) cmd_url ;;
   down) cmd_down ;;
   tick) cmd_tick ;;
   *)
-    echo "usage: vast up|exec <script> [arg…]|pull|url|down|tick" >&2
+    echo "usage: vast up|exec <script> [arg…]|price|pull|url|down|tick" >&2
     exit 3
     ;;
 esac

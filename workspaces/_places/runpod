@@ -178,6 +178,17 @@ verb_up() {
   trap - EXIT INT TERM
 }
 
+# price — the on-demand USD per hour of RUNPOD_GPU_ID in its cloud type, in stock or not: up finds the stock.
+# shortcut: the GPU price alone, no container disk; add the disk when its cost shows.
+verb_price() {
+  local f=securePricePerHr p
+  [ -n "${RUNPOD_GPU_ID:-}" ] || die "set RUNPOD_GPU_ID in $place_env"
+  if [ "${RUNPOD_CLOUD_TYPE:-SECURE}" = COMMUNITY ]; then f=communityPricePerHr; fi
+  p="$(rp gpu list --include-unavailable | jq -er --arg g "$RUNPOD_GPU_ID" --arg f "$f" \
+    'first(.[] | select(.gpuId == $g) | .[$f] | numbers)')" || die "runpodctl gpu list has no $f for $RUNPOD_GPU_ID"
+  echo "$p"
+}
+
 verb_exec() {
   local s="${1:-}" cmd a
   case "$s" in '' | */* | .*) die "usage: runpod exec <script> [arg…]" ;; esac
@@ -261,12 +272,12 @@ verb_tick() {
 
 verb="${1:-}"
 case "$verb" in
-  up | exec | pull | url | down | tick)
+  up | exec | price | pull | url | down | tick)
     shift
     "verb_$verb" "$@"
     ;;
   *)
-    echo "usage: runpod up|exec <script> [arg…]|pull|url|down|tick" >&2
+    echo "usage: runpod up|exec <script> [arg…]|price|pull|url|down|tick" >&2
     exit 3
     ;;
 esac
