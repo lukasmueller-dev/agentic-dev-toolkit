@@ -411,7 +411,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
   grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2/4</span></b><span class="why">h3 paste</span></a><span class="chip">research</span><code class="repo">proj</code></div>' "$f"
   grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st">needs you</span><h2>lr <span class="n">2/4</span></h2><code class="meta">proj · research</code></div><div class="job lane research s-blocked">' "$f"
-  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 paste</p><div class="wks">' "$f"
+  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 paste</p><div class="jacts" data-research="lr">' "$f"
   # The order: h4 builds on h1, so it sits below it, one level in.
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
   grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">queued: run on runpod</p></div>' "$f"
