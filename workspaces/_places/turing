@@ -57,7 +57,8 @@ verb_up() {
   [ ! -f "$HOME/.config/vibe/workspaces/$name.env" ] || secrets="$HOME/.config/vibe/workspaces/$name.env"
   trap undo_up EXIT
   trap 'exit 1' INT TERM
-  id="$(docker create --name "$c" ${args[@]+"${args[@]}"} \
+  # --init: PID 1 reaps killed children; a zombie keeps its pid alive and fails `ds --stop`.
+  id="$(docker create --init --name "$c" ${args[@]+"${args[@]}"} \
     -v "$WS_DIR:/ws/scripts:ro" -v "$WS_STATE/in:/ws/in:ro" \
     -e "WS_NAME=$name" -e "WS_INSTANCE=$WS_INSTANCE" -e WS_PLACE=turing -e "WS_HOURS=$hours" \
     "$WS_CONF_IMAGE:$WS_CONF_COMMIT" sleep infinity)"

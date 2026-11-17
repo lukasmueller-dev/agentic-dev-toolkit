@@ -293,7 +293,7 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"svc up — http://100.64.0.1:8080" ]] || false
   c="$(cat "$S/containers/ws-svc")"
-  [[ "$c" == "--name ws-svc -p 100.64.0.1:8080:8080 -p 100.64.0.1:8081:8081 -v $VIBE_WORKSPACES/svc:/ws/scripts:ro -v $STATES/svc/in:/ws/in:ro "* ]] || false
+  [[ "$c" == "--init --name ws-svc -p 100.64.0.1:8080:8080 -p 100.64.0.1:8081:8081 -v $VIBE_WORKSPACES/svc:/ws/scripts:ro -v $STATES/svc/in:/ws/in:ro "* ]] || false
   [[ "$c" == *" -e WS_PLACE=turing -e WS_HOURS=4 ghcr.io/x/tool:$HEX sleep infinity" ]] || false
   [[ "$c" != *--gpus* ]] || false
   cmp "$S/secrets.got" "$HOME/.config/vibe/workspaces/svc.env"
@@ -498,8 +498,8 @@ dead() { ! kill -0 "$1" 2>/dev/null; }
   echo "$p" >"$STATES/tick.pid"
   "$VIBE" queue run --claude --drain >/dev/null 2>&1
   within5 test ! -e "$S/containers/ws-old"
+  within5 test ! -e "$STATES/old/id" # verb_down removes id after the container
   kill "$p"
-  [ ! -e "$STATES/old/id" ]
 }
 
 @test "ws build: the image at its pinned commit, tagged with it; runs=host has none" {
