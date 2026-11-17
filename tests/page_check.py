@@ -238,7 +238,9 @@ try:
                                                 ("desk-1440x900-settings.png", 1440, 900, False, "settings", False)):
             cdp("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "dark" if dark else "light"}]})
             cdp("Emulation.setDeviceMetricsOverride", {"width": w, "height": h, "deviceScaleFactor": 1, "mobile": mobile})
-            js("history.replaceState(null, '', '#' + %s); dispatchEvent(new HashChangeEvent('hashchange')); scrollTo(0, 0)" % json.dumps(hash_))
+            js("location.hash = %s" % json.dumps(hash_))  # a navigation: :target picks the tab
+            time.sleep(0.3)
+            js("scrollTo(0, 0)")
             time.sleep(0.8)
             with open(os.path.join(SHOTS, name), "wb") as f:
                 f.write(base64.b64decode(cdp("Page.captureScreenshot", {"format": "png"})["data"]))

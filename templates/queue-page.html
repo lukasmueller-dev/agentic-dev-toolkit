@@ -182,8 +182,8 @@ textarea { resize: vertical; }
 .md th, .page th { color: var(--muted); font-size: 13px; font-weight: 500; }
 .md th, .md td { padding: 8px 8px 8px 0; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
 /* Recurring: a table per repo. Settings: a line per setting. */
-#recurring .sec > h2, #settings .sec > h2 { font-family: var(--mono); }
-#recurring .sec > h2 { font-size: 13px; letter-spacing: 0; text-transform: none; }
+#recurring .sec > h2 { font-family: var(--mono); font-size: 13px; letter-spacing: 0; text-transform: none; }
+.page > h1 + .sec { margin-top: 20px; }
 .page th, .page td { padding: 10px 16px; text-align: left; vertical-align: middle; }
 .page tr + tr td { border-top: 1px solid var(--line); }
 .page th { border-bottom: 1px solid var(--line); }
@@ -216,6 +216,7 @@ body.can .wrow > .jacts { margin: 0; }
 #panel { position: fixed; inset: 0 0 0 auto; width: min(480px, 100%); height: 100%; max-width: none; max-height: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 0; border-left: 1px solid var(--line); color: var(--fg); }
 #panel::backdrop { background: rgba(0,0,0,.3); }
 #panel > .close { position: sticky; top: 0; z-index: 1; float: right; height: auto; padding: 16px 24px 8px; background: none; border: 0; color: var(--muted); font-weight: 400; }
+#panel > .close:focus-visible { outline-offset: -6px; }
 .pnone { margin: 0; padding: 28px 32px; color: var(--muted); font-size: 13px; }
 .pout { border-top: 1px solid var(--line); }
 .ph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; padding: 16px 32px 8px; }
