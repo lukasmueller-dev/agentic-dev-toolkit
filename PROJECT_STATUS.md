@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-16 · queue-redesign_
+_Last updated: 2026-11-17 · queue-redesign_
 
 ## Goal
 
@@ -20,6 +20,9 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-17: **one whole-repo audit job, `lean-audit`**; `repo-review` is gone.
+  `codebase-health` keeps its dedup and complexity scan: its roadmap items
+  fed 14 finished follow-up jobs. Evidence: PR for `audit-job-pick`.
 - 2026-11-16: **the queue page is desk-first**: rail, one Needs-you inbox, a job
   panel open from 1200 px, a Workspaces page; still the bash render of
   `vibe queue page`. Page: `docs/vibe-queue.md`; decisions: PR for `queue-redesign`.
@@ -112,8 +115,6 @@ contract and the installer's auto-discovery rules.
   `docs/plugin.md`.
 - 2026-07-26: MCP servers are never installed; `~/.claude.json` is untouched.
   See `CLAUDE.md`.
-- 2026-11-01: The repo review is the monthly report job `repo-review`
-  (`/code-review high .`); the `codebase-review` skill is gone. PR for `repo-review-job`.
 - 2026-07-22: Planned work lives in `PROJECT_ROADMAP.md`. PR for `feat-roadmap`.
 - 2026-07-21: Global memory is one portable file, `memory/GLOBAL.md`, reached
   from `claude/CLAUDE.md` by an `@` import. See `memory/README.md`.

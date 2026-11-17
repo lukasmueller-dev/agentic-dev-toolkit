@@ -880,14 +880,14 @@ optin() {
   no_slot "$n/prompt.md"
   run act opt-in "{\"repo\": \"$r\", \"job\": \"nosuch\"}"
   [[ "${lines[0]}" == *'"code": 1'*"no recurring job 'nosuch'"* ]] || false
-  optin "$r" repo-review
-  run act opt-in "{\"repo\": \"$r\", \"job\": \"repo-review\"}"
+  optin "$r" lean-audit
+  run act opt-in "{\"repo\": \"$r\", \"job\": \"lean-audit\"}"
   [[ "${lines[0]}" == *'"code": 1'*'already has'* ]] || false
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<option value=\"$r\">proj</option></select></label><label>Task<textarea name=\"task\" rows=\"3\"></textarea></label><label>Done when: a command that checks it<input name=\"done\"></label><label>Branch slug<input name=\"branch\"></label><button data-act=\"new\">Queue job</button>" "$Q/web/index.html"
   grep -qF "<div class=\"jacts\" data-repo=\"$r\"><span class=\"lbl\">proj</span><button data-act=\"roadmap\">Roadmap</button><span class=\"ask\"><label>Recurring job<select name=\"job\">" "$Q/web/index.html"
   grep -qF '<option>stale-state</option>' "$Q/web/index.html"
-  run grep -qF '<option>repo-review</option>' "$Q/web/index.html"
+  run grep -qF '<option>lean-audit</option>' "$Q/web/index.html"
   [ "$status" -eq 1 ]
 }
 
