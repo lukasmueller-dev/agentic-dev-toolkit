@@ -22,7 +22,7 @@ Session 1: the code and the run.
 
 Session 2: a `GPU run finished` block ends this prompt. Close the run.
 
-1. **No run.** `Exit: infra` or `Exit: usd`: the place failed or the budget refused the start. Write `result` as `failed: infra: <reason>` or `failed: usd: <reason>`, and stop.
+1. **No run.** `Exit: infra`, `usd` or `stopped`: the place failed, the budget refused the start, or a stop came before it. Write `result` as `failed: <exit>: <reason>`, and stop.
 2. **Read** the log and the `Result:` line, the run-result of the runner. `none` means the run failed.
 3. **Write `runs/<hid>/row.md`:** one row in the ledger columns of `RESEARCH.md`, then the path of the evidence on its own line. The result is the `metric` of the run-result. The cost is the hours of the run and the USD in the `cost` file beside the run-result. The verdict judges the result against the item's Pass: `passed` or `failed`, and `exploratory` for `"partial": true`.
 4. **Commit** the row and the evidence under `runs/<hid>/`. Write `result` as `done: <hid> <metric> <verdict>`.

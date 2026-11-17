@@ -31,6 +31,8 @@
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
 #   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue;
 #                                   a tool job's run: its stop script, then down
+#   vibe queue stop --research <slug> [--now]
+#                                   the research starts no worker; --now: no run either, each place run is cut
 #   vibe queue steer <id> <text>    a running job: the text to its session (steer=1 in queue.conf);
 #                                   a tool job's run: to its steer script; exit 3 there: not supported
 #   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived;
@@ -1789,9 +1791,23 @@ cmd_queue_cancel() {
 
 # vibe queue stop ID — the runner stops a running job on its next pass: failed, note
 # stopped; no requeue, no publish. A tool job's run: the job's process stops it (tool_run).
+# vibe queue stop --research SLUG [--now] — each job of research SLUG in the queue gets the file drain (drain or now):
+# vibe queue worker starts no worker; now: vibe queue gpu queues no run, and place_run cuts each place run.
+# shortcut: SLUG alone names the research, so a slug two repos share stops both; add --repo when that bites.
 cmd_queue_stop() {
-  local d
-  [[ $# == 1 ]] || die "usage: vibe queue stop <id>"
+  local d m=drain j n=0 u="usage: vibe queue stop <id> | --research <slug> [--now]"
+  if [[ "${1:-}" == --research ]]; then
+    [[ -n "${2:-}" && ($# == 2 || ($# == 3 && "$3" == --now)) ]] || die "$u"
+    if (($# == 3)); then m=now; fi
+    while IFS= read -r j; do
+      echo "$m" | fresh "${j%/job}/drain" || die "${j%/job}/drain not written"
+      n=$((n + 1))
+    done < <(grep -lxF -- "research=$2" "$QDIR"/*/job 2>/dev/null || true)
+    ((n)) || die "no job of research $2 in the queue"
+    echo "research $2: $m — $n jobs"
+    return 0
+  fi
+  [[ $# == 1 ]] || die "$u"
   d="$(queue_job "$1")"
   [[ "$(jstate "$d" status)" == running ]] || die "${d##*/} is $(jstate "$d" status), not running — cancel takes a queued job"
   date '+%F %T' >"$d/stop"
@@ -1829,7 +1845,7 @@ branch_idle() {
   done < <(branch_jobs "$(jget "$1/job" repo)" "$(jget "$1/job" branch)")
 }
 
-# follow_dir JOB — a fresh dir with JOB's job (no now=, at=, follow=, review=), prompt.md and in/; echoes it.
+# follow_dir JOB — a fresh dir with JOB's job (no now=, at=, follow=, review=), prompt.md, in/ and drain; echoes it.
 # A review round or the verify step gets its base job's timeout back: an agent job, not a review.
 follow_dir() {
   local tmp r t
@@ -1845,7 +1861,15 @@ follow_dir() {
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
   if [[ -d "$1/in" ]]; then cp -R "$1/in" "$tmp/in"; fi
+  drain_copy "$1" "$tmp"
   echo "$tmp"
+}
+
+# drain_copy FROM TO — FROM's research stop (drain or now) to TO: a follow-up of a stopped research stays stopped.
+drain_copy() {
+  local m
+  m="$(jstate "$1" drain)"
+  case "$m" in drain | now) echo "$m" >"$2/drain" ;; esac
 }
 
 # ias_waits JOB — an IAS worker that ended blocked with paste.md: its run is out on IAS until `vibe queue answer`.
@@ -2155,6 +2179,7 @@ cmd_queue_gpu() {
   esac
   (($#)) || die "$u"
   deadline_gate "$d" "queue no run"
+  [[ "$(jstate "$d" drain)" != now ]] || die "research stopped (vibe queue stop --research --now): queue no run, finish the task"
   if [[ -n "$p" && "$p" != turing ]]; then
     place_queue "$d" "$p" "$@"
     return 0
@@ -2234,11 +2259,12 @@ run_alive() {
 
 # place_run JOB — JOB's run in instance research-<id>: in/repo holds run/commit alone (depth 1: no other branch
 # leaves turing), in/cmd the command, in/repo/.claude/research/ the folder. The usd gate (place_gate), up, exec run
-# until the stop bound before the limit, then exec stop, pull, down. All output to the runner's log in the instance
-# state, run/log at the end (fresh: no write through a link); /ws/out to JOB/out/.
-# A failed fetch, price or up writes JOB/infra; a refused start ends as usd. Then cost, run/exit and the follow-up.
+# until the stop bound before the limit or a stop --now (JOB/drain: now), then exec stop, pull, down. All output to the
+# runner's log in the instance state, run/log at the end (fresh: no write through a link); /ws/out to JOB/out/.
+# A failed fetch, price or up writes JOB/infra; a refused start ends as usd, a stop --now before up as stopped.
+# Then cost, run/exit and the follow-up.
 place_run() {
-  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t
+  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t pid cut=0
   p="$(jstate "$d/run" place)" c="$(jstate "$d/run" commit)"
   # The agent can write its job dir: a commit git reads as an option, a host place, or a link to a host file runs
   # or reads outside the sandbox. The error names no value: through a link, it can be a secret's first line.
@@ -2261,6 +2287,10 @@ place_run() {
   } >>"$st/log" 2>&1; then
     rc=infra
   fi
+  if [[ "$rc" == 0 && "$(jstate "$d" drain)" == now ]]; then
+    echo "vibe: stopped before up (vibe queue stop --research --now)" >>"$st/log"
+    rc=stopped
+  fi
   if [[ "$rc" == 0 ]]; then place_gate "$d" "$inst" >>"$st/log" 2>&1 || rc=$?; fi
   case "$rc" in 1) rc=usd ;; 2) rc=infra ;; esac
   if [[ "$rc" == 0 ]]; then
@@ -2274,7 +2304,24 @@ place_run() {
     # The stop script runs before the limit: its RESULT line lands in the run's log, not in a tick's log.
     if [[ "$lim" =~ ^[0-9]+$ ]]; then secs=$((lim - $(date +%s) - stop)); fi
     if [[ -n "$secs" ]] && ((secs < 1)); then secs=1; fi
-    WS_SECS="$secs" ws_place "$inst" exec run >>"$st/log" 2>&1 || rc=$?
+    # Its own process group: a stop --now TERMs the place's exec, and the run ends as at its limit (124).
+    # timeout(1) leads a group of its own: its TERM handler passes the TERM on to that group.
+    set -m
+    WS_SECS="$secs" ws_place "$inst" exec run </dev/null >>"$st/log" 2>&1 &
+    pid=$!
+    set +m
+    while kill -0 "$pid" 2>/dev/null; do
+      if [[ "$(jstate "$d" drain)" == now ]]; then
+        pkill -TERM -P "$pid" 2>/dev/null || true
+        kill -TERM -- "-$pid" 2>/dev/null || true
+        cut=1
+        break
+      fi
+      sleep "${VIBE_WS_POLL:-10}"
+    done
+    wait "$pid" || rc=$?
+    # A run that ended 0 as the stop came in keeps its result.
+    if ((cut && rc != 0)); then rc=124; fi
     # From here this process stops, pulls and downs the instance: vibe ws tick leaves it alone (owner).
     echo "$d" >"$st/owner"
     if ((rc == 124)); then WS_SECS="$stop" ws_place "$inst" exec stop >>"$st/log" 2>&1 || true; fi
@@ -2353,12 +2400,13 @@ run_result() {
 }
 
 # follow_job FROM TO [KEY=value...] — TO/job: FROM's job file with follow=1, parent=FROM and the
-# KEY=value lines (they replace FROM's), no tool=: a review round or a GPU follow-up runs no tool.
-# Last, so the runner skips TO until it is whole.
+# KEY=value lines (they replace FROM's), no tool=: a review round or a GPU follow-up runs no tool. TO/drain: FROM's.
+# The job file last, so the runner skips TO until it is whole.
 follow_job() {
   local from="$1" to="$2" l keys="follow|parent|tool"
   shift 2
   for l in "$@"; do keys+="|${l%%=*}"; done
+  drain_copy "$from" "$to"
   {
     grep -Ev "^($keys)=" "$from/job" || true
     echo "follow=1"
@@ -2381,7 +2429,7 @@ cmd_queue_follow() {
   run_result "${GPUQ_LOG:-}" "$p"
   if [[ -s "$p/run-result" ]]; then
     r="$(cat "$p/run-result") ($p/run-result)"
-  elif [[ "${GPUQ_EXIT:-}" == usd ]]; then
+  elif [[ "${GPUQ_EXIT:-}" =~ ^(usd|stopped)$ ]]; then
     r="none — $(tail -n 1 "$GPUQ_LOG")"
   elif [[ -n "$(jget "$p/job" research)" || -d "$p/run" ]]; then
     r="none — no RESULT line: the run failed"
@@ -2452,6 +2500,7 @@ cmd_queue_worker() {
   s="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
   [[ -n "$s" && -z "$(jget "$d/job" hid)" ]] || die "vibe queue worker runs inside a research coordinator job: research=, no hid="
   deadline_gate "$d" "start no worker"
+  [[ ! -e "$d/drain" ]] || die "research $s is stopped (vibe queue stop --research): start no worker, close the runs"
   k="$(jget "$d/job" workers)"
   k="${k:-3}"
   [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"

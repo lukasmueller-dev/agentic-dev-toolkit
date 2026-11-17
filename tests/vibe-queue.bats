@@ -2650,12 +2650,12 @@ gpurace() {
   [ "$status" -eq 0 ]
 }
 
-# places — stub places runpod and vast: each verb but tick to $STUBS/place.log; exec runs the folder's script
+# places — stub places runpod and vast, polled each 0.1 s: each verb but tick to $STUBS/place.log; exec runs the folder's script
 # with WS_IN for /ws/in. $STUBS/fail-up: up fails; short-limit: the limit is 3 s after up; price: what price prints,
 # none: price exits 3; out-links: pull leaves a link and a FIFO in out/; pull-hang, down-hang: that verb sleeps 30 s.
 places() {
   local w="$BATS_TEST_TMPDIR/workspaces"
-  export VIBE_WORKSPACES="$w"
+  export VIBE_WORKSPACES="$w" VIBE_WS_POLL=0.1
   mkdir -p "$w/_places"
   cat >"$w/_places/runpod" <<EOF
 #!/usr/bin/env bash
@@ -2691,7 +2691,7 @@ EOF
 }
 
 # research_repo — a repo whose main holds .claude/research/ (runpod, vast; hours=2) and train.sh; echoes its path.
-# $STUBS/run-sleep: train.sh waits 30 s first; run-hold: it waits while the file exists.
+# $STUBS/run-sleep: train.sh waits 30 s first; run-hold: it waits while the file exists; run-end: it got past the wait.
 research_repo() {
   local r
   r="$(make_repo proj)"
@@ -2705,6 +2705,7 @@ research_repo() {
 echo "in \${PWD##*/} at \$(git rev-parse HEAD), commits: \$(git rev-list --all | wc -l | tr -d ' ')"
 [ ! -e "$STUBS/run-sleep" ] || sleep 30
 while [ -e "$STUBS/run-hold" ]; do sleep 0.1; done
+touch "$STUBS/run-end"
 echo 'RESULT {"metric": 0.5}'
 echo 'RESULT {"metric": 0.7, "seed": 1}'
 echo "a last line"
@@ -3475,6 +3476,83 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ ! -e "$Q/02-w/HANDOFF.md" ]
 }
 
+@test "stop --research: drain — the research starts no worker, its runs go on; a follow-up stays stopped; another research runs on" {
+  local r w
+  r="$(make_repo proj)"
+  w="$(coord_wt "$r")"
+  coord "$r" "$w"
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  echo gpu >"$Q/02-w/status"
+  mkjob 03-k "$r" research-q2 ok research=q2
+  run "$VIBE" queue stop --research q1
+  [ "$status" -eq 0 ]
+  [ "$output" = "research q1: drain — 2 jobs" ]
+  [ "$(cat "$Q/01-c/drain") $(cat "$Q/02-w/drain")" = "drain drain" ]
+  [ ! -e "$Q/03-k/drain" ]
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: research q1 is stopped (vibe queue stop --research): start no worker, close the runs" ]
+  run git -C "$r" rev-parse --verify -q research/q1/h2
+  [ "$status" -ne 0 ]
+  VIBE_JOB_DIR="$Q/02-w" run "$VIBE" queue gpu -- true
+  [ "$status" -eq 0 ]
+  [ -s "$Q/02-w/gpu-job" ]
+  GPUQ_EXIT=0 GPUQ_LOG=/dev/null run "$VIBE" queue follow "$Q/02-w"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-w-gpu/drain")" = drain ]
+  run "$VIBE" queue stop --research nope
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: no job of research nope in the queue" ]
+  run "$VIBE" queue stop --research q1 --later
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: usage: vibe queue stop <id> | --research <slug> [--now]" ]
+}
+
+@test "stop --research --now: a place run is cut as at its limit: stop, pull, down, a partial result; a run not up yet does not start; gpu queues no run" {
+  local r j pid
+  command -v timeout >/dev/null || command -v gtimeout >/dev/null || skip "no timeout(1): no bound"
+  places
+  r="$(research_repo)"
+  touch "$STUBS/run-hold"
+  for j in 01-a:q1 02-b:q2; do
+    mkjob "${j%:*}" "$r" "task-${j%:*}" ok "research=${j#*:}"
+    echo "$r" >"$Q/${j%:*}/worktree"
+    echo gpu >"$Q/${j%:*}/status"
+    mkdir "$Q/${j%:*}/run"
+    echo runpod >"$Q/${j%:*}/run/place"
+    git -C "$r" rev-parse HEAD >"$Q/${j%:*}/run/commit"
+    printf '#!/usr/bin/env bash\nsh train.sh\n' >"$Q/${j%:*}/run/cmd"
+  done
+  "$VIBE" queue stop --research q2 --now >/dev/null
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 100); do
+    if grep -q '^runpod exec run' "$STUBS/place.log" 2>/dev/null; then break; fi
+    sleep 0.1
+  done
+  run "$VIBE" queue stop --research q1 --now
+  [ "$output" = "research q1: now — 1 jobs" ]
+  wait "$pid"
+  rm "$STUBS/run-hold"
+  # The TERM reached the run under timeout(1): no orphan gets past the wait.
+  sleep 0.5
+  [ ! -e "$STUBS/run-end" ]
+  [ "$(cut -d' ' -f2,3 "$STUBS/place.log")" = "$(printf '%s\n' 'price hours=2' 'up hours=2' 'exec run' 'exec stop' 'pull hours=2' 'down hours=2')" ]
+  [ "$(cat "$Q/01-a/run/exit")" = 124 ]
+  [ "$(tail -n 1 "$Q/01-a/run/log")" = 'RESULT {"metric": 0.1, "partial": true}' ]
+  [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.1,"partial":true}' ]
+  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  [ "$(cat "$Q/01-a-gpu/drain")" = now ]
+  [ "$(cat "$Q/02-b/run/exit")" = stopped ]
+  grep -qxF -- '- Exit: stopped' "$Q/02-b-gpu/prompt.md"
+  grep -qxF -- '- Result: none — vibe: stopped before up (vibe queue stop --research --now)' "$Q/02-b-gpu/prompt.md"
+  [ "$(cat "$Q/02-b/cost")" = 0 ]
+  [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
+  VIBE_JOB_DIR="$Q/01-a-gpu" run "$VIBE" queue gpu -- true
+  [ "$status" -ne 0 ]
+  [ "$output" = "vibe: research stopped (vibe queue stop --research --now): queue no run, finish the task" ]
+}
+
 @test "close: past deadline= and over usd=, an IAS worker's session 2 and the coordinator's close session still run" {
   local r c
   r="$(make_repo proj)"
@@ -4069,7 +4147,7 @@ phase_jobs() {
 # steer-exit: steer's exit.
 tool() {
   local w="$BATS_TEST_TMPDIR/workspaces"
-  export VIBE_WORKSPACES="$w"
+  export VIBE_WORKSPACES="$w" VIBE_WS_POLL=0.1
   mkdir -p "$w/_places" "$w/$1" "$GPU_QUEUE_DIR"
   cp "$REPO_ROOT/workspaces/_places/turing" "$w/_places/turing"
   printf '%s\n' kind=run runs=host places=turing hours=2 "result=$2" "${@:3}" >"$w/$1/workspace.conf"
