@@ -744,6 +744,7 @@ denied() {
     "git fetch --upload-pack=x origin" "git fetch --upl=x origin" "git ls-remote --upload-pack=x origin" "git ls-remote --exec=x origin" \
     "git ls-remote --u=x origin" "git clone --upload-pack=x url" "git clone --up=x url" \
     "git clone -u x url" "git clone url -u x" "git clone -ux url" \
+    "git clone --template=x url" "git clone --template x url" "git clone url --te=x" \
     "git push --receive-pack=x origin b" "git push --exec=x origin b" "git push --receive=x origin b" \
     "git push --ex=x origin b" "git push origin b --e=x" \
     "git grep -Ox foo" "git grep -n foo -Ox" "git grep --open-files-in-pager=x foo" "git grep --open=x foo" \
@@ -766,7 +767,7 @@ denied() {
   for c in \
     "git pull --ff-only" "git pull --rebase origin main" "git fetch --prune origin" \
     "git ls-remote --exit-code origin main" "git ls-remote --heads origin" \
-    "git clone https://github.com/a/my-utils" "git clone --depth 1 -b main url dir" "git clone --recurse-submodules url" \
+    "git clone https://github.com/a/my-utils" "git clone --depth 1 -b main url dir" "git clone --recurse-submodules url" "git clone --tags url" \
     "git push -u origin b" "git push --recurse-submodules=check origin b" "git push --set-upstream origin b" \
     "git status --untracked-files=no" "git diff --exit-code" "git log --exclude=x" "git ls-files --exclude-standard" \
     "git grep -n foo" "git grep -e Output" "git grep --extended-regexp foo" "git commit -m fix" \
@@ -774,6 +775,7 @@ denied() {
     "rsync -a --existing a h:b" "rsync -a my-extra.txt h:b" \
     "scp -r a h:b" "scp -P 22 a h:b" "scp -o BatchMode=yes a h:b" "scp a.txt user@host:my-dir" \
     "ssh h true" "ssh -o BatchMode=yes h true" "ssh -p 22 -i key h" \
+    "ssh-keygen -F github.com" \
     "sort -u f" "sort -k2 f" "sort --check f" "sort -T /tmp f" \
     "rg foo" "rg -n --glob '*.sh' foo" "rg --hidden foo" "rg --pretty foo" "rg --pre-glob '*.gz' foo" \
     "git grep Access-Control-Allow-Origin" "git commit -m 'deny --upload-pack flags'" "git log --grep=--exec" \
