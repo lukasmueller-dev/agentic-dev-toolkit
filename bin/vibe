@@ -2445,13 +2445,14 @@ has_baseline() {
     END { exit !f }' <<<"$1"
 }
 
-# research_item MD HID — `<name><TAB><builds>` of item `### HID <name> — <state>` in the RESEARCH.md text MD; builds:
-# the first word of the item's `Builds on:` line, else root. Nothing when MD has no such item.
+# research_item MD HID — `<name><TAB><builds>` of item `### HID <name> — <state>` (the last ` — ` ends the name) in the
+# RESEARCH.md text MD; builds: the first word of the item's `Builds on:` line, no end punctuation, else root. Nothing
+# when MD has no such item.
 research_item() {
   H="$2" awk '
     /^##/ && f { exit }
-    index($0, "### " ENVIRON["H"] " ") == 1 { f = 1; n = substr($0, length(ENVIRON["H"]) + 6); sub(/ — .*/, "", n); next }
-    f { x = $0; gsub(/[*`]/, "", x); sub(/^[-[:space:]]+/, "", x); if (index(x, "Builds on:") == 1) { split(substr(x, 11), w, " "); b = w[1]; gsub(/[^[:alnum:]._-]/, "", b) } }
+    index($0, "### " ENVIRON["H"] " ") == 1 { f = 1; n = substr($0, length(ENVIRON["H"]) + 6); if (match(n, /.* — /)) n = substr(n, 1, RLENGTH - length(" — ")); next }
+    f { x = $0; gsub(/[*`]/, "", x); sub(/^[-[:space:]]+/, "", x); if (index(x, "Builds on:") == 1) { split(substr(x, 11), w, " "); b = w[1]; gsub(/[^[:alnum:]._-]/, "", b); sub(/[.]+$/, "", b) } }
     END { if (f) print n "\t" (b == "" ? "root" : b) }' <<<"$1"
 }
 

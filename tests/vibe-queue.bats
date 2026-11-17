@@ -3054,7 +3054,7 @@ refused() {
   [ ! -e "$st/id" ]
 }
 
-# coord_wt REPO [ROW] — REPO's worktree research-q1 with RESEARCH.md committed: items h1, h2 (builds on h1), h3, h4; the
+# coord_wt REPO [ROW] — REPO's worktree research-q1 with RESEARCH.md committed: items h1, h2 (builds on h1), h3, h4, h5 (builds on h2); the
 # ledger holds ROW, by default a baseline row. Echoes its path.
 coord_wt() {
   local w="$1/.claude/worktrees/research-q1"
@@ -3062,7 +3062,7 @@ coord_wt() {
   {
     printf '# Research — proj / research-q1\n\n## Backlog\n\n### h1 wider net — open\n\n- Idea: a wider net fits.\n\n'
     # shellcheck disable=SC2016  # literal backticks in RESEARCH.md
-    printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n### h4 batch — open\n\n## Ledger\n\n'
+    printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n### h4 batch — open\n\n### h5 wide — deep — open\n\n- Builds on: h2.\n\n## Ledger\n\n'
     printf '| id | commit | run | cost | result | verdict | evidence |\n| --- | --- | --- | --- | --- | --- | --- |\n'
     printf '%s\n' "${2-| baseline | 0123abc | 1 | 0 | 0.50 | baseline | runs/baseline/log |}"
   } >"$w/RESEARCH.md"
@@ -3083,7 +3083,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   local r w j
   r="$(make_repo proj)"
   w="$(coord_wt "$r")"
-  coord "$r" "$w" usd=5 "deadline=2999-01-01 08:00" "question=Does width help?" workers=2 better=higher timeout=3h
+  coord "$r" "$w" usd=5 "deadline=2999-01-01 08:00" "question=Does width help?" workers=3 better=higher timeout=3h
   VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h2 --place runpod
   [ "$status" -eq 0 ]
   j="$(qjob -proj-research-q1-h2)"
@@ -3101,6 +3101,11 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   grep -qx place=turing "$j/job"
   grep -qx builds=root "$j/job"
   grep -qx 'idea=wider net' "$j/job"
+  VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h5
+  [ "$status" -eq 0 ]
+  j="$(qjob -research-q1-h5)"
+  grep -qx 'idea=wide — deep' "$j/job"
+  grep -qx builds=h2 "$j/job"
   [ -z "$(find "$Q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
