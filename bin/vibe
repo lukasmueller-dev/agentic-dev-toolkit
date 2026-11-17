@@ -2144,6 +2144,7 @@ place_queue() {
 
 # place_pass JOB — the runner pass for JOB/run/: start place_run once. A run whose process died before
 # run/exit (a reboot) ends as infra; its instance goes down at its limit (vibe ws tick).
+# The run is a fork of the runner: a pid that a reboot gave to another command is no run.
 place_pass() {
   local d="$1" p
   if [[ ! -f "$d/job" || ! -f "$d/run/place" || -e "$d/run/exit" ]]; then return 0; fi
@@ -2151,7 +2152,7 @@ place_pass() {
   if [[ -z "$p" ]]; then
     place_run "$d" >>"$d/runner.log" 2>&1 &
     echo "$!" >"$d/run/pid"
-  elif ! kill -0 "$p" 2>/dev/null && [[ ! -e "$d/run/exit" ]]; then
+  elif [[ "$(ps -o command= -p "$p" 2>/dev/null || true)" != *" queue run --"* && ! -e "$d/run/exit" ]]; then
     echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" >"$d/infra"
     echo infra >"$d/run/exit"
     (GPUQ_EXIT=infra GPUQ_LOG="$d/run/log" cmd_queue_follow "$d") >>"$d/runner.log" 2>&1 || true

@@ -2910,21 +2910,28 @@ refused() {
   [ "$(cat "$Q/01-a-gpu/status") $(cat "$Q/02-b-gpu/status")" = "done done" ]
 }
 
-@test "gpu --place: a run whose process died before its end is infra too; the follow-up gets the reason" {
-  local r
+@test "gpu --place: a run whose process died before its end is infra too, also when a reboot gave its pid to another command" {
+  local r j
   r="$(make_repo proj)"
-  mkjob 01-a "$r" task-a ok
-  mkdir -p "$Q/01-a/run"
-  echo runpod >"$Q/01-a/run/place"
+  sleep 30 &
+  for j in 01-a 02-b; do
+    mkjob "$j" "$r" "task-$j" ok
+    mkdir -p "$Q/$j/run"
+    echo runpod >"$Q/$j/run/place"
+    echo gpu >"$Q/$j/status"
+  done
   echo 999999 >"$Q/01-a/run/pid"
-  echo gpu >"$Q/01-a/status"
+  echo "$!" >"$Q/02-b/run/pid"
   drain
+  kill "$(cat "$Q/02-b/run/pid")"
   [ "$status" -eq 0 ]
-  [ "$(cat "$Q/01-a/run/exit")" = infra ]
-  grep -qF 'the run process died' "$Q/01-a/infra"
-  grep -qF -- '- Infra: the run process died' "$Q/01-a-gpu/prompt.md"
-  [ "$(cat "$Q/01-a/status")" = "done" ]
-  [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
+  for j in 01-a 02-b; do
+    [ "$(cat "$Q/$j/run/exit")" = infra ]
+    grep -qF 'the run process died' "$Q/$j/infra"
+    grep -qF -- '- Infra: the run process died' "$Q/$j-gpu/prompt.md"
+    [ "$(cat "$Q/$j/status")" = "done" ]
+    [ "$(cat "$Q/$j-gpu/status")" = "done" ]
+  done
 }
 
 @test "gpu --place: a run/commit git reads as an option, or a run/place other than runpod and vast, is infra; git runs nothing" {
