@@ -27,6 +27,9 @@ contract and the installer's auto-discovery rules.
   tool under `workspaces/`, each in a container; a service stays up with a link,
   a `kind=run` tool is a queue job (`tool=`) with stop, steer and a checked
   result. Contract: `docs/workspaces.md`; decisions: PR for `ws-surface`.
+- 2026-11-16: **experiment jobs get `/code-review` only**: `after=code` drops
+  the `lean-review` pass; `fill-queue` proposes it when a job's result is a
+  number or a verdict. Design: PR body.
 - 2026-11-14: **the report is stdout only**: `vibe queue report` writes no file
   and has no `--week`; the page's Queue tab shows the held jobs and the triage
   lines. Design: PR body.

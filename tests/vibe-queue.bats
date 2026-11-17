@@ -141,6 +141,12 @@ case "\$mode" in
   sleep) sleep 30 ;;
   slow) echo half >wip.txt && sleep 30 ;;
   fix)
+    if [ -f "$STUBS/fix-error" ]; then
+      echo half >>work.txt && cat "$STUBS/fix-error"
+      exit 0
+    fi
+    [ ! -f "$STUBS/fix-crash" ] || { : >.mcp.json && exit 3; }
+    [ ! -f "$STUBS/fix-sleep" ] || { echo half >>work.txt && sleep 30; }
     if [ -f "$STUBS/fix-big" ]; then echo fixed >fix.txt && git add fix.txt && git commit -q -m "fix: review"; fi
     if [ -f "$STUBS/fix-md" ]; then echo note >>NOTES.md && git add NOTES.md && git commit -q -m "docs: review"; fi
     sed "s/@SHA@/\$(git rev-parse --short HEAD)/" "$STUBS/verdicts" >"\$VIBE_JOB_DIR/verdicts"
@@ -394,6 +400,24 @@ locked_out() (
   [ "$output" = 0 ]
 }
 
+@test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
+  local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
+  r="$(make_repo proj)"
+  mkdir "$tk" && cp -R "$REPO_ROOT/bin" "$REPO_ROOT/skills" "$REPO_ROOT/claude" "$REPO_ROOT/templates" "$tk"
+  mkjob 01-a "$r" task-a seq
+  "$tk/bin/vibe" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 &
+  pid=$!
+  for i in $(seq 1 100); do
+    [ ! -s "$Q/01-a/pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$Q/01-a/pid" ]
+  { head -n 1 "$tk/bin/vibe" && echo '# a line the running vibe never reads, long enough to move its end offset' && tail -n +2 "$tk/bin/vibe"; } >"$BATS_TEST_TMPDIR/vibe.new"
+  cat "$BATS_TEST_TMPDIR/vibe.new" >"$tk/bin/vibe"
+  wait "$pid" || { cat "$BATS_TEST_TMPDIR/run.out" && false; }
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
 @test "report: a Features table before the repos; a done member job leaves the repo tables, a blocked one stays" {
   local r1 r2 F="$XDG_STATE_HOME/vibe/features"
   r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
@@ -467,6 +491,19 @@ locked_out() (
   [ "$status" -ne 0 ]
   [[ "$output" == *"./bridge is not an absolute path"* ]] || false
   [ ! -e "$F/rel.md" ]
+}
+
+@test "feature add: refuses a member path that is not canonical and names the one to write" {
+  local r1 r2 p
+  r1="$(make_repo bridge)" r2="$(make_repo cmdr)"
+  git -C "$r1" branch sticks
+  git -C "$r2" branch gamepad
+  for p in "$r1/../bridge" "$(dirname "$r1")//bridge"; do
+    run "$VIBE" feature add "$(mkfeature dots "$p sticks" "$r2 gamepad")"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"$p is not the path jobs store as their repo — write $r1"* ]] || false
+    [ ! -e "$XDG_STATE_HOME/vibe/features/dots.md" ]
+  done
 }
 
 @test "feature ready and archive: the marker, then both files under archive/<YYYY-MM>/features; a client refuses both" {
@@ -1076,6 +1113,147 @@ died_job() {
   [ "$status" -ne 0 ]
 }
 
+# epoch_at 'YYYY-MM-DD HH:MM' — epoch seconds, GNU or BSD date.
+epoch_at() { date -d "$1:00" +%s 2>/dev/null || date -j -f '%Y-%m-%d %H:%M:%S' "$1:00" +%s; }
+
+# mkprep DIR REPO BRANCH — a prepared job dir for `vibe queue add`.
+mkprep() {
+  mkdir -p "$1"
+  printf 'repo=%s\nbranch=%s\nmodel=sonnet\ncontext=night work\n' "$2" "$3" >"$1/job"
+  printf 'Do the task.\nMODE=ok\n' >"$1/prompt.md"
+}
+
+@test "add --at: writes the next HH:MM as at=; a bad time, a missing time or --now with it queues nothing" {
+  local r a now at e t
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  for t in 25:00 24:00 23:60 9:5 noon; do
+    run "$VIBE" queue add --at "$t" "$a"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"bad time '$t'"* ]] || false
+  done
+  run "$VIBE" queue add --at
+  [ "$status" -ne 0 ]
+  run "$VIBE" queue add --now --at 03:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--now and --at"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # The current minute has passed: the next one is tomorrow.
+  now="$(date +%s)"
+  run "$VIBE" queue add --at "$(date +%H:%M)" "$a"
+  [ "$status" -eq 0 ]
+  [ ! -e "$a" ]
+  at="$(sed -n 's/^at=//p' "$Q"/*-proj-x/job)"
+  [[ "$at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]] || false
+  e="$(epoch_at "$at")"
+  [ "$e" -gt $((now + 80000)) ]
+  [ "$e" -le $((now + 90000)) ]
+  [[ "$output" == *"starts $at"* ]] || false
+}
+
+@test "run: a job added with --at does not start before its time, starts after it; status shows the start" {
+  local r a j pid at
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  at="$(sed -n 's/^at=//p' "$j/job")"
+  [[ "$at" == *" 03:30" ]] || false
+  run "$VIBE" queue status
+  [[ "$output" == *"starts $at · night work"* ]] || false
+  # A job with no at= is the clock: once it is done, the runner has scanned the waiting one.
+  mkjob 01-ctl "$r" ctl ok
+  timeout 60 "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 1 150); do
+    [ "$(cat "$Q/01-ctl/status" 2>/dev/null)" != "done" ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-ctl/status")" = "done" ]
+  sleep 1
+  [ ! -e "$j/status" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 0 ]
+  # The time has come: at= is in the past.
+  sed 's/^at=.*/at=2000-01-01 03:30/' "$j/job" >"$j/job.tmp" && mv "$j/job.tmp" "$j/job"
+  wait "$pid"
+  [ "$(cat "$j/status")" = "done" ]
+  [ "$(grep -c proj-task-a "$STUBS/claude.log")" = 1 ]
+  run "$VIBE" queue status
+  [[ "$output" != *"starts "* ]] || false
+}
+
+@test "run: a job with now=1 starts although its at= is ahead" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok "at=2999-01-01 03:30" now=1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+}
+
+# clockdate DAY NOW — a `date` in $BATS_TEST_TMPDIR/clock that fakes `date +%F` (DAY), `date +%s` (NOW) and tomorrow; the rest is the real date.
+clockdate() {
+  mkdir -p "$BATS_TEST_TMPDIR/clock"
+  cat >"$BATS_TEST_TMPDIR/clock/date" <<EOF
+#!/bin/sh
+case "\$*" in
+  "+%F") echo $1 ;;
+  "+%s") echo $2 ;;
+  "-d +1 day +%F") echo 2026-03-29 ;;
+  *) exec /bin/date "\$@" ;;
+esac
+EOF
+  chmod +x "$BATS_TEST_TMPDIR/clock/date"
+}
+
+@test "add --at: refuses a time the spring clock change skips, tonight and today; the next real time passes" {
+  local r a
+  [ -e /usr/share/zoneinfo/Europe/Berlin ] || skip "no tz database"
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  export TZ=Europe/Berlin
+  # 2026-03-28 20:00 CET: 02:30 has passed, and 2026-03-29 02:30 does not exist.
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  # 2026-03-29 01:00 CET: 02:30 today does not exist, and no arithmetic error shows.
+  clockdate 2026-03-29 1774742400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 02:30 "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"02:30 does not exist on 2026-03-29"* ]] || false
+  [[ "$output" != *"syntax error"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  clockdate 2026-03-28 1774724400
+  PATH="$BATS_TEST_TMPDIR/clock:$PATH" run "$VIBE" queue add --at 03:30 "$a"
+  [ "$status" -eq 0 ]
+  grep -qx 'at=2026-03-29 03:30' "$Q"/*-proj-x/job
+}
+
+@test "retry: a cancelled job that waited on at= comes back without it, and starts" {
+  local r a j id new
+  r="$(make_repo proj)"
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" task-a
+  "$VIBE" queue add --at 03:30 "$a"
+  j="$(echo "$Q"/*-proj-task-a)"
+  id="${j##*/}"
+  grep -q '^at=' "$j/job"
+  "$VIBE" queue cancel "$id"
+  run "$VIBE" queue retry "$id"
+  [ "$status" -eq 0 ]
+  new="$(echo "$Q"/*-proj-task-a)"
+  [ "$new" != "$j" ]
+  [ "$(grep -c '^at=' "$new/job")" = 0 ]
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$new/status")" = "done" ]
+}
+
 @test "milestones: a SPEC.md job that ticks one queues the next; the last one ends the chain" {
   local r
   r="$(make_repo proj)"
@@ -1095,6 +1273,23 @@ died_job() {
   [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 3 ]
 }
 
+@test "milestones: a job started by now=1 over a future at= queues the next milestone without at=, and it starts" {
+  local r d n
+  r="$(make_repo proj)"
+  "$VIBE" start -C "$r" spec >/dev/null 2>&1
+  printf '# Spec\n\n- [ ] one\n- [ ] two\n' >"$r/.claude/worktrees/spec/SPEC.md"
+  git -C "$r/.claude/worktrees/spec" add SPEC.md
+  git -C "$r/.claude/worktrees/spec" commit -q -m "docs(spec): x"
+  mkjob 01-a "$r" spec milestone "at=2999-01-01 03:30" now=1
+  run timeout 60 "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" -eq 2 ]
+  for d in "$Q"/*/; do [ "$(cat "$d/status")" = "done" ]; done
+  n="$(find "$Q" -mindepth 1 -maxdepth 1 -name '*-proj-spec')"
+  [ -n "$n" ]
+  [ "$(grep -c '^at=' "$n/job")" = 0 ]
+}
+
 @test "conf: sets one key in queue.conf; refuses an unknown key and a bad value" {
   run "$VIBE" queue conf slots=2
   [ "$status" -eq 0 ]
@@ -1112,7 +1307,9 @@ died_job() {
   done
   run "$VIBE" queue conf review_level=max
   [ "$status" -eq 0 ]
-  [ "$(cat "$CONF")" = "$(printf 'after=\nslots=3\nreview_level=max')" ]
+  run "$VIBE" queue conf after=code
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CONF")" = "$(printf 'slots=3\nreview_level=max\nafter=code')" ]
 }
 
 @test "unlimit: the usage limit goes and a queued job starts" {
@@ -2443,6 +2640,27 @@ two_findings() {
   grep -qF -- "--settings $REPO_ROOT/claude/vibe-job-settings.json " "$STUBS/claude.log"
 }
 
+@test "review: PASSES=code runs /code-review only, with no rubric" {
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR" run bash "$REPO_ROOT/claude/vibe-review.sh" "$BATS_TEST_TMPDIR" proj-review1 sonnet high main code
+  [ "$status" -eq 0 ]
+  grep -qx 'Run /code-review high origin/main\.\.\.HEAD\. Then return its findings through the structured output\.' "$STUBS/claude.log"
+  run grep -c 'lean-review\|^# Lean review$' "$STUBS/claude.log"
+  [ "$output" = 0 ]
+}
+
+@test "review: after=code reaches the reviewer; the PR body says /code-review only" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=code
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  touch "$STUBS/fix-md"
+  drain
+  grep -q '^after=code$' "$Q/01-a-review1/job"
+  grep -q '^Run /code-review high origin/main\.\.\.HEAD\. Then return its findings ' "$STUBS/claude.log"
+  grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open (/code-review only)$' "$Q/01-a-review1/pr-body.md"
+}
+
 @test "review: a missing rubric stops the round before the reviewer starts" {
   local copy="$BATS_TEST_TMPDIR/copy"
   mkdir -p "$copy/claude"
@@ -2505,6 +2723,57 @@ two_findings() {
   grep -q '^\*\*Review:\*\* R1: 2 findings → 1 fixed, 1 open$' "$Q/01-a-review1/pr-body.md"
   grep -q -- '-p --model opus --name proj-task-a-review1 ' "$STUBS/claude.log"
   grep -q '^Run /code-review low origin/main\.\.\.HEAD\. ' "$STUBS/claude.log"
+}
+
+@test "review: a fix session that ends in an API error, an error result or a crash → the round fails, names the dirty worktree, no PR; a clean round is done" {
+  local r w
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  printf '1=fixed @SHA@\n2=open\n' >"$STUBS/verdicts"
+  echo '{"type":"result","subtype":"success","is_error":true,"api_error_status":429,"terminal_reason":"api_error"}' >"$STUBS/fix-error"
+  drain
+  [ "$status" -eq 0 ]
+  w="$(cat "$Q/01-a/worktree")"
+  [ "$(cat "$Q/01-a-review1/status")" = failed ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → fix failed: API error 429; $w has uncommitted changes" ]
+  [ ! -e "$Q/01-a-review1/pr" ]
+  [ ! -e "$Q/01-a-review2" ]
+  rm -f "$STUBS/review-count"
+  echo '{"type":"result","subtype":"error_during_execution","is_error":true,"api_error_status":null}' >"$STUBS/fix-error"
+  mkjob 04-d "$r" task-d ok after=review
+  drain
+  w="$(cat "$Q/04-d/worktree")"
+  [ "$(cat "$Q/04-d-review1/status")" = failed ]
+  [ "$(cat "$Q/04-d-review1/note")" = "R1: 2 findings → fix failed: error result; $w has uncommitted changes" ]
+  rm -f "$STUBS/fix-error" "$STUBS/review-count"
+  touch "$STUBS/fix-crash"
+  mkjob 03-c "$r" task-c ok after=review
+  drain
+  [ "$(cat "$Q/03-c-review1/status")" = failed ]
+  [ -f "$(cat "$Q/03-c/worktree")/.mcp.json" ]
+  [ "$(cat "$Q/03-c-review1/note")" = "R1: 2 findings → fix failed: agent exit 3" ]
+  rm -f "$STUBS/fix-crash" "$STUBS/review-count"
+  mkjob 02-b "$r" task-b ok after=review
+  drain
+  [ "$(cat "$Q/02-b-review1/status")" = "done" ]
+  [ "$(cat "$Q/02-b-review1/note")" = "R1: 2 findings → 1 fixed, 1 open" ]
+  [ "$(cat "$Q/02-b-review1/pr")" = "https://example.com/pull/1" ]
+}
+
+@test "review: a fix session past review_timeout → the round fails, names the dirty worktree, no PR" {
+  command -v timeout >/dev/null 2>&1 || skip "no timeout(1)"
+  local r w
+  r="$(make_repo proj)"
+  printf 'review_timeout=3s\n' >>"$CONF"
+  mkjob 01-a "$r" task-a ok after=review
+  two_findings
+  touch "$STUBS/fix-sleep"
+  drain
+  w="$(cat "$Q/01-a/worktree")"
+  [ "$(cat "$Q/01-a-review1/status")" = failed ]
+  [ "$(cat "$Q/01-a-review1/note")" = "R1: 2 findings → fix failed: timeout; $w has uncommitted changes" ]
+  [ ! -e "$Q/01-a-review1/pr" ]
 }
 
 @test "review: review_rounds caps the rounds; review_trivial sets the bar" {
@@ -2707,7 +2976,7 @@ verify_skill() {
   [[ "$output" == *"### Needs you"*"| 01-a-verify | done |"*"V: dirty · "* ]] || false
 }
 
-@test "add: refuses verify= on a lane job, on a job with no review, and a bad value; queues none of the dirs" {
+@test "add: refuses verify= on a lane job, on a job with no review, a bad value, a bad after=; queues none of the dirs" {
   local r a b
   r="$(make_repo proj)"
   a="$BATS_TEST_TMPDIR/a" b="$BATS_TEST_TMPDIR/b"
@@ -2729,8 +2998,14 @@ verify_skill() {
   printf 'repo=%s\nbranch=y\nafter=review\nverify=all\n' "$r" >"$b/job"
   run "$VIBE" queue add "$b"
   [[ "$output" == *"verify=all — app, blast-radius or app,blast-radius"* ]] || false
+  printf 'repo=%s\nbranch=y\nafter=cod\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
+  [[ "$output" == *"after=cod — review, code or empty"* ]] || false
   [ -z "$(ls "$Q")" ]
   run "$VIBE" queue add "$a"
+  [ "$status" -eq 0 ]
+  printf 'repo=%s\nbranch=y\nafter=code\nverify=app\n' "$r" >"$b/job"
+  run "$VIBE" queue add "$b"
   [ "$status" -eq 0 ]
 }
 
@@ -2878,6 +3153,14 @@ phase_jobs() {
   grep -qF '<p class="phases"><span>○ Agent</span> · <span>○ Report</span></p>' "$f"
   grep -qE '^\.phases \.x \{ color: var\(--bad\); \}' "$f"
   grep -qE '^\.phases \.r \{ color: var\(--fg\); \}' "$f"
+}
+
+@test "phases: an after=code job shows R1 and names only /code-review on the page" {
+  local r f="$XDG_STATE_HOME/vibe/web/index.html"
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok after=code
+  "$VIBE" queue page >/dev/null
+  grep -qF '<summary><span>○ Agent</span> · <span>○ R1</span> · <span>○ Gate</span> · <span>○ PR</span></summary><p>R1: /code-review</p></details>' "$f"
 }
 
 @test "phases: a lane card gets one phase line, of its running item; each feature member card keeps its own" {

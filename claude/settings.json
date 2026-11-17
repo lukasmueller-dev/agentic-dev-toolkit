@@ -156,6 +156,7 @@
   "sandbox": {
     "enabled": true,
     "allowUnsandboxedCommands": true,
+    "autoAllowBashIfSandboxed": true,
     "credentials": {
       "files": [
         { "mode": "deny", "path": "~/.aws/credentials" },
@@ -214,6 +215,11 @@
           {
             "type": "command",
             "command": "$HOME/.claude/hooks/clear-config-lock.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "$HOME/.claude/hooks/deny-push-force-cluster.sh",
             "timeout": 10
           }
         ]

@@ -24,6 +24,11 @@
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/claude/hooks/clear-config-lock.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/claude/hooks/deny-push-force-cluster.sh",
+            "timeout": 10
           }
         ]
       }

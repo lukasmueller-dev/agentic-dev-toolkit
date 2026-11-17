@@ -36,7 +36,7 @@ elif [ "$cmd" = build ]; then
   done
   git init -q -b main "$campaign"
   git -C "$campaign" commit -q --allow-empty -m seed
-  git -C "$campaign" branch kapso/exp-2
+  git -C "$campaign" branch generic_exp_2
   mkdir -p "$campaign/.kapso"
   cp "$STUB_SOLUTION" "$campaign/.kapso/solution.json"
   exit "${STUB_RC:-0}"
@@ -49,18 +49,18 @@ EOF
 solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
 
 @test "run: a campaign that met its goal gives result, report, bundle, branch and score" {
-  solution '{"branch":"kapso/exp-2","commit":"c0ffee","score":0.91,"goal_achieved":true,"stopped_reason":"goal_achieved"}'
+  solution '{"branch":"generic_exp_2","commit":"c0ffee","score":0.91,"goal_achieved":true,"stopped_reason":"goal_achieved"}'
   run "$WS_SRC/run"
   [ "$status" -eq 0 ]
-  [ "$(cat "$WS/out/result")" = "done: kapso/exp-2, score 0.91" ]
-  [ "$(cat "$WS/out/branch")" = "kapso/exp-2" ]
+  [ "$(cat "$WS/out/result")" = "done: generic_exp_2, score 0.91" ]
+  [ "$(cat "$WS/out/branch")" = "generic_exp_2" ]
   [ "$(cat "$WS/out/score")" = "0.91" ]
   [ "$(cat "$WS/out/report.md")" = "# stub report" ]
-  git bundle list-heads "$WS/out/repo.bundle" | grep -q 'refs/heads/kapso/exp-2'
+  git bundle list-heads "$WS/out/repo.bundle" | grep -q 'refs/heads/generic_exp_2'
 }
 
 @test "run: kapso gets the brief, repo, evaluation, budget, the override and the token" {
-  solution '{"branch":"kapso/exp-2","score":1,"goal_achieved":true}'
+  solution '{"branch":"generic_exp_2","score":1,"goal_achieved":true}'
   run "$WS_SRC/run"
   [ "$status" -eq 0 ]
   grep -qxF "build|--brief|$WS/in/brief.md|--repo|$WS/in/repo|--evaluation|$WS/in/repo/eval|--output|$WS/data/campaign|--budget-experiments|3|--budget-minutes|115|--config|$WS_SRC/config.yaml|token=tok" "$STUB_LOG"
@@ -68,13 +68,13 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
 
 @test "run: a solution without goal_achieved, or with false, gives failed:" {
   local json
-  for json in '{"branch":"kapso/exp-2","score":0.4}' '{"branch":"kapso/exp-2","score":0.4,"goal_achieved":false,"stopped_reason":"budget_exhausted"}'; do
+  for json in '{"branch":"generic_exp_2","score":0.4}' '{"branch":"generic_exp_2","score":0.4,"goal_achieved":false,"stopped_reason":"budget_exhausted"}'; do
     rm -rf "$WS/data/campaign" "$WS/out"/*
     solution "$json"
     run "$WS_SRC/run"
     [ "$status" -eq 0 ]
     [[ "$(cat "$WS/out/result")" == "failed: goal not achieved ("* ]] || false
-    [ "$(cat "$WS/out/branch")" = "kapso/exp-2" ]
+    [ "$(cat "$WS/out/branch")" = "generic_exp_2" ]
   done
   [ "$(cat "$WS/out/result")" = "failed: goal not achieved (budget_exhausted)" ]
 }
@@ -91,7 +91,7 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
 }
 
 @test "run: a kapso exit code is the script's, with a failed: result and a report" {
-  solution '{"branch":"kapso/exp-2","score":1,"goal_achieved":true}'
+  solution '{"branch":"generic_exp_2","score":1,"goal_achieved":true}'
   STUB_RC=7 run "$WS_SRC/run"
   [ "$status" -eq 7 ]
   [ "$(cat "$WS/out/result")" = "failed: run exit 7, see tool.log" ]
@@ -140,7 +140,7 @@ solution() { printf '%s\n' "$1" >"$STUB_SOLUTION"; }
 }
 
 @test "run, stop and steer put the image's kapso on PATH; only run sets IS_SANDBOX" {
-  solution '{"branch":"kapso/exp-2","score":1,"goal_achieved":true}'
+  solution '{"branch":"generic_exp_2","score":1,"goal_achieved":true}'
   export STUB_ENV="$BATS_TEST_TMPDIR/env.log"
   unset IS_SANDBOX
   "$WS_SRC/run"

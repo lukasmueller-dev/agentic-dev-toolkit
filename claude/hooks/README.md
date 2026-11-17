@@ -8,6 +8,7 @@ directory at `~/.claude/hooks`, and wired up by `../settings.json`.
 | `session-start-handoff.sh`| `SessionStart` hook    | Injects `HANDOFF.md` as context on `startup`/`clear` |
 | `statusline.sh`           | `statusLine` command   | Renders `repo · branch · task`                  |
 | `clear-config-lock.sh`    | `PreToolUse` hook (Bash) | Removes the sandbox's stale empty `.git/config.lock` before an unsandboxed command |
+| `deny-push-force-cluster.sh` | `PreToolUse` hook (Bash) | Denies `git push` with a short-flag cluster that holds `f` (`-vf`, `-fuv`); the deny rules miss these |
 | `inject-global-memory.sh` | `SessionStart` hook, **plugin only** | Injects `memory/GLOBAL.md` and the pstack adapter pointer where no `~/.claude/CLAUDE.md` exists |
 
 `statusline.sh` is not a hook event — Claude Code calls it through the

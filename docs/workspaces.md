@@ -93,7 +93,7 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 
 | Verb | Does |
 | --- | --- |
-| `up` | the container runs `sleep infinity` with `/ws/in`, `/ws/data` and the secrets file in place; a failed `up` leaves nothing behind |
+| `up` | the container runs `sleep infinity` (turing: `docker create --init`, so PID 1 reaps killed processes) with `/ws/in`, `/ws/data` and the secrets file in place; a failed `up` leaves nothing behind |
 | `exec <script> [arg…]` | runs `/ws/scripts/<script>`, passes stdout and the exit code |
 | `pull` | copies `/ws/data` and `/ws/out` into `$WS_STATE` |
 | `url` | prints the address of the first port as the tailnet reaches it |

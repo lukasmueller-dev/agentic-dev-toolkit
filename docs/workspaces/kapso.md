@@ -26,7 +26,7 @@ img="ghcr.io/lukasmueller-dev/ws-kapso:$commit"
 docker build -t "$img" workspaces/kapso
 ```
 
-The image is unbuilt. Claude Code is pinned to 2.1.310. The base image, the apt packages and Kapso's dependencies install unpinned, so a rebuild of the same tag can differ.
+Built and run on turing on 2026-11-16. Claude Code is pinned to 2.1.310. The base image, the apt packages and Kapso's dependencies install unpinned, so a rebuild of the same tag can differ.
 Rented place: `docker push "$img"` and make the package public. Turing uses the local image.
 
 ## 2. Check the container
@@ -91,9 +91,9 @@ The brief has no `Budget` line: `run` sets the budget from `in/args` and `hours`
 
 ```bash
 job=~/.local/state/vibe/queue/<job id>
-cat "$job/out/result"                              # done: kapso/exp-<n>, score 1.0
-cat "$job/out/branch" "$job/out/score"             # kapso/exp-<n>  1.0
-git bundle list-heads "$job/out/repo.bundle"       # <sha> refs/heads/kapso/exp-<n>
+cat "$job/out/result"                              # done: generic_exp_<n>, score 1
+cat "$job/out/branch" "$job/out/score"             # generic_exp_<n>  1
+git bundle list-heads "$job/out/repo.bundle"       # <sha> refs/heads/generic_exp_<n>
 ```
 
 The job ends as a draft PR on `kapso-test`. `out/report.md` and `out/score` are Kapso's claim. The closing session runs `python3 eval/evaluate.py` on the branch: the PR body shows `accuracy: 1.000`.

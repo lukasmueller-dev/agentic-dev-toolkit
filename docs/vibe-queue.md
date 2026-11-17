@@ -36,7 +36,7 @@ review_trivial=20
 review_model=sonnet
 review_level=high
 review_timeout=1h
-after=review
+after=review       # code: /code-review only, no lean-review; empty: no review
 memory_max=25%     # per job: 100% ÷ slots; a systemd size (6G) or infinity
 web_port=7341      # the page endpoint, 127.0.0.1 only (step 3)
 web_login=         # your tailnet login; empty: every page write gets 403
@@ -91,7 +91,7 @@ sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a 
 - The phase line, also in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
   ✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
   Gate and PR drop once the chain's last job ended without them. A lane shows its running job's chain, else the latest one.
-  A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`.
+  A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`, or `/code-review` with `after=code`.
 - A running job's block shows its last step and folds the last 10 from `queue/<id>/log` (`jq` if present).
 - The GPU holder, first match: a running `gpu` job, a running outside `gpu-queue` run, a workspace that holds the lock, a running `gpu=yes` tool job on turing; else `busy`.
 - Workspaces Start: a place and hours form for a tool with 2+ places, else one button. While the lock is held, the turing option names the GPU holder for a `gpu=yes` tool.
@@ -134,6 +134,7 @@ A `done` job is covered by a URL on its branch, and waits while a job there is q
 - FIFO by id `<YYYYMMDD-HHMMSS>-<repo>-<branch>`; a GPU follow-up `<id>-gpu` sorts right after its job and starts once its job has an `ended` file. A `done` job with a dead process and no `ended` file gets one on the next runner pass. `vibe queue archive` and the report skip a final job that has a `pid` file and no `ended` file: its process still writes.
 - Slots: `slots` agents at once. One job per branch at a time.
 - `vibe queue add --now` starts the job before the other queued jobs. `vibe queue pause`: no new start; running jobs finish.
+- `vibe queue add --at HH:MM <dir>...`: the jobs wait until that local time (tomorrow's when it has passed today), then start as normal jobs. The job file gets `at=YYYY-MM-DD HH:MM`; `vibe queue status` and the page show `starts <that time>`. `--now` with `--at`, and a time the clock change skips, are refused; `vibe queue set <id> now=1` starts a waiting job at once; `retry` drops `at=`. A start is up to one runner poll (30 s) late.
 - `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
 - `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
@@ -149,11 +150,12 @@ A `done` job is covered by a URL on its branch, and waits while a job there is q
 - A failed push writes `push failed` (git-lfs: `push failed (git-lfs: push by hand)`) to `pr`; a failed `gh pr create` writes `PR not created`. The `done` job shows under "Needs you" with that note, not under "Done". A failing gate keeps its row and gains the note. A feature member whose last `pr` holds either note shows it as its state, and the feature `needs you`.
 - Each runner git call on a job's tree, the checkout of a resumed branch and `vibe sync` run with `core.hooksPath=/dev/null` (`agent_git` in `skills/_lib/lib.sh`): no repo hook runs, the job's own hooks included. A relative `core.hooksPath` would run them unsandboxed. `agent_push` refuses a push when `git-lfs` is installed and a commit to push adds or changes a path that `filter=lfs` maps (any `.gitattributes`, `.git/info/attributes`): the pre-push hook that uploads the LFS objects is off. A push that changes no LFS path goes through.
 - Timeout: the job gets one more turn in its saved session (`--max-turns 5`) that commits `HANDOFF.md` and writes `result`. Status stays `timeout`.
-- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes.
+- Review: a `done` job with commits ahead of its base queues `<id>-review1` before any push. A fresh read-only session runs `/code-review <review_level> origin/<base>...HEAD` inside a prompt (a bare slash command returns no findings), then the [`lean-review`](../skills/lean-review/SKILL.md) rubric from its system prompt. The job's own session fixes or rejects each finding of both passes. `after=code`: `/code-review` only, no `lean-review`; the `**Review:**` line ends `(/code-review only)`.
 - Round 2 (`<id>-review2`) runs only when round 1 found something and its fix changed a file outside `*.md` or more than `review_trivial` lines. `review_rounds` caps it; what stays open goes to the PR body.
 - The last review round, or the verify step after it, pushes and opens the PR. Its body carries a `**Review:**` line above `<details>`: one `R<n>:` per round, then `V:`. Findings, verdicts and verify checks sit inside.
-- No `structured_output` → `R<n>: review failed`. A round past `review_timeout` → `R<n>: timeout`. The PR opens either way.
-- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off.
+- No `structured_output` → `R<n>: review failed`. A reviewer past `review_timeout` → `R<n>: timeout`. The PR opens either way.
+- A fix session past `review_timeout`, with a non-zero exit, or with an error result (a 429 spend limit) → `failed`, note `R<n>: … → fix failed: API error 429; <worktree> has uncommitted changes`. No PR; `vibe queue retry <id>` adopts the worktree.
+- No review for `queued:`, `blocked`, `failed` or `timeout` jobs, `output=report` jobs, or a job without commits. `after=` empty in `queue.conf` or the job file turns it off. `vibe queue add` refuses an `after=` other than `review`, `code` or empty.
 - Verify: `verify=app`, `blast-radius` or `app,blast-radius` (`/enqueue`, `/fill-queue` on request) queues `<id>-verify` after the last review round. A fresh read-only session runs `claude/vibe-verify.sh` with `review_model` and `review_timeout`.
 - `app` follows the repo's `.claude/skills/verify-*/SKILL.md` (a human writes it: `/create-verification-skill`); none → `V: no verify skill`. `blast-radius` follows the vendored skill.
 - Verify reports only: a moved HEAD or a changed tracked file → `V: dirty`: no gate, no push, no PR, and the worktree stays as it is. `V: fail`, `dirty`, `timeout` or `verify failed` put a `done` job under "Needs you", like a non-zero gate.
@@ -189,7 +191,7 @@ vibe feature archive <slug>        # all member PRs merged; refuses an open one
 vibe queue ready --feature <slug>  # each member PR checked, then ready, then feature ready
 ```
 
-- A member is a `- <repo> <branch>` line (absolute repo path; `feature add` refuses a relative one) under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
+- A member is a `- <repo> <branch>` line (the repo path as `cd <repo> && pwd` prints it; `feature add` refuses a relative path or one with `..`, `.` or `//`) under `## Members` of `features/<slug>.md` ([`templates/FEATURE.md`](../templates/FEATURE.md)). A branch is in one feature at most; the job file has no key.
 - A member is one job, a lane, a `SPEC.md` chain, or a PR with no job. Its `SPEC.md` holds only its milestones and a pointer to the feature file.
 - At job start the runner adds a `## Feature` block to a member's prompt, once: the file path and the contract rule. A contract change ends the job `blocked: contract …`.
 - At publish: a `**Feature:**` line below the TL;DR (siblings as `repo#pr`, else `repo:branch`), the decisions and contract in a `<details>`, the PR URL into the member line. Sibling bodies stay as they are.
