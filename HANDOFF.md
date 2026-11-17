@@ -30,6 +30,8 @@ None.
 
 - `references/research-worker.md` has no IAS step yet. Milestone 5 adds it: a `place=ias` worker writes `runs/<hid>/job.sbatch` and `paste.md`, then ends `blocked:`.
 - `vibe queue stop --research` is not in the contract table of `docs/vibe-queue.md` § Research jobs yet. Add its row with the command.
+- Open risk: the runner writes job dir files the agent can replace by a link (`run/log`, `run/pid`, `infra`, `cost`) with `>` or `>>`, so the write goes to the link's target outside the sandbox. `place_run` now refuses a link in `run/` before it reads; the writes are not checked.
+- A research is its `repo=` plus `research=`: `fan_in`, `vibe queue worker` and `place_gate` match both. New code that joins jobs of one research must too.
 - `vibe queue add` appends `references/research.md` to a job with `research=` and no `hid=`. A test coordinator made by `mkjob` has no block.
 - The blocks must not hold the text `## GPU run finished` or `## Worker finished`: the agent stub in `tests/vibe-queue.bats` picks its mode from them.
 - The coordinator block merges in rounds: it merges and starts workers only when no worker runs. A worker ends `failed: infra: …` or `failed: usd: …` for a run that never ran; the coordinator reopens the item under a new hid.
