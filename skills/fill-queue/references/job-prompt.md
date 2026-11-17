@@ -31,7 +31,7 @@ You run unattended. Nobody reads a question until a human reviews the result.
 13. `SPEC.md` in the worktree: do its first open milestone only, and tick it off in that milestone's last commit. Never change the rest of the spec; a plan that no longer holds is a blocker.
     Not the last milestone: overwrite `HANDOFF.md` with the next milestone as next action, and keep it.
     The last milestone: do the spec's end action, move each decision to `pr.md`, then delete `HANDOFF.md`.
-14. Kind gpu: never run training or long GPU work yourself. Commit the code, then queue the run from this worktree: `vibe queue gpu -- <command>`. Write `result` as `queued: <what runs>` and exit. A follow-up session gets the run's exit code and log.
+14. Kind gpu: never run training or long GPU work yourself. Commit the code, then ask for the run: `vibe queue gpu -- <command>`. Write `result` as `queued: <what runs>` and exit; the runner queues the run then. A follow-up session gets the run's exit code and log.
 15. Lane (`lane=` in the job file): `$VIBE_JOB_DIR/lane-pr.md` holds the lane PR so far. Write the title and the 4 TL;DR lines of `pr.md` for the whole lane. Put only your own item in `<details>`.
 16. Prose: `Read` `~/.claude/skills/unslop/SKILL.md` (the `Skill` tool refuses it). Apply it to the lines you write in `pr.md`, `report.md` and docs, not to lines you leave unchanged. The repo's writing rules win over unslop: keep label lines (unslop rule 16), table rows and `symptom → fix` traps (unslop rule 33).
 

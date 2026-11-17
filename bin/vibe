@@ -943,18 +943,13 @@ secs() {
 
 # agent_exec JOB TIMEOUT SCRIPT ARG... — <agent>/SCRIPT in its memory scope under
 # timeout(1), JOB/agent as $VIBE_JOB_DIR; its pid in JOB/agent-pid. Exit 124: the time limit; 137: killed before it.
-# The sandbox writes only JOB/agent: copies of JOB's inputs in (no links: the file tools run unsandboxed),
-# the agent's outputs (plain files) back to JOB after.
+# The sandbox writes only JOB/agent: copies of job, base, lane-pr.md in, the agent's outputs (plain files) back to JOB after.
 agent_exec() {
   local d="$1" t="$2" s="$3" rc=0 start="$SECONDS" x
   shift 3
   local -a tcmd=("${MEM_CMD[@]+"${MEM_CMD[@]}"}" "${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}")
   if ((${#TIMEOUT_CMD[@]})); then tcmd+=("$t"); fi
-  mkdir -p "$d/agent"
-  for x in job base lane-pr.md in out tool.log tool-exit; do
-    rm -rf "${d:?}/agent/$x"
-    if [[ -e "$d/$x" ]]; then cp -R "$d/$x" "$d/agent/$x"; fi
-  done
+  agent_copy "$d" job base lane-pr.md
   VIBE_JOB_DIR="$d/agent" VIBE_STEER="$d/steer" "${tcmd[@]+"${tcmd[@]}"}" bash "$SELF_ROOT/$AGENT/$s" "$@" &
   echo "$!" >"$d/agent-pid"
   wait "$!" || rc=$?
@@ -966,6 +961,17 @@ agent_exec() {
   # timeout(1) exits 137 too, when TERM left the agent running past --kill-after.
   if ((rc == 137 && ${#TIMEOUT_CMD[@]})) && ((SECONDS - start >= $(secs "$t"))); then rc=124; fi
   return "$rc"
+}
+
+# agent_copy JOB NAME... — fresh copies of JOB/NAME in JOB/agent. No links: Write and Edit run unsandboxed.
+agent_copy() {
+  local d="$1" x
+  shift
+  mkdir -p "$d/agent"
+  for x in "$@"; do
+    rm -rf "${d:?}/agent/$x"
+    if [[ -e "$d/$x" ]]; then cp -R "$d/$x" "$d/agent/$x"; fi
+  done
 }
 
 # job_agent JOB TIMEOUT PROMPT [SESSION] [MAX_TURNS] — one agent session in the
@@ -1452,8 +1458,11 @@ job_run() {
   if [[ -n "$(jget "$d/job" tool)" ]]; then
     tool_job "$d" || return 0
     p="$d/close.md"
+    agent_copy "$d" in out tool.log tool-exit
   fi
   job_agent "$d" "$t" "$p" "$(jstate "$d" session)" || rc=$?
+  # A tool's in/ and out/ can be large: only the closing session gets copies.
+  if [[ "$p" == "$d/close.md" ]]; then rm -rf "$d/agent/in" "$d/agent/out"; fi
   job_session "$d"
   if stopped "$d"; then return 0; fi
   result="$(jstate "$d" result)"
@@ -1479,7 +1488,12 @@ job_run() {
       "done:"*) st="done" ;;
       "blocked:"*) st=blocked ;;
       "queued:"*)
-        if gpu_submit "$d"; then st=gpu; else st=failed result="" note="queued: but no GPU run asked for (vibe queue gpu), or past deadline="; fi
+        if gpu_submit "$d"; then
+          st=gpu
+        else
+          st=failed result="failed: no GPU run asked for (vibe queue gpu), or the session started past deadline="
+          echo "$result" >"$d/result"
+        fi
         ;;
       *) st=failed note="no result line" ;;
     esac
@@ -2115,13 +2129,15 @@ cmd_queue_gpu() {
 
 # gpu_submit JOB — after a session that ended `queued:`: queue JOB/gpu-cmd in gpu-queue (cwd: the
 # worktree), its id in JOB/gpu-job; when it ends, a follow-up job continues the task. False with no
-# gpu-cmd, or past deadline= (the hard stop of a research job's budget). The job sandbox cannot write gpu-queue.
+# gpu-cmd, or a session that started past deadline= (the hard stop of a research job's budget).
+# The session start, not gpu-cmd's mtime: the agent can set that. The job sandbox cannot write gpu-queue.
 gpu_submit() {
-  local d="$1" id dl a
+  local d="$1" id dl a s
   local -a argv=()
   [[ -s "$d/gpu-cmd" ]] || return 1
   dl="$(deadline_of "$d/job")" || return 1
-  if [[ -n "$dl" ]] && (($(date +%s) >= dl)); then return 1; fi
+  s="$(epoch_of "$(jstate "$d" started)")"
+  if [[ -n "$dl" ]] && ((${s:-$(date +%s)} >= dl)); then return 1; fi
   while IFS= read -r -d '' a; do argv+=("$a"); done <"$d/gpu-cmd"
   ((${#argv[@]})) || return 1
   id="$("$SELF_ROOT/bin/gpu-queue" submit --name "${d##*/}" --dir "$(jstate "$d" worktree)" \

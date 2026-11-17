@@ -206,10 +206,10 @@ An open question with a metric, a budget and a backlog of experiments runs as on
 `/enqueue` makes one: route Research. `/fill-queue` proposes up to 3 from each repo's open questions and metric items; a picked one goes through that route.
 
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
-- Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, queue one snapshot run, exit.
+- Prompt: `job-prompt.md` plus [`references/research.md`](../skills/fill-queue/references/research.md). One session: close the last run, pick the next item, write its pass criterion, smoke check, ask for one snapshot run, exit. The runner queues the run once the session ends.
 - The loop is the GPU chain: each session ends `queued:` after `vibe queue gpu`; the follow-up session closes that run and queues the next one.
 - The runner pushes and writes the PR after each session. The review rounds run once, after the last session's `done:`.
-- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it neither `vibe queue gpu` nor the runner queues a run, so the next session ends the job. `vibe queue add` refuses another format.
+- `deadline=YYYY-MM-DD HH:MM` (local time) in the job file: past it `vibe queue gpu` asks for nothing, and the runner queues no run from a session that started past it. The next session ends the job. `vibe queue add` refuses another format.
 - The agent adds its own experiments only under the "Own ideas" rules of the file. A pass criterion never changes after its run.
 - Kind `gpu` only; no lane, no `SPEC.md` chain.
 - shortcut: only the deadline is enforced; compute hours and the run count are the agent's ledger. Add a runner check when a job overspends.
@@ -296,7 +296,7 @@ Add a route or a button:
 | `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
-| `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; copies of `job`, `base`, `lane-pr.md`, a tool run's `in/`, `out/`, `tool.log`, `tool-exit`, fresh each session |
+| `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; copies of `job`, `base`, `lane-pr.md`, fresh each session; a tool job's closing session also gets `in/`, `out/`, `tool.log`, `tool-exit` |
 | `queue/<id>/result`, `pr.md`, `report.md` | the agent's `done:`/`queued:`/`blocked:`/`failed:` line; PR title + body (`templates/job-pr.md`); findings (`templates/job-report.md`). The runner copies them, `verdicts` and `gpu-cmd` from `agent/` after each session, plain files only |
 | `queue/<id>/gate`, `gate.log` | the gate's exit code; `$ <command>`, then its output |
 | `queue/<id>/held`, `gpu-cmd`, `gpu-job` | `vibe queue hold` note; the run `vibe queue gpu` asked for (NUL-ended args); the `gpu-queue` job id |

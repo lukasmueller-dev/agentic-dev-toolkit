@@ -10,8 +10,8 @@ Each session does one turn of the loop, then exits. The last "GPU run finished" 
 5. **Register before you code.** The item has Idea, Evidence, Code, Cost, Pass and Then in `RESEARCH.md`, in a commit before its run.
 6. **Build the least.** New behavior sits behind a switch that is off by default. Run the repo's tests for what you touch.
 7. **Test yourself.** The run command starts with a smoke check: minutes, the same code path, checks that fail loud. The long run starts only when it passes.
-8. **Run one snapshot.** The command names one commit and runs a copy of it, never the live worktree. Queue it: `vibe queue gpu -- <command>`. One run per session.
-9. **Use the wait.** After you queue the run, prepare the next item's code when it does not need the result. Commit before you exit.
+8. **Run one snapshot.** The command names one commit and runs a copy of it, never the live worktree. Ask for it: `vibe queue gpu -- <command>`. One run per session.
+9. **Ask last.** The runner queues the run only once you exit, so the GPU waits while you work. After the ask, do only rule 12.
 10. **Own ideas.** You may add an item under the rules of "Own ideas". Base it on data that exists, and name the files. Rule 5 holds for it.
 11. **Budget.** Before each run, add its expected cost to the ledger. Past the deadline, the compute or the run count: queue nothing, go to rule 13.
 12. **Exit of a turn:** overwrite `HANDOFF.md` (state, the run in the queue, next action), commit, write `pr.md`, write `result` as `queued: <item>`.

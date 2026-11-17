@@ -49,8 +49,14 @@ case "\$mode" in
     echo code >code.txt && git add code.txt && git commit -q -m "feat: train script"
     "$VIBE" queue gpu -- sh -c '[ ! -f $STUBS/gpu-sleep ] || sleep 30; echo trained >out.txt'
     [ ! -f "$STUBS/gpu-forge" ] || printf 'true\0' >"\$VIBE_JOB_DIR/gpu-cmd"
+    [ ! -f "$STUBS/gpu-started" ] || cp "$STUBS/gpu-started" "\$jd/started"
     ls "\$GPU_QUEUE_DIR/queued" >"$STUBS/gpu-in-session" 2>/dev/null || true
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
+    ;;
+  leak)
+    echo work >work.txt && git add work.txt && git commit -q -m "feat: work"
+    ln -s "$STUBS/secret" "\$VIBE_JOB_DIR/pr.md"
+    echo "done: work.txt added" >"\$VIBE_JOB_DIR/result"
     ;;
   forge)
     for f in "$STUBS"/forge/*; do rm -f "\$VIBE_JOB_DIR/\${f##*/}" && cp "\$f" "\$VIBE_JOB_DIR/"; done
@@ -1569,14 +1575,24 @@ EOF
 }
 
 @test "trust: the job sandbox may not write the queue or gpu-queue" {
-  local e p
-  # An allowWrite entry (~/…) that covers one of these lets a job forge the runner's files or a GPU run.
-  while IFS= read -r e; do
-    e="${e#\~}"
-    for p in /.local/state/vibe/queue/id/worktree /.local/state/gpu-queue/queued/id/cmd; do
-      case "$p" in "${e%/}/"*) false ;; esac
-    done
-  done < <(jq -r '.sandbox.filesystem.allowWrite[]' "$REPO_ROOT/claude/vibe-job-settings.json")
+  # An entry that names either, or holds ~/.local/state, lets a job forge the runner's files or a GPU run.
+  jq -e '[.sandbox.filesystem.allowWrite[] | rtrimstr("/") as $e
+    | select(($e | contains("vibe") or contains("gpu-queue")) or ("~/.local/state/" | startswith($e + "/")))] == []' \
+    "$REPO_ROOT/claude/vibe-job-settings.json"
+}
+
+@test "trust: a link the job leaves as pr.md is not copied back or published" {
+  local r
+  r="$(make_repo proj)"
+  echo "host secret" >"$STUBS/secret"
+  mkjob 01-a "$r" task-a leak
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/status")" = "done" ]
+  [ ! -e "$Q/01-a/pr.md" ]
+  [ -f "$Q/01-a/pr-body.md" ]
+  run grep -q "host secret" "$Q/01-a/pr-body.md"
+  [ "$status" -eq 1 ]
 }
 
 @test "report: a done job whose push failed or whose PR was not created is under Needs you with its note, not under Done" {
@@ -2683,9 +2699,29 @@ gpurace() {
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/01-a/status")" = failed ]
-  [[ "$(cat "$Q/01-a/note")" == "queued: but no GPU run asked for"* ]] || false
+  [[ "$(cat "$Q/01-a/note")" == "failed: no GPU run asked for"* ]] || false
+  [ "$(cat "$Q/01-a/result")" = "$(cat "$Q/01-a/note")" ]
   [ ! -e "$Q/01-a/gpu-job" ]
   [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
+}
+
+@test "gpu: a run asked for in a session that started before deadline= is queued, though the session ends past it" {
+  local r pid
+  r="$(make_repo proj)"
+  touch "$STUBS/gpu-forge"                         # the ask the session made before the deadline
+  echo "2000-01-01 07:55:00" >"$STUBS/gpu-started" # the stub plays the clock: the session started at 07:55
+  mkjob 01-a "$r" task-a gpu "deadline=2000-01-01 08:00"
+  "$VIBE" queue run --claude --drain >"$BATS_TEST_TMPDIR/run.out" 2>&1 3>&- &
+  pid=$!
+  for _ in $(seq 1 100); do
+    [ "$(cat "$Q/01-a/status" 2>/dev/null)" != gpu ] || break
+    sleep 0.1
+  done
+  [ "$(cat "$Q/01-a/status")" = gpu ]
+  [ -d "$GPU_QUEUE_DIR/queued/$(cat "$Q/01-a/gpu-job")" ]
+  "$REPO_ROOT/bin/gpu-queue" cancel "$(cat "$Q/01-a/gpu-job")" 2>/dev/null
+  wait "$pid"
+  [ "$(cat "$Q/01-a/note")" = "GPU run cancelled" ]
 }
 
 @test "add, gpu: a deadline= that is not YYYY-MM-DD HH:MM is refused" {
