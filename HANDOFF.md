@@ -14,13 +14,13 @@
 
 ## State
 
-Milestone 1 of `SPEC.md` is done: `vibe queue gpu --place runpod|vast`, `run-result`, `infra`.
+Milestones 1 and 2 of `SPEC.md` are done: `vibe queue gpu --place runpod|vast`, `run-result`, `infra`, place verb `price`, the `usd=` gate, `cost`.
 Member of the feature `parallel-research` with `research-card` (this repo) and `research-setup` (safety-critic).
 
 ## Next action
 
-Milestone 2 of `SPEC.md`: place verb `price`, the `usd=` gate, the runner writes `cost` per worker.
-Done when `bats tests/vibe-queue.bats tests/ws-place-runpod.bats tests/ws-place-vast.bats` pass with a gate test and a `price` test per place.
+Milestone 3 of `SPEC.md`: `vibe queue worker HID [--place P]` from inside the coordinator job; refusals, fan-in.
+Done when `bats tests/vibe-queue.bats` passes with a test per refusal and a fan-in test with 2 worker ends.
 
 ## Blockers
 
@@ -34,3 +34,5 @@ None.
 - A place script runs a workspace folder, not a bare command: the command reaches the container as `/ws/in/cmd` (feature contract).
 - `git branch research/<slug>/<hid>` fails when a branch `research` or `research/<slug>` exists → refuse that research branch name with one line.
 - `research-card` reads the job keys and the job dir files of the contract; a change to one needs the user.
+- The usd gate (`place_gate`) reads `usd=` from the run's own job file and sums `cost` over jobs with the same `research=` → a worker job must carry both; `follow_job` copies them.
+- The stub places in `tests/vibe-queue.bats` print `$STUBS/price`; with no file `price` exits 3, so the price is 0 and the gate never refuses.
