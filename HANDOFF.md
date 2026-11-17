@@ -10,24 +10,27 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-run`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-run
-- **Last updated:** 2026-11-17 09:58 CET · turing
+- **Last updated:** 2026-11-17 · turing
 
 ## State
 
-Not started. `SPEC.md` holds the milestones; the feature file holds the goal, the decisions and the contract.
+Milestone 1 of `SPEC.md` is done: `vibe queue gpu --place runpod|vast`, `run-result`, `infra`.
 Member of the feature `parallel-research` with `research-card` (this repo) and `research-setup` (safety-critic).
 
 ## Next action
 
-Milestone 1 of `SPEC.md`: `vibe queue gpu --place runpod|vast -- CMD`, `run-result` and `infra`.
-Done when `bats tests/vibe-queue.bats tests/vibe-ws.bats` pass with a test per sentence of the milestone, on stub places.
+Milestone 2 of `SPEC.md`: place verb `price`, the `usd=` gate, the runner writes `cost` per worker.
+Done when `bats tests/vibe-queue.bats tests/ws-place-runpod.bats tests/ws-place-vast.bats` pass with a gate test and a `price` test per place.
 
 ## Blockers
 
-_What is stopping progress, and what would unblock it._
+None.
 
 ## Gotchas (unpromoted)
 
+- A place run: `vibe queue gpu --place` writes `<job>/run/` (place, commit, cmd); the runner's `place_pass` starts `place_run` in the background.
+- `place_run` uses instance `research-<job id>`; its `dir` file points `ws_place` at the clone's `.claude/research/`. The tests use stub places `runpod` and `vast` (`places` in `tests/vibe-queue.bats`).
+- `mkjob` in `tests/vibe-queue.bats` loops with a global `l`: a test variable `l` gets overwritten. Use another name.
 - A place script runs a workspace folder, not a bare command: the command reaches the container as `/ws/in/cmd` (feature contract).
 - `git branch research/<slug>/<hid>` fails when a branch `research` or `research/<slug>` exists → refuse that research branch name with one line.
 - `research-card` reads the job keys and the job dir files of the contract; a change to one needs the user.
