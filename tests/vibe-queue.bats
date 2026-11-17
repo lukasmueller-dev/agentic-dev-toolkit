@@ -3032,6 +3032,7 @@ coord_wt() {
   "$VIBE" start -C "$1" research-q1 >/dev/null 2>&1
   {
     printf '# Research — proj / research-q1\n\n## Backlog\n\n### h1 wider net — open\n\n- Idea: a wider net fits.\n\n'
+    # shellcheck disable=SC2016  # literal backticks in RESEARCH.md
     printf '### h2 warmup — open\n\n- **Builds on:** `h1`, its width\n\n### h3 dropout — open\n\n## Ledger\n\n'
     printf '| id | commit | run | cost | result | verdict | evidence |\n| --- | --- | --- | --- | --- | --- | --- |\n'
     printf '%s\n' "${2-| baseline | 0123abc | 1 | 0 | 0.50 | baseline | runs/baseline/log |}"
@@ -3064,7 +3065,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   grep -qxF '# Agent job: Research worker h2: warmup' "$j/prompt.md"
   grep -qF -- "- **Repo / branch:** $r · \`research/q1/h2\`" "$j/prompt.md"
   grep -qF -- '- **Time limit:** 3h' "$j/prompt.md"
-  grep -qF '`runs/h2/row.md` holds the ledger row of the run' "$j/prompt.md"
+  grep -qF "\`runs/h2/row.md\` holds the ledger row of the run" "$j/prompt.md"
   VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h1
   [ "$status" -eq 0 ]
   j="$(qjob -research-q1-h1)"
@@ -3085,11 +3086,11 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   mkjob 04-w "$r" research/q1/h3 ok research=q1 hid=h3
   echo "done" >"$Q/04-w/status"
   mkjob 05-w "$r" research/q2/h9 ok research=q2 hid=h9
-  n="$(ls "$Q" | wc -l)"
+  n="$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)"
   VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h3
   [ "$status" -ne 0 ]
   [ "$output" = "vibe: workers=2: h1 h2 run — start the next one after a worker ends" ]
-  [ "$(ls "$Q" | wc -l)" = "$n" ]
+  [ "$(find "$Q" -mindepth 1 -maxdepth 1 | wc -l)" = "$n" ]
   run git -C "$r" rev-parse --verify -q research/q1/h3
   [ "$status" -ne 0 ]
   echo "done" >"$Q/02-w/status"
