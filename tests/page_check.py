@@ -42,7 +42,7 @@ def edit(fn):
 
 def state(job, text):
     """The page with JOB's block head state set to TEXT."""
-    return lambda h: re.sub(r'(id="job-%s" hidden><div class="bh"><i class="lamp l-[a-z]+"></i><span class="st">)[^<]*' % re.escape(job), r"\g<1>" + text, h)
+    return lambda h: re.sub(r'(id="job-%s" hidden><div class="bh"><i class="lamp l-[a-z]+"></i><span class="st"[^>]*>)[^<]*' % re.escape(job), r"\g<1>" + text, h)
 
 
 with open(PAGE, encoding="utf-8") as f:
@@ -232,7 +232,10 @@ try:
         for name, w, h, mobile, hash_, dark in (("desk-2560x1440.png", 2560, 1440, False, "job-" + A, False),
                                                 ("desk-1440x900.png", 1440, 900, False, "job-research/" + R, False),
                                                 ("phone-390x844.png", 390, 844, True, "jobs", False),
-                                                ("desk-1440x900-dark.png", 1440, 900, False, "job-" + A, True)):
+                                                ("phone-390x844-panel.png", 390, 844, True, "job-" + A, False),
+                                                ("desk-1440x900-dark.png", 1440, 900, False, "job-" + A, True),
+                                                ("desk-1440x900-workspaces.png", 1440, 900, False, "workspaces", False),
+                                                ("desk-1440x900-settings.png", 1440, 900, False, "settings", False)):
             cdp("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "dark" if dark else "light"}]})
             cdp("Emulation.setDeviceMetricsOverride", {"width": w, "height": h, "deviceScaleFactor": 1, "mobile": mobile})
             js("history.replaceState(null, '', '#' + %s); dispatchEvent(new HashChangeEvent('hashchange')); scrollTo(0, 0)" % json.dumps(hash_))

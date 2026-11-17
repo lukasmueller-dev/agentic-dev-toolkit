@@ -367,7 +367,7 @@ Run those two files without `-j`.
 
 **The page.js test in `vibe-web.bats` skips inside the agent sandbox: full Chrome does not start there.**
 Set `VIBE_TEST_BROWSER` to the Playwright `chrome-headless-shell` under `~/.cache/ms-playwright/`.
-For a screenshot, serve a dir that holds a copy of `web/` as `queue/` (`python3 -m http.server`) in the same Bash call.
+For screenshots, set `PAGE_SHOTS=<dir>`: `tests/page_check.py` writes the page at 2560×1440, 1440×900 and 390×844 there.
 
 **A bare `wait` in `vibe-web.bats` hangs: setup's `vibe-web` is a background job too.** Wait on a pid.
 
