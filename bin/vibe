@@ -63,7 +63,8 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
-#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines
+#   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines;
+#                                   an ended job whose PR is merged or closed to the archive (the hourly timer)
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
 # shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
@@ -4840,17 +4841,46 @@ triage_fix() {
   fi
 }
 
+# triage_archive [REPO...] — archive each ended job of REPO, or of every repo, whose PR is merged or closed; a line each.
+# A held job stays (hold is yours), so do a research job and a feature member (their card archives them).
+triage_archive() {
+  local d url st="" last="" a
+  feature_keys
+  while IFS=$'\t' read -r url d; do
+    if [[ "$url" != "$last" ]]; then
+      last="$url"
+      st="$(gh pr view "$url" --json state -q .state 2>/dev/null || true)"
+    fi
+    case "$st" in MERGED | CLOSED) ;; *) continue ;; esac
+    a="$QROOT/archive/$(date +%Y-%m)"
+    if mkdir -p "$a" && mv "$d" "$a/"; then
+      echo "archived ${d##*/}: PR $(echo "$st" | tr '[:upper:]' '[:lower:]')"
+    else
+      warn "${d##*/} not archived"
+    fi
+  done < <(
+    for d in "$QDIR"/*/; do
+      d="${d%/}" url="$(jstate "$d" pr)"
+      if [[ "$url" != http* || -f "$d/held" ]] || ! job_settled "$d" || is_member "$d"; then continue; fi
+      if (($#)) && ! in_list "$(jget "$d/job" repo)" "$@"; then continue; fi
+      printf '%s\t%s\n' "$url" "$d"
+    done | sort
+  )
+}
+
 # vibe job triage [REPO...] — every open agent PR of every repo under the
 # root: merge the base into a conflicted one and push; a `/fix` or "Request
 # changes" of your login starts one fix job; red CI and unanswered review
 # comments become lines in QROOT/triage.md, which the report and the page show.
+# Then each ended job whose PR is merged or closed goes to the archive (triage_archive).
 cmd_job_triage() {
-  local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text
+  local repo n url head base mergeable red comments out lines="" r me defs since fresh seen id text given=()
   command -v gh >/dev/null 2>&1 || {
     echo "no gh — nothing to triage"
     return 0
   }
   local repos=("$@")
+  for r in "$@"; do given+=("$(job_repo_path "$r")"); done
   if ((${#repos[@]} == 0)); then
     for r in "$JOBS_ROOT"/*/; do [[ ! -d "$r/.git" ]] || repos+=("${r%/}"); done
   fi
@@ -4887,6 +4917,7 @@ cmd_job_triage() {
       lines+="- $(basename "$repo") [#$n]($url): $(triage_fix "$repo" "$me" "$n" "$url" "$since" "$id" "$text")"$'\n'
     done <<<"$out"
   done
+  triage_archive "${given[@]+"${given[@]}"}"
   mkdir -p "$QROOT"
   if [[ -z "$lines" ]]; then
     rm -f "$QROOT/triage.md"
