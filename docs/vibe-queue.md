@@ -338,7 +338,7 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `evidence/` (screenshots, logs) |
-| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `price` (USD per hour), `log`, `exit` |
+| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd`; the runner adds `pid`, `price` (USD per hour), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
 | `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
 | `queue/<id>/drain`, `paste.md`, `ias.log` | [research](#research-jobs): `drain` or `now` (`vibe queue stop --research`); an IAS worker's steps; the output its answer gave |
 | `queue/<id>/fan` | [research](#research-jobs) worker: the coordinator job its end woke, `follow-up <id>-gpu`, `no wake: <id> done\|archived`, or `no coordinator` |
