@@ -503,6 +503,41 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$output" != *research-lr-h1* && "$output" != *research-lr-h4* && "$output" == *research-lr-h3* ]] || false
 }
 
+@test "research: a coordinator whose push or PR failed is a no PR job in the header, the status, the report and its row" {
+  local r c="$Q/20261117-100000-proj-research-lr"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  echo done >"$Q/20261117-100200-proj-research-lr-h2/status"
+  echo done >"$Q/20261117-100300-proj-research-lr-h3/status"
+  echo "push failed: rejected" >"$c/pr"
+  run "$VIBE" queue status
+  [[ "${lines[0]}" == *" · 1 no PR · "* ]] || false
+  [[ "$output" == *$'    PR: push failed: rejected\n'* ]] || false
+  run "$VIBE" queue report
+  [[ "$output" == *"| 20261117-100000-proj-research-lr | done |"* ]] || false
+  [[ "$output" == *"| **push failed: rejected** |"* ]] || false
+  # The same job with a PR URL has a link in its question's row and none of its own.
+  echo https://example.com/pull/5 >"$c/pr"
+  run "$VIBE" queue report
+  [[ "$output" == *"| [PR](https://example.com/pull/5) |"* && "$output" != *"| 20261117-100000-proj-research-lr | done |"* ]] || false
+  [[ "$("$VIBE" queue status | head -n 1)" == *" · 0 no PR · "* ]] || false
+}
+
+@test "research: a builds= cycle, a self-reference and an unknown hid keep every worker on the card, at depth 0" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  # h1 and h3 build on each other; h4 builds on h1; h2 on itself; h5 on a hid that is not there.
+  sed -i.bak 's/^builds=.*/builds=h3/' "$Q"/*-h1/job
+  sed -i.bak 's/^builds=.*/builds=h1/' "$Q"/*-h3/job
+  sed -i.bak 's/^builds=.*/builds=h2/' "$Q"/*-h2/job
+  rjob "$Q" 20261117-100500-proj-research-lr-h5 queued "$r" research/lr/h5 research=lr hid=h5 place=turing idea=x builds=h9
+  rpage
+  [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h2style=--d:0 data-hid=h5style=--d:0 data-hid=h1style=--d:0 data-hid=h3style=--d:0 data-hid=h4' ]
+  # h3 is in the cycle: its paste field is on the page.
+  [ "$(grep -o 'class="paste"' "$f" | wc -l)" -eq 1 ]
+}
+
 @test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
   local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
   r="$(make_repo proj)"

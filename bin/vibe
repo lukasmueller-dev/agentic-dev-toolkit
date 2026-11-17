@@ -2304,8 +2304,8 @@ queue_counts() {
         if [[ "$s" == "done" ]]; then kind="done"; fi
         u="$(jstate "$d" pr)"
         case "$u" in http*) ;; *) u="" ;; esac
-        # A research job opens no PR until its question ends: its card shows it.
-        if [[ "$s" == "done" && -z "$u" && -n "$(jget "$d/job" research)" ]]; then continue; fi
+        # A research job opens no PR until its question ends: its card shows it. A failed push or PR is no PR.
+        if [[ "$s" == "done" && -z "$u" && -n "$(jget "$d/job" research)" ]] && ! pr_missed "$(jstate "$d" pr)"; then continue; fi
         ;;
     esac
     rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
@@ -2530,6 +2530,7 @@ status_line() {
     research)
       printf '  %s%s · %s\n' "$2" "${4:+ · $4}" "$3"
       printf '    %s\n' "$5" "$(research_head "$8") · waits for ${8##*|}"
+      if [[ -n "$6" ]]; then printf '    PR: %s\n' "$6"; fi
       research_workers "${10}" | sed 's/^/    /'
       while IFS= read -r r; do
         if [[ -n "$r" ]]; then printf '    needs you: %s\n' "$(item_why "$r")"; fi
@@ -2648,13 +2649,19 @@ research_head() {
   echo "${best:+best $best · }$sp${usd:+ of \$$usd}${dl:+ · deadline $dl}"
 }
 
+# research_mu METRIC USD — a worker's `metric · $USD` text; either part may be empty.
+research_mu() {
+  local t="$1"
+  if [[ -n "$2" ]]; then t+="${t:+ · }\$$2"; fi
+  echo "$t"
+}
+
 # research_workers WORKERS — a text line per worker: `HID · PLACE  STATE  METRIC · USD`, indented by its depth.
 research_workers() {
   local h dp s pl lt m u idea w mu
   while IFS=$'\037' read -r h dp s pl lt m u idea w; do
     [[ -n "$h" ]] || continue
-    mu="$m"
-    if [[ -n "$u" ]]; then mu+="${mu:+ · }\$$u"; fi
+    mu="$(research_mu "$m" "$u")"
     printf '%*s%s · %s  %s%s\n' $((dp * 2)) '' "$h" "${pl:--}" "$s" "${mu:+  $mu}"
   done <<<"$1"
 }
@@ -2695,8 +2702,7 @@ research_card() {
       infra) lamp=warn ;;
       *) lamp="done" ;;
     esac
-    mu="$m"
-    if [[ -n "$u" ]]; then mu+="${mu:+ · }\$$u"; fi
+    mu="$(research_mu "$m" "$u")"
     rows+="<div class=\"wk\" style=\"--d:$dp\" data-hid=\"$(esc "$h")\"><i class=\"lamp l-$lamp\"></i><span class=\"wh\"><b>$(esc "$h")</b> <span class=\"n\">$(esc "$s${pl:+ · $pl}")</span></span><span class=\"wm\">$(esc "$mu")</span><p>$(esc "$idea")</p><p class=\"stats\">$(esc "$lt")</p>$(if [[ "$s" == paste && -s "$w/paste.md" ]]; then research_paste "$w"; fi)</div>"
   done <<<"$6"
   printf '%s</div>' "$rows"
@@ -3281,7 +3287,10 @@ report_rows() {
     cls="$(jstate "$d" status)" note=""
     if [[ "$cls" == "done" ]] && checks_failed "$d"; then cls=gate; fi
     # A done member job is in its feature's row.
-    if [[ "$cls" == "done" ]] && is_member "$d"; then continue; fi
+    # A research job whose push or PR failed keeps its row: the question's row has the note only.
+    if [[ "$cls" == "done" ]] && is_member "$d"; then
+      if [[ -z "$(jget "$d/job" research)" ]] || ! pr_missed "$(jstate "$d" pr)"; then continue; fi
+    fi
     group_of "$d"
     pr="$(jstate "$d" pr)" grp=0
     if ((${#GROUP[@]} > 1)) && [[ "$cls" == "done" ]]; then pr="$G_PR" grp=1; fi
@@ -3344,7 +3353,7 @@ research_md() {
       if [[ -n "$h" ]]; then w+="${w:+ · }$h ${pl:--} $s"; fi
     done <<<"$R_WORKERS"
     pr=""
-    case "$R_PR" in http*) pr="[PR]($R_PR)" ;; esac
+    case "$R_PR" in http*) pr="[PR]($R_PR)" ;; ?*) pr="**${R_PR//|//}**" ;; esac
     rows+="| $slug | $R_PILL | $R_PROGRESS | ${R_QUESTION//|//} | $(research_head "$R_HEAD") | $w | ${R_HEAD##*|} | $pr |"$'\n'
   done < <(research_slugs)
   [[ -n "$rows" ]] || return 0
@@ -3803,6 +3812,12 @@ research_row() {
     flat+="$h"$'\037'"$bd"$'\037'"$s"$'\037'"$(jget "$L/job" place)"$'\037'"${lt:-$(jstate "$L" note)}"$'\037'"$m"$'\037'"$c"$'\037'"$(jget "$L/job" idea)"$'\037'"$L"$'\n'
   done <<<"${hl#$'\n'}"
   R_WORKERS="$(research_tree "$flat" root 0)"
+  # A builds= cycle has no root: its workers follow, each at depth 0.
+  while IFS= read -r x; do
+    [[ -n "$x" ]] || continue
+    h="${x%%$'\037'*}" x="${x#*$'\037'}" x="${x#*$'\037'}"
+    if [[ "$R_WORKERS" != "$h"$'\037'* && "$R_WORKERS" != *$'\n'"$h"$'\037'* ]]; then R_WORKERS+="${R_WORKERS:+$'\n'}$h"$'\037'0$'\037'"$x"; fi
+  done <<<"$flat"
   if ((you)); then
     R_PILL="needs you" waits="you ($ys)"
   elif ((run)); then
