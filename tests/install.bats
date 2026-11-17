@@ -746,6 +746,10 @@ denied() {
     "git clone -u x url" "git clone url -u x" "git clone -ux url" \
     "git clone -qu x url" "git clone url -qu x" "git clone -vu x url" "git clone -nu x url" \
     "git clone -lu x url" "git clone -su x url" "git clone -4u x url" "git clone -6u x url" \
+    "git clone -c core.sshCommand=x ssh://h/r" "git clone -ccore.sshCommand=x url" "git clone url -c x" \
+    "git clone --config x url" "git clone --co=x url" "git clone --con=x url" "git clone url --conf=x" \
+    "git clone -qc x url" "git clone -vc x url" "git clone -nc x url" "git clone -lc x url" \
+    "git clone -sc x url" "git clone -4c x url" "git clone -6c x url" \
     "git clone --template=x url" "git clone --template x url" "git clone url --te=x" \
     "git push --receive-pack=x origin b" "git push --exec=x origin b" "git push --receive=x origin b" \
     "git push --ex=x origin b" "git push origin b --e=x" \
@@ -771,6 +775,7 @@ denied() {
     "git ls-remote --exit-code origin main" "git ls-remote --heads origin" \
     "git clone https://github.com/a/my-utils" "git clone --depth 1 -b main url dir" "git clone --recurse-submodules url" "git clone --tags url" \
     "git clone -q https://github.com/a/utils" "git clone -qb main url" \
+    "git clone --checkout url" "git clone https://github.com/a/cool-repo" \
     "git push -u origin b" "git push --recurse-submodules=check origin b" "git push --set-upstream origin b" \
     "git status --untracked-files=no" "git diff --exit-code" "git log --exclude=x" "git ls-files --exclude-standard" \
     "git grep -n foo" "git grep -e Output" "git grep --extended-regexp foo" "git commit -m fix" \
