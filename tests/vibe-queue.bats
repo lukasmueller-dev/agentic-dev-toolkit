@@ -2927,6 +2927,32 @@ refused() {
   [ "$(cat "$Q/01-a-gpu/status")" = "done" ]
 }
 
+@test "gpu --place: a run/commit git reads as an option, or a run/place other than runpod and vast, is infra; git runs nothing" {
+  local r j
+  places
+  r="$(research_repo)"
+  for j in 01-a 02-b; do
+    mkjob "$j" "$r" "task-$j" ok
+    echo "$r" >"$Q/$j/worktree"
+    echo gpu >"$Q/$j/status"
+    mkdir "$Q/$j/run"
+    printf '#!/usr/bin/env bash\nsh train.sh\n' >"$Q/$j/run/cmd"
+  done
+  echo runpod >"$Q/01-a/run/place"
+  echo "--upload-pack=touch $STUBS/pwned #" >"$Q/01-a/run/commit"
+  echo turing >"$Q/02-b/run/place"
+  git -C "$r" rev-parse HEAD >"$Q/02-b/run/commit"
+  drain
+  [ "$status" -eq 0 ]
+  [ ! -e "$STUBS/pwned" ]
+  [ ! -e "$STUBS/place.log" ]
+  for j in 01-a 02-b; do
+    [ "$(cat "$Q/$j/run/exit")" = infra ]
+    grep -qF 'vibe: run/place must be runpod or vast and run/commit a commit id' "$Q/$j/infra"
+    [ "$(cat "$Q/$j-gpu/status")" = "done" ]
+  done
+}
+
 # two_findings — the stub reviewer's first answer: two findings.
 two_findings() {
   printf '%s' '{"type":"result","structured_output":{"findings":[{"file":"work.txt","line":1,"summary":"empty file","failure_scenario":"reads nothing"},{"file":"x.sh","summary":"quote it","failure_scenario":"word split"}]}}' >"$STUBS/review-1.json"
