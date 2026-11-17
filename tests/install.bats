@@ -740,7 +740,7 @@ denied() {
   local c
   # each runs its argument as a program outside the sandbox (checked by hand in a scratch dir)
   for c in \
-    "git pull --upload-pack=x" "git pull --upload-pack x origin" "git pull '--upload-pack=x'" "git pull --upl=x" \
+    "git pull --upload-pack=x" "git pull --upload-pack x origin" "git pull origin --upload-pack=x" "git pull --upl=x" \
     "git fetch --upload-pack=x origin" "git fetch --upl=x origin" "git ls-remote --upload-pack=x origin" "git ls-remote --exec=x origin" \
     "git ls-remote --u=x origin" "git clone --upload-pack=x url" "git clone --up=x url" \
     "git clone -u x url" "git clone url -u x" "git clone -ux url" \
@@ -777,7 +777,9 @@ denied() {
     "sort -u f" "sort -k2 f" "sort --check f" "sort -T /tmp f" \
     "rg foo" "rg -n --glob '*.sh' foo" "rg --hidden foo" "rg --pretty foo" "rg --pre-glob '*.gz' foo" \
     "git grep Access-Control-Allow-Origin" "git commit -m 'deny --upload-pack flags'" "git log --grep=--exec" \
-    "scp build-Setup.tar h:b" "scp a.txt h:build-File"; do
+    "scp build-Setup.tar h:b" "scp a.txt h:build-File" \
+    "git push origin feature--env" "git clone https://github.com/a/my--utils" "git pull origin fix--upload" \
+    "git ls-remote origin fix--ex" "git grep -n foo -- src--option" "sort my--config.txt" "rsync -a src--rsh/ h:b"; do
     if denied "$c"; then
       echo "denied by mistake: $c" >&2
       return 1
