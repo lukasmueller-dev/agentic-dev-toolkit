@@ -222,6 +222,7 @@ A job with `research=<slug>` is in no repo group: the page shows one card per sl
 - `waits for`, first match: `you (…)` (`paste <hid>`: a blocked worker with `paste.md`; `<hid> blocked`; `coordinator blocked`, `failed`, `timeout`, `skipped`), `GPU` (a worker's run on turing), `coordinator` (queued or running), `nothing`.
 - Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
 - Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
+- Status and the report: a `Research` group after `Features`, a line (report: a row) per question, `hid · place  state  metric · USD` per worker. A done worker keeps no report row of its own.
 - A done job with no PR is no `no PR` in the status header.
 
 ## Tool jobs

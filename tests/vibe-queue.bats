@@ -474,6 +474,32 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o 'data-hid="h2"' "$f" | wc -l)" -eq 1 ]
 }
 
+@test "research: status has a Research group with a line per question (2/4) and a line per worker with its place; the report has one row" {
+  local r c="$Q/20261117-100000-proj-research-lr"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  run "$VIBE" queue status
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | sed -n '3,12p')" = 'Research
+  lr · 2/4 · needs you
+    Does a wider net help & by how much?
+    best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 · waits for you (paste h3)
+    h1 · turing  done  0.81 · $0.00
+      h4 · turing  done  0.84 · $0.00
+    h2 · runpod  running  $1.20
+    h3 · ias  paste
+    needs you: h3 paste' ]
+  # Its jobs are in no repo group of the status.
+  run grep -c '^proj$' <("$VIBE" queue status)
+  [ "$output" = 0 ]
+  echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
+  [[ "$("$VIBE" queue status)" == *$'    needs you: coordinator blocked: name the metric\n    needs you: h3 paste'* ]] || false
+  run "$VIBE" queue report
+  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 ias paste | you (coordinator blocked, paste h3) |' <<<"$output"
+  # A done worker has no row of its own; the one that needs you has.
+  [[ "$output" != *research-lr-h1* && "$output" != *research-lr-h4* && "$output" == *research-lr-h3* ]] || false
+}
+
 @test "run: a bin/vibe edited in place while the runner runs does not change its exit status" {
   local r tk="$BATS_TEST_TMPDIR/toolkit" pid i
   r="$(make_repo proj)"

@@ -10,18 +10,20 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card
-- **Last updated:** 2026-11-17 10:50 CET · turing
+- **Last updated:** 2026-11-17 11:05 CET · turing
 
 ## State
 
-Milestone 1 is done: `research_row` (`bin/vibe`) reads the job dirs; `queue_jobs` prints a `Research` group; `page_row` and `status_card`/`research_card` render the row and the block; `research_fixture` (`tests/helper.bash`) is the fixture of 1 coordinator and 4 workers.
-`status_line` has no `research` arm yet, so `vibe queue status` prints an empty `Research` header.
+Milestones 1 and 2 are done: the card, `vibe queue status` (`status_line` research arm) and the report (`research_md`).
+`research_head` and `research_workers` build the text lines; `research_card` builds the block.
 
 ## Next action
 
-Milestone 2 of `SPEC.md`: `vibe queue status` and the report.
-Add a `research` arm to `status_line` and a `research_md` table (call it next to `feature_md` in `queue_report_md`): one row per question (`2/4`), the place on each worker row.
-Done when `bats tests/vibe-queue.bats -f research` passes with a status test on `research_fixture`.
+Milestone 3 of `SPEC.md`: paste panel and stop.
+In `research_card` (`bin/vibe`) a worker in state `paste` shows the steps of its `paste.md` with a copy button each, and one field that posts to `answer` with that worker's job dir id (the `DIR` field of the worker line). Copy handling goes into `templates/queue-page.js`: the CSP runs only `page.js`.
+`Stop question` and `Stop now ✓` post to the new routes `research-stop` and `research-stop-now` in `bin/vibe-web`: `vibe queue stop --research <slug> [--now]` (the command is `research-run`'s: test the argv only). Add a `research` ARGS pattern for the slug.
+Add 3 rows to the Page actions table in `docs/vibe-queue.md`: Copy, Stop question ✓, Stop now ✓.
+Done when `bats tests/vibe-web.bats` passes with a test per route's argv.
 
 ## Blockers
 

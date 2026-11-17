@@ -2504,7 +2504,7 @@ job_card() {
   "$1" job "$3" "${st:-queued}" "$txt$(side_suffix "$2")" "$(jstate "$2" pr)" "$2" "${4:-}"
 }
 
-# status_line repo|feature|gpu|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
+# status_line repo|feature|research|gpu|job|lane|end … — queue_jobs for a narrow terminal: name and status, text and phases below.
 status_line() {
   local r b p ms note
   case "$1" in
@@ -2526,6 +2526,14 @@ status_line() {
       printf '  %s · %s · %s%s\n    %s\n' "$2" "$4" "$5" "${6:+ · $6}" "$7"
       if [[ -n "${11:-}" ]]; then printf '    %s\n' "${11//$'\n'/ · }"; fi
       if [[ -n "$9" ]]; then printf '%s\n' "$9" | sed 's/^/    /'; fi
+      ;;
+    research)
+      printf '  %s%s · %s\n' "$2" "${4:+ · $4}" "$3"
+      printf '    %s\n' "$5" "$(research_head "$8") · waits for ${8##*|}"
+      research_workers "${10}" | sed 's/^/    /'
+      while IFS= read -r r; do
+        if [[ -n "$r" ]]; then printf '    needs you: %s\n' "$(item_why "$r")"; fi
+      done <<<"$9"
       ;;
     feature)
       printf '  %s · %s · %s\n' "$2" "$4" "$3"
@@ -2633,13 +2641,30 @@ job_buttons() {
   printf '<div class="jacts" data-id="%s"%s%s>%s%s%s</div>' "$(esc "${1##*/}")" "${pr:+ data-pr=\"$(esc "$pr")\"}" "${gpu:+ data-gpu=\"$(esc "$gpu")\"}" "$a" "${links:+<div class=\"files\">$links</div>}" "$(btn_rows "$b" "$c")"
 }
 
+# research_head HEAD — the head line of a question: best, USD spent of `usd=`, deadline (HEAD: research_row's R_HEAD).
+research_head() {
+  local best sp usd dl w
+  IFS='|' read -r best sp usd dl w <<<"$1"
+  echo "${best:+best $best · }$sp${usd:+ of \$$usd}${dl:+ · deadline $dl}"
+}
+
+# research_workers WORKERS — a text line per worker: `HID · PLACE  STATE  METRIC · USD`, indented by its depth.
+research_workers() {
+  local h dp s pl lt m u idea w mu
+  while IFS=$'\037' read -r h dp s pl lt m u idea w; do
+    [[ -n "$h" ]] || continue
+    mu="$m"
+    if [[ -n "$u" ]]; then mu+="${mu:+ · }\$$u"; fi
+    printf '%*s%s · %s  %s%s\n' $((dp * 2)) '' "$h" "${pl:--}" "$s" "${mu:+  $mu}"
+  done <<<"$1"
+}
+
 # research_card DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS, R_WORKERS): the
 # head line, what the question waits for, a line per job that needs you, the coordinator's buttons until it is done,
 # then a row per worker: lamp, hid, state, place, metric, USD, idea, last step. A builds= row is indented by its depth.
 research_card() {
-  local best sp usd dl waits l w h dp s pl lt m u idea lamp mu rows=""
-  IFS='|' read -r best sp usd dl waits <<<"$2"
-  rows="<p class=\"stats\">$(esc "${best:+best $best · }$sp${usd:+ of \$$usd}${dl:+ · deadline $dl}")</p><p>waits for $(esc "$waits")</p>"
+  local l w h dp s pl lt m u idea lamp mu rows=""
+  rows="<p class=\"stats\">$(esc "$(research_head "$2")")</p><p>waits for $(esc "${2##*|}")</p>"
   while IFS= read -r l; do
     if [[ -n "$l" ]]; then rows+="<p>$(esc "$(item_why "$l")")</p>"; fi
   done <<<"$3"
@@ -3291,6 +3316,23 @@ feature_md() {
   printf '\n## Features\n\n| Feature | State | Done | Context | Members | Links |\n| --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
+# research_md — the report's Research table: per question its pill, done/workers, the question, the head line,
+# each worker as `hid place state`, what it waits for. No question, no table.
+research_md() {
+  local slug w rows="" h dp s pl _x
+  while IFS= read -r slug; do
+    [[ -n "$slug" ]] || continue
+    research_row "$slug"
+    w=""
+    while IFS=$'\037' read -r h dp s pl _x; do
+      if [[ -n "$h" ]]; then w+="${w:+ · }$h ${pl:--} $s"; fi
+    done <<<"$R_WORKERS"
+    rows+="| $slug | $R_PILL | $R_PROGRESS | ${R_QUESTION//|//} | $(research_head "$R_HEAD") | $w | ${R_HEAD##*|} |"$'\n'
+  done < <(research_slugs)
+  [[ -n "$rows" ]] || return 0
+  printf '\n## Research\n\n| Research | State | Done | Question | Best, USD | Workers | Waits for |\n| --- | --- | --- | --- | --- | --- | --- |\n%s' "$rows"
+}
+
 # queue_front_md — held jobs under "Yours", then the triage lines: the top of the report. The page has its own: page_sections.
 queue_front_md() {
   local d rows=""
@@ -3320,6 +3362,7 @@ queue_report_md() {
   queue_front_md
   feature_keys
   feature_md
+  research_md
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
