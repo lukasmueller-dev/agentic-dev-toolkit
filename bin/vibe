@@ -3704,22 +3704,27 @@ ws_page() {
   if [[ -n "$runs" ]]; then printf '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards">%s</div></section>\n' "$runs"; fi
 }
 
-# item_why LINE — `NAME STATUS: NOTE` of a lane or feature item line `NAME  STATUS  NOTE` (2+ spaces apart); the status once.
+# item_split LINE — I_NAME, I_STATE and I_NOTE of a lane or feature item line `NAME  STATUS  NOTE` (2+ spaces apart).
+item_split() {
+  local r="${1#*  }"
+  I_NAME="${1%%  *}" I_STATE="${r%%  *}" r="${r#*  }"
+  I_NOTE="${r#"${r%%[! ]*}"}"
+}
+
+# item_why LINE — `NAME STATUS: NOTE` of an item line (item_split); the status once.
 item_why() {
-  local n="${1%%  *}" r="${1#*  }" s
-  s="${r%%  *}" r="${r#*  }"
-  r="${r#"${r%%[! ]*}"}"
-  case "$r" in "$s"*) echo "$n $r" ;; *) echo "$n $s${r:+: $r}" ;; esac
+  item_split "$1"
+  case "$I_NOTE" in "$I_STATE"*) echo "$I_NAME $I_NOTE" ;; *) echo "$I_NAME $I_STATE${I_NOTE:+: $I_NOTE}" ;; esac
 }
 
 # page_why LINE — item_why in page words: `NAME · State: note`, the note without its state prefix.
 page_why() {
-  local n="${1%%  *}" r="${1#*  }" s
-  s="${r%%  *}" r="${r#*  }"
-  r="${r#"${r%%[! ]*}"}"
-  if [[ "$r" == "$s" ]]; then r=""; fi
+  local r
+  item_split "$1"
+  r="$I_NOTE"
+  if [[ "$r" == "$I_STATE" ]]; then r=""; fi
   r="$(note_text "$r")"
-  echo "$n · $(st_label "$s")${r:+: $r}"
+  echo "$I_NAME · $(st_label "$I_STATE")${r:+: $r}"
 }
 
 # page_row repo|end|job|lane|feature|research|gpu … — a queue_jobs printer: `<section><TAB><row>`, then `blk<TAB><block>`, per item.
