@@ -11,7 +11,7 @@ and refill it whenever you like.
 | [`/review-jobs`](../skills/review-jobs/SKILL.md) | the report of `vibe queue report`; features first, then repos, with a "Next: …?" stop before each; per row ready, requeue, hold, close, ack; archives what it carried out; gives the merge order |
 | [`/check-in`](../skills/check-in/SKILL.md) | `/review-jobs`, then `/fill-queue` |
 | [`/shutdown`](../skills/shutdown/SKILL.md) | hands off every worktree, then `/fill-queue` |
-| 01:00 timer | adds due recurring jobs: [`vibe-jobs.md`](vibe-jobs.md) |
+| 01:00 timer, hourly timer | adds due recurring jobs; triages agent PRs: [`vibe-jobs.md`](vibe-jobs.md) |
 
 ## Requirements
 
@@ -76,17 +76,16 @@ sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a 
 | Part | Shows |
 | --- | --- |
 | Rail | `vibe`, Queue with the Needs-you count, Workspaces with a lamp per service, Config |
-| Header | lamp, `3 of 4 slots`, `paused`, the usage limit or the 5h use, `GPU: <holder>` while the lock is held, `updated N s ago` (red `stale` after 2 min); Pause or Resume, Clear limit while limited, New job |
+| Header | lamp, `3 of 4 slots`, `paused`, the usage limit or the 5h use, `GPU: <holder>` while the lock is held, `updated N s ago` (red `stale` after 2 min); Pause or Resume, Clear limit while limited |
 | Queue | Needs you and Running open; Queued, Held, Triage (`triage.md`) and Done folded to one line, each only with a row |
 | Row | lamp, title, reason, phase bar while it runs, tool chip (`kapso · turing`), repo, run time, one primary button |
 | Panel | the block of the row the URL names (`#job-<key>`): state, meta line, phase line, steps, fields, buttons, file links |
 | Workspaces | a row per `kind=service` tool: lamp, label, role, place, state, time up and left (amber under 30 min), Open UI ↗ and Stop, or Start; the `kind=run` tools in one line |
-| Config | Settings with Set config, Actions, Recurring jobs with Run and Reset, the last 20 page actions |
-| New job | a panel block: the new-job form, then per repo Roadmap, Opt in and its recurring jobs |
+| Config | Settings with Set config; Restart runner and a Restart per `claude-rc@` unit file; per repo its recurring jobs with Run, and Reset when stopped |
 
 - Needs you: a job blocked, failed, timed out or skipped; a done job with a failed gate or verify, `push failed`, `PR not created` or a PR to review; a lane with such an item; a feature that needs you, in `your test` or in `merge`.
 - A lane, a feature, a tool job and an outside GPU run are one row each. The block folds a card per lane job or feature member.
-- The primary button, first match: Answer, Retry, Fix, Open PR, Test passed, Archive. Answer and Fix open the block at its field. The other buttons are in the panel.
+- The primary button, first match: Answer, Retry, Open PR, Test passed, Archive. Answer opens the block at its field. The other buttons are in the panel.
 - The phase bar has a segment per step of the phase line and the running step's name after it.
 - The phase line, also in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
   ✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
@@ -111,7 +110,7 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 
 - The page shows buttons only after `GET /queue/api/whoami` returns your login. Server down: the page reads, no buttons.
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
-- Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page. The Config page shows the last 20.
+- Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page.
 - Buttons, routes and commands: [Page actions](#page-actions).
 - A button's output and a file link open under the block in the panel.
 - A `.md` in the panel keeps raw tags: `style` elements go, and every attribute except `href`, `src`, `alt`, `title`, `type`, `checked`, `start`. Its buttons do nothing; CSP blocks scripts and frames.
@@ -137,7 +136,7 @@ A `done` job is covered by a URL on its branch, and waits while a job there is q
 - `vibe queue add --at HH:MM <dir>...`: the jobs wait until that local time (tomorrow's when it has passed today), then start as normal jobs. The job file gets `at=YYYY-MM-DD HH:MM`; `vibe queue status` and the page show `starts <that time>`. `--now` with `--at`, and a time the clock change skips, are refused; `vibe queue set <id> now=1` starts a waiting job at once; `retry` drops `at=`. A start is up to one runner poll (30 s) late.
 - `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
-- `vibe queue retry <id>`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived.
+- `vibe queue retry <id> [<note>]`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived. A note ends the task as `Note: <note>`. A `blocked` job needs one; with a `HANDOFF.md`, a lane side branch or an IAS run it goes through `queue answer`.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
 - `vibe queue steer <id> <text>` with `steer=1`: each session starts with `--input-format stream-json` and reads the FIFO `<job>/steer`. The running session gets the text as a user message at its next boundary. Its first result event ends the input; `vibe queue steer` refuses a text after it. A tool job's run: [Tool jobs](#tool-jobs).
 - `vibe queue unlimit` removes `limit`: jobs start again.
@@ -288,43 +287,32 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Header: Pause / Resume | `pause`, `resume` | `vibe queue pause` / `resume` |
 | Header: Clear limit | `unlimit` | `vibe queue unlimit` |
 | Config: Set config | `conf` | `vibe queue conf <key=value>` |
-| Config: Servers | `servers` | `vibe status --claude` |
-| Config: Worktrees | `worktrees` | `cleanup.sh scan <repo>` |
-| Config: Triage PRs | `triage` | `vibe job triage` |
-| Config: Sync worktrees | `sync` | `vibe sync --all` |
 | Config: Restart runner ✓ | `restart` | `systemctl --user restart vibe-queue` |
-| Config: Update toolkit ✓ | `update-toolkit` | `vibe update-toolkit`; vibe-web re-execs itself after its reply |
-| Config: Restart server ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>` |
-| Config, New job: `<job>` | `run` | `vibe job run <repo> <job>` |
-| Config, stopped recurring job: Reset `<job>` | `reset` | `vibe job reset <repo> <job>` |
-| Worktree row in the panel, merged or prunable: Remove ✓ | `worktree-remove` | `cleanup.sh remove <path>`: merged or prunable only |
+| Config: Restart `<server>` ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>`; one per unit file |
+| Config, recurring job: Run | `run` | `vibe job run <repo> <job>` |
+| Config, stopped recurring job: Reset | `reset` | `vibe job reset <repo> <job>` |
 | Queued job: Start next | `now` | `vibe queue set <id> now=1` |
 | Queued job: No review | `noreview` | `vibe queue set <id> after=` |
 | Queued job: Cancel ✓ | `cancel` | `vibe queue cancel <id>` |
 | Running job: Stop ✓ | `stop` | `vibe queue stop <id>` |
 | Running tool job: Send (steer) | `steer` | `vibe queue steer <id> <text>` |
 | GPU job: Cancel GPU run ✓ | `gpu-cancel` | `gpu-queue cancel <gpu>` |
-| Failed, timeout or skipped job: Retry | `retry` | `vibe queue retry <id>` |
+| Failed, timeout or skipped job: Retry | `retry` | `vibe queue retry <id> [<note>]` |
 | Blocked, failed or timeout job: Send answer | `answer` | `vibe queue answer <id> <text>`; a research worker in `paste` or `blocked` has it too |
-| Done job with a PR: Start fix job | `fix` | `vibe queue fix <pr> <text>` |
 | Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
 | Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
+| Job panel: Activity | `GET job/<id>/activity` | the last 5 agent texts and 5 tool calls of `log`, newest first, as JSON; no `log`: 404 |
 | Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `out/report.md` as text; `log`, `tool.log`: the last 64 KB; `out/files`: its file list; a `.md` with `?html` rendered |
-| Item with a PR: Merge order | `merge-order` | `vibe queue merge-order <repo>` |
 | Feature in `your test`: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
 | Research card, done: Archive ✓ | `research-archive` | `vibe queue archive --research <research>`: every job of the question, none unless each has ended |
 | Research card: Stop question | `research-stop` | `vibe queue stop --research <research>`: no new worker, each run finishes |
 | Research card: Stop now ✓ | `research-stop-now` | `vibe queue stop --research <research> --now` |
 | Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
-| New job: Queue job | `new` | `vibe queue new <repo> <branch> <done> <task>` |
-| New job: Roadmap | `roadmap` | `vibe queue roadmap --full <repo>` |
-| Roadmap row in the panel: Queue | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
-| New job: Opt in | `opt-in` | `vibe queue new --opt-in <job> <repo>` |
 | Workspaces: Start | `ws-start` | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
 | Workspaces: Stop ✓ | `ws-stop` | `vibe ws stop <name>` |
 
-Not on the page: merge, single-PR ready or close, the `run-ci` label, prompt edits, tool-job creation.
+Not on the page (the CLI has them): merge, single-PR ready or close, the `run-ci` label, prompt edits, tool-job creation, new jobs, fix jobs (a `/fix` comment starts one), merge order, worktree cleanup, sync, toolkit update.
 
 Add a route or a button:
 

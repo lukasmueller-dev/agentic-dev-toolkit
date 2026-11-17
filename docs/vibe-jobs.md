@@ -1,8 +1,9 @@
 # Recurring jobs
 
-A job is a prompt plus a schedule. At 01:00 `vibe job triage` checks the
-open agent PRs, then `vibe job due` adds every due job to the vibe queue
-(`docs/vibe-queue.md`); `/review-jobs` shows the result. Skill: [`skills/recurring-jobs/`](../skills/recurring-jobs/SKILL.md).
+A job is a prompt plus a schedule. At 01:00 `vibe job due` adds every due job
+to the vibe queue (`docs/vibe-queue.md`); `/review-jobs` shows the result. Each
+hour `vibe job triage` checks the open agent PRs and archives the jobs whose PR
+is merged or closed. Skill: [`skills/recurring-jobs/`](../skills/recurring-jobs/SKILL.md).
 
 ## Requirements
 
@@ -18,13 +19,14 @@ vibe job add <repo> codebase-health      # writes <repo>/.vibe-jobs/codebase-hea
 Edit the file (keys override the catalogue; the body is repo-specific
 instruction), commit it. `/recurring-jobs add <job>` does the same in a session.
 
-## 2. Install the timer
+## 2. Install the timers
 
 Server machine only (`~/.config/vibe/role` holds `server`).
 
 ```bash
-systemctl --user link ~/.claude/systemd/vibe-jobs.service ~/.claude/systemd/vibe-jobs.timer
-systemctl --user enable --now vibe-jobs.timer
+systemctl --user link ~/.claude/systemd/vibe-jobs.service ~/.claude/systemd/vibe-jobs.timer \
+  ~/.claude/systemd/vibe-triage.service ~/.claude/systemd/vibe-triage.timer
+systemctl --user enable --now vibe-jobs.timer vibe-triage.timer
 ```
 
 ## 3. Verify
@@ -36,7 +38,7 @@ vibe job due --dry                       # what the next 01:00 run queues
 vibe job run <repo> <job>                # one job now; then: vibe queue status
 vibe job reset <repo> <job>              # a stopped job: forget its failures
 vibe job triage [<repo>...]              # agent PRs now; lines also in ~/.local/state/vibe/triage.md
-systemctl --user list-timers vibe-jobs.timer
+systemctl --user list-timers vibe-jobs.timer vibe-triage.timer
 ```
 
 ## Catalogue
@@ -96,6 +98,7 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - A job queued or running on the branch, a PR with no job, or no text: a `no fix job:` line. The next triage tries again.
 - A failed check, and other comments or reviews newer than the last non-merge commit: one line each.
 - The lines replace `triage.md`; the report and the page's Queue tab show them under `## Triage`. Nothing to report: no file.
+- An ended job whose PR is merged or closed → the archive, one `gh pr view` per PR. A held job, a research job and a feature member stay. With `<repo>`: that repo's jobs only.
 
 ## What breaks it
 
@@ -103,9 +106,10 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - `stopped: 2 failures` → read the last job's `log`, then `vibe job reset <repo> <job>`.
 - Every job drops to `report` → two job PRs are open in that repo; merge or close one.
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
-- A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next night catches it.
+- A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next hour catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
-- `/fix` starts nothing → triage runs at 01:00 and on the page's Triage PRs; the comment must start with `/fix`; a commit after it answers it, so write it again.
+- No triage line for days, `/fix` starts nothing → `vibe-triage.timer` is not enabled: step 2.
+- `/fix` starts nothing → triage runs each hour; the comment must start with `/fix`; a commit after it answers it, so write it again.
 - "Request changes" is off → GitHub refuses it on your own PR, and the runner's `gh` login opens the PRs. Use `/fix <text>`, or run `gh` as a second account with `pr_login=<you>`.
 - `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.
 - `verify-maintain` leaves `verify-skill.patch` under "Needs you" → the job sandbox denies `.claude/skills/`; `git apply` the patch in a worktree.

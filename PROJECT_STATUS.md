@@ -56,7 +56,8 @@ contract and the installer's auto-discovery rules.
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
   review comments as triage lines; then `vibe job due`. 2026-11-06: your
   `/fix` there starts one fix job and one summary comment; another login stays
-  a triage line. Design: PR body.
+  a triage line. 2026-11-17: hourly on `vibe-triage.timer`; it also archives
+  ended jobs whose PR is merged or closed. Design: PR body.
 - 2026-10-29: **the queue has a read-only phone page**: the runner writes
   `web/index.html` each pass, `tailscale serve` delivers it. 2026-11-04: its
   buttons post to the write endpoint `bin/vibe-web` (`/queue/api`, your
