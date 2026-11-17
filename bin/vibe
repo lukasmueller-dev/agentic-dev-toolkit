@@ -2208,15 +2208,19 @@ run_alive() {
 place_run() {
   local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t
   p="$(jstate "$d/run" place)" c="$(jstate "$d/run" commit)"
+  # The agent can write its job dir: a commit git reads as an option, a host place, or a link to a host file runs
+  # or reads outside the sandbox. The error names no value: through a link, it can be a secret's first line.
+  if [[ -L "$d/run" || -L "$d/run/place" || -L "$d/run/commit" || -L "$d/run/cmd" || ! -f "$d/run/cmd" ||
+    ! "$p" =~ ^(runpod|vast)$ || ! "$c" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+    p="" rc=infra
+  fi
   st="$WS_STATES/$inst"
   mkdir -p "$st/in"
   echo "$p" >"$st/place"
   echo "$st/in/repo/.claude/research" >"$st/dir"
   echo "research-$(basename "$(jget "$d/job" repo)")" >"$st/name"
-  # The agent can write its job dir: a commit git reads as an option, or a host place, runs outside the sandbox.
-  if [[ ! "$p" =~ ^(runpod|vast)$ || ! "$c" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
-    echo "vibe: run/place must be runpod or vast and run/commit a commit id, not '$p' '$c'" >>"$d/run/log"
-    rc=infra
+  if [[ "$rc" == infra ]]; then
+    echo "vibe: run/place must be runpod or vast, run/commit a commit id, run/cmd a file, and none a link" >>"$d/run/log"
   elif ! {
     cp "$d/run/cmd" "$st/in/cmd" && chmod +x "$st/in/cmd" &&
       agent_git init -q "$st/in/repo" &&

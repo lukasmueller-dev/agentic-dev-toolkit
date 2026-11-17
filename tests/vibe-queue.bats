@@ -3000,11 +3000,11 @@ refused() {
   done
 }
 
-@test "gpu --place: a run/commit git reads as an option, or a run/place other than runpod and vast, is infra; git runs nothing" {
+@test "gpu --place: a run/commit git reads as an option, a run/place other than runpod and vast, or a link in run/ is infra; git runs nothing" {
   local r j
   places
   r="$(research_repo)"
-  for j in 01-a 02-b; do
+  for j in 01-a 02-b 03-c 04-d; do
     mkjob "$j" "$r" "task-$j" ok
     echo "$r" >"$Q/$j/worktree"
     echo gpu >"$Q/$j/status"
@@ -3015,15 +3015,23 @@ refused() {
   echo "--upload-pack=touch $STUBS/pwned #" >"$Q/01-a/run/commit"
   echo turing >"$Q/02-b/run/place"
   git -C "$r" rev-parse HEAD >"$Q/02-b/run/commit"
+  # A link to a host file the sandbox hides: the runner must not copy it to the place or print its first line.
+  echo SECRET-LINE >"$BATS_TEST_TMPDIR/secret"
+  for j in 03-c 04-d; do git -C "$r" rev-parse HEAD >"$Q/$j/run/commit"; done
+  echo runpod >"$Q/03-c/run/place"
+  ln -sf "$BATS_TEST_TMPDIR/secret" "$Q/03-c/run/cmd"
+  ln -s "$BATS_TEST_TMPDIR/secret" "$Q/04-d/run/place"
   drain
   [ "$status" -eq 0 ]
   [ ! -e "$STUBS/pwned" ]
   [ ! -e "$STUBS/place.log" ]
-  for j in 01-a 02-b; do
+  for j in 01-a 02-b 03-c 04-d; do
     [ "$(cat "$Q/$j/run/exit")" = infra ]
-    grep -qF 'vibe: run/place must be runpod or vast and run/commit a commit id' "$Q/$j/infra"
+    grep -qxF 'vibe: run/place must be runpod or vast, run/commit a commit id, run/cmd a file, and none a link' "$Q/$j/infra"
     [ "$(cat "$Q/$j-gpu/status")" = "done" ]
   done
+  run grep -rlF SECRET-LINE "$Q" "$XDG_STATE_HOME/vibe/workspaces"
+  [ "$status" -eq 1 ]
 }
 
 @test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
