@@ -3630,10 +3630,10 @@ ws_recipe() {
 
 # ws_page HOLDER — line 1: `1` while a tool runs (the tab's dot), else empty; then the Workspaces tab: a card per kind=service
 # tool: lamp and state, label, role, where it runs, Open UI ↗ and Stop, or Start (a place and hours form for 2+ places);
-# then a card per run tool: lamp and state (its live job), label, role, where it runs, its last run. HOLDER: gpu_holder,
+# then a card per run tool: lamp and state (Idle, or its live job), label, role, where it runs. HOLDER: gpu_holder,
 # named on turing for a gpu=yes tool. Routes ws-start, ws-stop.
 ws_page() {
-  local d n f l s st lamp line b e p u t x lim now dot="" rows="" runs="" opts hold="${1:-}" tj j run last meta
+  local d n f l s st lamp line b e p u t x lim now dot="" rows="" runs="" opts hold="${1:-}" tj j run meta
   now="$(date +%s)"
   tj="$(grep -H '^tool=' "$QDIR"/*/job "$QROOT"/archive/*/*/job 2>/dev/null || true)"
   for d in "$WS_ROOT"/*/; do
@@ -3643,22 +3643,13 @@ ws_page() {
     p="$(jget "$f" places)" t="$(jget "$f" hours)"
     meta="Runs on: ${p//,/, }$(if [[ "$(jget "$f" gpu)" == yes ]]; then echo " · GPU"; fi)${t:+ · $t h}"
     if [[ "$(jget "$f" kind)" != service ]]; then
-      run="" last=""
+      run=""
       while IFS= read -r j; do
-        case "$(jstate "$j" status)" in
-          "" | queued | running | gpu) run="$j" ;;
-          *) last="$j" ;;
-        esac
+        case "$(jstate "$j" status)" in "" | queued | running | gpu) run="$j" ;; esac
       done < <(printf '%s\n' "$tj" | awk -F'/job:tool=' -v n="$n" '$2 == n { k = $1; sub(/.*\//, "", k); print k "\t" $1 }' | sort | cut -f 2-)
       lamp=off line="Idle"
       if [[ -n "$run" ]]; then
         lamp=ok dot=1 line="$(st_label "$(jstate "$run" status)") · $(esc "$(short_id "$run" "$(jget "$run/job" repo)")")"
-      fi
-      if [[ -n "$last" ]]; then
-        t="${last##*/}" t="${t:0:4}-${t:4:2}-${t:6:2}"
-        line+=" · last run $t: $(esc "$(short "$(note_text "$(jstate "$last" note)")")")"
-      else
-        line+=" · no run yet"
       fi
       runs+="<div class=\"wrow\" id=\"ws-$e\"><div class=\"t\"><span class=\"why\"><i class=\"lamp l-$lamp\"></i>$line</span><b>$(esc "$l")</b><span class=\"role\">$(esc "$(jget "$f" role)")</span><span class=\"meta\">$(esc "$meta")</span></div>$(ws_recipe "$n")</div>"
       continue

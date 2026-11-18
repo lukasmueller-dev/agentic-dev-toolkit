@@ -264,7 +264,7 @@ post() {
   [ "$status" -eq 1 ]
 }
 
-@test "vibe queue page: Workspaces from the state files alone: a card per service, Start or a place and hours form, Open UI, Stop and time left when up; a card per run tool with its job and last run; a tab dot while one runs" {
+@test "vibe queue page: Workspaces from the state files alone: a card per service, Start or a place and hours form, Open UI, Stop and time left when up; a card per run tool with its live job and no last run; a tab dot while one runs" {
   local w="$BATS_TEST_TMPDIR/workspaces" st="$Q/workspaces" f="$Q/web/index.html" now a="$Q/archive/2026-11/20261103-080000-proj-loop1"
   printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
   chmod +x "$STUBS/docker"
@@ -276,13 +276,13 @@ post() {
   grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
   grep -qF '<div class="wrow" id="ws-svc"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>Svc</b><span class="role">Serves one thing.</span><span class="meta">Runs on: turing, runpod · 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
   grep -qF '<div class="wrow" id="ws-one"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>one</b><span class="role">One place.</span><span class="meta">Runs on: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
-  grep -qF '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards"><div class="wrow" id="ws-loop"><div class="t"><span class="why"><i class="lamp l-off"></i>Idle · no run yet</span><b>Loop</b><span class="role">Runs a loop.</span><span class="meta">Runs on: turing</span></div></div></div></section>' "$f"
-  # A run tool: its live job, else Idle; its last ended job, live or archived, with the date of its id.
+  grep -qF '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards"><div class="wrow" id="ws-loop"><div class="t"><span class="why"><i class="lamp l-off"></i>Idle</span><b>Loop</b><span class="role">Runs a loop.</span><span class="meta">Runs on: turing</span></div></div></div></section>' "$f"
+  # A run tool: its live job, else Idle; an ended job, live or archived, adds no last-run text.
   qjob 20261104-080000-proj-loop running
   echo tool=loop >>"$Q/queue/20261104-080000-proj-loop/job"
   mkdir -p "$a" && printf 'repo=%s/proj\nbranch=loop1\ntool=loop\n' "$BATS_TEST_TMPDIR" >"$a/job" && echo "done" >"$a/status" && echo "done: wrote 3 files" >"$a/note"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="why"><i class="lamp l-ok"></i>Running · loop · last run 2026-11-03: wrote 3 files</span><b>Loop</b>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-ok"></i>Running · loop</span><b>Loop</b>' "$f"
   grep -qF '<a class="tw" href="#workspaces">Workspaces <i class="lamp l-ok"></i></a>' "$f"
   rm -r "$Q/queue/20261104-080000-proj-loop"
   # No hours= in the conf: an optional Hours field; page.js sends no hours, the start has no limit.
@@ -291,6 +291,8 @@ post() {
   grep -qF '<span class="meta">Runs on: turing, runpod</span>' "$f"
   grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
   grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-off"></i>Idle</span><b>Loop</b>' "$f"
+  [ -z "$(grep -o 'last run[^<]*\|no run yet' "$f")" ]
   printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
   now="$(date +%s)"
   mkdir -p "$st/svc" "$st/one"
