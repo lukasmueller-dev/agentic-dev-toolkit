@@ -5,7 +5,7 @@ Script: [`workspaces/_places/runpod`](../../workspaces/_places/runpod). Contract
 
 ## Requirements
 
-- `runpodctl` with the `pod` and `ssh info` commands, `jq`, `rsync`, `ssh` and `tailscale` on turing.
+- `runpodctl` with the `pod` commands, `jq`, `rsync`, `ssh` and `tailscale` on turing.
 - `rsync` 3.4.0, or a distro build of 3.2.3 or newer with the fixes for CVE-2024-12084 to 12088 and CVE-2024-12747.
   `pull` copies from a pod that runs an untrusted tool, and its bound needs `--stop-after`.
 - A RunPod account with prepaid credit and auto-pay off. The credit is the last money stop: RunPod has no spend limit per pod.
@@ -53,7 +53,7 @@ out="$(runpodctl pod create --name ws-check --gpu-id '<id>' --image "$img" --con
   --ports 22/tcp --cloud-type SECURE --docker-args "sleep infinity" --output json)"
 id="$(jq -r '.id // empty' <<<"$out")" && echo "id=$id"                        # not empty
 runpodctl pod get "$id" --output json | jq -r .runtimeStatus                   # running, after some minutes
-runpodctl ssh info "$id" --output json | jq '{ip, port, key: .ssh_key.path}'   # no null
+runpodctl pod get "$id" --output json | jq '.ssh | {ip, port, key: .ssh_key.path}'  # no null; `ssh info` says "not ready" (runpodctl 3.1.1)
 runpodctl pod list --output json | jq --arg id "$id" 'type == "array" and any(.[]; .id == $id and .name == "ws-check")'   # true
 ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=accept-new -p <port> -i <key> root@<ip> rsync --version
 runpodctl pod delete "$id"
