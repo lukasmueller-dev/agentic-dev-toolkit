@@ -284,43 +284,23 @@ An outside research tool (`kind=run` under `workspaces/`) does the first part of
 ## Page words
 
 The page's labels and the raw words that the CLI, the job files and `vibe queue status` keep.
-Each state and step shows its sentence as a tooltip. Source: `st_label`, `st_tip`, `page_steps`, `job_files` and `page_status` in `bin/vibe`.
-
-| State | Raw | Means |
-| --- | --- | --- |
-| Queued | `queued` | It waits for a free slot or for its start time. |
-| Running | `running` | An agent works on it now. |
-| On the GPU | `gpu` | It waits for its GPU run to end. |
-| Waits for the GPU | `parked` (a `gpu-queue` run) | The run starts once the GPU is free. |
-| On hold | `held` (`vibe queue hold`) | You put it aside with a note; nothing runs until you act. |
-| Has a question | `blocked` | The agent stopped on a question: answer it in the note, then Run again. |
-| Failed | `failed` | It ended with an error: Run again, Put on hold or Archive. |
-| Ran out of time | `timeout` | It hit its time limit: Run again to go on from where it stopped. |
-| Skipped: (reason) | `skipped` | The runner did not start it, for the reason given. |
-| Done | `done` | It ended without an error. |
-| PR #N to review | `done` with a PR | It opened a draft PR: review it on GitHub. |
-| Checks failed (exit N) | gate exit N | The checks of the repo (.vibe-jobs/gate) failed: read the Checks log. |
-| Verify: (verdict) | `V: fail`, `dirty`, `timeout` | The verify agent did not pass the change. |
-| push failed, PR not created | the `pr` file | The runner could not push the branch or open the PR. |
-| Needs you | `needs you` (lane, feature, research) | One of its items needs your answer or your check. |
-| Test it yourself | `your test` (feature) | Every member PR passed its checks: test the feature, then Test passed. |
-| Ready to merge | `merge` (feature) | Every member PR is ready: merge them, then Archive. |
-| No job | `no job` (feature member) | No queued job works on this branch. |
-| Finished | a GPU run's exit 0 | The GPU run ended with exit 0. |
-| Failed, exit N | a GPU run's exit N | The GPU run ended with an error. |
-| Cancelled | a GPU run's `cancelled` | A cancel stopped the GPU run. |
-
-| Step | Raw | Means |
-| --- | --- | --- |
-| Work | `Agent` | The agent does the task in its worktree. |
-| Review N | `RN` | A second agent reviews the diff with `/code-review` + `lean-review` (`after=code`: `/code-review`); a finding sends the job back to Work. |
-| Verify | `Verify` | An agent tries the change with the repo's verify skill and says pass or fail. |
-| Checks | `Gate` | The repo's own checks (.vibe-jobs/gate) run; a fail stops the PR. |
-| PR | `PR` | The runner pushes the branch and opens a draft PR. |
-| Report | `Report` | The agent writes its report; the job opens no PR. |
+Each state and step has its one-sentence tooltip on the page: `st_tip` and `page_steps` in `bin/vibe`.
 
 | Page word | Raw |
 | --- | --- |
+| Queued · Running · On the GPU | `queued` · `running` · `gpu` |
+| Waits for the GPU | `parked` (a `gpu-queue` run) |
+| On hold | `held` (`vibe queue hold`) |
+| Has a question · Failed · Ran out of time | `blocked` · `failed` · `timeout` |
+| Skipped: (reason) | `skipped` |
+| Done · PR #N to review | `done` · `done` with a PR |
+| Checks failed (exit N) | gate exit N |
+| Verify: (verdict) | `V: fail`, `dirty`, `timeout` |
+| push failed, PR not created | the `pr` file |
+| Needs you | `needs you` (lane, feature, research) |
+| Test it yourself · Ready to merge · No job | `your test` · `merge` · `no job` (feature) |
+| Finished · Failed, exit N · Cancelled | a GPU run's exit 0 · exit N · `cancelled` |
+| Work · Review N · Verify · Checks · PR · Report | the steps `Agent` · `RN` · `Verify` · `Gate` · `PR` · `Report` |
 | N of M items | a lane, feature or research progress (`9/9`) |
 | Milestone K of T | a branch of jobs with a `SPEC.md`: K the first open box |
 | N of M jobs | a branch of jobs without `lane=` and `SPEC.md` |
