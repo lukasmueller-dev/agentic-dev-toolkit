@@ -2688,6 +2688,21 @@ endedjob() {
   grep -F '| 01-a |' "$f" | grep -qF '≈3% 5h est.'
 }
 
+@test "cost: no limit share cache while a job it overlaps is done but has no ended file (queue follow, still publishing)" {
+  local r
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:05:00 10:14:59 3 0.40 0.48
+  # 2020: a span open until now overlaps 01-a at any time of day.
+  printf '2020-01-01 10:00:00\n' >"$Q/01-a/started" && printf '2020-01-01 10:09:59\n' >"$Q/01-a/ended"
+  printf '2020-01-01 10:05:00\n' >"$Q/02-b/started" && rm "$Q/02-b/ended"
+  "$VIBE" queue report >/dev/null
+  [ ! -e "$Q/01-a/limit-pct" ]
+  printf '2020-01-01 10:14:59\n' >"$Q/02-b/ended"
+  "$VIBE" queue report >/dev/null
+  [ "$(cat "$Q/01-a/limit-pct")" = 3 ]
+}
+
 @test "cost: no limit share when resetsAt changes, a neighbour has no cost, or the log has one event" {
   local r f
   r="$(make_repo proj)"
