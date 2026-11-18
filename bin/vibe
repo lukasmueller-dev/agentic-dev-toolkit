@@ -1989,9 +1989,9 @@ cmd_queue_answer() {
       END { if (!f) { print ""; print "## Blockers"; print ""; print ENVIRON["ANS"] } }' "$wt/HANDOFF.md" >"$t"
     mv -f "$t" "$wt/HANDOFF.md"
     if ! git -C "$wt" diff --quiet -- HANDOFF.md; then
-      git -C "$wt" commit -q -m "docs(handoff): ${d##*/} unblocked" -- HANDOFF.md || die "commit in $wt failed"
+      agent_git -C "$wt" commit -q -m "docs(handoff): ${d##*/} unblocked" -- HANDOFF.md || die "commit in $wt failed"
     fi
-    git -C "$wt" push -q origin "HEAD:refs/heads/$branch" || die "push of $branch failed"
+    agent_push "$wt" -q origin "HEAD:refs/heads/$branch" || die "push of $branch failed"
     tmp="$(follow_dir "$d")"
     cp "$d/worktree" "$tmp/worktree"
   else

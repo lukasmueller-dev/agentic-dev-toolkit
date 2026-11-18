@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-17 · queue-page-redesign_
+_Last updated: 2026-11-18 · queue-page-v2_
 
 ## Items
 
@@ -42,6 +42,16 @@ staged straight from it. Order matters within a track; tracks are independent.
       list it (`docs/sota/2026-W44.md`) and no test shows a refused write.
       Done when a smoke job's Write outside its worktree and job dir is
       refused, and its `result` and `report.md` still land.
+
+- [ ] **[health] Hook for the program-flag spellings a deny glob misses** — the
+      deny rules in `claude/settings.json` match a flag as a word, so
+      `git clone -qvu <cmd>`, `rsync -ave <cmd>`, `scp -rS <cmd>`, `git grep -nO<cmd>`,
+      `ssh -vF <cfg>`, `ssh -o proxycommand=<cmd>` and a quoted flag still run a
+      program outside the sandbox. Add a `PreToolUse` hook beside
+      `claude/hooks/deny-push-force-cluster.sh`, wired in `claude/settings.json`
+      and `.claude-plugin/hooks.json` (PR of `job-exec-guards`).
+      Done when a `tests/hooks.bats` case denies each spelling, `tests/plugin.bats`
+      passes, and the `CLAUDE.md` line "No hook covers these yet" is deleted.
 
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
 
