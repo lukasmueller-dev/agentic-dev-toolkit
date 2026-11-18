@@ -10,7 +10,7 @@ setup() {
   STUB="$BATS_TEST_TMPDIR/stub"
   mkdir -p "$STUB"
   # runpodctl: a pod exists while $STUB/pod does; its status is $STUB/status (default running);
-  # create-fail-after, create-text, list-fail, delete-fail and get-error change a reply;
+  # create-nostock (a count of stock errors), create-fail-after, create-text, list-fail, delete-fail and get-error change a reply;
   # list-hook runs before a list reply.
   cat >"$STUB/runpodctl" <<'EOF'
 #!/bin/sh
@@ -18,6 +18,12 @@ d="$(dirname "$0")"
 echo "$*" >>"$d/runpodctl.log"
 case "$1 $2" in
   "pod create")
+    n="$(cat "$d/create-nostock" 2>/dev/null || echo 0)"
+    if [ "$n" -gt 0 ]; then
+      echo $((n - 1)) >"$d/create-nostock"
+      echo '{"error":"failed to create pod: There are no longer any instances available with the requested specifications.","status":400}' >&2
+      exit 1
+    fi
     touch "$d/pod"
     [ ! -f "$d/create-fail-after" ] || exit 1
     [ ! -f "$d/create-text" ] || { echo "created pod pod123"; exit 0; }
@@ -142,6 +148,29 @@ pod_up() {
     [ ! -e "$WS_STATE/id" ]
     [ ! -e "$WS_STATE/limit" ]
   done
+}
+
+@test "up tries the create again after a stock error, until RUNPOD_WAIT ends" {
+  echo 2 >"$STUB/create-nostock"
+  run "$PLACE" up
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^pod create' "$STUB/runpodctl.log")" -eq 3 ]
+  [ "$(cat "$WS_STATE/id")" = pod123 ]
+
+  "$PLACE" down
+  rm -f "$STUB/runpodctl.log"
+  echo 1000 >"$STUB/create-nostock"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [[ $output == *"in stock for 1s"* ]] || false
+  [ ! -e "$STUB/pod" ]
+  [ ! -e "$WS_STATE/id" ]
+
+  rm -f "$STUB/create-nostock" "$STUB/runpodctl.log"
+  touch "$STUB/create-fail-after"
+  run "$PLACE" up
+  [ "$status" -ne 0 ]
+  [ "$(grep -c '^pod create' "$STUB/runpodctl.log")" -eq 1 ]
 }
 
 @test "tick keeps the id when get fails with an auth error that says not found" {

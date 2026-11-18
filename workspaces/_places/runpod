@@ -159,14 +159,22 @@ verb_up() {
   echo pending >"$WS_STATE/id" # a killed up leaves a trace for tick
   trap undo_up EXIT
   trap 'exit 1' INT TERM
-  out="$(rp pod create --name "ws-$WS_INSTANCE" --gpu-id "$RUNPOD_GPU_ID" \
+  # The stock flips by the minute and a stock error makes no pod: try again until RUNPOD_WAIT ends.
+  local err="$WS_STATE/create.err" deadline=$(($(date +%s) + wait_s))
+  until out="$(rp pod create --name "ws-$WS_INSTANCE" --gpu-id "$RUNPOD_GPU_ID" \
     --image "$WS_CONF_IMAGE:$WS_CONF_COMMIT" --container-disk-in-gb "${RUNPOD_DISK_GB:-50}" \
-    --ports 22/tcp --cloud-type "${RUNPOD_CLOUD_TYPE:-SECURE}" --docker-args "sleep infinity")"
+    --ports 22/tcp --cloud-type "${RUNPOD_CLOUD_TYPE:-SECURE}" --docker-args "sleep infinity" 2>"$err")"; do
+    cat "$err" >&2
+    grep -q 'no longer any instances' "$err" || exit 1
+    [ "$(date +%s)" -lt "$deadline" ] || die "no $RUNPOD_GPU_ID in stock for ${wait_s}s"
+    sleep "$poll"
+  done
+  rm -f "$err"
   id="$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true)"
   [ -n "$id" ] || die "pod create printed no id; check runpodctl pod list: $out"
   echo "$id" >"$WS_STATE/id"
   rm -f "$WS_STATE/known_hosts"
-  local deadline=$(($(date +%s) + wait_s))
+  deadline=$(($(date +%s) + wait_s))
   until ready; do
     [ "$(date +%s)" -lt "$deadline" ] || die "pod $id gives no ssh after ${wait_s}s"
     sleep "$poll"
