@@ -94,7 +94,7 @@ The page is a monitor with one-click decisions. Its labels: [Page words](#page-w
   ✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
   Gate and PR drop once the chain's last job ended without them. A lane shows its running job's chain, else the latest one.
 - The panel's steps are the phase line in page words: `✓ Work — ✓ Review 1 — ▶ Review 2 — ○ Verify — ○ Checks — ○ PR`. A step's tooltip says what it does, with its detail (`2 fixed`) and the review passes.
-- Activity: when a block shows, page.js fetches the last 5 agent texts and the last 5 tool calls of its `log` (`GET job/<id>/activity`). The runner's render holds no log text.
+- Activity: when a block shows, page.js fetches the last 5 agent texts and the last 5 tool calls of its `log` (`GET job/<id>/activity`).
 - The GPU holder, first match: a running `gpu` job, a running outside `gpu-queue` run, a workspace that holds the lock, a running `gpu=yes` tool job on turing; else `busy`.
 - Workspaces Start: a place and hours form for a tool with 2+ places, else one button. While the lock is held, the turing option names the GPU holder for a `gpu=yes` tool.
 - Layout: centered, at most 1440 px. From 1200 px the job list (at most 600 px) has the panel as a right column, always open, with Close only under a button's output. Under 1200 px one column, the panel a modal over the list; on a phone a bottom sheet, the tabs on a line of their own.
