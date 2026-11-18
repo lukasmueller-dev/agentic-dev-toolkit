@@ -62,6 +62,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       Done when the card's link opens the UI after `vibe ws start
       hypothesisloop`, with no step by hand.
 
+- [ ] **First RunPod research run** — the human test of parallel-research
+      (2026-11-18) ran a toy place run on vast to its end; RunPod never got past
+      `up`: one pod gave no ssh in 600 s, two creates found no GPU in stock.
+      Done when a toy item with `Place: runpod` ends with a `run-result` and
+      `runpodctl pod list` is empty after it.
+
 - [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
       step 3 on turing (`tool=autoresearchclaw`, `hours=4`). The image and
       `autoresearchclaw.env` exist; step 2 passed on 2026-11-16. Revoke the
