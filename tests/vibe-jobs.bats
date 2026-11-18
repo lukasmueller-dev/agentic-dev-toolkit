@@ -60,6 +60,7 @@ case "\$1 \$2 \$3" in
     elif [ -f "$STUBS/cap" ]; then cat "$STUBS/cap"; fi
     ;;
   "api user -q") cat "$STUBS/login" 2>/dev/null ;;
+  "pr view "*) cat "$STUBS/state-\${3##*/}" 2>/dev/null ;;
   "api --paginate repos/{owner}/{repo}/pulls/1/comments?per_page=100") for p in "$STUBS"/inline*.json; do [ ! -f "\$p" ] || jq -r "\$5" "\$p"; done ;;
 esac
 EOF
@@ -455,6 +456,43 @@ branch_off() {
   [ "$output" = "no gh — nothing to triage" ]
 }
 
+# ended ID BRANCH STATUS PR [REPO] — a queue job of REPO (else proj) on BRANCH with STATUS and PR <n> of o/proj.
+ended() {
+  mkdir -p "$Q/$1"
+  printf 'repo=%s\nbranch=%s\n' "${5:-$BATS_TEST_TMPDIR/proj}" "$2" >"$Q/$1/job"
+  echo "$3" >"$Q/$1/status"
+  echo "https://github.com/o/proj/pull/$4" >"$Q/$1/pr"
+}
+
+@test "job triage: archives each ended job whose PR is merged or closed, one gh call per PR; open, held, running, feature member and other repo stay" {
+  local r a d
+  r="$(make_repo proj)" a="$XDG_STATE_HOME/vibe/archive/$(date +%Y-%m)"
+  echo '[]' >"$STUBS/prs.json"
+  echo MERGED >"$STUBS/state-1" && echo CLOSED >"$STUBS/state-2" && echo OPEN >"$STUBS/state-3"
+  ended 20261117-010000-proj-a lane "done" 1
+  ended 20261117-010001-proj-b lane "done" 1
+  ended 20261117-010002-proj-c c failed 2
+  ended 20261117-010003-proj-d d "done" 3
+  ended 20261117-010004-proj-e e "done" 1
+  echo "test it on the robot" >"$Q/20261117-010004-proj-e/held"
+  ended 20261117-010005-proj-f f running 1
+  ended 20261117-010006-proj-g g "done" 1
+  mkdir -p "$XDG_STATE_HOME/vibe/features"
+  printf '# Feature\n\n## Members\n\n- %s g https://github.com/o/proj/pull/1\n' "$r" >"$XDG_STATE_HOME/vibe/features/teleop.md"
+  ended 20261117-010007-other-h h "done" 1 "$BATS_TEST_TMPDIR/other"
+  run "$VIBE" job triage "$r"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"archived 20261117-010000-proj-a: PR merged"*"archived 20261117-010001-proj-b: PR merged"* ]] || false
+  [[ "$output" == *"archived 20261117-010002-proj-c: PR closed"* ]] || false
+  for d in a b c; do [ -d "$a/20261117-01000$(printf '%s' "$d" | tr abc 012)-proj-$d" ]; done
+  for d in 20261117-010003-proj-d 20261117-010004-proj-e 20261117-010005-proj-f 20261117-010006-proj-g 20261117-010007-other-h; do [ -d "$Q/$d" ]; done
+  [ "$(grep -c '^pr view https://github.com/o/proj/pull/1 ' "$STUBS/gh.log")" = 1 ]
+  # No repo named: the queue's other repos too.
+  run "$VIBE" job triage
+  [[ "$output" == *"archived 20261117-010007-other-h: PR merged"* ]] || false
+}
+
 @test "job triage: your /fix yields one fix job and one summary comment; a collaborator's comment only a triage line" {
   local r j
   r="$(make_repo proj)"
@@ -612,13 +650,17 @@ branch_off() {
   [ "$(fix_jobs)" = 3 ]
 }
 
-@test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent" {
-  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
-  grep -q '^ExecStart=.*vibe job due$' "$REPO_ROOT/claude/systemd/vibe-jobs.service"
-  [ "$(grep '^ExecStart=' "$REPO_ROOT/claude/systemd/vibe-jobs.service" | head -n 1)" = 'ExecStart=-%h/bin/vibe job triage' ]
-  grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
-  run grep -c Persistent "$REPO_ROOT/claude/systemd/vibe-jobs.timer"
+@test "unit: the dispatcher runs only with role 'server', at 01:00, not persistent; triage runs each hour on its own timer" {
+  local u="$REPO_ROOT/claude/systemd"
+  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$u/vibe-jobs.service"
+  [ "$(grep '^ExecStart=' "$u/vibe-jobs.service")" = 'ExecStart=%h/bin/vibe job due' ]
+  grep -q '^OnCalendar=\*-\*-\* 01:00:00$' "$u/vibe-jobs.timer"
+  run grep -c Persistent "$u/vibe-jobs.timer"
   [ "$output" = 0 ]
+  grep -q '^ExecCondition=.*grep -qx server %h/.config/vibe/role' "$u/vibe-triage.service"
+  [ "$(grep '^ExecStart=' "$u/vibe-triage.service")" = 'ExecStart=%h/bin/vibe job triage' ]
+  grep -q '^OnCalendar=hourly$' "$u/vibe-triage.timer"
+  grep -q '^WantedBy=timers.target$' "$u/vibe-triage.timer"
 }
 
 @test "unit: every catalogue entry has a schedule, a day when weekly, and a task body" {

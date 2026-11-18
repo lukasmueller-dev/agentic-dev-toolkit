@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-18 · research-run_
+_Last updated: 2026-11-18 · queue-page-v2_
 
 ## Items
 
@@ -28,6 +28,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       `for r in ~/github/*/PROJECT_ROADMAP.md; do [ -f "${r%/*}/.vibe-jobs/roadmap-cleanup.md" ] || echo "$r"; done`
       prints nothing, and `gh pr diff <n> --name-only` on the first
       `jobs/roadmap-cleanup` PR prints only `PROJECT_ROADMAP.md`.
+- [ ] **Archive a GPU run outside a job** — a run submitted with
+      `gpu-queue` directly shows in the page's Done section as one of the
+      last 3 finished runs (`gpu_outside`, `bin/vibe`) and has no archive
+      action.
+      Done when the page and the CLI can archive such a run, and the run
+      leaves Done at once.
 
 ### Health items (repo review of 2026-11-03)
 
@@ -48,6 +54,13 @@ staged straight from it. Order matters within a track; tracks are independent.
       passes, and the `CLAUDE.md` line "No hook covers these yet" is deleted.
 
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
+
+- [ ] **HypothesisLoop start serves its UI** — `vibe ws start hypothesisloop`
+      brings up only the API (8081). The UI on 3000, which the page's
+      "Open UI ↗" link names, starts only by hand (recipe step 4,
+      `docs/workspaces/hypothesisloop.md`).
+      Done when the card's link opens the UI after `vibe ws start
+      hypothesisloop`, with no step by hand.
 
 - [ ] **First RunPod research run** — the human test of parallel-research
       (2026-11-18) ran a toy place run on vast to its end; RunPod never got past

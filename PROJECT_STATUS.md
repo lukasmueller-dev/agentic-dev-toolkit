@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-17 · research-run_
+_Last updated: 2026-11-18 · queue-page-v2_
 
 ## Goal
 
@@ -28,9 +28,10 @@ contract and the installer's auto-discovery rules.
 - 2026-11-17: **one whole-repo audit job, `lean-audit`**; `repo-review` is gone.
   `codebase-health` keeps its dedup and complexity scan: its roadmap items
   fed 14 finished follow-up jobs. Evidence: PR for `audit-job-pick`.
-- 2026-11-16: **the queue page is desk-first**: rail, one Needs-you inbox, a job
-  panel open from 1200 px, a Workspaces page; still the bash render of
-  `vibe queue page`. Page: `docs/vibe-queue.md`; decisions: PR for `queue-redesign`.
+- 2026-11-18: **the queue page is a monitor with one-click decisions**: a
+  centered top bar with five tabs, plain labels (`docs/vibe-queue.md` § Page
+  words), a job panel open from 1200 px; specs, tasks and roadmap work stay in a
+  session. Still the bash render of `vibe queue page`. Decisions: PR for `queue-page-v2`.
 - 2026-11-15: **outside research tools run through `vibe ws`**: one folder per
   tool under `workspaces/`, each in a container; a service stays up with a link,
   a `kind=run` tool is a queue job (`tool=`) with stop, steer and a checked
@@ -39,7 +40,7 @@ contract and the installer's auto-discovery rules.
   the `lean-review` pass; `fill-queue` proposes it when a job's result is a
   number or a verdict. Design: PR body.
 - 2026-11-14: **the report is stdout only**: `vibe queue report` writes no file
-  and has no `--week`; the page's Queue tab shows the held jobs and the triage
+  and has no `--week`; the page's Jobs tab shows the held jobs and the triage
   lines. Design: PR body.
 - 2026-11-07: **queue jobs run more skills**: each review round adds the `lean-review` rubric to `/code-review`; opt-in `verify=` adds a report-only `<id>-verify` step; `job_phases` feeds the page and status. Design: PR for `queue-verify-skills`.
 - 2026-11-07: **no repo hook runs with your credentials**: every unsandboxed
@@ -56,7 +57,8 @@ contract and the installer's auto-discovery rules.
   the base into conflicted `agent` PRs (no agent) and writes red CI and new
   review comments as triage lines; then `vibe job due`. 2026-11-06: your
   `/fix` there starts one fix job and one summary comment; another login stays
-  a triage line. Design: PR body.
+  a triage line. 2026-11-17: hourly on `vibe-triage.timer`; it also archives
+  ended jobs whose PR is merged or closed. Design: PR body.
 - 2026-10-29: **the queue has a read-only phone page**: the runner writes
   `web/index.html` each pass, `tailscale serve` delivers it. 2026-11-04: its
   buttons post to the write endpoint `bin/vibe-web` (`/queue/api`, your
