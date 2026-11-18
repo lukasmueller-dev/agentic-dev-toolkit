@@ -22,7 +22,7 @@ contract and the installer's auto-discovery rules.
 
 - 2026-11-17: **a research is a coordinator job and parallel workers**: only the
   coordinator writes `RESEARCH.md`; it starts up to `workers=` workers, one run
-  each on turing, RunPod, vast or IAS. `usd=` and `deadline=` gate a start and
+  each on turing, RunPod, vast or slurm. `usd=` and `deadline=` gate a start and
   never cut a run. A route of `/enqueue`, no new skill. Contract:
   `docs/vibe-queue.md` § Research jobs; decisions: PR for `research-run`.
 - 2026-11-17: **one whole-repo audit job, `lean-audit`**; `repo-review` is gone.

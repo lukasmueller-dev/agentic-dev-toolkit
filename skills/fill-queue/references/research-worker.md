@@ -14,11 +14,11 @@ Session 1: the code and the run.
 4. **Ask for one run, last.** `place=turing`: `vibe queue gpu -- <command>`. `place=runpod` or `vast`: `vibe queue gpu --place <place> -- <command>`. The runner queues it once you exit. The last line of the run's output is `RESULT {"metric": <number>}`.
 5. **Exit:** write `result` as `queued: <hid> at <place>`.
 
-`place=ias`: you queue no run, because the user starts it on IAS.
+`place=slurm`: you queue no run, because the user starts it on the cluster.
 
 1. **Write the job.** Copy the repo's `.claude/research/job.sbatch` to `runs/<hid>/job.sbatch` and put the command of the run in it. Commit.
 2. **Write `paste.md`** in the job dir: 3 steps, each a command. Step 1 fetches your commit (`git fetch origin research/<slug>/<hid>`, then `git checkout <commit>`). Step 2 is `sbatch runs/<hid>/job.sbatch`. Step 3 prints the last `RESULT` line of the job's output.
-3. **Exit:** write `result` as `blocked: <hid> waits for its IAS run, paste.md`. The runner pushes the branch. The user's answer is the output of step 3, and it starts session 2.
+3. **Exit:** write `result` as `blocked: <hid> waits for its slurm run, paste.md`. The runner pushes the branch. The user's answer is the output of step 3, and it starts session 2.
 
 Session 2: a `GPU run finished` block ends this prompt. Close the run.
 
