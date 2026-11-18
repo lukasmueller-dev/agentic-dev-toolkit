@@ -3570,7 +3570,7 @@ rc_servers() {
 # A claude-rc@NAME.service.d/ drop-in dir stays: adding the server again keeps its settings.
 cmd_server_remove() {
   local f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/claude-rc@${1:-}.service"
-  (($# == 1)) || die "usage: vibe server-remove <name>"
+  [[ $# -eq 1 && -n "${1:-}" ]] || die "usage: vibe server-remove <name>"
   case $'\n'"$(rc_servers)"$'\n' in
     *$'\n'"$1"$'\n'*) ;;
     *) die "no claude-rc@$1 unit file" ;;

@@ -1175,6 +1175,17 @@ optin() {
   done
 }
 
+@test "vibe server-remove: an empty or missing name, or a name with no unit file, is refused before systemctl runs" {
+  local n
+  for n in "" nosuch; do
+    run "$REPO_ROOT/bin/vibe" server-remove "$n"
+    [ "$status" -ne 0 ]
+  done
+  run "$REPO_ROOT/bin/vibe" server-remove
+  [ "$status" -ne 0 ]
+  [ ! -s "$STUBS/systemctl.log" ]
+}
+
 # get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
 get() {
   local p="$1"
