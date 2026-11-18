@@ -1,0 +1,10 @@
+# vibe-triage.timer — the triage each hour, on the hour.
+
+[Unit]
+Description=vibe-triage each hour
+
+[Timer]
+OnCalendar=hourly
+
+[Install]
+WantedBy=timers.target

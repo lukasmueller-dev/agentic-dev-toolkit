@@ -1,0 +1,12 @@
+# vibe-triage — triages the agent PRs and archives the jobs whose PR is merged
+# or closed, each hour (timer: vibe-triage.timer). Setup: docs/vibe-jobs.md.
+# Skipped unless ~/.config/vibe/role holds 'server'.
+
+[Unit]
+Description=vibe-triage: agent PRs and merged jobs
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
+ExecStart=%h/bin/vibe job triage

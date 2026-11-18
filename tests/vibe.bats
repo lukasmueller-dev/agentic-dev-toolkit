@@ -450,6 +450,34 @@ make_kit() {
   [ "$(cat "$STUBS/systemctl.log")" = "$(printf -- '--user daemon-reload\n--user try-restart vibe-web.service')" ]
 }
 
+@test "update-toolkit: a server with vibe-jobs.timer enabled gets vibe-triage.timer linked and enabled once; a disabled one stays off" {
+  local t o ud="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  t="$(make_kit)"
+  o="$(clone_repo kit kit-other)"
+  printf '#!/bin/sh\necho "$@" >>"%s/systemctl.log"\n' "$STUBS" >"$STUBS/systemctl"
+  chmod +x "$STUBS/systemctl"
+  mkdir -p "$HOME/.config/vibe" "$ud/timers.target.wants" "$o/claude/systemd"
+  echo server >"$HOME/.config/vibe/role"
+  ln -s "$ud/vibe-jobs.timer" "$ud/timers.target.wants/vibe-jobs.timer"
+  echo "[Timer]" >"$o/claude/systemd/vibe-triage.timer"
+  git -C "$o" add claude
+  git -C "$o" commit -q -m "triage timer"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "$(printf -- '--user daemon-reload\n--user link %s/.claude/systemd/vibe-triage.service %s/.claude/systemd/vibe-triage.timer\n--user enable --now vibe-triage.timer' "$HOME" "$HOME")" ]
+  [[ "$output" == *"triage timer enabled: vibe-triage.timer"* ]] || false
+  # Linked once (the stub links nothing, so the test does): a later unit change leaves it, disabled or not.
+  ln -s "$HOME/.claude/systemd/vibe-triage.timer" "$ud/vibe-triage.timer"
+  rm "$STUBS/systemctl.log"
+  echo "[Timer] changed" >"$o/claude/systemd/vibe-triage.timer"
+  git -C "$o" commit -q -am "triage timer again"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user daemon-reload" ]
+}
+
 @test "update-toolkit: a changed runner or endpoint restarts its unit on a server only" {
   local t o
   t="$(make_kit)"

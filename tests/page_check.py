@@ -1,9 +1,12 @@
 """page_check.py BROWSER WEB_DIR A B RESEARCH — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
 
 WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and the research question RESEARCH
-(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place. Prints one line per check; exits 1 when one fails, 77 when the browser does not start (a sandbox that
-refuses its sockets). Used by tests/vibe-web.bats.
+(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place, with a whoami
+and an Activity per job as static files. Prints one line per check; exits 1 when one fails, 77 when the browser does not
+start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
+Used by tests/vibe-web.bats.
 """
+import base64
 import functools
 import http.server
 import json
@@ -39,13 +42,31 @@ def edit(fn):
 
 def state(job, text):
     """The page with JOB's block head state set to TEXT."""
-    return lambda h: re.sub(r'(id="job-%s" hidden><div class="bh"><i class="lamp l-[a-z]+"></i><span class="st">)[^<]*' % re.escape(job), r"\g<1>" + text, h)
+    return lambda h: re.sub(r'(id="job-%s" hidden><div class="bh"><i class="lamp l-[a-z]+"></i><span class="st"[^>]*>)[^<]*' % re.escape(job), r"\g<1>" + text, h)
 
 
-# Two service rows, the first with a Place form.
-ROW = '<div class="wrow" id="ws-%s"><i class="lamp l-off"></i><div class="t"><b>%s</b><span class="why">Off</span></div>%s</div>'
+with open(PAGE, encoding="utf-8") as f:
+    FRESH = f.read()  # the page as vibe wrote it: the screenshots show it
+
+# The API's reads as static files: whoami shows the buttons; an Activity per job with a log.
+os.makedirs(os.path.join(WEB, "api", "job"), exist_ok=True)
+with open(os.path.join(WEB, "api", "whoami"), "w", encoding="utf-8") as f:
+    json.dump({"login": "me@example.com"}, f)
+with open(PAGE, encoding="utf-8") as f:
+    for i in set(re.findall(r'<div class="act" data-id="([^"]+)">', f.read())):
+        os.makedirs(os.path.join(WEB, "api", "job", i), exist_ok=True)
+        with open(os.path.join(WEB, "api", "job", i, "activity"), "w", encoding="utf-8") as g:
+            json.dump([{"time": "09:58", "kind": "Agent", "text": "The runner now checks the worktree path before it runs git there."},
+                       {"time": "09:57", "kind": "Bash", "text": "bats tests/vibe-queue.bats"},
+                       {"time": "09:55", "kind": "Edit", "text": "bin/vibe"}], g)
+
+# Two service cards, the first with a Place form.
+ROW = '<div class="wrow" id="ws-%s"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>%s</b></div>%s</div>'
 FORM = '<div class="jacts" data-name="one"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><button data-act="ws-start">Start</button></span></div>'
 edit(lambda h: re.sub(r'(<section id="workspaces" class="page">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
+
+# A block S for the select checks.
+edit(lambda h: h.replace('<div class="pblocks">\n', '<div class="pblocks">\n<div class="blk" id="job-S" hidden><div class="bh"><h2>S</h2></div></div>\n', 1))
 
 # An old render: the runner stopped writing an hour ago.
 edit(lambda h: re.sub(r'data-t="[0-9]+"', 'data-t="%d"' % (time.time() - 3600), h))
@@ -127,38 +148,39 @@ try:
     cdp("Page.navigate", {"url": URL + "#job-" + A})
     until("document.readyState === 'complete'", 10)
     check("an old page reads stale at load", until("document.querySelector('.updated').classList.contains('stale')", 4))
+    check("a stale page says Runner stopped", js("document.querySelector('.stat').innerText.includes('Runner stopped')"))
     check("the hash shows its block", js("!document.getElementById('job-%s').hidden" % A))
     # Half a note in A's field, then B in the panel.
     js("document.querySelector('#job-%s textarea').value = 'half'" % A)
     js("location.hash = 'job-%s'" % B)
     check("another row shows its block", until("!document.getElementById('job-%s').hidden" % B, 2))
-    # A select in New job set to its second option, then left: no field has focus.
-    js("(() => { const s = document.createElement('select'); s.add(new Option('a')); s.add(new Option('b')); s.selectedIndex = 1; document.querySelector('#new .bh').append(s); })()")
+    # A select in block S set to its second option, then left: no field has focus.
+    js("(() => { const s = document.createElement('select'); s.add(new Option('a')); s.add(new Option('b')); s.selectedIndex = 1; document.querySelector('#job-S .bh').append(s); })()")
     # One's Place set to runpod, then left.
     js("document.querySelector('#ws-one select').selectedIndex = 1")
     # The runner writes a new page: A and B change, a new block C, a new Needs-you count, a fresh render.
     edit(lambda h: state(B, "changed")(state(A, "changed")(h)))
-    edit(lambda h: h.replace('<div class="blk" id="new" hidden>', '<div class="blk" id="job-C" hidden><div class="bh"><h2>C</h2></div></div>\n<div class="blk" id="new" hidden>', 1))
+    edit(lambda h: h.replace('<div class="blk" id="job-S" hidden>', '<div class="blk" id="job-C" hidden><div class="bh"><h2>C</h2></div></div>\n<div class="blk" id="job-S" hidden>', 1))
     edit(lambda h: re.sub(r'(<h2>Needs you <span class="n">)[0-9]+', r"\g<1>3", h))
-    edit(lambda h: h.replace('<h2>New job</h2>', '<h2>New job 2</h2>', 1))
-    edit(lambda h: h.replace('<span class="why">Off</span>', '<span class="why">up</span>'))
+    edit(lambda h: h.replace('<h2>S</h2>', '<h2>S 2</h2>', 1))
+    edit(lambda h: h.replace('<i class="lamp l-off"></i>Off</span>', '<i class="lamp l-off"></i>up</span>'))
     edit(lambda h: re.sub(r'data-t="[0-9]+"', 'data-t="%d"' % time.time(), h))
     check("the block without a field in use swaps", until((ST % B) + " === 'changed'", 13))
-    check("a block with text in a field stays", js(ST % A) == "blocked" and js("document.querySelector('#job-%s textarea').value" % A) == "half")
-    check("a block with a changed select and no focus stays", js("document.querySelector('#new h2').textContent") == "New job" and js("document.querySelector('#new .bh select').selectedIndex") == 1)
+    check("a block with text in a field stays", js(ST % A) == "Has a question" and js("document.querySelector('#job-%s textarea').value" % A) == "half")
+    check("a block with a changed select and no focus stays", js("document.querySelector('#job-S h2').textContent") == "S" and js("document.querySelector('#job-S .bh select').selectedIndex") == 1)
     check("a new block arrives", js("!!document.getElementById('job-C')"))
     WHY = "document.querySelector('#ws-%s .why').textContent"
     check("a changed select holds only itself: the other row and its own row's text swap", js(WHY % "two") == "up" and js(WHY % "one") == "up")
     check("the changed select keeps its value", js("document.querySelector('#ws-one select').selectedIndex") == 1)
     check("the list swaps", js("document.querySelector('[data-k=\"you\"] h2 .n').textContent") == "3")
-    check("a fresh render is not stale", js("!document.querySelector('.updated').classList.contains('stale')"))
+    check("a fresh render is not stale", js("!document.querySelector('.updated').classList.contains('stale') && !document.querySelector('.stat').innerText.includes('Runner stopped')"))
     js("location.hash = 'job-C'")
     check("the new block shows", until("!document.getElementById('job-C').hidden", 2))
     # The field empties: the next poll swaps that block too.
     js("document.querySelector('#job-%s textarea').value = ''" % A)
-    js("document.querySelector('#new .bh select').selectedIndex = 0")
+    js("document.querySelector('#job-S .bh select').selectedIndex = 0")
     check("an emptied field lets its block swap", until((ST % A) + " === 'changed'", 13))
-    check("a select back at its default lets its block swap", until("document.querySelector('#new h2').textContent === 'New job 2'", 2))
+    check("a select back at its default lets its block swap", until("document.querySelector('#job-S h2').textContent === 'S 2'", 2))
     # The research card: a row per worker, the builds= row right of its parent, no row wider than the panel, on a desk and a phone.
     RB = "document.getElementById('job-research/%s')" % R
     js("location.hash = 'job-research/%s'" % R)
@@ -181,6 +203,47 @@ try:
     time.sleep(2.5)
     check("a second tap leaves the label at Copy", js("%s.querySelectorAll('.paste button[data-copy]')[1].textContent" % RB) == "Copy")
     check("a paste field and both stop buttons are in the block", js("!!%s.querySelector('.wk[data-hid=\"h3\"] .paste textarea[name=text]') && %s.querySelectorAll('button[data-act^=research-stop]').length === 2" % (RB, RB)))
+    # The five tabs on a desk: each hash tab shows its page alone and is marked; Help ↗ opens Page words.
+    cdp("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+    check("whoami shows the buttons", until("document.body.classList.contains('can')", 12))
+    SEEN = "[...document.querySelectorAll('main > .page, main > #panel')].filter(p => getComputedStyle(p).display !== 'none').map(p => p.id).join()"
+    MARK = "getComputedStyle(document.querySelector('.tabs a[href=\"#%s\"]')).borderBottomColor !== 'rgba(0, 0, 0, 0)'"
+    RAW = re.compile(r"\bblocked\b|gate\.log", re.I)
+    for h, want in (("recurring", "recurring"), ("workspaces", "workspaces"), ("settings", "settings"), ("jobs", "jobs,panel")):
+        js("location.hash = '%s'" % h)
+        check("tab %s shows its page alone, marked" % h, until("%s === '%s' && %s" % (SEEN, want, MARK % h), 2))
+        check("no raw state word on tab %s" % h, not RAW.search(js("document.body.innerText")))
+    HELP = "[...document.querySelectorAll('.tabs a')].filter(a => a.textContent === 'Help ↗').map(a => a.target + ' ' + a.getAttribute('href'))"
+    check("Help ↗ opens Page words in a new tab", re.fullmatch(r"_blank https://github\.com/[^/]+/[^/]+/blob/HEAD/docs/vibe-queue\.md#page-words", (js(HELP) or [""])[0]) is not None)
+    for b in js("[...document.querySelectorAll('#panel .blk')].map(b => b.id)"):
+        js("location.hash = %s" % json.dumps(b))
+        until("!document.getElementById(%s).hidden" % json.dumps(b), 2)
+        check("no raw state word in %s" % b, not RAW.search(js("document.body.innerText")))
+    check("a failed job's Checks log link reads Checks log", js("[...document.querySelectorAll('.files a')].some(a => a.textContent === 'Checks log' && a.href.endsWith('/gate.log'))"))
+    js("location.hash = 'job-%s'" % A)
+    check("Activity shows the job's last steps, agent text as text", until("document.querySelectorAll('#job-%s .act li').length === 3 && document.querySelector('#job-%s .act li.ag span:last-child').textContent.startsWith('The runner')" % (A, A), 4))
+    SHOTS = os.environ.get("PAGE_SHOTS")
+    if SHOTS:
+        os.makedirs(SHOTS, exist_ok=True)
+        edit(lambda h: FRESH)
+        js("location.reload()")
+        time.sleep(1)
+        until("document.readyState === 'complete' && document.body.classList.contains('can')", 10)
+        for name, w, h, mobile, hash_, dark in (("desk-2560x1440.png", 2560, 1440, False, "job-" + A, False),
+                                                ("desk-1440x900.png", 1440, 900, False, "job-research/" + R, False),
+                                                ("phone-390x844.png", 390, 844, True, "jobs", False),
+                                                ("phone-390x844-panel.png", 390, 844, True, "job-" + A, False),
+                                                ("desk-1440x900-dark.png", 1440, 900, False, "job-" + A, True),
+                                                ("desk-1440x900-workspaces.png", 1440, 900, False, "workspaces", False),
+                                                ("desk-1440x900-settings.png", 1440, 900, False, "settings", False)):
+            cdp("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-color-scheme", "value": "dark" if dark else "light"}]})
+            cdp("Emulation.setDeviceMetricsOverride", {"width": w, "height": h, "deviceScaleFactor": 1, "mobile": mobile})
+            js("location.hash = %s" % json.dumps(hash_))  # a navigation: :target picks the tab
+            time.sleep(0.3)
+            js("scrollTo(0, 0)")
+            time.sleep(0.8)
+            with open(os.path.join(SHOTS, name), "wb") as f:
+                f.write(base64.b64decode(cdp("Page.captureScreenshot", {"format": "png"})["data"]))
 finally:
     proc.kill()
     proc.wait()
