@@ -76,6 +76,15 @@ Other notes:
 - `--all`: every repo next to the toolkit (`VIBE_ROOT`).
 - Every `vibe` call warns once when the toolkit checkout is behind `origin/main` (fetch: every `sync`, else at most every 5 min), off `main`, or dirty. Fix: `vibe update-toolkit`.
 
+## Remove a server
+
+```bash
+vibe server-remove <repo>    # or Settings → Session servers → Remove (two taps)
+```
+
+Runs `systemctl --user disable --now claude-rc@<repo>`, then deletes the unit file when it is a symlink.
+A `claude-rc@<repo>.service.d/` drop-in dir stays: a re-add keeps its settings.
+
 ## What breaks it
 
 - `git-lfs: not pushed` from `vibe sync` (note `git-lfs: push by hand`), the runner or `/handoff-brief` → hooks are off, so the LFS upload hook does not run. Push that branch yourself.

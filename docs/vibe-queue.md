@@ -83,9 +83,9 @@ The page is a monitor with one-click decisions. Its labels: [Page words](#page-w
 | Jobs | Needs you and Running open; Queued, On hold, PR problems (`triage.md`) and Done folded in one card, each only with a row |
 | Row | lamp, title, progress, one line (the reason, or the repo and the running step), run time, one primary button |
 | Job panel | the block of the row the URL names (`#job-<key>`): state, title, repo · branch · run time; steps; one result line; buttons; task (3 lines, then a fold); files; activity |
-| Recurring | per repo: job, schedule, last run, state, Run; Reset only when stopped |
-| Workspaces | a card per tool. Services: state, time up and left (amber under 30 min), Start, or Open UI ↗ and Stop. Tools that run as a job: state, the live job, the last result, Recipe ↗; no Start |
-| Settings | Slots, Claude usage limit (Clear usage limit while reached), any other `key=value`; Restart queue runner; a Restart per `claude-rc@` unit file |
+| Recurring | per repo: job, schedule, last run, state, Run; Skip for a due or not-due job, Undo while it skips its next run, Reset only when stopped |
+| Workspaces | a card per tool. Services: state, time up and left (amber under 30 min), Start, or Open UI ↗ and Stop. Tools that run as a job: Idle or the live job, Recipe ↗; no Start, no last run |
+| Settings | Slots, Claude usage limit (Clear usage limit while reached), any other `key=value`; Restart queue runner; a Restart and a Remove (two taps) per `claude-rc@` unit file |
 
 - Needs you: a job blocked, failed, timed out or skipped; a done job with a failed gate or verify, `push failed`, `PR not created` or a PR to review; a lane with such an item; a feature that needs you, in `your test` or in `merge`.
 - A lane, a feature, a tool job and an outside GPU run are one row each. The block folds a card per lane job or feature member.
@@ -330,8 +330,11 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Settings, limit reached: Clear usage limit | `unlimit` | `vibe queue unlimit` |
 | Settings: Restart queue runner ✓ | `restart` | `systemctl --user restart vibe-queue` |
 | Settings, session server: Restart ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>`; one per unit file |
+| Settings, session server: Remove ✓ | `server-remove` | `vibe server-remove <server>`: `systemctl --user disable --now`, then the unit symlink goes; a `.service.d/` drop-in stays |
 | Recurring: Run | `run` | `vibe job run <repo> <job>` |
 | Recurring, stopped job: Reset | `reset` | `vibe job reset <repo> <job>` |
+| Recurring, due or not-due job: Skip | `skip` | `vibe job skip <repo> <job>` |
+| Recurring, job that skips: Undo | `skip-undo` | `vibe job skip <repo> <job> --undo` |
 | Queued job: Start next | `now` | `vibe queue set <id> now=1` |
 | Queued job with a review: Skip review | `noreview` | `vibe queue set <id> after=` |
 | Queued job: Cancel ✓ | `cancel` | `vibe queue cancel <id>` |
