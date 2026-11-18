@@ -98,6 +98,7 @@ Open the address on the phone. An ssh tunnel from turing to the pod carries the 
 ## What breaks it
 
 - `pod <id> gives no ssh after <n>s` → the image is private, its entrypoint starts no `sshd`, or the pull takes longer than `RUNPOD_WAIT`. `up` deletes the pod first.
+- `no <gpu> in stock for <n>s` → `up` tried the create again each `RUNPOD_POLL` for `RUNPOD_WAIT`. Pick another `RUNPOD_GPU_ID` from `runpodctl gpu list`.
 - `pod create printed no id`, or a `runpodctl` error from the create → no credit, no free GPU of that id, or a new output shape.
   `up` deletes a pod named `ws-<instance>` if one exists.
 - `--gpu-id` gets quotes → the script reads `runpod.env` as `KEY=VALUE` lines and does not source it. Write the id with no quotes.
