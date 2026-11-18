@@ -2660,11 +2660,32 @@ endedjob() {
   "$VIBE" queue report >"$f"
   grep -F '| 01-a |' "$f" | grep -qF "≈\$1.00 API · ≈2% 5h est. · 3 turns · 1m"
   grep -F '| 02-b |' "$f" | grep -qF "≈\$3.00 API · ≈6% 5h est. · 3 turns · 1m"
-  # 03-c runs in the last tenth of 01-a and 02-b: its $20 counts for $2.
-  endedjob 03-c "$r" 10:09:00 10:18:59 20 0.48 0.50
+  # 05-e runs in the last tenth of 03-c and 04-d: its $20 counts for $2.
+  endedjob 03-c "$r" 12:00:00 12:09:59 1 0.40 0.48
+  endedjob 04-d "$r" 12:00:00 12:09:59 3 0.40 0.48
+  endedjob 05-e "$r" 12:09:00 12:18:59 20 0.48 0.50
   "$VIBE" queue report >"$f"
-  grep -F '| 01-a |' "$f" | grep -qF '≈1% 5h est.'
-  grep -F '| 02-b |' "$f" | grep -qF '≈4% 5h est.'
+  grep -F '| 03-c |' "$f" | grep -qF '≈1% 5h est.'
+  grep -F '| 04-d |' "$f" | grep -qF '≈4% 5h est.'
+}
+
+@test "cost: a final job's limit share comes from its cache once no job it overlaps can change" {
+  local r f
+  r="$(make_repo proj)"
+  endedjob 01-a "$r" 10:00:00 10:09:59 1 0.40 0.48
+  endedjob 02-b "$r" 10:05:00 10:14:59 3 0.40 0.48
+  echo gpu >"$Q/02-b/status"
+  f="$BATS_TEST_TMPDIR/report.md"
+  "$VIBE" queue report >"$f"
+  grep -F '| 01-a |' "$f" | grep -qF '≈3% 5h est.'
+  [ ! -e "$Q/01-a/limit-pct" ]
+  echo "done" >"$Q/02-b/status"
+  "$VIBE" queue report >"$f"
+  [ "$(cat "$Q/01-a/limit-pct")" = 3 ]
+  # 03-c overlaps 01-a: a new scan would give 01-a ≈0%.
+  endedjob 03-c "$r" 10:00:00 10:09:59 20 0.40 0.48
+  "$VIBE" queue report >"$f"
+  grep -F '| 01-a |' "$f" | grep -qF '≈3% 5h est.'
 }
 
 @test "cost: no limit share when resetsAt changes, a neighbour has no cost, or the log has one event" {
@@ -2687,7 +2708,7 @@ endedjob() {
   [[ "$output" != *"API"* ]] || false
 }
 
-@test "cost: the limit share reads no job that ended before the job started" {
+@test "cost: the limit share reads no job that ended before the job started or started after it ended" {
   local r f n0 n1 i
   r="$(make_repo proj)"
   printf '#!/bin/sh\necho x >>"%s/date.calls"\nexec /bin/date "$@"\n' "$STUBS" >"$STUBS/date"
@@ -2702,7 +2723,10 @@ endedjob() {
     echo "2020-01-01 10:00:00" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/started"
     echo "2020-01-01 10:09:59" >"$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/ended"
     cp "$Q/01-a/log" "$XDG_STATE_HOME/vibe/archive/2020-01/old-$i/log"
+    mkdir -p "$XDG_STATE_HOME/vibe/archive/2020-01/new-$i"
+    echo "$(date +%F) 23:00:00" >"$XDG_STATE_HOME/vibe/archive/2020-01/new-$i/started"
   done
+  rm "$Q"/0[12]-*/limit-pct # the scan, not its cache
   : >"$STUBS/date.calls"
   f="$BATS_TEST_TMPDIR/report.md"
   "$VIBE" queue report >"$f"
