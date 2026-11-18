@@ -113,8 +113,10 @@ summary::-webkit-details-marker { display: none; }
 .job p:empty { display: none; }
 .job p.stats { color: var(--muted); font-size: 13px; }
 .job h3, .act h3 { margin: 24px 0 6px; color: var(--muted); font-size: 12px; font-weight: 500; }
-.steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 20px 0 0; color: var(--muted); font-size: 13px; }
+.steps { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 20px 0 0; color: var(--muted); font-size: 13px; }
 .steps span { border-bottom: 1px dotted var(--line-strong); cursor: help; }
+/* The tip under the steps line, full width at most: no clip at the panel edge; focus shows it on a tap. */
+.steps span:is(:hover, :focus)::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 0; z-index: 2; width: max-content; max-width: 100%; padding: 6px 10px; background: var(--fg); border-radius: 6px; color: var(--surface); font-size: 12px; font-weight: 400; line-height: 1.4; pointer-events: none; }
 .steps i { color: var(--line-strong); font-style: normal; }
 .steps .ok { color: var(--ok); }
 .steps .run { color: var(--fg); font-weight: 500; }

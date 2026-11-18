@@ -3326,12 +3326,13 @@ step_name() {
   esac
 }
 
-# page_steps PHASES DIR — job_phases as the panel's steps: a mark, a name and a one-sentence tooltip each, the detail in it.
+# page_steps PHASES DIR — job_phases as the panel's steps: a mark (● for the CLI's ▶), a name and a one-sentence tooltip each, the detail in it.
 page_steps() {
-  local l c n t d out=""
+  local l m c n t d out=""
   while IFS= read -r l; do
     [[ -n "$l" ]] || continue
-    case "$l" in "✓ "*) c=' class="ok"' ;; "▶ "*) c=' class="run"' ;; "✗ "*) c=' class="bad"' ;; *) c="" ;; esac
+    m="${l%% *}"
+    case "$l" in "✓ "*) c=' class="ok"' ;; "▶ "*) c=' class="run"' m="●" ;; "✗ "*) c=' class="bad"' ;; *) c="" ;; esac
     n="$(step_name "$l")" d="${l#* }" d="${d#* }"
     if [[ "$d" == "${l#* }" ]]; then d=""; fi
     case "$n" in
@@ -3342,7 +3343,7 @@ page_steps() {
       PR) t="The runner pushes the branch and opens a draft PR." ;;
       *) t="The agent writes its report; the job opens no PR." ;;
     esac
-    out+="${out:+<i>—</i>}<span$c title=\"$(esc "$t${d:+ ($d)}")\">$(esc "${l%% *} $n")</span>"
+    out+="${out:+<i>—</i>}<span$c tabindex=\"0\" data-tip=\"$(esc "$t${d:+ ($d)}")\">$(esc "$m $n")</span>"
   done <<<"$1"
   if [[ -n "$out" ]]; then printf '<p class="steps">%s</p>' "$out"; fi
 }
