@@ -3654,7 +3654,7 @@ ws_recipe() {
 ws_page() {
   local d n f l s st lamp line b e p u t x lim now dot="" rows="" runs="" opts hold="${1:-}" tj j run meta
   now="$(date +%s)"
-  tj="$(grep -H '^tool=' "$QDIR"/*/job "$QROOT"/archive/*/*/job 2>/dev/null || true)"
+  tj="$(grep -H '^tool=' "$QDIR"/*/job 2>/dev/null || true)"
   for d in "$WS_ROOT"/*/; do
     n="${d%/}" n="${n##*/}"
     if [[ ! -d "$d" || "$n" == _* || "$(slug "$n")" != "$n" || "$(ws_check "$WS_ROOT/$n")" != ok ]]; then continue; fi
