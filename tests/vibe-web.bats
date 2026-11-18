@@ -359,6 +359,18 @@ post() {
   [ ! -e "$STUBS/docker.log" ]
 }
 
+@test "vibe-web: a render that cannot start leaves the render thread up" {
+  mkdir -p "$BATS_TEST_TMPDIR/root/bin"
+  cp "$REPO_ROOT/bin/vibe-web" "$BATS_TEST_TMPDIR/root/bin/"
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
+  "$BATS_TEST_TMPDIR/root/bin/vibe-web" 2>>"$BATS_TEST_TMPDIR/web.log" &
+  echo $! >"$BATS_TEST_TMPDIR/web.pid"
+  curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
+  run act pause '{}'
+  [[ "${lines[0]}" == *'"code": 127'* ]] || false
+  eventually rendered
+}
+
 @test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
   run post /queue/api/pause -H 'Content-Length: -1' --max-time 5
   [ "${lines[1]}" = 403 ]

@@ -154,7 +154,7 @@ def renderer():
         DIRTY.clear()
         try:
             subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=TIMEOUT)
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, OSError):  # no fork (ENOMEM), no bin/vibe mid-update: the next write tries again
             pass
         RENDERING.clear()
 
