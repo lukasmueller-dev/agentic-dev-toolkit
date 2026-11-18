@@ -51,6 +51,7 @@ printf '%s\n' 'VAST_QUERY=num_gpus=1 cpu_arch=amd64' 'VAST_DISK=50' 'VAST_WAIT=1
 ```
 
 These are the defaults. `up` adds `verified=true rentable=true datacenter=True` to `VAST_QUERY` and rents the cheapest offer by `dph`.
+`price` prints the `dph_total` of that offer, priced with `VAST_DISK` GB of disk.
 `VAST_DISK` is in GB; `VAST_WAIT` is the seconds to `running` and an ssh answer. The `VAST_*` keys stay on turing.
 
 ## 5. Start

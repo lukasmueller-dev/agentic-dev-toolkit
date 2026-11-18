@@ -89,12 +89,14 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 
 ## Place verbs
 
-`workspaces/_places/<place> <verb>` with env `WS_INSTANCE`, `WS_STATE`, `WS_DIR` and `WS_CONF_<KEY>` per conf key.
+`workspaces/_places/<place> <verb>` with env `WS_INSTANCE`, `WS_STATE`, `WS_DIR`, `WS_NAME` and `WS_CONF_<KEY>` per conf key.
+`WS_NAME` names the env file; empty, the place takes the folder name.
 
 | Verb | Does |
 | --- | --- |
 | `up` | the container runs `sleep infinity` (turing: `docker create --init`, so PID 1 reaps killed processes) with `/ws/in`, `/ws/data` and the secrets file in place; a failed `up` leaves nothing behind |
 | `exec <script> [arg…]` | runs `/ws/scripts/<script>`, passes stdout and the exit code |
+| `price` | prints the USD per hour that an `up` costs now; turing exits 3 and costs 0 |
 | `pull` | copies `/ws/data` and `/ws/out` into `$WS_STATE` |
 | `url` | prints the address of the first port as the tailnet reaches it |
 | `down` | `pull`, then destroy; destroys after a failed `pull` too |
@@ -105,7 +107,10 @@ Bash; exit 0 ok, 3 verb not supported, other error.
 - `~/.local/state/vibe/workspaces/<instance>/`: `place`, `id`, `started`, `limit` (epoch), `url`, `pulled` (epoch), `data/`, `out/`.
 - A detached start adds `holder` (the pid of `vibe ws hold`), `hold.log`, and `waits` or `starts` while it waits or starts; `starts` holds `script` once the start script runs.
 - A page stop adds `stops` (the pid of `vibe ws down`) and `stop.log`; a failed one keeps `stop.log`.
-- Instance: `<name>` for a service, `<name>-<job id>` for a run.
+- Instance: `<name>` for a service, `<name>-<job id>` for a run, `research-<job id>` for a [research run](vibe-queue.md#research-jobs).
+- A research run adds `dir`: its folder, the clone's `.claude/research/`. The place verbs use that folder, not one under `workspaces/`.
+- It adds `name` too: `research-<repo folder>`, so each repo has its own env file.
+- After `exec run` it adds `owner`, its job dir. Its run then stops, pulls and downs the instance; `vibe ws tick` skips it while that run's process lives.
 - Secrets: `~/.config/vibe/workspaces/<name>.env`, mode 600, `KEY=VALUE`.
 
 ## Queue job

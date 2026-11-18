@@ -48,6 +48,7 @@ Warning: this step rents a pod. It bills until the delete at the end of the step
 
 ```bash
 runpodctl gpu list                        # pick the cheapest id
+runpodctl gpu list --include-unavailable --output json | jq '.[0] | {gpuId, securePricePerHr}'   # no null: price reads these
 out="$(runpodctl pod create --name ws-check --gpu-id '<id>' --image "$img" --container-disk-in-gb 20 \
   --ports 22/tcp --cloud-type SECURE --docker-args "sleep infinity" --output json)"
 id="$(jq -r '.id // empty' <<<"$out")" && echo "id=$id"                        # not empty

@@ -1,9 +1,10 @@
 # Research — <repo> / <branch>
 
 > The work order and lab book of one research job: a question, a budget and
-> a backlog of experiments. An unattended agent works it off, one run at a
-> time, and may add its own experiments under "Own ideas". The ledger only
-> grows. Its end action removes this file before the merge.
+> a backlog of experiments. A coordinator agent writes it and starts parallel
+> workers, one experiment and one run each; it may add its own experiments
+> under "Own ideas". The ledger only grows. Its end action removes this file
+> before the merge.
 
 - **Repo:** <repo>
 - **Branch:** `<branch>`
@@ -19,7 +20,7 @@ _The number that decides, and the command or files that give it. The reference v
 
 ## Budget
 
-_The deadline (date and time), the compute (hours, on what), the most long runs, the most own ideas with a long run._
+_The deadline (date and time), the compute (hours, on what), the most long runs, the most own ideas with a long run, `workers` (the most parallel runs, default 3), `usd` (the most USD on rented places)._
 
 ## Limits
 
@@ -35,7 +36,7 @@ _One line per fact that holds, with the file that shows it. An experiment that o
 
 ## Backlog
 
-_One block per experiment, best first: `### <id> <name> — open`. Then one line each: Idea · Evidence · Code · Cost · Pass (the criterion, written before the run) · Then (what a pass and a fail lead to). States: open, running, passed, failed, dropped._
+_One block per experiment, best first: `### <hid> <name> — open`, the hid a lowercase slug (`h1`). Then one line each, `<label>: <text>`: Idea · Evidence · Code · Cost · Pass (the criterion, written before the run) · Then (what a pass and a fail lead to) · Place (a place of the repo's `## Research` section) · Builds on (the hid whose merged code it needs, or `root`). States: open, running, passed, failed, dropped._
 
 ## Own ideas
 
@@ -43,8 +44,10 @@ _What the agent may add with no human: the scope, when, how many. What always ne
 
 ## Ledger
 
-| id | commit | run | cost | result | verdict | evidence |
-| --- | --- | --- | --- | --- | --- | --- |
+_The first row has the id `baseline`: no worker starts before it._
+
+| id | commit | place | run | cost | result | verdict | evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 
 ## End action
 
