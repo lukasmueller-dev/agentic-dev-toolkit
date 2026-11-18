@@ -964,7 +964,7 @@ optin() {
   r="$(make_repo proj)"
   optin "$r" codebase-health
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button></div>" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
   mkdir -p "${f%/*}" && echo 2 >"$f"
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<td>stopped</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"reset\">Reset</button></div>" "$Q/web/index.html"
@@ -978,6 +978,24 @@ optin() {
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
   [ ! -e "$f" ]
   run act reset "{\"repo\": \"$r\", \"job\": \"../x\"}"
+  [ "${lines[1]}" = 400 ]
+}
+
+@test "routes skip and skip-undo: the state file, and the page shows Skip, then Undo; a bad job is 400" {
+  local r f="$Q/jobs/proj/codebase-health"
+  r="$(make_repo proj)"
+  optin "$r" codebase-health
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF "<td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
+  run act skip "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ -s "$f/skip" ]
+  grep -qF "<td>skips next run</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip-undo\">Undo</button></div>" "$Q/web/index.html"
+  run act skip-undo "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ ! -e "$f/skip" ]
+  grep -qF "<td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
+  run act skip "{\"repo\": \"$r\", \"job\": \"../x\"}"
   [ "${lines[1]}" = 400 ]
 }
 
@@ -1225,7 +1243,7 @@ get() {
 l = importlib.machinery.SourceFileLoader("vw", sys.argv[1]); m = importlib.util.module_from_spec(importlib.util.spec_from_loader("vw", l)); l.exec_module(m)
 print(" ".join(sorted(m.ROUTES)))' "$REPO_ROOT/bin/vibe-web"
   [ "$status" -eq 0 ]
-  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-restart steer stop unlimit ws-start ws-stop' ]
+  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-restart skip skip-undo steer stop unlimit ws-start ws-stop' ]
   for r in fix merge-order new roadmap roadmap-new opt-in triage servers worktrees worktree-remove sync update-toolkit; do
     run act "$r" '{"id": "20261104-080000-proj-task", "repo": "/x", "pr": "https://github.com/o/p/pull/1", "text": "x"}'
     [ "${lines[1]}" = 404 ]

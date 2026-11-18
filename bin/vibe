@@ -3603,20 +3603,24 @@ settings_page() {
 }
 
 # recurring_page — the Recurring tab: per opted-in repo a table of its recurring jobs: schedule, last run, state, Run,
-# and Reset when stopped. Routes run, reset.
+# and Reset when stopped, Skip when due or not due, Undo when it skips its next run. Routes run, reset, skip, skip-undo.
 recurring_page() {
   local r e j sc dy last st x rows rec=""
   while IFS= read -r r; do
     e="$(esc "$r")" rows=""
     while IFS=$'\t' read -r _ j sc dy last st; do
-      x=""
-      if [[ "$st" == stopped ]]; then x='<button data-act="reset">Reset</button>'; fi
+      case "$st" in
+        stopped) x='<button data-act="reset">Reset</button>' ;;
+        due | "not due") x='<button data-act="skip">Skip</button>' ;;
+        "skips next run") x='<button data-act="skip-undo">Undo</button>' ;;
+        *) x="" ;;
+      esac
       if [[ "$dy" != - ]]; then sc+=" · $dy"; fi
       rows+="<tr><td>$(esc "$j")</td><td>$(esc "$sc")</td><td>$(esc "$last")</td><td>$(esc "$st")</td><td><div class=\"jacts\" data-repo=\"$e\" data-job=\"$(esc "$j")\"><button data-act=\"run\">Run</button>$x</div></td></tr>"
     done < <(job_rows "$r")
     rec+="<section class=\"sec\"><h2>$(esc "${r##*/}")</h2><div class=\"card\"><table><tr><th>Job</th><th>Schedule</th><th>Last run</th><th>State</th><th></th></tr>$rows</table></div></section>"$'\n'
   done < <(job_repos)
-  printf '<h1>Recurring jobs</h1><p class="note">Run queues a job now. A session adds or changes one.</p>\n%s\n' "${rec:-<p class=\"none\">No repo has a .vibe-jobs/ file.</p>}"
+  printf '<h1>Recurring jobs</h1><p class="note">Run queues a job now. Skip drops its next run. A session adds or changes one.</p>\n%s\n' "${rec:-<p class=\"none\">No repo has a .vibe-jobs/ file.</p>}"
 }
 
 # ws_recipe NAME — the Recipe link of a workspace tool: its doc on GitHub; empty without a doc or a GitHub origin.

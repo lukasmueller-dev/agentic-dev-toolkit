@@ -48,6 +48,8 @@ ROUTES = {
     "research-stop-now": ["vibe", "queue", "stop", "--research", "{research}", "--now"],
     "run": ["vibe", "job", "run", "{repo}", "{job}"],
     "reset": ["vibe", "job", "reset", "{repo}", "{job}"],
+    "skip": ["vibe", "job", "skip", "{repo}", "{job}"],
+    "skip-undo": ["vibe", "job", "skip", "{repo}", "{job}", "--undo"],
     "gpu-cancel": ["gpu-queue", "cancel", "{gpu}"],
     "server-restart": ["systemctl", "--user", "restart", "claude-rc@{server}"],
     "ws-start": ["vibe", "ws", "start", "{name}", "--place={place?}", "--hours={hours?}"],
