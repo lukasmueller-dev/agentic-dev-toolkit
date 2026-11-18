@@ -75,15 +75,15 @@ New entry: copy `skills/recurring-jobs/references/jobs/_template.md`.
 | --- | --- |
 | `skills/recurring-jobs/references/jobs/<job>.md` | catalogue: frontmatter `schedule` `day` `output` `model` `timeout` `after` `kind`, then the task |
 | `<repo>/.vibe-jobs/<job>.md` | opt-in; frontmatter overrides the same keys; body = repo instructions. No catalogue entry: needs `schedule` and a body |
-| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails`, `last-result` | epoch of the last `done`; failures in a row; the last `done:` result line, the prompt's **Last run** |
+| `~/.local/state/vibe/jobs/<repo>/<job>/last-run`, `fails`, `last-result`, `skip`, `skipped` | epoch of the last `done`; failures in a row; the last `done:` result line, the prompt's **Last run**; epoch `vibe job skip` set, gone once its tick passes; epoch of the tick that used the skip |
 | `~/.local/state/vibe/queue/<id>/` | the queued job (`docs/vibe-queue.md`) |
 | `job` | `repo=` `branch=jobs/<job>` `model=` `timeout=` `recurring=<job>` `output=pr\|report` `after=` (only when set) |
 
 Rules the dispatcher keeps:
 
-- Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run`; `day` (`sun`…`sat`) must match today.
+- Due: `daily` ≥20 h, `weekly` ≥6 d, `monthly` ≥27 d since `last-run` or the last skipped tick; `day` (`sun`…`sat`) must match today.
 - At most `--max` 8 jobs a run, oldest `last-run` first.
-- `vibe job skip`: the job shows `skips next run`; at its due tick nothing is queued. The next period counts from that tick (state file `skipped`); `last-run` stays.
+- `vibe job skip`: the job shows `skips next run`; at its due tick nothing is queued. The next period counts from that tick (state files `skip`, then `skipped`); `last-run` stays.
 - A job with an unfinished copy in the queue (`queued`, `running`, `gpu`) is not queued again; `vibe job list` shows `queued`.
 - `last-run` is written on `done` only. Two `failed`/`timeout` in a row stop the job: it shows as `stopped`, and lands in the queue once as `skipped` under "Needs you".
 - Output `pr` drops to `report` when the repo has 2 open PRs with the `agent` label on `jobs/*` branches and this job's branch is not one of them.
