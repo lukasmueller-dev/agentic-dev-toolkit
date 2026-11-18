@@ -252,6 +252,14 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [ "$status" -ne 0 ]
   [[ "$output" == *"nosuch in proj: no schedule"* ]] || false
   [ ! -d "$XDG_STATE_HOME/vibe/jobs/proj/nosuch" ]
+  # A job the repo has no file for, or a repo that is not there, never ticks: refused, no state written.
+  run "$VIBE" job skip proj crashy
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"crashy is not opted in for proj"* ]] || false
+  [ ! -d "$XDG_STATE_HOME/vibe/jobs/proj/crashy" ]
+  run "$VIBE" job skip "$BATS_TEST_TMPDIR/nowhere" health
+  [ "$status" -ne 0 ]
+  [ ! -d "$XDG_STATE_HOME/vibe/jobs/nowhere" ]
 }
 
 @test "job run + queue run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {

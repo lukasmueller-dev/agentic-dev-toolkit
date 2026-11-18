@@ -5170,6 +5170,7 @@ cmd_job_skip() {
   fi
   why="$(job_check "$repo" "${args[1]}")"
   [[ "$why" == ok ]] || die "${args[1]} in $(basename "$repo"): $why"
+  [[ -f "$repo/.vibe-jobs/${args[1]}.md" ]] || die "${args[1]} is not opted in for $(basename "$repo")"
   mkdir -p "$dir"
   date +%s >"$dir/skip"
   echo "${args[1]} in $(basename "$repo") skips its next run"
