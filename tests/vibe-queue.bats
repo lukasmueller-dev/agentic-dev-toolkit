@@ -4419,18 +4419,18 @@ steps() { grep -o "<div class=\"blk\" id=\"job-$1\" .*" "$XDG_STATE_HOME/vibe/we
   r="$(make_repo proj)"
   phase_jobs "$r"
   "$VIBE" queue page >/dev/null
-  [ "$(steps proj/task-a)" = '✓ Work · ✓ Review 1 · ▶ Review 2 · ○ Verify · ○ Checks · ○ PR' ]
+  [ "$(steps proj/task-a)" = '✓ Work · ✓ Review 1 · ● Review 2 · ○ Verify · ○ Checks · ○ PR' ]
   [ "$(steps 02-b)" = '○ Work · ○ Review 1 · ○ Checks · ○ PR' ]
   [ "$(steps proj/task-c)" = '✓ Work · ✗ Review 1 · ✗ Verify · ✗ Checks · ✗ PR' ]
   [ "$(steps 04-d)" = '✗ Work' ]
   [ "$(steps 05-e)" = '✓ Work · ✓ Checks · ✓ PR' ]
-  [ "$(steps 06-f)" = '✓ Work · ▶ Checks · ○ PR' ]
+  [ "$(steps 06-f)" = '✓ Work · ● Checks · ○ PR' ]
   [ "$(steps 07-g)" = '✓ Work · ✓ Report' ]
   [ "$(steps 08-h)" = '○ Work · ○ Report' ]
   # The mark is a class; a step's detail goes into its tooltip; the Review tooltip names the passes.
-  grep -qF '<span class="run" title="A second agent reviews the diff with /code-review + lean-review; a finding sends the job back to Work.">▶ Review 2</span>' "$f"
-  grep -qF '<span class="ok" title="A second agent reviews the diff with /code-review + lean-review; a finding sends the job back to Work. (2 fixed)">✓ Review 1</span>' "$f"
-  grep -qF "<span class=\"bad\" title=\"The repo's own checks (.vibe-jobs/gate) run; a fail stops the PR. (exit 1)\">✗ Checks</span>" "$f"
+  grep -qF '<span class="run" tabindex="0" data-tip="A second agent reviews the diff with /code-review + lean-review; a finding sends the job back to Work.">● Review 2</span>' "$f"
+  grep -qF '<span class="ok" tabindex="0" data-tip="A second agent reviews the diff with /code-review + lean-review; a finding sends the job back to Work. (2 fixed)">✓ Review 1</span>' "$f"
+  grep -qF "<span class=\"bad\" tabindex=\"0\" data-tip=\"The repo's own checks (.vibe-jobs/gate) run; a fail stops the PR. (exit 1)\">✗ Checks</span>" "$f"
   grep -qE '^\.steps \.bad \{ color: var\(--bad\); \}' "$f"
   grep -qE '^\.steps \.run \{ color: var\(--fg\); font-weight: 500; \}' "$f"
 }
@@ -4440,7 +4440,7 @@ steps() { grep -o "<div class=\"blk\" id=\"job-$1\" .*" "$XDG_STATE_HOME/vibe/we
   r="$(make_repo proj)"
   mkjob 01-a "$r" task-a ok after=code
   "$VIBE" queue page >/dev/null
-  grep -qF '<span title="A second agent reviews the diff with /code-review; a finding sends the job back to Work.">○ Review 1</span>' "$f"
+  grep -qF '<span tabindex="0" data-tip="A second agent reviews the diff with /code-review; a finding sends the job back to Work.">○ Review 1</span>' "$f"
 }
 
 @test "phases: a lane card gets one steps line, of its running item; each feature member card keeps its own" {
@@ -4456,7 +4456,7 @@ steps() { grep -o "<div class=\"blk\" id=\"job-$1\" .*" "$XDG_STATE_HOME/vibe/we
   [[ "$output" == *$'  lane-x · 1/3 · beta · https://example.com/pull/1\n    Fix health\n    ▶ Agent · ○ Gate · ○ PR'* ]] || false
   "$VIBE" queue page >/dev/null
   [ "$(grep -o 'class="steps"' "$f" | wc -l)" -eq 1 ]
-  [ "$(steps proj/lane-x)" = '▶ Work · ○ Checks · ○ PR' ]
+  [ "$(steps proj/lane-x)" = '● Work · ○ Checks · ○ PR' ]
   grep -qF '○ PR</span></p><p>Fix health <a href="https://example.com/pull/1">PR</a></p><p>next: beta</p>' "$f"
   putfeature teleop "$r1 lane-x" "$r2 gamepad"
   endjob 04-d "$r2" gamepad https://example.com/pull/4
