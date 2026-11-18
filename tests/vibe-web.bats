@@ -203,15 +203,16 @@ post() {
   grep -qF '<a class="btn new" href="#new">New job</a>' "$Q/web/index.html"
 }
 
-@test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps" {
+@test "page.js in a headless browser: an old page reads stale at load; a field in use holds only its block, the rest swaps; a research card fits the panel" {
   local b a=20261104-080000-proj-a c=20261104-080001-proj-c
   b="${VIBE_TEST_BROWSER:-$(command -v chrome-headless-shell chromium chromium-browser google-chrome google-chrome-stable | head -n 1 || true)}"
   [ -n "$b" ] || skip "no headless browser (VIBE_TEST_BROWSER)"
   qjob "$a" blocked
   qjob "$c" blocked
   printf 'repo=%s/proj\nbranch=task-c\n' "$BATS_TEST_TMPDIR" >"$Q/queue/$c/job"
+  research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   "$REPO_ROOT/bin/vibe" queue page
-  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c"
+  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr
   echo "$output"
   [ "$status" -ne 77 ] || skip "$output"
   [ "$status" -eq 0 ]
@@ -697,6 +698,63 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   [ -f "$Q/archive/$(date +%Y-%m)/features/teleop.md" ]
   run act feature-archive '{"feature": "../teleop"}'
   [ "${lines[1]}" = 400 ]
+}
+
+@test "page: a research card has Stop question and Stop now; a worker in paste has a Copy per step and a field that answers it" {
+  local f="$Q/web/index.html" c="$Q/queue/20261117-100000-proj-research-lr"
+  research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop" title="No new worker: each run finishes">Stop question</button><hr><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
+  grep -qF '<div class="paste"><ol><li><code>git fetch the commit</code><button type="button" data-copy>Copy</button></li><li><code>sbatch runs/h3/job.sbatch</code><button type="button" data-copy>Copy</button></li><li><code>print the RESULT line</code><button type="button" data-copy>Copy</button></li></ol><div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>The RESULT line from IAS: the worker closes its run with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
+  [ "$(grep -o 'data-copy' "$f" | wc -l)" -eq 3 ]
+  run grep -c 'research-archive' "$f"
+  [ "$output" = 0 ]
+  # A finished question has Archive, no stop buttons, and a worker with no paste has no panel.
+  echo done >"$Q/queue/20261117-100300-proj-research-lr-h3/status"
+  echo done >"$Q/queue/20261117-100200-proj-research-lr-h2/status"
+  "$REPO_ROOT/bin/vibe" queue page
+  run grep -c 'research-stop\|data-copy' "$f"
+  [ "$output" = 0 ]
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
+}
+
+@test "page: a blocked research worker with no paste.md has the answer field of its own job" {
+  local f="$Q/web/index.html"
+  research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
+  rm "$Q/queue/20261117-100300-proj-research-lr-h3/paste.md"
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<span class="n">blocked · ias</span>' "$f"
+  grep -qF '<div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>Your answer: the job runs again with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
+  run grep -c 'class="paste"' "$f"
+  [ "$output" = 0 ]
+}
+
+@test "route research-archive: vibe queue archive --research <slug>; a bad slug is 400" {
+  run act research-archive '{"research": "lr"}'
+  grep -q $'\tvibe queue archive --research lr\t[0-9]*$' "$Q/actions.log"
+  run act research-archive '{"research": "-x"}'
+  [ "${lines[1]}" = 400 ]
+  [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
+}
+
+@test "route research-stop: vibe queue stop --research <slug>; a bad slug or none is 400" {
+  run act research-stop '{"research": "lr"}'
+  grep -q $'\tvibe queue stop --research lr\t[0-9]*$' "$Q/actions.log"
+  run act research-stop '{"research": "-x"}'
+  [ "${lines[1]}" = 400 ]
+  run act research-stop '{"research": "../lr"}'
+  [ "${lines[1]}" = 400 ]
+  run act research-stop '{}'
+  [ "${lines[1]}" = 400 ]
+  [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
+}
+
+@test "route research-stop-now: vibe queue stop --research <slug> --now" {
+  run act research-stop-now '{"research": "lr"}'
+  grep -q $'\tvibe queue stop --research lr --now\t[0-9]*$' "$Q/actions.log"
+  run act research-stop-now '{"research": "lr x"}'
+  [ "${lines[1]}" = 400 ]
+  [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
 }
 
 @test "route merge-order: smallest first; each PR names the later ones that share a file; a bad repo is 400" {

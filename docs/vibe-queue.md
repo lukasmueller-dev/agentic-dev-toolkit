@@ -248,6 +248,18 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 - The close runs past `deadline=` and `usd=`: session 2, an IAS answer, a worker's wake and the coordinator's last session. Only `vibe queue gpu`, `vibe queue worker` and the place gate check them.
 - shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.
 
+## Research card
+
+A job with `research=<slug>` is in no repo group: the page shows one card per slug. A coordinator has `question=`, a worker `hid=`. The card reads job files and job dir files, never `RESEARCH.md`.
+
+- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files), `deadline=`, `waits for`.
+- `waits for`, first match: `you (…)` (`paste <hid>`: a blocked worker with `paste.md`; `<hid> blocked`; `coordinator blocked`, `failed`, `timeout`, `skipped`), `GPU` (a worker's run on turing), `coordinator` (queued or running), `nothing`.
+- Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
+- A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. A `blocked` worker with no `paste.md` has the `answer` field. The card shows Stop question and Stop now until the question is done, then Archive.
+- Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
+- Status and the report: a `Research` group after `Features`, a line (report: a row) per question, `hid · place  state  metric · USD` per worker. A done worker keeps no report row of its own.
+- The `no PR` count of the status header skips a done research job with no PR.
+
 ## Tool jobs
 
 An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
@@ -293,7 +305,7 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Running tool job: Send (steer) | `steer` | `vibe queue steer <id> <text>` |
 | GPU job: Cancel GPU run ✓ | `gpu-cancel` | `gpu-queue cancel <gpu>` |
 | Failed, timeout or skipped job: Retry | `retry` | `vibe queue retry <id>` |
-| Blocked, failed or timeout job: Send answer | `answer` | `vibe queue answer <id> <text>` |
+| Blocked, failed or timeout job: Send answer | `answer` | `vibe queue answer <id> <text>`; a research worker in `paste` or `blocked` has it too |
 | Done job with a PR: Start fix job | `fix` | `vibe queue fix <pr> <text>` |
 | Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
 | Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
@@ -301,6 +313,10 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Item with a PR: Merge order | `merge-order` | `vibe queue merge-order <repo>` |
 | Feature in `your test`: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
+| Research card, done: Archive ✓ | `research-archive` | `vibe queue archive --research <research>`: every job of the question, none unless each has ended |
+| Research card: Stop question | `research-stop` | `vibe queue stop --research <research>`: no new worker, each run finishes |
+| Research card: Stop now ✓ | `research-stop-now` | `vibe queue stop --research <research> --now` |
+| Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
 | New job: Queue job | `new` | `vibe queue new <repo> <branch> <done> <task>` |
 | New job: Roadmap | `roadmap` | `vibe queue roadmap --full <repo>` |
 | Roadmap row in the panel: Queue | `roadmap-new` | `vibe queue new --line <line> <repo> <branch>` |
