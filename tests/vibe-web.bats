@@ -231,11 +231,11 @@ post() {
   grep -qF "if (!v && 'opt' in x.dataset && !('need' in b.dataset)) continue;" "$js"
   grep -qF "vals[x.name] = (x.dataset.pre || '') + v;" "$js"
   grep -qF "if (!v) { x.focus(); return; }" "$js"
-  grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
+  grep -qF "const args = Object.assign({}, card && card.dataset, vals), act = b.dataset.act;" "$js"
   # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
   grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));" "$js"
   # A send resets a select to its default option too, so its part swaps again.
-  grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
+  grep -qF "if (keep) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
   grep -qF "if (held(live)) { if (swapIn(live, \$(s, n))) kept = true; else p[2] = h; continue; }" "$js"
   grep -qF "if (r.ok && !kept) last = t;" "$js"
   # The panel: Close, the empty note, the blocks, the output; no New job.

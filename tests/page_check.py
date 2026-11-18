@@ -1,8 +1,8 @@
 """page_check.py BROWSER WEB_DIR A B RESEARCH — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
 
 WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and the research question RESEARCH
-(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place, with a whoami
-and an Activity per job as static files. Prints one line per check; exits 1 when one fails, 77 when the browser does not
+(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place, with a whoami,
+a GET writes and an Activity per job as static files; a POST gets the answer in ANSWERS after 1.5 s. Prints one line per check; exits 1 when one fails, 77 when the browser does not
 start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
 Used by tests/vibe-web.bats.
 """
@@ -26,9 +26,29 @@ signal.alarm(80)  # a hung browser fails the test instead of the suite
 
 root = tempfile.mkdtemp()
 os.symlink(WEB, os.path.join(root, "queue"))
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
-handler.func.log_message = lambda *a: None
-server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+ANSWERS = {"archive": {"code": 0, "out": "archived"}, "hold": {"code": 1, "out": "no such job"}}  # by route; none: no answer
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        time.sleep(1.5)
+        a = ANSWERS.get(self.path.rsplit("/", 1)[-1])
+        if a is None:
+            self.close_connection = True
+            return
+        body = json.dumps(a).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Handler, directory=root))
 threading.Thread(target=server.serve_forever, daemon=True).start()
 URL = "http://127.0.0.1:%d/queue/index.html" % server.server_address[1]
 
@@ -52,6 +72,8 @@ with open(PAGE, encoding="utf-8") as f:
 os.makedirs(os.path.join(WEB, "api", "job"), exist_ok=True)
 with open(os.path.join(WEB, "api", "whoami"), "w", encoding="utf-8") as f:
     json.dump({"login": "me@example.com"}, f)
+with open(os.path.join(WEB, "api", "writes"), "w", encoding="utf-8") as f:
+    json.dump({"writes": 1, "render": False}, f)
 with open(PAGE, encoding="utf-8") as f:
     for i in set(re.findall(r'<div class="act" data-id="([^"]+)">', f.read())):
         os.makedirs(os.path.join(WEB, "api", "job", i), exist_ok=True)
@@ -222,6 +244,19 @@ try:
     check("a failed job's Checks log link reads Checks log", js("[...document.querySelectorAll('.files a')].some(a => a.textContent === 'Checks log' && a.href.endsWith('/gate.log'))"))
     js("location.hash = 'job-%s'" % A)
     check("Activity shows the job's last steps, agent text as text", until("document.querySelectorAll('#job-%s .act li').length === 3 && document.querySelector('#job-%s .act li.ag span:last-child').textContent.startsWith('The runner')" % (A, A), 4))
+    # A write: the command and its seconds while it waits, then Done in N s; its button stays off until its card changes.
+    MSG, BTN = "document.querySelector('.pmsg').textContent", "document.querySelector('#job-%s button[data-act=\"%s\"]')"
+    js("%s.click(); %s.click()" % (BTN % (A, "archive"), BTN % (A, "archive")))
+    check("a write in flight shows the command, its seconds and the writes before it; its button reads its verb", until("/^archive %s · [0-9]+ s · 1 write before yours$/.test(%s)" % (A, MSG), 1) and js("%s.textContent" % (BTN % (A, "archive"))) == "Archiving…")
+    check("a write that worked says Done in N s, with the output", until("/^Done in [0-9]+ s$/.test(%s)" % MSG, 4) and js("document.querySelector('.pbody pre').textContent") == "archived")
+    time.sleep(2.5)
+    check("its button stays off with its verb while the card is the same", js("%s.disabled && %s.textContent === 'Archiving…'" % (BTN % (A, "archive"), BTN % (A, "archive"))))
+    edit(state(A, "archived"))
+    check("a change in its card brings the button back", until("!%s.disabled && %s.textContent === 'Archive'" % (BTN % (A, "archive"), BTN % (A, "archive")), 4))
+    js("document.querySelector('#job-%s textarea').value = 'why'; %s.click()" % (A, BTN % (A, "hold")))
+    check("a write that failed says Failed (exit N), with the output; its button is back", until("%s === 'Failed (exit 1)' && !%s.disabled" % (MSG, BTN % (A, "hold")), 4) and js("document.querySelector('.pbody pre').textContent") == "no such job")
+    js("%s.click()" % (BTN % (A, "retry")))
+    check("a write with no answer says the command can still run; its button stays off", until("%s === 'No answer. The command can still run.'" % MSG, 4) and js("%s.disabled && %s.textContent === 'Starting…'" % (BTN % (A, "retry"), BTN % (A, "retry"))))
     SHOTS = os.environ.get("PAGE_SHOTS")
     if SHOTS:
         os.makedirs(SHOTS, exist_ok=True)

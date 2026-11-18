@@ -4,6 +4,9 @@
    Buttons: a paste step's Copy writes its text to the clipboard; /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts, then each named field of the button's .ask after its data-pre, empty only with data-opt and a button without data-need; ⌘↵ in a field sends, Esc clears it.
    Output: .pout under the block; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
+   Write: GET writes (the writes before yours), then the POST; the output shows the command and a seconds counter, then Done in N s or
+   Failed (exit N) and the output; no answer: the command can still run. Each button of a write is off with a verb while it runs; after it
+   worked or got no answer, until a fetched page shows a change in its card, at most 60 s. The poll runs every 2 s meanwhile, else every 10 s.
    After a write: poll now, or once more after a poll in flight. */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
@@ -53,6 +56,20 @@
     });
     return kept;
   };
+  /* A write's verb while its buttons stay off. */
+  const VERB = { now: 'Starting…', retry: 'Starting…', run: 'Starting…', 'ws-start': 'Starting…', archive: 'Archiving…', 'feature-archive': 'Archiving…',
+    'research-archive': 'Archiving…', stop: 'Stopping…', 'research-stop': 'Stopping…', 'research-stop-now': 'Stopping…', 'ws-stop': 'Stopping…',
+    cancel: 'Cancelling…', 'gpu-cancel': 'Cancelling…', restart: 'Restarting…', 'server-restart': 'Restarting…', pause: 'Pausing…', resume: 'Resuming…',
+    hold: 'Holding…', answer: 'Sending…', steer: 'Sending…', noreview: 'Skipping…', 'feature-ready': 'Marking ready…', reset: 'Resetting…',
+    unlimit: 'Clearing…', conf: 'Saving…' };
+  /* pend: the writes whose buttons stay off; a write: its route (act) and the JSON of its .jacts data (key). doc: the last fetched page.
+     A card: the nearest [data-k] or [id] of each button of the write (a row, a block, a section), else its .jacts. */
+  let pend = [], doc = null;
+  const jkey = c => JSON.stringify(Object.assign({}, c && c.dataset));
+  const mine = (d, p) => [...d.querySelectorAll('button[data-act]')].filter(x => x.dataset.act === p.act && !x.closest('.md') && jkey(x.closest('.jacts')) === p.key);
+  const sig = (d, p) => mine(d, p).map(x => (x.closest('[data-k], [id]') || x.closest('.jacts')).outerHTML).join('');
+  const mark = (p, on) => mine(document, p).forEach(x => { if (on || x.textContent === p.verb) { x.disabled = on; x.textContent = on ? p.verb : p.label; } });
+  const drop = p => { if (pend.includes(p)) { pend = pend.filter(x => x !== p); mark(p, false); } };
   /* base: the browser time at which the render was 0 s old; the browser clock only ever measures a span. */
   let last = '', busy = false, again = false, base = Date.now(), cur = '', view = 0;
   setInterval(() => {
@@ -101,6 +118,8 @@
       let kept = false;
       if (r.ok && t !== last) {
         const n = new DOMParser().parseFromString(t, 'text/html');
+        doc = n;
+        [...pend].forEach(p => { if (sig(n, p) !== p.was) drop(p); });
         for (const p of parts) {
           const [s, live, was] = p, h = $(s, n).innerHTML;
           if (h === was) continue;
@@ -111,6 +130,7 @@
           live.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
         }
         document.title = n.title;
+        pend.forEach(p => mark(p, true)); /* a part that swapped for another card brings the button back */
         show();
       }
       /* The age at fetch: the Date header minus data-t, both the server's clock; no header: a new render is 0 s old. */
@@ -123,7 +143,8 @@
       if (again) { again = false; poll(); } /* a write came in mid-fetch: that fetch may hold the old page */
     }
   };
-  setInterval(poll, 10000);
+  let ticks = 0;
+  setInterval(() => { if (pend.length || ++ticks % 5 === 0) poll(); }, 2000);
   poll(); /* now too: until a fetch gives the server's Date, a page the runner stopped writing would read fresh */
   /* The output under the block: a button's answer or a file. */
   const out = (title, sub) => {
@@ -207,24 +228,39 @@
     if ('confirm' in b.dataset && !b.classList.contains('armed')) {
       const t = b.textContent;
       b.classList.add('armed'); b.textContent = 'Tap again: ' + t;
-      setTimeout(() => { b.classList.remove('armed'); b.textContent = t; }, 4000);
+      setTimeout(() => { if (b.classList.contains('armed')) { b.classList.remove('armed'); b.textContent = t; } }, 4000); /* a second tap disarms it */
       return;
     }
     b.classList.remove('armed'); /* the poll after the write may swap again */
     /* data-id, data-pr, data-repo, data-feature, data-job, data-server, data-name; then the fields */
-    const args = Object.assign({}, card && card.dataset, vals);
-    b.disabled = true;
-    const v = out(b.textContent.replace('Tap again: ', ''), (args.repo || '').split('/').pop() || args.id || args.name || args.server || '');
-    let done = false;
+    const args = Object.assign({}, card && card.dataset, vals), act = b.dataset.act;
+    const p = { act, key: jkey(card), label: b.textContent.replace('Tap again: ', ''), verb: VERB[act] || 'Sent…' };
+    p.was = doc ? sig(doc, p) : null;
+    pend.push(p); mark(p, true);
+    const v = out(p.label, (args.repo || '').split('/').pop() || args.id || args.name || args.server || '');
+    /* The command as the page sends it: the route, then each value but the PR link. */
+    const cmd = [act, ...Object.keys(args).filter(k => k !== 'pr').map(k => args[k])].join(' '), t0 = Date.now();
+    const secs = () => Math.round((Date.now() - t0) / 1000);
+    let before = 0, r = null, j = null, keep = true;
+    const tick = () => { if (v === view) say(`${cmd} · ${secs()} s` + (before ? ` · ${before} write${before > 1 ? 's' : ''} before yours` : '')); };
+    tick();
+    const clock = setInterval(tick, 1000);
     try {
-      const r = await fetch(api + b.dataset.act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) }), j = await r.json();
-      done = r.ok && j.code === 0;
-      if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; }); /* a field at its default frees its part for the swap */
+      before = await fetch(api + 'writes', { cache: 'no-store' }).then(x => x.json()).then(x => +x.writes || 0, () => 0);
+      tick();
+      r = await fetch(api + act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
+      j = await r.json();
+    } catch (err) { /* no answer: the command can still run */ }
+    clearInterval(clock);
+    if (!j) { if (v === view) say('No answer. The command can still run.', true); }
+    else {
+      keep = r.ok && j.code === 0;
+      if (keep) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; }); /* a field at its default frees its part for the swap */
       if (v !== view) { /* a newer view is open */ }
       else if (!r.ok) say(`refused: ${j.error}`, true);
-      else { say(done ? '' : `exit ${j.code}`, !done); pbody.replaceChildren(el('pre', j.out || 'Done.')); }
-    } catch (err) { if (v === view) say('no answer from /queue/api', true); }
-    b.disabled = false;
+      else { say(keep ? `Done in ${secs()} s` : `Failed (exit ${j.code})`, !keep); if (j.out) pbody.replaceChildren(el('pre', j.out)); }
+    }
+    if (keep) setTimeout(() => drop(p), 60000); else drop(p);
     if (busy) again = true; else await poll();
   });
 })();
