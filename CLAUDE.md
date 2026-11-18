@@ -286,6 +286,16 @@ things about permission rules that are easy to get wrong:
 
 - **`*` spans spaces.** `Bash(git *)` allows `git push --force`. Name
   read-only subcommands individually.
+- **A program flag needs its own deny rule.** `git pull *` in `excludedCommands`
+  or `git grep:*` in the allow list lets `--upload-pack=<cmd>` or `-O<cmd>` run
+  `<cmd>`. Add the rule and a case to the program-flag test in `tests/install.bats`.
+  - Write `cmd* --flag*` (`git pull* --upl*`): it matches the flag as first or later argument.
+    A commit message, a branch like `feature--env` and a file like `build-Setup.tar` pass.
+  - `cmd* -X*` also matches a sibling command (`ssh-keygen -F host`). For a short flag of `ssh`, write `ssh -X*` and `ssh * -X*`.
+  - Git and `sort` accept any unique prefix of a long flag: test the shortest that runs.
+  - A glob misses a short flag in a cluster (`rsync -ave`, `git clone -qvu`, `ssh -vF`),
+    a quoted flag, a flag behind `$VAR`, and a keyword in other case (`ssh -o proxycommand=`). No hook covers these yet; the roadmap queues one.
+  - A remote command that holds the flag (`ssh h 'grep -F x'`) is denied. Spell the long flag.
 - **A leading `/` in a path rule anchors to the settings file's own
   directory**, not the project. In user settings, `Read(/secrets/**)` protects
   `~/.claude/secrets`, not anything in your repo. Use `**/` patterns.
