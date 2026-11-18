@@ -292,7 +292,8 @@ post() {
   grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
   grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
   grep -qF '<span class="why"><i class="lamp l-off"></i>Idle</span><b>Loop</b>' "$f"
-  [ -z "$(grep -o 'last run[^<]*\|no run yet' "$f")" ]
+  run grep -c 'last run\|no run yet' "$f"
+  [ "$output" = 0 ]
   printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
   now="$(date +%s)"
   mkdir -p "$st/svc" "$st/one"
@@ -1157,7 +1158,8 @@ optin() {
   [ ! -L "$u/claude-rc@thesis.service" ]
   [ -f "$u/claude-rc@thesis.service.d/override.conf" ]
   [ -f "$src/claude-rc@thesis.service" ]
-  [ -z "$(grep -o 'data-server="thesis"' "$Q/web/index.html")" ]
+  run grep -c 'data-server="thesis"' "$Q/web/index.html"
+  [ "$output" = 0 ]
   # A unit file that is no symlink stays; a name with no unit file is refused before systemctl runs.
   run "$REPO_ROOT/bin/vibe" server-remove other
   [ "$status" -eq 0 ]
