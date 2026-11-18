@@ -29,6 +29,8 @@ systemctl --user link ~/.claude/systemd/vibe-jobs.service ~/.claude/systemd/vibe
 systemctl --user enable --now vibe-jobs.timer vibe-triage.timer
 ```
 
+`vibe update-toolkit` links and enables `vibe-triage.timer` once on a server with `vibe-jobs.timer` enabled; a triage timer already linked stays as it is.
+
 ## 3. Verify
 
 ```bash
@@ -97,7 +99,7 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - Another login: a triage line. Its text reaches no prompt.
 - A job queued or running on the branch, a PR with no job, or no text: a `no fix job:` line. The next triage tries again.
 - A failed check, and other comments or reviews newer than the last non-merge commit: one line each.
-- The lines replace `triage.md`; the report and the page's Queue tab show them under `## Triage`. Nothing to report: no file.
+- The lines replace `triage.md`; the report shows them under `## Triage`, the page's Jobs tab in its PR problems fold. Nothing to report: no file.
 - An ended job whose PR is merged or closed → the archive, one `gh pr view` per PR. A held job, a research job and a feature member stay. With `<repo>`: that repo's jobs only.
 
 ## What breaks it
@@ -108,7 +110,7 @@ Rules triage keeps (every repo under `VIBE_ROOT`, open PRs labelled `agent`):
 - The timer fired, nothing ran → `~/.config/vibe/role` is not `server`, or `vibe job due --dry` lists nothing, or `vibe-queue.service` is not running.
 - A conflicted PR has no triage line → GitHub reports `mergeable` `UNKNOWN` until it computes it; the next hour catches it.
 - `needs a hand merge` → a real text conflict; merge by hand, or requeue the task.
-- No triage line for days, `/fix` starts nothing → `vibe-triage.timer` is not enabled: step 2.
+- No triage line for days, `/fix` starts nothing → `vibe-triage.timer` is not enabled (`vibe update-toolkit` enables it only after a unit change, on a server with `vibe-jobs.timer`): step 2.
 - `/fix` starts nothing → triage runs each hour; the comment must start with `/fix`; a commit after it answers it, so write it again.
 - "Request changes" is off → GitHub refuses it on your own PR, and the runner's `gh` login opens the PRs. Use `/fix <text>`, or run `gh` as a second account with `pr_login=<you>`.
 - `bib-check` is `blocked: sandbox denies …` → add `export.arxiv.org` and `doi.org` to `sandbox.network.allowedDomains` in `claude/vibe-job-settings.json`. The job re-queues each night until it runs.

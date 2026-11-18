@@ -27,7 +27,7 @@ vibe ws tick                 # each instance with an id: its place's tick; the r
 - `stop` refuses a start whose start script runs, and an instance that `stops`.
 - `stop` from the page detaches the stop script and `down` as `vibe ws down`, returns `stops`, and the tick skips the instance meanwhile.
 - The turing place publishes `ports` on the tailscale address only. `up` copies the kept `data/` back into `/ws/data`.
-- The queue page's Workspaces page has a row per service with Start, Stop and Open UI ↗: [Page](vibe-queue.md#3-page).
+- The queue page's Workspaces tab has a card per service with Start, Stop and Open UI ↗: [Page](vibe-queue.md#3-page).
 - A `kind=run` tool runs as a queue job: `/enqueue` route Tool run. Flow, stop and steer: [Tool jobs](vibe-queue.md#tool-jobs).
 
 ## Layout

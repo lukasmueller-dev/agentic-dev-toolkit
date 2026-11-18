@@ -73,31 +73,34 @@ Serve it on the tailnet once:
 sudo tailscale serve --bg --set-path /queue ~/.local/state/vibe/web   # root: a path, not a port
 ```
 
+The page is a monitor with one-click decisions. Its labels: [Page words](#page-words); its buttons: [Page actions](#page-actions).
+
 | Part | Shows |
 | --- | --- |
-| Rail | `vibe`, Queue with the Needs-you count, Workspaces with a lamp per service, Config |
-| Header | lamp, `3 of 4 slots`, `paused`, the usage limit or the 5h use, `GPU: <holder>` while the lock is held, `updated N s ago` (red `stale` after 2 min); Pause or Resume, Clear limit while limited |
-| Queue | Needs you and Running open; Queued, Held, Triage (`triage.md`) and Done folded to one line, each only with a row |
-| Row | lamp, title, reason, phase bar while it runs, tool chip (`kapso · turing`), repo, run time, one primary button |
-| Panel | the block of the row the URL names (`#job-<key>`): state, meta line, phase line, steps, fields, buttons, file links |
-| Workspaces | a row per `kind=service` tool: lamp, label, role, place, state, time up and left (amber under 30 min), Open UI ↗ and Stop, or Start; the `kind=run` tools in one line |
-| Config | Settings with Set config; Restart runner and a Restart per `claude-rc@` unit file; per repo its recurring jobs with Run, and Reset when stopped |
+| Top bar | glider, `vibe queue`, the tabs, the status, Pause or Resume |
+| Tabs | Jobs with the Needs-you count, Recurring, Workspaces (a dot while a tool runs), Settings, Help ↗ (Page words on GitHub, from the `origin` URL) |
+| Status | lamp, `3 of 4 jobs run`; wider than a phone also `paused`, the Claude usage or limit, `GPU busy: <holder>`; `Runner stopped` when the page is older than 2 min |
+| Jobs | Needs you and Running open; Queued, On hold, PR problems (`triage.md`) and Done folded in one card, each only with a row |
+| Row | lamp, title, progress, one line (the reason, or the repo and the running step), run time, one primary button |
+| Job panel | the block of the row the URL names (`#job-<key>`): state, title, repo · branch · run time; steps; one result line; buttons; task (3 lines, then a fold); files; activity |
+| Recurring | per repo: job, schedule, last run, state, Run; Reset only when stopped |
+| Workspaces | a card per tool. Services: state, time up and left (amber under 30 min), Start, or Open UI ↗ and Stop. Tools that run as a job: state, the live job, the last result, Recipe ↗; no Start |
+| Settings | Slots, Claude usage limit (Clear usage limit while reached), any other `key=value`; Restart queue runner; a Restart per `claude-rc@` unit file |
 
 - Needs you: a job blocked, failed, timed out or skipped; a done job with a failed gate or verify, `push failed`, `PR not created` or a PR to review; a lane with such an item; a feature that needs you, in `your test` or in `merge`.
 - A lane, a feature, a tool job and an outside GPU run are one row each. The block folds a card per lane job or feature member.
-- The primary button, first match: Answer, Retry, Open PR, Test passed, Archive. Answer opens the block at its field. The other buttons are in the panel.
-- The phase bar has a segment per step of the phase line and the running step's name after it.
-- The phase line, also in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
+- The primary button, first match: Answer, Run again, Open PR ↗, Test passed, Archive. Answer opens the block at its note field. The other buttons are in the panel.
+- The phase line, in `vibe queue status`: `✓ Agent · ✓ R1 2 fixed · ▶ R2 · ○ Verify app · ○ Gate · ○ PR`.
   ✓ done, ▶ running, ○ to come, ✗ failed (red). R2 shows once queued, Verify only with `verify=`; a report job shows `Agent · Report`.
   Gate and PR drop once the chain's last job ended without them. A lane shows its running job's chain, else the latest one.
-  A line with a review round opens to name the passes: `R1, R2: /code-review + lean-review`, or `/code-review` with `after=code`.
-- A running job's block shows its last step and folds the last 10 from `queue/<id>/log` (`jq` if present).
+- The panel's steps are the phase line in page words: `✓ Work — ✓ Review 1 — ▶ Review 2 — ○ Verify — ○ Checks — ○ PR`. A step's tooltip says what it does, with its detail (`2 fixed`) and the review passes.
+- Activity: when a block shows, page.js fetches the last 5 agent texts and the last 5 tool calls of its `log` (`GET job/<id>/activity`). The runner's render holds no log text.
 - The GPU holder, first match: a running `gpu` job, a running outside `gpu-queue` run, a workspace that holds the lock, a running `gpu=yes` tool job on turing; else `busy`.
 - Workspaces Start: a place and hours form for a tool with 2+ places, else one button. While the lock is held, the turing option names the GPU holder for a `gpu=yes` tool.
-- The panel: from 1200 px a right column, always open, with Close only under a button's output; under it a modal over the list; on a phone a bottom sheet. On a phone the rail is a top bar.
+- Layout: centered, at most 1440 px. From 1200 px the job list (at most 600 px) has the panel as a right column, always open, with Close only under a button's output. Under 1200 px one column, the panel a modal over the list; on a phone a bottom sheet, the tabs on a line of their own.
 - `j`/`k` move the selection; no single key writes. In a field, `⌘↵` or `Ctrl↵` sends and `Esc` clears.
 - The page fetches itself every 10 s and swaps each part that changed; open folds stay. A field in focus or with a changed value stays as it is, and so does its panel block; the rest of its part swaps. Without JS it needs a reload.
-- The tab title is `(N) vibe`, N the Needs-you count. The rail's glider moves while a job runs, except with reduced motion. Light and dark follow the system.
+- The tab title is `(N) vibe`, N the Needs-you count. The glider moves while a job runs, except with reduced motion. Light and dark follow the system; one indigo accent, red only for a failure.
 
 Buttons, server only: `bin/vibe-web` runs one fixed command per route; `web_login` in `queue.conf` first.
 
@@ -275,8 +278,66 @@ An outside research tool (`kind=run` under `workspaces/`) does the first part of
 - `vibe queue stop <id>` during the run: TERM to it, the stop script, then `down`; no closing session.
 - `vibe queue steer <id> <text>`: the text to the tool's `steer` script while the run is up; exit 3 there → `not supported`.
 - Retry runs the tool again with `in/`; answer closes the same run again; fix, review rounds and GPU follow-ups run no tool.
-- The page: one row with a `<tool> · <place>` chip. While the tool runs, the block shows the last 10 lines of `tool.log` and a Steer field when the tool's `steer` script is not a bare `exit 3`. After the run it links `out/report.md` and `out/files/`.
+- The page: one row with a `<tool> · <place>` chip. While the tool runs, the block has a Message to `<tool>` field when the tool's `steer` script is not a bare `exit 3`. Its files: Tool log, then Tool report and Output files after the run.
 - shortcut: the run has no memory limit (`MEM_CMD` covers sessions and gates only); add one at the place when a tool runs the machine out of RAM.
+
+## Page words
+
+The page's labels and the raw words that the CLI, the job files and `vibe queue status` keep.
+Each state and step shows its sentence as a tooltip. Source: `st_label`, `st_tip`, `page_steps`, `job_files` and `page_status` in `bin/vibe`.
+
+| State | Raw | Means |
+| --- | --- | --- |
+| Queued | `queued` | It waits for a free slot or for its start time. |
+| Running | `running` | An agent works on it now. |
+| On the GPU | `gpu` | It waits for its GPU run to end. |
+| Waits for the GPU | `parked` (a `gpu-queue` run) | The run starts once the GPU is free. |
+| On hold | `held` (`vibe queue hold`) | You put it aside with a note; nothing runs until you act. |
+| Has a question | `blocked` | The agent stopped on a question: answer it in the note, then Run again. |
+| Failed | `failed` | It ended with an error: Run again, Put on hold or Archive. |
+| Ran out of time | `timeout` | It hit its time limit: Run again to go on from where it stopped. |
+| Skipped: (reason) | `skipped` | The runner did not start it, for the reason given. |
+| Done | `done` | It ended without an error. |
+| PR #N to review | `done` with a PR | It opened a draft PR: review it on GitHub. |
+| Checks failed (exit N) | gate exit N | The checks of the repo (.vibe-jobs/gate) failed: read the Checks log. |
+| Verify: (verdict) | `V: fail`, `dirty`, `timeout` | The verify agent did not pass the change. |
+| push failed, PR not created | the `pr` file | The runner could not push the branch or open the PR. |
+| Needs you | `needs you` (lane, feature, research) | One of its items needs your answer or your check. |
+| Test it yourself | `your test` (feature) | Every member PR passed its checks: test the feature, then Test passed. |
+| Ready to merge | `merge` (feature) | Every member PR is ready: merge them, then Archive. |
+| No job | `no job` (feature member) | No queued job works on this branch. |
+| Finished | a GPU run's exit 0 | The GPU run ended with exit 0. |
+| Failed, exit N | a GPU run's exit N | The GPU run ended with an error. |
+| Cancelled | a GPU run's `cancelled` | A cancel stopped the GPU run. |
+
+| Step | Raw | Means |
+| --- | --- | --- |
+| Work | `Agent` | The agent does the task in its worktree. |
+| Review N | `RN` | A second agent reviews the diff with `/code-review` + `lean-review` (`after=code`: `/code-review`); a finding sends the job back to Work. |
+| Verify | `Verify` | An agent tries the change with the repo's verify skill and says pass or fail. |
+| Checks | `Gate` | The repo's own checks (.vibe-jobs/gate) run; a fail stops the PR. |
+| PR | `PR` | The runner pushes the branch and opens a draft PR. |
+| Report | `Report` | The agent writes its report; the job opens no PR. |
+
+| Page word | Raw |
+| --- | --- |
+| N of M items | a lane, feature or research progress (`9/9`) |
+| Milestone K of T | a branch of jobs with a `SPEC.md`: K the first open box |
+| N of M jobs | a branch of jobs without `lane=` and `SPEC.md` |
+| GPU run · `<name>` | an outside `gpu-queue` run `<YYYYMMDD-HHMMSS-n>-<name>` |
+| N of M jobs run | running jobs of `slots` |
+| Claude usage N%, resets HH:MM | `limit 5h: N%, resets HH:MM` |
+| Claude usage limit, resets HH:MM | the `limit` file: no job starts before it |
+| GPU busy: `<holder>` | the `gpu-queue` lock holder |
+| Runner stopped | the page is older than 2 min |
+| PR problems | `triage.md` ([triage](vibe-jobs.md)) |
+| Tools that run as a job | `kind=run` tools ([workspaces](workspaces.md)) |
+| Runs on | `places=` of `workspace.conf` |
+| Report · PR text · Note · Result | `report.md` · `pr.md` · `note` · `result` |
+| Checks log · Tool log · Full log | `gate.log` · `tool.log` · `log` |
+| Tool report · Output files | `out/report.md` · `out/files/` |
+
+Buttons: [Page actions](#page-actions).
 
 ## Page actions
 
@@ -284,41 +345,42 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 
 | Where: button | Route | Command |
 | ------------- | ----- | ------- |
-| Header: Pause / Resume | `pause`, `resume` | `vibe queue pause` / `resume` |
-| Header: Clear limit | `unlimit` | `vibe queue unlimit` |
-| Config: Set config | `conf` | `vibe queue conf <key=value>` |
-| Config: Restart runner ✓ | `restart` | `systemctl --user restart vibe-queue` |
-| Config: Restart `<server>` ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>`; one per unit file |
-| Config, recurring job: Run | `run` | `vibe job run <repo> <job>` |
-| Config, stopped recurring job: Reset | `reset` | `vibe job reset <repo> <job>` |
+| Top bar: Pause / Resume | `pause`, `resume` | `vibe queue pause` / `resume` |
+| Settings, Slots or Other setting: Set | `conf` | `vibe queue conf <key=value>`; Slots sends `slots=<n>` |
+| Settings, limit reached: Clear usage limit | `unlimit` | `vibe queue unlimit` |
+| Settings: Restart queue runner ✓ | `restart` | `systemctl --user restart vibe-queue` |
+| Settings, session server: Restart ✓ | `server-restart` | `systemctl --user restart claude-rc@<server>`; one per unit file |
+| Recurring: Run | `run` | `vibe job run <repo> <job>` |
+| Recurring, stopped job: Reset | `reset` | `vibe job reset <repo> <job>` |
 | Queued job: Start next | `now` | `vibe queue set <id> now=1` |
-| Queued job: No review | `noreview` | `vibe queue set <id> after=` |
+| Queued job with a review: Skip review | `noreview` | `vibe queue set <id> after=` |
 | Queued job: Cancel ✓ | `cancel` | `vibe queue cancel <id>` |
 | Running job: Stop ✓ | `stop` | `vibe queue stop <id>` |
-| Running tool job: Send (steer) | `steer` | `vibe queue steer <id> <text>` |
-| GPU job: Cancel GPU run ✓ | `gpu-cancel` | `gpu-queue cancel <gpu>` |
-| Failed, timeout or skipped job: Retry | `retry` | `vibe queue retry <id> [<note>]` |
-| Blocked, failed or timeout job: Send answer | `answer` | `vibe queue answer <id> <text>`; a research worker in `paste` or `blocked` has it too |
-| Ended job: Hold | `hold` | `vibe queue hold <id> <note>` |
+| Running tool job: Message to `<tool>`, Send | `steer` | `vibe queue steer <id> <text>` |
+| Job on the GPU: Cancel GPU run ✓ | `gpu-cancel` | `gpu-queue cancel <gpu>` |
+| Has a question, Failed, Ran out of time, Skipped: Run again | `retry` | `vibe queue retry <id> [<note>]`; the note field is optional, needed for Has a question |
+| Same job, not On hold: Put on hold | `hold` | `vibe queue hold <id> <note>`; the same note field, needed |
 | Ended job: Archive ✓ | `archive` | `vibe queue archive <id>` |
 | Job panel: Activity | `GET job/<id>/activity` | the last 5 agent texts and 5 tool calls of `log`, newest first, as JSON; no `log`: 404 |
-| Job: a file link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `out/report.md` as text; `log`, `tool.log`: the last 64 KB; `out/files`: its file list; a `.md` with `?html` rendered |
-| Feature in `your test`: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
-| Feature in `merge`: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
+| Job panel, Files: a link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `out/report.md` as text; `log`, `tool.log`: the last 64 KB; `out/files`: its file list; a `.md` with `?html` rendered |
+| Feature, Test it yourself: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
+| Feature, Ready to merge: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
 | Research card, done: Archive ✓ | `research-archive` | `vibe queue archive --research <research>`: every job of the question, none unless each has ended |
 | Research card: Stop question | `research-stop` | `vibe queue stop --research <research>`: no new worker, each run finishes |
 | Research card: Stop now ✓ | `research-stop-now` | `vibe queue stop --research <research> --now` |
+| Research worker in `paste` or Has a question: Send answer | `answer` | `vibe queue answer <id> <text>` |
 | Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
 | Workspaces: Start | `ws-start` | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
 | Workspaces: Stop ✓ | `ws-stop` | `vibe ws stop <name>` |
 
-Not on the page (the CLI has them): merge, single-PR ready or close, the `run-ci` label, prompt edits, tool-job creation, new jobs, fix jobs (a `/fix` comment starts one), merge order, worktree cleanup, sync, toolkit update.
+Not on the page (the CLI has them): merge, single-PR ready or close, the `run-ci` label, prompt edits, tool-job creation, new jobs, fix jobs (a `/fix` comment starts one), triage (an hourly timer runs it), merge order, worktree cleanup, sync, toolkit update.
 
 Add a route or a button:
 
-- Route: one line in `ROUTES` (`bin/vibe-web`). A body arg is a `"{name}"` slot at an arg's end (`claude-rc@{server}`) plus a pattern in `ARGS`. A `"{name?}"` slot drops its arg when the body has no `name`. `TOOLS` maps argv[0] to an argv prefix (`cleanup.sh` runs with `bash`).
+- Route: one line in `ROUTES` (`bin/vibe-web`). A body arg is a `"{name}"` slot at an arg's end (`claude-rc@{server}`) plus a pattern in `ARGS`. A `"{name?}"` slot drops its arg when the body has no `name`. `TOOLS` maps `vibe` and `gpu-queue` to this checkout's `bin/`.
 - Button: `<button data-act="<route>" [data-confirm]>` in a `<div class="jacts" data-<arg>="…">` inside `main` or a panel block. A text arg is a field: `ask` in `bin/vibe`.
-- page.js sends each `data-*` of the nearest `.jacts`, then each named field of the button's `.ask`. An empty field stops the send, except one with `data-opt`.
+- page.js sends each `data-*` of the nearest `.jacts`, then each named field of the button's `.ask`, its `data-pre` (`slots=`) before the value.
+  An empty field stops the send, except one with `data-opt` when the button has no `data-need`.
 - Order in a group: read-only buttons, write buttons, then `<hr>` and the `data-confirm` buttons (`btn_rows` in `bin/vibe`). A group is a grid of equal cells.
 - The CSP runs only `page.js`: no inline `<script>` or `onclick`.
 - A `<details>` keeps its open state by its nearest `data-k` or `id` and its place among that node's folds.
@@ -371,7 +433,7 @@ After the session ends `queued:`, the runner queues it in [`bin/gpu-queue`](../b
 After the run, job `<id>-gpu` continues on the same branch with the exit code and log.
 A `gpu-queue` run that no job's `gpu-job` names (a manual `submit`) shows in a `GPU` block of `vibe queue status`: elapsed time, dir, last log line, command, `then`, wandb link.
 The block adds the 3 latest `finished/` runs (exit code, end time) and the `held/` and `parked/` runs (`gpu-queue` does not write those dirs yet); only running and queued runs count in "on the GPU".
-On the page each such run is a row in Running, Queued or Held, and the 3 latest finished runs are rows in Done.
+On the page each such run is a row in Running, Queued or On hold, and the 3 latest finished runs are rows in Done.
 
 ```bash
 gpu-queue status                      # queued, running, finished (exit code)
@@ -410,7 +472,7 @@ The PR footer line and the report row end with the job's size, from the last `re
 - Your `pre-push` hook does not run on the runner's push → move a test into `.vibe-jobs/gate`. A push that adds or changes an LFS-tracked file: the runner and `vibe sync` refuse it (`git-lfs: push by hand`) → push the branch yourself.
 - `vibe queue run` started inside a sandboxed session → its jobs inherit that sandbox; use the service.
 - Another tool uses the GPU → wrap it: `gpu-queue lock -- <cmd>`.
-- Page time stamp old → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
+- The page shows `Runner stopped` → the runner stopped, or runs old code after an update: `systemctl --user restart vibe-queue` (jobs keep running).
 - `/queue` returns 404 → no serve path yet; step 3. `401 ... must be root` → run it with `sudo`.
 - No buttons on the page → `vibe-web.service` down, no `/queue/api` serve path, or `web_login` is not your login: `journalctl --user -u vibe-web`.
 - `no server configured` or `the queue runs on the server` → this machine is a client; step 2, or `ssh <host>`.
