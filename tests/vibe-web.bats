@@ -789,7 +789,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop" title="No new worker: each run finishes">Stop question</button><hr><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
-  grep -qF '<div class="paste"><ol><li><code>git fetch the commit</code><button type="button" data-copy>Copy</button></li><li><code>sbatch runs/h3/job.sbatch</code><button type="button" data-copy>Copy</button></li><li><code>print the RESULT line</code><button type="button" data-copy>Copy</button></li></ol><div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>The RESULT line from IAS: the worker closes its run with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
+  grep -qF '<div class="paste"><ol><li><code>git fetch the commit</code><button type="button" data-copy>Copy</button></li><li><code>sbatch runs/h3/job.sbatch</code><button type="button" data-copy>Copy</button></li><li><code>print the RESULT line</code><button type="button" data-copy>Copy</button></li></ol><div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>The RESULT line from the cluster: the worker closes its run with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
   [ "$(grep -o 'data-copy' "$f" | wc -l)" -eq 3 ]
   run grep -c 'research-archive' "$f"
   [ "$output" = 0 ]
@@ -807,7 +807,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
   rm "$Q/queue/20261117-100300-proj-research-lr-h3/paste.md"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="n">Has a question · ias</span>' "$f"
+  grep -qF '<span class="n">Has a question · slurm</span>' "$f"
   grep -qF '<div class="jacts" data-id="20261117-100300-proj-research-lr-h3"><span class="ask"><label>Your answer: the job runs again with it<textarea name="text" rows="3"></textarea></label><button data-act="answer">Send answer</button></span></div></div>' "$f"
   run grep -c 'class="paste"' "$f"
   [ "$output" = 0 ]

@@ -139,7 +139,7 @@ A `done` job is covered by a URL on its branch, and waits while a job there is q
 - `vibe queue add --at HH:MM <dir>...`: the jobs wait until that local time (tomorrow's when it has passed today), then start as normal jobs. The job file gets `at=YYYY-MM-DD HH:MM`; `vibe queue status` and the page show `starts <that time>`. `--now` with `--at`, and a time the clock change skips, are refused; `vibe queue set <id> now=1` starts a waiting job at once; `retry` drops `at=`. A start is up to one runner poll (30 s) late.
 - `vibe queue conf <key>=<value>` sets one `queue.conf` key: `slots`, `after`, `review_*`, `memory_max`, `steer`; other keys and bad values are refused.
 - `vibe queue set <id> now=1|after=`, `cancel <id>`: queued jobs only. `cancel`: `skipped`, note `cancelled`.
-- `vibe queue retry <id> [<note>]`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived. A note ends the task as `Note: <note>`. A `blocked` job needs one; with a `HANDOFF.md`, a lane side branch or an IAS run it goes through `queue answer`.
+- `vibe queue retry <id> [<note>]`: a `failed`, `timeout` or `skipped` job again as a new job (job file, `prompt.md`, its own worktree); the old one is archived. A note ends the task as `Note: <note>`. A `blocked` job needs one; with a `HANDOFF.md`, a lane side branch or a slurm run it goes through `queue answer`.
 - `vibe queue stop <id>`: a running job gets a `stop` file; the runner's next pass sends TERM to the agent, and the job ends `failed`, note `stopped`. No requeue, no gate, no push, no WIP commit; a lane item leaves the lane as on `failed`. A recurring job does not count it as a fail.
 - `vibe queue steer <id> <text>` with `steer=1`: each session starts with `--input-format stream-json` and reads the FIFO `<job>/steer`. The running session gets the text as a user message at its next boundary. Its first result event ends the input; `vibe queue steer` refuses a text after it. A tool job's run: [Tool jobs](#tool-jobs).
 - `vibe queue unlimit` removes `limit`: jobs start again.
@@ -211,9 +211,9 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 | -------- | ----- |
 | Coordinator job keys | `research=<slug>` `question=` `usd=` `workers=` (default 3) `better=higher\|lower` `deadline=` |
 | Worker job keys | `research=` `hid=` `place=` `idea=` `builds=<hid\|root>` |
-| Worker job dir files | `run-result` (the `RESULT` JSON), `cost` (USD), `paste.md` (an IAS worker's steps), `infra` |
+| Worker job dir files | `run-result` (the `RESULT` JSON), `cost` (USD), `paste.md` (a slurm worker's steps), `infra` |
 | `vibe queue stop --research <slug> [--now]` | drain: no new worker, each run finishes; `--now`: no new run, each place run runs `stop`, `pull`, `down` |
-| The repo's `.claude/research/` | `workspace.conf` (`kind=run`, `result=folder`), `Dockerfile`, `run`, `stop`, `job.sbatch` (the IAS job); [workspace contract](workspaces.md) |
+| The repo's `.claude/research/` | `workspace.conf` (`kind=run`, `result=folder`), `Dockerfile`, `run`, `stop`, `job.sbatch` (the slurm job); [workspace contract](workspaces.md) |
 | A run | the command `/ws/in/cmd` runs in `/ws/in/repo`; its last output line is `RESULT {"metric": <number>}`; `stop` adds `"partial": true` |
 | `## Research` in the repo's instruction file | Places, Metric command, Smoke check, Data, Tracker, Cost limit: [`research.md`](../skills/fill-queue/references/research.md) |
 
@@ -235,19 +235,19 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 - `usd=` in the job file gates each place run. Before `up` the runner reads the place's `price` (USD per hour). It refuses the start when spent + `hours` × price is above `usd`, and the follow-up gets `Exit: usd` and the reason. `vibe queue add` refuses a `usd=` that is no number.
 - Spent is the sum of `cost` over the live and archived jobs with the same `repo=` and `research=`. A start writes `cost` = `hours` × price, so a running run counts at its full `hours`.
 - At the end of a place run, `cost` is price × the time from `up` to `down`. A run on turing costs 0.
-- `vibe queue worker <hid> [--place turing|runpod|vast|ias]`, from inside the coordinator job (`research=`, no `hid=`), queues a worker for item `### <hid> <name>` of the committed `RESEARCH.md`. Its branch `research/<slug>/<hid>` starts at the worktree's HEAD.
+- `vibe queue worker <hid> [--place turing|runpod|vast|slurm]`, from inside the coordinator job (`research=`, no `hid=`), queues a worker for item `### <hid> <name>` of the committed `RESEARCH.md`. Its branch `research/<slug>/<hid>` starts at the worktree's HEAD.
 - The worker job: the coordinator's `repo=` `model=` `effort=` `timeout=` `research=` `usd=` `deadline=`, then `hid=` `place=` (default `turing`) `idea=` (the item's name) `builds=` (the first word of its `Builds on:` line, else `root`) and `after=`. The runner pushes it and opens no PR.
-- Each refusal is one error line, and nothing is queued: past `deadline=`; a stopped research; `workers=` (default 3) workers of the repo's research with a job that has not ended or an IAS run out; no ledger row with the id `baseline`; no such item; a branch git refuses (it exists, or a branch `research/<slug>` does). A rerun takes a new hid.
+- Each refusal is one error line, and nothing is queued: past `deadline=`; a stopped research; `workers=` (default 3) workers of the repo's research with a job that has not ended or a slurm run out; no ledger row with the id `baseline`; no such item; a branch git refuses (it exists, or a branch `research/<slug>` does). A rerun takes a new hid.
 - A worker end wakes the coordinator, once per worker job (`fan`). The end: the job is final and has no `<id>-gpu` session 2.
 - The newest coordinator job with the worker's `repo=` and `research=` decides the wake. Queued: it gets a `## Worker finished` block. `gpu` (it ended `queued:`) or `timeout`: a follow-up job gets the block, and a `gpu` one ends `done`.
 - Running, `blocked`, `failed` or `skipped`: the wake waits for its end, `vibe queue answer` or `retry`. `done` or archived: no wake.
 - In a job, `vibe queue gpu --place` and `vibe queue worker` only check and ask: `agent/run/`, `agent/workers`. After a `queued:` session the runner takes the run (`place_take`) and queues each worker under the lock `queue/.workers.lock`, as of the session start. A refusal goes to `workers.log`; when each asked worker is refused, the job fails.
-- A `place=ias` worker's session 1 commits `runs/<hid>/job.sbatch` (from the repo's `.claude/research/job.sbatch`), writes `paste.md` and ends `blocked:`. The runner pushes its branch. Until the answer it wakes no coordinator.
-- `vibe queue answer <id> '<output>'` on that worker writes the text to `ias.log` and its last `RESULT` line to `run-result`, then queues session 2 (`<id>-gpu`, `Exit: ias`). No `RESULT` line: the run failed. A `RESULT {` line that does not parse is refused.
+- A `place=slurm` worker's session 1 commits `runs/<hid>/job.sbatch` (from the repo's `.claude/research/job.sbatch`), writes `paste.md` and ends `blocked:`. The runner pushes its branch. Until the answer it wakes no coordinator.
+- `vibe queue answer <id> '<output>'` on that worker writes the text to `slurm.log` and its last `RESULT` line to `run-result`, then queues session 2 (`<id>-gpu`, `Exit: slurm`). No `RESULT` line: the run failed. A `RESULT {` line that does not parse is refused.
 - `vibe queue stop --research <slug>` writes `drain` to each job of the research in the queue; a follow-up job copies it. Drain: `vibe queue worker` refuses, and each run finishes.
 - `--now` writes `now`: `vibe queue gpu` refuses too, and each place run ends as at its limit (TERM, `stop`, `pull`, `down`; `run/exit` 124). A place run not up yet ends `stopped`: no `up`, cost 0. A turing run finishes: Cancel GPU run on the page.
 - shortcut: the slug alone names the research, so a slug two repos share stops both; add `--repo` when that bites.
-- The close runs past `deadline=` and `usd=`: session 2, an IAS answer, a worker's wake and the coordinator's last session. Only `vibe queue gpu`, `vibe queue worker` and the place gate check them.
+- The close runs past `deadline=` and `usd=`: session 2, a slurm answer, a worker's wake and the coordinator's last session. Only `vibe queue gpu`, `vibe queue worker` and the place gate check them.
 - shortcut: the runner enforces the deadline and `usd=` only; compute hours on turing and the run count are the agent's ledger. Add a runner check when a job overruns them.
 
 ## Research card
@@ -387,7 +387,7 @@ Add a route or a button:
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `agent/evidence/` (screenshots, logs) |
 | `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd` (from `agent/run/`); the runner adds `pid`, `price` (USD per hour), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
 | `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
-| `queue/<id>/drain`, `paste.md`, `ias.log` | [research](#research-jobs): `drain` or `now` (`vibe queue stop --research`); an IAS worker's steps; the output its answer gave |
+| `queue/<id>/drain`, `paste.md`, `slurm.log` | [research](#research-jobs): `drain` or `now` (`vibe queue stop --research`); a slurm worker's steps; the output its answer gave |
 | `queue/<id>/workers.log` | [research](#research-jobs) coordinator: the output of each worker the runner queued or refused |
 | `queue/<id>/fan` | [research](#research-jobs) worker: the coordinator job its end woke, `follow-up <id>-gpu`, `no wake: <id> done\|archived`, or `no coordinator` |
 | `queue/<id>/close.md` | [tool job](#tool-jobs): the closing prompt; its other files: [Queue job](workspaces.md#queue-job) |

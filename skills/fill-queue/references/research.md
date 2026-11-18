@@ -8,12 +8,12 @@ You coordinate one research question, and workers make its runs. This block repl
 
 The repo's instruction file can hold a `## Research` section, one line each. With no section, each run goes to `turing`.
 
-- Places: where a run can go (`turing`, `runpod`, `vast`, `ias`), with their limits. `turing` runs one run at a time; the others run in parallel. The user starts an `ias` run: its worker waits until the user answers, and counts as a running worker.
+- Places: where a run can go (`turing`, `runpod`, `vast`, `slurm`), with their limits. `turing` runs one run at a time; the others run in parallel. The user starts a `slurm` run: its worker waits until the user answers, and counts as a running worker.
 - Metric command: how to compute the metric, which direction is better, and the noise of one measurement.
 - Smoke check: a command of minutes on the code path of a run. Exit 0 is a pass.
 - Data: what a run needs, and where its outputs go.
 - Tracker: where a run logs, and how to switch it off.
-- Cost limit: the USD of one question (`usd=`). `turing` and `ias` cost 0 USD.
+- Cost limit: the USD of one question (`usd=`). `turing` and `slurm` cost 0 USD.
 
 1. **Read first:** `RESEARCH.md`, `HANDOFF.md`, the `## Research` section.
 2. **Baseline first.** No worker starts before the ledger has a row `baseline`. With no such row, ask for the Metric command on your HEAD: `vibe queue gpu [--place runpod|vast] -- <command>`. The runner queues the run once you exit. The next session reads its `GPU run finished` block and adds the row. Its run time plus a half is the Cost of each item with none.

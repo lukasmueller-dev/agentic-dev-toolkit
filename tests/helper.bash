@@ -118,7 +118,7 @@ rjob() {
 }
 
 # research_fixture QDIR REPO — the question `lr` as job dirs, written by hand from the contract: a coordinator
-# (done) and 4 workers. h1 turing, done, 0.81; h2 runpod, run in flight, $1.20; h3 ias, blocked on a paste;
+# (done) and 4 workers. h1 turing, done, 0.81; h2 runpod, run in flight, $1.20; h3 slurm, blocked on a paste;
 # h4 turing, done, 0.84, builds on h1. Spent $1.20 of $50; best 0.84 (h4); waits for you (paste h3).
 research_fixture() {
   local q="$1" r="$2" w="research-lr"
@@ -132,9 +132,9 @@ research_fixture() {
   rjob "$q" 20261117-100200-proj-$w-h2 gpu "$r" research/lr/h2 "research=lr" "hid=h2" "place=runpod" "idea=wider net" "builds=root"
   echo 1.20 >"$q/20261117-100200-proj-$w-h2/cost"
   echo "queued: run on runpod" >"$q/20261117-100200-proj-$w-h2/note"
-  rjob "$q" 20261117-100300-proj-$w-h3 blocked "$r" research/lr/h3 "research=lr" "hid=h3" "place=ias" "idea=lr 3e-4" "builds=root"
+  rjob "$q" 20261117-100300-proj-$w-h3 blocked "$r" research/lr/h3 "research=lr" "hid=h3" "place=slurm" "idea=lr 3e-4" "builds=root"
   printf '1. git fetch the commit\n2. sbatch runs/h3/job.sbatch\n3. print the RESULT line\n' >"$q/20261117-100300-proj-$w-h3/paste.md"
-  echo "blocked: paste 3 steps on IAS" >"$q/20261117-100300-proj-$w-h3/note"
+  echo "blocked: paste 3 steps on the cluster" >"$q/20261117-100300-proj-$w-h3/note"
   rjob "$q" 20261117-100400-proj-$w-h4 "done" "$r" research/lr/h4 "research=lr" "hid=h4" "place=turing" "idea=baseline + warmup" "builds=h1"
   echo '{"metric": 0.84, "n": 3}' >"$q/20261117-100400-proj-$w-h4/run-result"
   echo 0 >"$q/20261117-100400-proj-$w-h4/cost"

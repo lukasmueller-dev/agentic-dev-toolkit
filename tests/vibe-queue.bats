@@ -62,11 +62,11 @@ case "\$mode" in
     echo "queued: training" >"\$VIBE_JOB_DIR/result"
     ;;
   wait) echo "queued: workers run" >"\$VIBE_JOB_DIR/result" ;;
-  ias)
+  slurm)
     h="\$(sed -n 's/^hid=//p' "\$VIBE_JOB_DIR/job")"
     mkdir -p "runs/\$h" && echo '#SBATCH --time=1:00:00' >"runs/\$h/job.sbatch" && git add runs && git commit -q -m "feat: \$h sbatch"
     printf '1. git fetch\n2. sbatch\n3. the RESULT line\n' >"\$VIBE_JOB_DIR/paste.md"
-    echo "blocked: \$h waits for its IAS run — paste.md" >"\$VIBE_JOB_DIR/result"
+    echo "blocked: \$h waits for its slurm run — paste.md" >"\$VIBE_JOB_DIR/result"
     ;;
   askworkers)
     cat "$STUBS/workers-ask" >>"\$VIBE_JOB_DIR/workers"
@@ -458,7 +458,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
   grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">Running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">run on runpod</p></div>' "$f"
   grep -qF '<div class="wk" style="--d:1" data-hid="h4"><i class="lamp l-done"></i><span class="wh"><b>h4</b> <span class="n">Done · turing</span></span><span class="wm">0.84 · $0.00</span>' "$f"
-  grep -qF '<div class="wk" style="--d:0" data-hid="h3"><i class="lamp l-bad"></i><span class="wh"><b>h3</b> <span class="n">paste · ias</span></span><span class="wm"></span>' "$f"
+  grep -qF '<div class="wk" style="--d:0" data-hid="h3"><i class="lamp l-bad"></i><span class="wh"><b>h3</b> <span class="n">paste · slurm</span></span><span class="wm"></span>' "$f"
   # Its jobs are in no repo group, and a done job with no PR is no `no PR` job: only h3 counts.
   run grep -c '<h2>proj</h2>' "$f"
   [ "$output" = 0 ]
@@ -531,7 +531,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
     h1 · turing  done  0.81 · $0.00
       h4 · turing  done  0.84 · $0.00
     h2 · runpod  running  $1.20
-    h3 · ias  paste
+    h3 · slurm  paste
     needs you: h3 paste' ]
   # Its jobs are in no repo group of the status.
   run grep -c '^proj$' <("$VIBE" queue status)
@@ -539,7 +539,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
   [[ "$("$VIBE" queue status)" == *$'    needs you: coordinator blocked: name the metric\n    needs you: h3 paste'* ]] || false
   run "$VIBE" queue report
-  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 ias paste | you (coordinator blocked, paste h3) |  |' <<<"$output"
+  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 slurm paste | you (coordinator blocked, paste h3) |  |' <<<"$output"
   # The coordinator's PR is in the row: its done job has no row of its own.
   echo https://example.com/pull/5 >"$c/pr"
   [[ "$("$VIBE" queue report)" == *'| [PR](https://example.com/pull/5) |'* ]] || false
@@ -3756,15 +3756,15 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$Q/01-c/status")" = blocked ]
 }
 
-@test "answer: an IAS worker waits blocked: it counts at workers= and wakes no one; its answer writes run-result and queues session 2" {
+@test "answer: a slurm worker waits blocked: it counts at workers= and wakes no one; its answer writes run-result and queues session 2" {
   local r w
   r="$(make_repo proj)"
   w="$(coord_wt "$r")"
   coord "$r" "$w" workers=1
-  # Not gpu: a drain waits for a gpu job, and nothing wakes this one while the IAS run is out.
+  # Not gpu: a drain waits for a gpu job, and nothing wakes this one while the slurm run is out.
   echo blocked >"$Q/01-c/status"
   date '+%F %T' >"$Q/01-c/ended"
-  mkjob 02-w "$r" research/q1/h1 ias research=q1 hid=h1 place=ias
+  mkjob 02-w "$r" research/q1/h1 slurm research=q1 hid=h1 place=slurm
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/02-w/status")" = blocked ]
@@ -3786,8 +3786,8 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(cat "$Q/02-w/run-result")" = '{"metric":0.8}' ]
   [ "$(cat "$Q/02-w/cost")" = 0 ]
   [ "$(cat "$Q/02-w/status")" = "done" ]
-  grep -qxF -- '- Exit: ias' "$Q/02-w-gpu/prompt.md"
-  grep -qxF -- "- Log: $Q/02-w/ias.log" "$Q/02-w-gpu/prompt.md"
+  grep -qxF -- '- Exit: slurm' "$Q/02-w-gpu/prompt.md"
+  grep -qxF -- "- Log: $Q/02-w/slurm.log" "$Q/02-w-gpu/prompt.md"
   grep -qxF -- "- Result: {\"metric\":0.8} ($Q/02-w/run-result)" "$Q/02-w-gpu/prompt.md"
   grep -qx 'hid=h1' "$Q/02-w-gpu/job"
   [ ! -e "$Q/02-w/HANDOFF.md" ]
@@ -3870,10 +3870,10 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$output" = "vibe: research stopped (vibe queue stop --research --now): queue no run, finish the task" ]
 }
 
-@test "close: past deadline= and over usd=, an IAS worker's session 2 and the coordinator's close session still run" {
+@test "close: past deadline= and over usd=, a slurm worker's session 2 and the coordinator's close session still run" {
   local r c
   r="$(make_repo proj)"
-  mkjob 02-w "$r" research/q1/h1 ias research=q1 hid=h1 place=ias usd=1 "deadline=2000-01-01 08:00"
+  mkjob 02-w "$r" research/q1/h1 slurm research=q1 hid=h1 place=slurm usd=1 "deadline=2000-01-01 08:00"
   drain
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/02-w/status")" = blocked ]
