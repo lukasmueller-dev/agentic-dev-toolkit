@@ -4,7 +4,7 @@
    Buttons: a paste step's Copy writes its text to the clipboard; /queue/api (bin/vibe-web) after whoami; a data-confirm button needs a second tap within 4 s.
    Args: the data-* of the nearest .jacts, then each named field of the button's .ask after its data-pre, empty only with data-opt and a button without data-need; ⌘↵ in a field sends, Esc clears it.
    Output: .pout under the block; agent text only through textContent, or in .md, where no button works: raw HTML can repeat any id or class chain, so a guard compares nodes, never selectors.
-   Write: GET writes (the writes before yours), then the POST; the output shows the command and a seconds counter, then Done in N s or
+   Write: GET writes (the writes before yours, again each second while one is left), then the POST; the output shows the command and a seconds counter, then Done in N s or
    Failed (exit N) and the output; no answer: the command can still run. Each button of a write is off with a verb while it runs; after it
    worked or got no answer, until a fetched page shows a change in its card, at most 60 s. The poll runs every 2 s meanwhile, else every 10 s.
    After a write: poll now, or once more after a poll in flight. */
@@ -241,13 +241,16 @@
     /* The command as the page sends it: the route, then each value but the PR link. */
     const cmd = [act, ...Object.keys(args).filter(k => k !== 'pr').map(k => args[k])].join(' '), t0 = Date.now();
     const secs = () => Math.round((Date.now() - t0) / 1000);
-    let before = 0, r = null, j = null, keep = true;
+    let before = 0, sent = 0, r = null, j = null, keep = true;
     const tick = () => { if (v === view) say(`${cmd} · ${secs()} s` + (before ? ` · ${before} write${before > 1 ? 's' : ''} before yours` : '')); };
+    /* The writes that hold or wait for the lock, less this one once sent. */
+    const count = () => fetch(api + 'writes', { cache: 'no-store' }).then(x => x.json()).then(x => { before = Math.max(0, (+x.writes || 0) - sent); }, () => { before = 0; });
     tick();
-    const clock = setInterval(tick, 1000);
+    const clock = setInterval(() => { tick(); if (before) count(); }, 1000);
     try {
-      before = await fetch(api + 'writes', { cache: 'no-store' }).then(x => x.json()).then(x => +x.writes || 0, () => 0);
+      await count();
       tick();
+      sent = 1;
       r = await fetch(api + act, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(args) });
       j = await r.json();
     } catch (err) { /* no answer: the command can still run */ }

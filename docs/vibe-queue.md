@@ -357,7 +357,7 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 
 The output of a write, under the block:
 
-- While it runs: the command as the page sends it (the route and its values), a seconds counter, and `1 write before yours` when another write holds the lock.
+- While it runs: the command as the page sends it (the route and its values), a seconds counter, and `1 write before yours` while another write holds or waits for the lock. The page reads the count again each second.
 - The answer: `Done in N s` or `Failed (exit N)`, then the command output. A refused write shows `refused: <error>`.
 - No answer, for example a dropped connection: `No answer. The command can still run.`
 - The button is off with a verb (`Starting…`, `Archiving…`) while the write runs.

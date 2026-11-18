@@ -26,7 +26,7 @@ signal.alarm(80)  # a hung browser fails the test instead of the suite
 
 root = tempfile.mkdtemp()
 os.symlink(WEB, os.path.join(root, "queue"))
-ANSWERS = {"archive": (4, {"code": 0, "out": "archived"}), "hold": (1.5, {"code": 1, "out": "no such job"})}  # route: s, answer; none: no answer
+ANSWERS = {"archive": (8, {"code": 0, "out": "archived"}), "hold": (1.5, {"code": 1, "out": "no such job"})}  # route: s, answer; none: no answer
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -72,8 +72,15 @@ with open(PAGE, encoding="utf-8") as f:
 os.makedirs(os.path.join(WEB, "api", "job"), exist_ok=True)
 with open(os.path.join(WEB, "api", "whoami"), "w", encoding="utf-8") as f:
     json.dump({"login": "me@example.com"}, f)
-with open(os.path.join(WEB, "api", "writes"), "w", encoding="utf-8") as f:
-    json.dump({"writes": 1, "render": False}, f)
+
+
+def writes(n):
+    """GET writes: N writes hold or wait for the lock."""
+    with open(os.path.join(WEB, "api", "writes"), "w", encoding="utf-8") as f:
+        json.dump({"writes": n, "render": False}, f)
+
+
+writes(2)
 with open(PAGE, encoding="utf-8") as f:
     for i in set(re.findall(r'<div class="act" data-id="([^"]+)">', f.read())):
         os.makedirs(os.path.join(WEB, "api", "job", i), exist_ok=True)
@@ -247,11 +254,14 @@ try:
     # A write: the command and its seconds while it waits, then Done in N s; its button stays off until its card changes.
     MSG, BTN = "document.querySelector('.pmsg').textContent", "document.querySelector('#job-%s button[data-act=\"%s\"]')"
     js("%s.click(); %s.click()" % (BTN % (A, "archive"), BTN % (A, "archive")))
-    check("a write in flight shows the command, its seconds and the writes before it; its button reads its verb", until("/^archive %s · [0-9]+ s · 1 write before yours$/.test(%s)" % (A, MSG), 1) and js("%s.textContent" % (BTN % (A, "archive"))) == "Archiving…")
+    check("a write in flight shows the command, its seconds and the writes before it; its button reads its verb", until("/^archive %s · [0-9]+ s · 2 writes before yours$/.test(%s)" % (A, MSG), 1) and js("%s.textContent" % (BTN % (A, "archive"))) == "Archiving…")
+    check("once sent, the count leaves out the write itself", until("/^archive %s · [0-9]+ s · 1 write before yours$/.test(%s)" % (A, MSG), 2.5))
+    writes(1)
+    check("the count goes when the write before it ends", until("/^archive %s · [0-9]+ s$/.test(%s)" % (A, MSG), 2.5))
     edit(state(A, "moved"))
     time.sleep(2.5)
     check("a change in its card while the write runs keeps its button off", js("%s.disabled && %s.textContent === 'Archiving…'" % (BTN % (A, "archive"), BTN % (A, "archive"))) and js(ST % A) == "moved")
-    check("a write that worked says Done in N s, with the output", until("/^Done in [0-9]+ s$/.test(%s)" % MSG, 4) and js("document.querySelector('.pbody pre').textContent") == "archived")
+    check("a write that worked says Done in N s, with the output", until("/^Done in [0-9]+ s$/.test(%s)" % MSG, 5) and js("document.querySelector('.pbody pre').textContent") == "archived")
     time.sleep(2.5)
     check("its button stays off with its verb while the card is the same", js("%s.disabled && %s.textContent === 'Archiving…'" % (BTN % (A, "archive"), BTN % (A, "archive"))))
     edit(state(A, "archived"))
