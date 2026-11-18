@@ -209,6 +209,50 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   [[ "$output" == *"### Needs you"*"| ${d##*/} | skipped |  | stopped after 2 failures"* ]] || false
 }
 
+@test "job skip: the next due tick queues nothing, the period counts from that tick, last-run stays; --undo takes it back" {
+  local r s="$XDG_STATE_HOME/vibe/jobs/proj/health" last week=$((7 * 86400))
+  r="$(make_repo proj)"
+  optin "$r" health
+  last=$(($(date +%s) - 2 * week))
+  state "$r" health last-run "$last"
+  run "$VIBE" job skip proj health
+  [ "$status" -eq 0 ]
+  [[ "$("$VIBE" job list "$r")" == *"health"*"skips next run"* ]] || false
+  run "$VIBE" job due --dry "$r"
+  [[ "$output" == *"skipped: $r health"*"nothing to queue"* ]] || false
+  [ -f "$s/skip" ]
+  run "$VIBE" job skip proj health --undo
+  [ "$status" -eq 0 ]
+  [ ! -e "$s/skip" ]
+  run "$VIBE" job due --dry "$r"
+  [[ "$output" == *"would queue: $r health"* ]] || false
+  # The due tick: nothing queued, the skip is used up, last-run is the old one, the week starts at the tick.
+  "$VIBE" job skip proj health
+  run "$VIBE" job due "$r"
+  [[ "$output" == *"skipped: $r health"*"nothing to queue"* ]] || false
+  [ -z "$(qjobs jobs-health)" ]
+  [ ! -e "$s/skip" ]
+  [ "$(cat "$s/last-run")" = "$last" ]
+  [[ "$("$VIBE" job list "$r")" == *"health"*"$(date -d "@$last" +%F 2>/dev/null || date -r "$last" +%F)"*"not due"* ]] || false
+  state "$r" health skipped "$(($(date +%s) - week - 3600))"
+  run "$VIBE" job due --dry "$r"
+  [[ "$output" == *"would queue: $r health"* ]] || false
+  # A job that is not due keeps the skip until its tick.
+  rm "$s/skipped"
+  state "$r" health last-run "$(date +%s)"
+  "$VIBE" job skip proj health
+  "$VIBE" job due "$r" >/dev/null
+  [ -f "$s/skip" ] && [ ! -e "$s/skipped" ]
+  [[ "$("$VIBE" job list "$r")" == *"health"*"skips next run"* ]] || false
+  # A bad job name or an unknown job is refused; --undo needs no job file.
+  run "$VIBE" job skip proj ../x
+  [ "$status" -ne 0 ]
+  run "$VIBE" job skip proj nosuch
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"nosuch in proj: no schedule"* ]] || false
+  [ ! -d "$XDG_STATE_HOME/vibe/jobs/proj/nosuch" ]
+}
+
 @test "job run + queue run: branch jobs/<job>, label, last-run on done; failures count and stop the job" {
   local r
   r="$(make_repo proj)"

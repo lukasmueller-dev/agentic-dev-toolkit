@@ -73,9 +73,9 @@ _vibe() {
       ;;
     job)
       if [[ "$COMP_CWORD" -eq 2 ]]; then
-        _vibe_reply "list due run add triage reset" "$cur"
+        _vibe_reply "list due run add triage reset skip" "$cur"
       else
-        _vibe_reply "--all --dry --max" "$cur"
+        _vibe_reply "--all --dry --max --undo" "$cur"
       fi
       ;;
     ws) if [[ "$COMP_CWORD" -eq 2 ]]; then _vibe_reply "list status build start stop tick" "$cur"; else COMPREPLY=(); fi ;;

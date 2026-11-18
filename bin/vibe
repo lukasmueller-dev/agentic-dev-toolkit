@@ -64,6 +64,8 @@
 #   vibe job run <repo> <job>       queue one recurring job now
 #   vibe job add <repo> <job>       opt <repo> in: write <repo>/.vibe-jobs/<job>.md
 #   vibe job reset <repo> <job>     forget the failures of a stopped job
+#   vibe job skip <repo> <job> [--undo]
+#                                   queue nothing at the job's next due tick; --undo takes it back
 #   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines; archive merged
 #
 # Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
@@ -4696,10 +4698,30 @@ job_live() {
   return 1
 }
 
+# job_sched REPO JOB — "due" or "not due" by the schedule: the period since the last run or the last skipped tick, and the day.
+job_sched() {
+  local repo="$1" job="$2" sched day last skipped now period today
+  sched="$(job_key "$repo" "$job" schedule "")" day="$(job_key "$repo" "$job" day "")"
+  case "$sched" in
+    daily) period=72000 ;;
+    weekly) period=518400 ;;
+    monthly) period=2332800 ;;
+  esac
+  last="$(job_state "$repo" "$job" last-run)" skipped="$(job_state "$repo" "$job" skipped)"
+  if ((${skipped:-0} > ${last:-0})); then last="$skipped"; fi
+  now="$(date +%s)"
+  today="$(LC_ALL=C date +%a | tr '[:upper:]' '[:lower:]')"
+  if ((now - ${last:-0} < period)) || [[ -n "$day" && "$day" != "$today" ]]; then
+    echo "not due"
+  else
+    echo due
+  fi
+}
+
 # job_due REPO JOB — "due", "stopped" (two failures), "queued" (a copy is in
-# the queue), "not due", "invalid".
+# the queue), "skips next run" (vibe job skip), "not due", "invalid".
 job_due() {
-  local repo="$1" job="$2" sched day last fails now period today
+  local repo="$1" job="$2" fails
   [[ "$(job_check "$repo" "$job")" == ok ]] || {
     echo invalid
     return 0
@@ -4713,20 +4735,11 @@ job_due() {
     echo queued
     return 0
   fi
-  sched="$(job_key "$repo" "$job" schedule "")" day="$(job_key "$repo" "$job" day "")"
-  case "$sched" in
-    daily) period=72000 ;;
-    weekly) period=518400 ;;
-    monthly) period=2332800 ;;
-  esac
-  last="$(job_state "$repo" "$job" last-run)"
-  now="$(date +%s)"
-  today="$(LC_ALL=C date +%a | tr '[:upper:]' '[:lower:]')"
-  if ((now - ${last:-0} < period)) || [[ -n "$day" && "$day" != "$today" ]]; then
-    echo "not due"
-  else
-    echo due
+  if [[ -n "$(job_state "$repo" "$job" skip)" ]]; then
+    echo "skips next run"
+    return 0
   fi
+  job_sched "$repo" "$job"
 }
 
 # vibe job list [--all] [REPO...] — one row per repo × job; --all adds the
@@ -4887,7 +4900,8 @@ job_stopped() {
 }
 
 # vibe job due [--dry] [--max N] [REPO...] — add every due job to the queue,
-# oldest last-run first, at most N. A stopped job lands as `skipped`.
+# oldest last-run first, at most N. A stopped job lands as `skipped`; a job set to skip
+# its next run queues nothing at its due tick, and its next period counts from that tick.
 cmd_job_due() {
   local repo job why last lines="" picked=() stopped=()
   job_args "$@"
@@ -4902,6 +4916,11 @@ cmd_job_due() {
           lines+="${last:-0} $repo $job"$'\n'
           ;;
         stopped) stopped+=("$repo $job") ;;
+        "skips next run")
+          [[ "$(job_sched "$repo" "$job")" == due ]] || continue
+          if ((!DRY)); then job_skip_use "$repo" "$job"; fi
+          echo "skipped: $repo $job (vibe job skip)"
+          ;;
       esac
     done < <(job_names "$repo")
   done < <(job_repos "${REST[@]+"${REST[@]}"}")
@@ -5111,13 +5130,44 @@ cmd_job_reset() {
   echo "reset $2 in $(basename "$repo")"
 }
 
+# job_skip_use REPO JOB — the skip is used up at its due tick: drop it, and the next period counts from now.
+job_skip_use() {
+  date +%s >"$JOBS_STATE/$(basename "$1")/$2/skipped"
+  rm -f "$JOBS_STATE/$(basename "$1")/$2/skip"
+}
+
+# vibe job skip REPO JOB [--undo] — JOB queues nothing at its next due tick (state `skips next run`); --undo takes it back.
+cmd_job_skip() {
+  local repo dir why undo=0 args=() a
+  for a in "$@"; do
+    case "$a" in
+      --undo) undo=1 ;;
+      *) args+=("$a") ;;
+    esac
+  done
+  ((${#args[@]} == 2)) || die "usage: vibe job skip <repo> <job> [--undo]"
+  [[ "$(slug "${args[1]}")" == "${args[1]}" ]] || die "bad job name '${args[1]}'"
+  repo="$(job_repo_path "${args[0]}")"
+  dir="$JOBS_STATE/$(basename "$repo")/${args[1]}"
+  if ((undo)); then
+    rm -f "$dir/skip"
+    echo "${args[1]} in $(basename "$repo") no longer skips its next run"
+    return 0
+  fi
+  why="$(job_check "$repo" "${args[1]}")"
+  [[ "$why" == ok ]] || die "${args[1]} in $(basename "$repo"): $why"
+  mkdir -p "$dir"
+  date +%s >"$dir/skip"
+  echo "${args[1]} in $(basename "$repo") skips its next run"
+}
+
 cmd_job() {
   role_gate job "$@"
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | due | run | add | triage | reset) "cmd_job_$sub" "$@" ;;
-    *) die "usage: vibe job list|due|run|add|triage|reset — see vibe --help" ;;
+    list | due | run | add | triage | reset | skip) "cmd_job_$sub" "$@" ;;
+    *) die "usage: vibe job list|due|run|add|triage|reset|skip — see vibe --help" ;;
   esac
 }
 
