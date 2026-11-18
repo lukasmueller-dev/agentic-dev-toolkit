@@ -2,7 +2,7 @@
 
 WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and the research question RESEARCH
 (a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place, with a whoami,
-a GET writes and an Activity per job as static files; a POST gets the answer in ANSWERS after 1.5 s. Prints one line per check; exits 1 when one fails, 77 when the browser does not
+a GET writes and an Activity per job as static files; a POST gets its answer in ANSWERS after its delay. Prints one line per check; exits 1 when one fails, 77 when the browser does not
 start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
 Used by tests/vibe-web.bats.
 """
@@ -26,14 +26,14 @@ signal.alarm(80)  # a hung browser fails the test instead of the suite
 
 root = tempfile.mkdtemp()
 os.symlink(WEB, os.path.join(root, "queue"))
-ANSWERS = {"archive": {"code": 0, "out": "archived"}, "hold": {"code": 1, "out": "no such job"}}  # by route; none: no answer
+ANSWERS = {"archive": (4, {"code": 0, "out": "archived"}), "hold": (1.5, {"code": 1, "out": "no such job"})}  # route: s, answer; none: no answer
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers.get("Content-Length") or 0))
-        time.sleep(1.5)
-        a = ANSWERS.get(self.path.rsplit("/", 1)[-1])
+        delay, a = ANSWERS.get(self.path.rsplit("/", 1)[-1], (1.5, None))
+        time.sleep(delay)
         if a is None:
             self.close_connection = True
             return
@@ -248,6 +248,9 @@ try:
     MSG, BTN = "document.querySelector('.pmsg').textContent", "document.querySelector('#job-%s button[data-act=\"%s\"]')"
     js("%s.click(); %s.click()" % (BTN % (A, "archive"), BTN % (A, "archive")))
     check("a write in flight shows the command, its seconds and the writes before it; its button reads its verb", until("/^archive %s · [0-9]+ s · 1 write before yours$/.test(%s)" % (A, MSG), 1) and js("%s.textContent" % (BTN % (A, "archive"))) == "Archiving…")
+    edit(state(A, "moved"))
+    time.sleep(2.5)
+    check("a change in its card while the write runs keeps its button off", js("%s.disabled && %s.textContent === 'Archiving…'" % (BTN % (A, "archive"), BTN % (A, "archive"))) and js(ST % A) == "moved")
     check("a write that worked says Done in N s, with the output", until("/^Done in [0-9]+ s$/.test(%s)" % MSG, 4) and js("document.querySelector('.pbody pre').textContent") == "archived")
     time.sleep(2.5)
     check("its button stays off with its verb while the card is the same", js("%s.disabled && %s.textContent === 'Archiving…'" % (BTN % (A, "archive"), BTN % (A, "archive"))))

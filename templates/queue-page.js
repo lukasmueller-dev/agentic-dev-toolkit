@@ -62,7 +62,7 @@
     cancel: 'Cancelling…', 'gpu-cancel': 'Cancelling…', restart: 'Restarting…', 'server-restart': 'Restarting…', pause: 'Pausing…', resume: 'Resuming…',
     hold: 'Holding…', answer: 'Sending…', steer: 'Sending…', noreview: 'Skipping…', 'feature-ready': 'Marking ready…', reset: 'Resetting…',
     unlimit: 'Clearing…', conf: 'Saving…' };
-  /* pend: the writes whose buttons stay off; a write: its route (act) and the JSON of its .jacts data (key). doc: the last fetched page.
+  /* pend: the writes whose buttons stay off; a write: its route (act), the JSON of its .jacts data (key), done once its POST ends. doc: the last fetched page.
      A card: the nearest [data-k] or [id] of each button of the write (a row, a block, a section), else its .jacts. */
   let pend = [], doc = null;
   const jkey = c => JSON.stringify(Object.assign({}, c && c.dataset));
@@ -119,7 +119,7 @@
       if (r.ok && t !== last) {
         const n = new DOMParser().parseFromString(t, 'text/html');
         doc = n;
-        [...pend].forEach(p => { if (sig(n, p) !== p.was) drop(p); });
+        [...pend].forEach(p => { if (p.done && sig(n, p) !== p.was) drop(p); }); /* in flight: a running job's row changes each minute */
         for (const p of parts) {
           const [s, live, was] = p, h = $(s, n).innerHTML;
           if (h === was) continue;
@@ -252,6 +252,7 @@
       j = await r.json();
     } catch (err) { /* no answer: the command can still run */ }
     clearInterval(clock);
+    p.done = true;
     if (!j) { if (v === view) say('No answer. The command can still run.', true); }
     else {
       keep = r.ok && j.code === 0;
