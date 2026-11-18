@@ -34,6 +34,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       action.
       Done when the page and the CLI can archive such a run, and the run
       leaves Done at once.
+- [ ] **Fast page render and visible progress on page clicks** — a click
+      waits 41 s for a full render and shows only "…". Cache the limit
+      share of a final job; `vibe-web` renders after it answers; the panel
+      shows the command, its time and its exit.
+      Done when a bats test shows a final job's limit share comes from its
+      cache, and `bats tests/` passes.
 
 ### Health items (repo review of 2026-11-03)
 
