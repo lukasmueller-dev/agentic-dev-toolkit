@@ -241,6 +241,7 @@ post() {
     grep -qF '<a href="https://github.com/o/r/blob/HEAD/docs/vibe-queue.md#page-words" target="_blank" rel="noopener">Help ↗</a>' "$f"
     grep -qF '<a class="rcp" href="https://github.com/o/r/blob/HEAD/docs/workspaces/kapso.md" target="_blank" rel="noopener">Recipe ↗</a>' "$f"
   done
+  grep -qx '## Page words' "$REPO_ROOT/docs/vibe-queue.md" # the heading of the #page-words anchor
   for u in https://me:tok@github.com/o/r.git https://gitlab.com/o/r.git https://github.com/o/r/x none; do
     rm -f "$STUBS/origin"
     if [ "$u" != none ]; then echo "$u" >"$STUBS/origin"; fi
