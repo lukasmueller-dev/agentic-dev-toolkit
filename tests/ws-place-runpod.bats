@@ -29,13 +29,14 @@ case "$1 $2" in
   "pod get")
     [ ! -f "$d/get-error" ] || { cat "$d/get-error" >&2; exit 1; }
     [ -f "$d/pod" ] || { echo '{"error":"failed to get pod: pod not found"}' >&2; exit 1; }
-    printf '{"id":"pod123","runtimeStatus":"%s"}\n' "$(cat "$d/status" 2>/dev/null || echo running)" ;;
+    printf '{"id":"pod123","runtimeStatus":"%s","ssh":{"ip":"203.0.113.7","port":22022,"ssh_key":{"path":"/keys/rp","exists":true}}}\n' \
+      "$(cat "$d/status" 2>/dev/null || echo running)" ;;
   "pod delete")
     [ ! -f "$d/delete-fail" ] || exit 1
     rm -f "$d/pod"
     echo '{"deleted":true,"id":"pod123"}' ;;
   "ssh info")
-    echo '{"id":"pod123","ip":"203.0.113.7","port":22022,"ssh_key":{"path":"/keys/rp","exists":true}}' ;;
+    echo '{"error":"pod not ready: no container reported yet","ip":null,"port":null}' ;; # runpodctl 3.1.1 for a running pod
   "gpu list")
     echo '[{"gpuId":"NVIDIA A40","securePricePerHr":0.4,"communityPricePerHr":null},{"gpuId":"NVIDIA GeForce RTX 4090","securePricePerHr":0.69,"communityPricePerHr":0.34}]' ;;
   *) exit 2 ;;

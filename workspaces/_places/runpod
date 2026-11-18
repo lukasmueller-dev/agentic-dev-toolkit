@@ -57,12 +57,13 @@ q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 # A new pod reuses old IPs: a known_hosts per instance, never ~/.ssh/known_hosts.
 # shortcut: an hours-long exec run lives on one ssh, which outlasts a 10 min gap (30 s x 20) and no more;
 # a run detached in the pod, with exec polling /ws/out/result, is the upgrade once a longer gap ends a run.
+# Trap: runpodctl 3.1.1 `ssh info` says "pod not ready" (exit 0) for a pod that runs; read .ssh of `pod get`.
 addr() {
   local info ip port key
-  info="$(rp ssh info "$id" 2>/dev/null)" &&
-    ip="$(jq -r '.ip // empty' <<<"$info")" &&
-    port="$(jq -r '.port // empty' <<<"$info")" &&
-    key="$(jq -r '.ssh_key.path // empty' <<<"$info")" &&
+  info="$(rp pod get "$id" 2>/dev/null)" &&
+    ip="$(jq -r '.ssh.ip // empty' <<<"$info")" &&
+    port="$(jq -r '.ssh.port // empty' <<<"$info")" &&
+    key="$(jq -r '.ssh.ssh_key.path // empty' <<<"$info")" &&
     [ -n "$ip" ] && [ -n "$port" ] &&
     host="root@$ip" &&
     sshargs=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=20
