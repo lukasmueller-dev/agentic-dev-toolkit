@@ -27,7 +27,10 @@ case "\$1 \$2 \$*" in
   "pr list "*) cat "$STUBS/prs" ;;
 esac
 EOF
-  chmod +x "$STUBS/systemctl" "$STUBS/gh"
+  # git: origin's URL from STUBS/origin (none: exit 2), every other call to the real git; a clone's own origin never shows.
+  # shellcheck disable=SC2016  # the stub's own $3 $4 $5 and $@
+  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$(command -v git)" >"$STUBS/git"
+  chmod +x "$STUBS/systemctl" "$STUBS/gh" "$STUBS/git"
   PATH="$STUBS:$PATH"
   git_env
   export VIBE_WEB_TIMEOUT=3 VIBE_ROOT="$BATS_TEST_TMPDIR"
@@ -221,6 +224,7 @@ post() {
   date '+%F %T' >"$Q/queue/20261104-070000-run/started"
   echo https://example.com/pull/9 >"$Q/queue/20261104-060000-pr/pr"
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
+  echo https://github.com/o/r >"$STUBS/origin"
   "$REPO_ROOT/bin/vibe" queue page
   run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr
   echo "$output"
@@ -229,12 +233,7 @@ post() {
 }
 
 @test "vibe queue page: Help ↗ and Recipe ↗ link the GitHub origin in each of its three forms; no link for another host, a credential or no origin" {
-  local f="$Q/web/index.html" g u
-  g="$(command -v git)"
-  # git: origin's URL from STUBS/origin (none: exit 2), every other call to the real git.
-  # shellcheck disable=SC2016  # the stub's own $3 $4 $5 and $@
-  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$g" >"$STUBS/git"
-  chmod +x "$STUBS/git"
+  local f="$Q/web/index.html" u
   for u in git@github.com:o/r.git ssh://git@github.com/o/r.git https://github.com/o/r.git https://github.com/o/r; do
     echo "$u" >"$STUBS/origin"
     VIBE_WORKSPACES="$REPO_ROOT/workspaces" "$REPO_ROOT/bin/vibe" queue page
