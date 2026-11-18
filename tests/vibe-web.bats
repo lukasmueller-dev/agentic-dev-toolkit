@@ -1134,6 +1134,45 @@ optin() {
   [ "$(grep -o '<code>[^<]*</code></b><p></p></div><div class="jacts" data-server="[^"]*"><button data-act="server-restart" data-confirm>Restart</button>' "$Q/web/index.html" | sed 's/.*data-server="//; s/".*//' | paste -sd, -)" = agentic-dev-toolkit,thesis ]
 }
 
+@test "route server-remove and vibe server-remove: systemctl disables and stops, the unit symlink goes, a drop-in dir and a real unit file stay; the page has a Remove per server" {
+  local u="$XDG_CONFIG_HOME/systemd/user" src="$BATS_TEST_TMPDIR/unit-src"
+  mkdir -p "$u/claude-rc@thesis.service.d" "$src"
+  touch "$src/claude-rc@thesis.service" "$u/claude-rc@other.service" "$u/claude-rc@thesis.service.d/override.conf"
+  ln -s "$src/claude-rc@thesis.service" "$u/claude-rc@thesis.service"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<button data-act="server-restart" data-confirm>Restart</button><button data-act="server-remove" data-confirm>Remove</button>' "$Q/web/index.html"
+  grep -qF 'data-server="thesis"' "$Q/web/index.html"
+  # A failed disable leaves the link: the server is not half removed.
+  cp "$STUBS/systemctl" "$STUBS/systemctl.ok"
+  printf '#!/bin/sh\nexit 1\n' >"$STUBS/systemctl"
+  run "$REPO_ROOT/bin/vibe" server-remove thesis
+  [ "$status" -ne 0 ]
+  [ -L "$u/claude-rc@thesis.service" ]
+  mv "$STUBS/systemctl.ok" "$STUBS/systemctl"
+  run act server-remove '{"server": "thesis"}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -qx -- '--user disable --now claude-rc@thesis' "$STUBS/systemctl.log"
+  [ ! -e "$u/claude-rc@thesis.service" ]
+  [ ! -L "$u/claude-rc@thesis.service" ]
+  [ -f "$u/claude-rc@thesis.service.d/override.conf" ]
+  [ -f "$src/claude-rc@thesis.service" ]
+  [ -z "$(grep -o 'data-server="thesis"' "$Q/web/index.html")" ]
+  # A unit file that is no symlink stays; a name with no unit file is refused before systemctl runs.
+  run "$REPO_ROOT/bin/vibe" server-remove other
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not a symlink: kept"* ]] || false
+  [ -f "$u/claude-rc@other.service" ]
+  : >"$STUBS/systemctl.log"
+  run act server-remove '{"server": "nosuch"}'
+  [[ "${lines[0]}" == *'"code": 1'*"no claude-rc@nosuch unit file"* ]] || false
+  [ ! -s "$STUBS/systemctl.log" ]
+  for body in '{"server": "*"}' '{"server": "-x"}' '{"server": "a b"}' '{"server": "../x"}' '{}'; do
+    run act server-remove "$body"
+    [ "${lines[1]}" = 400 ]
+  done
+}
+
 # get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
 get() {
   local p="$1"
@@ -1245,7 +1284,7 @@ get() {
 l = importlib.machinery.SourceFileLoader("vw", sys.argv[1]); m = importlib.util.module_from_spec(importlib.util.spec_from_loader("vw", l)); l.exec_module(m)
 print(" ".join(sorted(m.ROUTES)))' "$REPO_ROOT/bin/vibe-web"
   [ "$status" -eq 0 ]
-  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-restart skip skip-undo steer stop unlimit ws-start ws-stop' ]
+  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-remove server-restart skip skip-undo steer stop unlimit ws-start ws-stop' ]
   for r in fix merge-order new roadmap roadmap-new opt-in triage servers worktrees worktree-remove sync update-toolkit; do
     run act "$r" '{"id": "20261104-080000-proj-task", "repo": "/x", "pr": "https://github.com/o/p/pull/1", "text": "x"}'
     [ "${lines[1]}" = 404 ]

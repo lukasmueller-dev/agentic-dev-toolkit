@@ -52,6 +52,7 @@ ROUTES = {
     "skip-undo": ["vibe", "job", "skip", "{repo}", "{job}", "--undo"],
     "gpu-cancel": ["gpu-queue", "cancel", "{gpu}"],
     "server-restart": ["systemctl", "--user", "restart", "claude-rc@{server}"],
+    "server-remove": ["vibe", "server-remove", "{server}"],
     "ws-start": ["vibe", "ws", "start", "{name}", "--place={place?}", "--hours={hours?}"],
     "ws-stop": ["vibe", "ws", "stop", "{name}"],
 }

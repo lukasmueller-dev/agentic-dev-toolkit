@@ -242,7 +242,8 @@ drain() { "$VIBE" queue run --claude --drain >/dev/null 2>&1; }
   state "$r" health last-run "$(date +%s)"
   "$VIBE" job skip proj health
   "$VIBE" job due "$r" >/dev/null
-  [ -f "$s/skip" ] && [ ! -e "$s/skipped" ]
+  [ -f "$s/skip" ]
+  [ ! -e "$s/skipped" ]
   [[ "$("$VIBE" job list "$r")" == *"health"*"skips next run"* ]] || false
   # A bad job name or an unknown job is refused; --undo needs no job file.
   run "$VIBE" job skip proj ../x

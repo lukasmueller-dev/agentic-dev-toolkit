@@ -7,6 +7,7 @@
 #   vibe sync [--all] [--wip]       push, fast-forward, report every worktree
 #   vibe status --<agent>           agent servers on this machine (<agent>/vibe-status.sh)
 #   vibe update-toolkit             pull the toolkit checkout, install, doctor
+#   vibe server-remove <name>       stop and disable claude-rc@<name>, delete its unit symlink; a .service.d/ drop-in stays
 #   vibe queue status               the queue: running, queued, PRs to review, jobs with no PR; two lines per job by repo
 #   vibe queue add [--now|--at HH:MM] <dir>...
 #                                   queue prepared job dirs (job, prompt.md); --now starts them first,
@@ -3565,6 +3566,24 @@ rc_servers() {
   printf '%s' "$all" | sort -u
 }
 
+# vibe server-remove NAME — stop and disable claude-rc@NAME, delete its unit file when that is a symlink.
+# A claude-rc@NAME.service.d/ drop-in dir stays: adding the server again keeps its settings.
+cmd_server_remove() {
+  local f="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/claude-rc@${1:-}.service"
+  (($# == 1)) || die "usage: vibe server-remove <name>"
+  case $'\n'"$(rc_servers)"$'\n' in
+    *$'\n'"$1"$'\n'*) ;;
+    *) die "no claude-rc@$1 unit file" ;;
+  esac
+  systemctl --user disable --now "claude-rc@$1" || die "systemctl disable --now claude-rc@$1 failed"
+  if [[ -L "$f" ]]; then
+    rm -f "$f"
+  elif [[ -e "$f" ]]; then
+    warn "$f is not a symlink: kept"
+  fi
+  echo "removed claude-rc@$1"
+}
+
 # gh_url — the https URL of this checkout's GitHub origin; empty for any other remote.
 gh_url() {
   local u re='^https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'
@@ -3581,7 +3600,7 @@ gh_url() {
 setting_line() { printf '<div class="line"><div><b>%s</b><p>%s</p></div>%s</div>' "$1" "$2" "$3"; }
 
 # settings_page — the Settings tab: Slots, the Claude usage limit with Clear usage limit while limited, any key=value;
-# Restart queue runner; a Restart per claude-rc@ server. Routes conf, unlimit, restart, server-restart.
+# Restart queue runner; a Restart and a Remove per claude-rc@ server. Routes conf, unlimit, restart, server-restart, server-remove.
 settings_page() {
   local r lim="None now." x="" conf="$QCONF" srv=""
   if limited; then
@@ -3591,7 +3610,7 @@ settings_page() {
   # shellcheck disable=SC2088  # a literal ~ for display
   case "$conf" in "$HOME"/*) conf="~/${conf#"$HOME"/}" ;; esac
   while IFS= read -r r; do
-    srv+="$(setting_line "<code>$(esc "$r")</code>" "" "<div class=\"jacts\" data-server=\"$(esc "$r")\"><button data-act=\"server-restart\" data-confirm>Restart</button></div>")"
+    srv+="$(setting_line "<code>$(esc "$r")</code>" "" "<div class=\"jacts\" data-server=\"$(esc "$r")\"><button data-act=\"server-restart\" data-confirm>Restart</button><button data-act=\"server-remove\" data-confirm>Remove</button></div>")"
   done < <(rc_servers)
   printf '<h1>Settings</h1>\n<section class="sec"><h2>Queue</h2><div class="card">%s%s%s</div></section>\n' \
     "$(setting_line Slots 'Jobs that run at the same time.' "<div class=\"jacts\"><span class=\"ask\"><input name=\"set\" data-pre=\"slots=\" type=\"number\" min=\"1\" value=\"$(esc "$(qconf slots 4)")\" aria-label=\"Slots\"><button data-act=\"conf\">Set</button></span></div>")" \
@@ -5652,6 +5671,10 @@ cmd_ws() {
     update-toolkit)
       shift
       cmd_update_toolkit "$@"
+      ;;
+    server-remove)
+      shift
+      cmd_server_remove "$@"
       ;;
     start | sync | status)
       cmd="$1"
