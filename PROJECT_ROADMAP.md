@@ -34,6 +34,13 @@ staged straight from it. Order matters within a track; tracks are independent.
       action.
       Done when the page and the CLI can archive such a run, and the run
       leaves Done at once.
+- [ ] **Queue page: Skip next run, Remove session server, lean tool cards** —
+      `vibe job skip <repo> <job> [--undo]` (state `skips next run`, Undo on the
+      Recurring tab); `vibe server remove <name>` and a Remove button on the
+      Settings tab; no "last run" text on a tool card.
+      Done when `bats tests/` passes with cases for skip, its Undo and the
+      schedule after the skipped tick, for server remove (`systemctl` stubbed:
+      instance symlink gone, drop-in dir kept) and for a tool card without "last run".
 
 ### Health items (repo review of 2026-11-03)
 
