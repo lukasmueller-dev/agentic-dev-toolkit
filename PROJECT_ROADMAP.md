@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-17 · audit-job-pick_
+_Last updated: 2026-11-18 · research-run_
 
 ## Items
 
@@ -38,6 +38,12 @@ staged straight from it. Order matters within a track; tracks are independent.
       refused, and its `result` and `report.md` still land.
 
 ### Workspace first runs (recipes: `docs/workspaces/<tool>.md`)
+
+- [ ] **First RunPod research run** — the human test of parallel-research
+      (2026-11-18) ran a toy place run on vast to its end; RunPod never got past
+      `up`: one pod gave no ssh in 600 s, two creates found no GPU in stock.
+      Done when a toy item with `Place: runpod` ends with a `run-result` and
+      `runpodctl pod list` is empty after it.
 
 - [ ] **First AutoResearchClaw run** — at the first real use, queue recipe
       step 3 on turing (`tool=autoresearchclaw`, `hours=4`). The image and
