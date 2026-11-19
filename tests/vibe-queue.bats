@@ -453,7 +453,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
   grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2 of 4 items</span></b><span class="why">h3 · paste · Research · proj</span></a></div>' "$f"
   grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="One of its items needs your answer or your check.">Needs you</span><h2>lr <span class="n">2 of 4 items</span></h2><code class="meta">proj · Research</code></div><div class="job lane research s-blocked">' "$f"
-  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
+  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>needs you · paste h3 · h2 on runpod</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
   # The order: h4 builds on h1, so it sits below it, one level in.
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
   grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">Running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">run on runpod</p></div>' "$f"
@@ -465,35 +465,50 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$("$VIBE" queue status | head -n 1)" == *" · 1 no PR · "* ]] || false
 }
 
-@test "page: a research question waits for you, the GPU, the coordinator, nothing, in that order" {
-  local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr"
+# shellcheck disable=SC2016  # a literal $ in the expected text
+@test "page: a research state line, first match: needs you, drained, on <place>, coding, closing, thinking, queued, done" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st t
   r="$(make_repo proj)"
   research_fixture "$Q" "$r"
-  # waits <text> <pill> — the page's waits line and the block's state.
-  waits() {
+  # line <text> — the card's state line on the page and in the status.
+  line() {
     rpage
-    grep -qF "<p>waits for $1</p>" "$f"
-    grep -qE "<span class=\"st\" title=\"[^\"]+\">$2</span><h2>lr " "$f"
+    grep -qF "<p>$1</p>" "$f"
+    [[ "$("$VIBE" queue status)" == *$'\n'"    $1"$'\n'* ]] || false
   }
-  waits 'you (paste h3)' 'Needs you'
-  # A coordinator that needs the user comes first, with its own buttons.
+  line 'needs you · paste h3 · h2 on runpod'
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
-  waits 'you (coordinator blocked, paste h3)' 'Needs you'
-  grep -qF '<span class="why">coordinator · Has a question: name the metric · Research · proj</span>' "$f"
-  grep -qF "<div class=\"jacts\" data-id=\"${c##*/}\">" "$f"
-  echo "done" >"$c/status"
-  # The paste is back: h3 is done.
-  echo "done" >"$h/status"
-  waits nothing Running
-  sed -i.bak 's/^place=runpod/place=turing/' "$Q"/*-h2/job
-  waits GPU Running
+  line 'needs you · coordinator blocked, paste h3 · h2 on runpod'
+  echo "done" >"$c/status" && echo "done" >"$h/status"
+  # After a Stop, drained comes before a live run.
+  echo drain >"$c/drain"
+  line 'drained · stop question · h2 on runpod'
+  echo now >"$h2/drain"
+  line 'drained · stop now · h2 on runpod'
+  rm "$c/drain" "$h2/drain"
+  st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
+  mkdir -p "$st" && echo "$t" >"$st/limit"
+  line "on runpod · h2 on runpod · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
+  echo "done" >"$h2/status" && echo running >"$h/status"
+  line coding
+  echo '{"metric": 0.5}' >"$h/run-result"
+  line closing
+  echo "done" >"$h/status" && echo running >"$c/status"
+  line thinking
   echo queued >"$c/status"
-  waits GPU Running
-  echo "done" >"$Q"/*-h2/status
-  waits coordinator Queued
+  line queued
   echo "done" >"$c/status"
-  waits nothing Done
-  [[ "$(grep -o '<div class="row" data-k="research/lr">.*' "$f")" == *'<i class="lamp l-done"></i>'* ]] || false
+  line "done"
+  # A coordinator that `vibe queue stop` ended needs no answer: the question drained, the newest run says why.
+  echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
+  mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
+  line 'drained · run at its limit · on vast'
+  echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
+  line 'drained · smoke failed · on vast'
+  echo usd >"$c/run/exit"
+  line 'drained · usd= spent · on vast'
+  rm -r "$c/run"
+  line 'drained · deadline passed'
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
@@ -547,10 +562,11 @@ rpage() { "$VIBE" queue page >/dev/null; }
   research_fixture "$Q" "$r"
   run "$VIBE" queue status
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | sed -n '3,12p')" = 'Research
+  [ "$(printf '%s\n' "$output" | sed -n '3,13p')" = 'Research
   lr · 2/4 · needs you
     Does a wider net help & by how much?
-    best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 · waits for you (paste h3)
+    best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00
+    needs you · paste h3 · h2 on runpod
     h1 · turing  done  0.81 · $0.00
       h4 · turing  done  0.84 · $0.00
     h2 · runpod  running  $1.20
@@ -562,7 +578,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
   [[ "$("$VIBE" queue status)" == *$'    needs you: coordinator blocked: name the metric\n    needs you: h3 paste'* ]] || false
   run "$VIBE" queue report
-  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 slurm paste | you (coordinator blocked, paste h3) |  |' <<<"$output"
+  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 slurm paste | needs you · coordinator blocked, paste h3 · h2 on runpod |  |' <<<"$output"
   # The coordinator's PR is in the row: its done job has no row of its own.
   echo https://example.com/pull/5 >"$c/pr"
   [[ "$("$VIBE" queue report)" == *'| [PR](https://example.com/pull/5) |'* ]] || false
