@@ -894,14 +894,26 @@ EOF
     grep -qxF "plugin install $p" "$HOME/claude.log"
   done < <(jq -r '.enabledPlugins | keys[]' "$REPO_ROOT/claude/settings.json")
   grep -qx 'plugin install runpod@runpod' "$HOME/claude.log"
+  # the repo's own marketplace, by its linked path
+  grep -qxF "plugin marketplace add $HOME/.claude/marketplace" "$HOME/claude.log"
+  grep -qx 'plugin install wandb@toolkit' "$HOME/claude.log"
 }
 
 # plugin_state — known_marketplaces.json and installed_plugins.json as the baseline pins them.
 plugin_state() {
   mkdir -p "$HOME/.claude/plugins"
-  jq '.extraKnownMarketplaces' "$REPO_ROOT/claude/settings.json" >"$HOME/.claude/plugins/known_marketplaces.json"
+  jq --arg p "$HOME/.claude/marketplace" '.extraKnownMarketplaces + {toolkit: {source: {source: "directory", path: $p}}}' \
+    "$REPO_ROOT/claude/settings.json" >"$HOME/.claude/plugins/known_marketplaces.json"
   jq '{plugins: (.enabledPlugins | map_values([{scope: "user"}]))}' "$REPO_ROOT/claude/settings.json" \
     >"$HOME/.claude/plugins/installed_plugins.json"
+}
+
+@test "claude plugins: the W&B key reaches the MCP header but not sandboxed Bash" {
+  jq -e '.sandbox.credentials.envVars | index({name: "WANDB_API_KEY", mode: "deny"})' "$REPO_ROOT/claude/settings.json"
+  jq -e '.mcpServers.wandb.headers.Authorization == "Bearer ${WANDB_API_KEY}"' "$REPO_ROOT/claude/marketplace/wandb/.mcp.json"
+  # the repo's file after the shared one: systemd lets the later file win
+  [ "$(grep '^EnvironmentFile=' "$REPO_ROOT/claude/systemd/claude-rc@.service")" = "EnvironmentFile=-%h/.config/vibe/secrets.env
+EnvironmentFile=-%h/.config/vibe/secrets/%i.env" ]
 }
 
 @test "claude plugins: a pinned and installed state calls claude for nothing" {

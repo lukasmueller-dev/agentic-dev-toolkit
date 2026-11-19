@@ -556,6 +556,8 @@ install_claude_settings() {
 
 # The baseline's enabledPlugins, installed: settings alone install nothing.
 # A github marketplace is (re)added at its pinned ref when the live record differs.
+# claude/marketplace (linked to ~/.claude/marketplace) is added by path; the CLI writes
+# its settings entry, since a baseline `~` path is rewritten absolute and the merge would undo it.
 # Never `marketplace remove`: it also deletes the entry from settings.json.
 # shortcut: a moved pin updates a plugin only when its version changes; reinstall by hand otherwise.
 install_claude_plugins() {
@@ -566,7 +568,8 @@ install_claude_plugins() {
   fi
   local dir="$HOME/.claude/plugins" name src have moved=" " p
   while IFS=$'\t' read -r name src; do
-    have="$(jq -r --arg n "$name" '.[$n].source // {} | (.repo // "") + (if .ref then "#" + .ref else "" end)' \
+    have="$(jq -r --arg n "$name" '.[$n].source // {}
+      | if .source == "directory" then .path else (.repo // "") + (if .ref then "#" + .ref else "" end) end' \
       "$dir/known_marketplaces.json" 2>/dev/null || true)"
     if [[ "$have" == "$src" ]]; then
       say "  ok       marketplace $name"
@@ -578,10 +581,14 @@ install_claude_plugins() {
     else
       warn "  failed   claude plugin marketplace add $src"
     fi
-  done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[]
-    | select(.value.source.source == "github")
-    | [.key, .value.source.repo + (if .value.source.ref then "#" + .value.source.ref else "" end)] | @tsv' \
-    "$CLAUDE_SETTINGS_SRC")
+  done < <(
+    jq -r '.extraKnownMarketplaces // {} | to_entries[]
+      | select(.value.source.source == "github")
+      | [.key, .value.source.repo + (if .value.source.ref then "#" + .value.source.ref else "" end)] | @tsv' \
+      "$CLAUDE_SETTINGS_SRC"
+    jq -r --arg p "$HOME/.claude/marketplace" '[.name, $p] | @tsv' \
+      "$REPO/claude/marketplace/.claude-plugin/marketplace.json"
+  )
   while IFS= read -r p; do
     if ! jq -e --arg p "$p" '.plugins[$p]' "$dir/installed_plugins.json" >/dev/null 2>&1; then
       if ((DRY)); then
