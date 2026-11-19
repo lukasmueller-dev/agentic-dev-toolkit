@@ -984,8 +984,8 @@ limit_reset() {
   echo "${BASH_REMATCH[1]}"
 }
 
-# at_time EPOCH — EPOCH as YYYY-MM-DD HH:MM, GNU or BSD date.
-at_time() { date -d "@$1" '+%F %H:%M' 2>/dev/null || date -r "$1" '+%F %H:%M'; }
+# at_time EPOCH [FORMAT] — EPOCH in FORMAT (default YYYY-MM-DD HH:MM), GNU or BSD date, C locale.
+at_time() { LC_ALL=C date -d "@$1" "+${2:-%F %H:%M}" 2>/dev/null || LC_ALL=C date -r "$1" "+${2:-%F %H:%M}"; }
 
 # limited — true until the usage limit a job hit resets.
 limited() {
@@ -4703,8 +4703,7 @@ research_line() {
   if [[ -n "$3" ]]; then r="$(jget "$3/job" hid)" r="${r:+$r }on $(research_place "$3")"; fi
   if [[ -n "$4" ]]; then
     t="$(jstate "$WS_STATES/research-${4##*/}" limit)"
-    [[ -n "$t" ]] || t="$(jstate "$4/run" limit)"
-    if [[ "$t" =~ ^[0-9]+$ ]]; then t="$(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"; else t=""; fi
+    if [[ "$t" =~ ^[0-9]+$ ]]; then t="$(at_time "$t" '%a %H:%M')"; else t=""; fi
   fi
   l+="${2:+ · $2}"
   # A coordinator's live run is the state itself: `on vast`, not `on vast · on vast`.
@@ -4884,7 +4883,7 @@ job_rows() {
   while IFS= read -r job; do
     [[ -n "$job" ]] || continue
     last="$(job_state "$1" "$job" last-run)"
-    if [[ -n "$last" ]]; then last="$(date -d "@$last" +%F 2>/dev/null || date -r "$last" +%F)"; fi
+    if [[ -n "$last" ]]; then last="$(at_time "$last" %F)"; fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$job" "$(job_key "$1" "$job" schedule -)" "$(job_key "$1" "$job" day -)" "${last:-never}" "$(job_due "$1" "$job")"
   done < <(job_names "$1")
 }
