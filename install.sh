@@ -438,7 +438,8 @@ CLAUDE_SETTINGS_DST="$HOME/.claude/settings.json"
 
 # [path, entry] pairs an earlier baseline shipped and the merge now deletes from
 # the live file at each install. The union alone would keep them for good.
-CLAUDE_SETTINGS_RETIRED='[[["sandbox", "excludedCommands"], "git fetch *"]]'
+CLAUDE_SETTINGS_RETIRED='[[["sandbox", "excludedCommands"], "git fetch *"],
+  [["permissions", "ask"], "mcp__plugin_runpod_runpod__*"]]'
 
 # Deep-merges the baseline over the live file, but UNIONS the permission and
 # sandbox arrays: jq's `*` replaces arrays wholesale, which would silently

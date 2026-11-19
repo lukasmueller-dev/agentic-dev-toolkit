@@ -6,7 +6,7 @@ The repo's own plugins live in `claude/marketplace/` (marketplace `toolkit`, add
 
 | Plugin | Gives | Guard |
 | --- | --- | --- |
-| `runpod@runpod` | 20 skills, the hosted MCP server `mcp.runpod.io` | `ask` on `Bash(runpodctl:*)` and `mcp__plugin_runpod_runpod__*` |
+| `runpod@runpod` | 20 skills, the hosted MCP server `mcp.runpod.io` | `ask` on `Bash(runpodctl:*)` and each MCP tool that changes or runs something; MCP reads (`list-*`, `get-*`, docs) allowed |
 | `vastai@vast-ai` | 7 skills (`vastai`, `vastai-host`, 5 commands) | `ask` on `Bash(vastai:*)` |
 | `wandb@toolkit` | the W&B MCP server, key `${WANDB_API_KEY}` | allowed; the key is unset in sandboxed Bash |
 
@@ -72,6 +72,8 @@ Set that SHA as `ref` in `claude/settings.json`, review the upstream diff, then 
 - A moved pin with the same plugin version updates nothing → `claude plugin uninstall <p>`, then `./install.sh claude`.
 - `/plugin` disables a plugin → the next install enables it again: the baseline wins.
 - `vastai` or `runpodctl` behind a path or `env` (`~/.local/bin/vastai`) misses the guard.
+- A new RunPod MCP tool is on no list: auto mode lets the classifier decide. Add it to `allow` (read) or `ask` (write).
+- `ask` beats `allow`: a catch-all `mcp__plugin_runpod_runpod__*` in `ask` prompts on every read again.
 - `plugin:wandb:wandb` fails with HTTP 401 → `WANDB_API_KEY` is unset in that server: check step 1, then step 4.
 - Queue jobs have no key: the W&B server fails to connect there.
 - An unsandboxed Bash call sees `WANDB_API_KEY`: `envVars` scrubs sandboxed commands only.
