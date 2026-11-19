@@ -21,7 +21,7 @@ tray-noise reads `$0.24 of $35` and `drained · stop now · on vast` in `vibe qu
 ## Next action
 
 End action of `SPEC.md`: `delete`. Move each decision of `SPEC.md` to `pr.md`, then `git rm SPEC.md HANDOFF.md`.
-Put the open human decisions below into the PR body first.
+Put the open human decision below (the run/ mirror) into the PR body first.
 
 ## Blockers
 
@@ -29,9 +29,6 @@ None.
 
 ## Gotchas (unpromoted)
 
-Open review finding (reviews 1 and 2): `research_why` takes its reason from the newest ended run of any job.
-After `vibe queue stop <coordinator>`, an old worker's exit 124 reads `run at its limit`; `stopped` shows only when no other reason matches.
-Only a `stop` file reaches drained with no drain file: `stopped` first makes the smoke, limit, usd and deadline reasons of SPEC.md unreachable. The human decides.
 Review 2 asks again to delete the `run/started` and `run/limit` mirror; SPEC.md keeps it. The human decides.
 
 `failed: smoke`, `Step:` and `Average time:` are safety-critic's own log words.
