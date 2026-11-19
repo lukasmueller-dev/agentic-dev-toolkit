@@ -3351,6 +3351,11 @@ st_tip() {
     *"Checks failed"*) echo "The checks of the repo (.vibe-jobs/gate) failed: read the Checks log." ;;
     *"Verify: "*) echo "The verify agent did not pass the change." ;;
     "push failed"* | "PR not created"*) echo "The runner could not push the branch or open the PR." ;;
+    Thinking) echo "The coordinator agent plans the next runs." ;;
+    Coding) echo "A worker agent writes its run." ;;
+    Closing) echo "A worker agent reads its run result." ;;
+    Drained) echo "No new run starts: the state line says why." ;;
+    "On "*) echo "A run uses its box at that place now." ;;
   esac
 }
 

@@ -488,6 +488,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   # The pill reads the state word: a drained question is not done, and keeps Stop now.
   [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · drained\n'* ]] || false
   grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
+  grep -qF '<span class="st" title="No new run starts: the state line says why.">Drained</span>' "$f"
   grep -qF 'data-act="research-stop-now"' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
@@ -495,6 +496,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line "on runpod · h2 · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
   # A live run keeps the gpu look: the brand glider runs.
   grep -qF '<div class="job lane research s-gpu"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">On runpod</span>' "$f"
+  grep -qF '<span class="st" title="A run uses its box at that place now.">On runpod</span>' "$f"
   echo "done" >"$h2/status" && echo running >"$h/status"
   line coding
   echo '{"metric": 0.5}' >"$h/run-result"
