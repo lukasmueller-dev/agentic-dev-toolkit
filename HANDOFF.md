@@ -36,7 +36,7 @@ None.
 `failed: smoke`, `Step:` and `Average time:` are safety-critic's own log words.
 They appear nowhere else in the toolkit. Keep them inside shortcuts; the `PROGRESS` contract is the real source.
 
-A run from before milestone 2 has no `run/started` or `run/limit`: the card shows no box time for it.
+No code reads `run/started` or `run/limit`: an ended run shows no box time. A review asks to delete the mirror; `SPEC.md` keeps it, so the human decides.
 
 A job with a `stop` file (`vibe queue stop <id>`) needs no answer: `research_row` treats it as `stopped`.
 
