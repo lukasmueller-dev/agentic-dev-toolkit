@@ -3445,7 +3445,7 @@ research_paste() {
 # it is done, the two stop buttons until the question drains or is done, then Archive (drained: Stop now while a run lives), then a row per worker: lamp, hid, state,
 # place, metric, USD, idea, last step, for a worker in `paste` its steps, for another blocked one an answer field. A builds= row is indented by its depth.
 research_card() {
-  local l w h dp s pl lt m u idea lamp mu b sq sn rows=""
+  local l w h dp s pl lt m u idea lamp mu a b sq sn rows=""
   rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>$(esc "${4##*|}")</p>"
   while IFS= read -r l; do
     if [[ -n "$l" ]]; then rows+="<p>$(esc "$(page_why "$l")")</p>"; fi
@@ -3455,11 +3455,16 @@ research_card() {
   sn='<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>'
   case "$2" in
     "done") b="$(act_btn research-archive)" ;;
-    # Drained: no Stop question; Stop now while a run lives (a coordinator run or a worker in `running`).
+    # Drained: no Stop question; Stop now while a run lives (a coordinator run or a worker in `running`);
+    # Archive once each job has settled, as `queue archive --research` asks.
     drained)
-      b=""
+      b="" a="$(act_btn research-archive)"
       if { [[ -n "$3" && "$(jstate "$3" status)" == gpu ]] && has_run "$3"; } || [[ "$6" == *$'\037'running$'\037'* ]]; then b="$sn"; fi
-      b="$(btn_rows "$b" "$(act_btn research-archive)")"
+      if [[ -n "$3" ]] && ! job_settled "$3"; then a=""; fi
+      while IFS=$'\037' read -r h dp s pl lt m u idea w; do
+        if [[ -n "$w" ]] && ! job_settled "$w"; then a=""; fi
+      done <<<"$6"
+      b="$(btn_rows "$b" "$a")"
       ;;
     *) b="$(btn_rows "$sq" "$sn")" ;;
   esac

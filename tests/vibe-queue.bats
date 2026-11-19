@@ -502,8 +502,8 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · drained\n'* ]] || false
   grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
   grep -qF '<span class="st" title="No new run starts: the state line says why.">Drained</span>' "$f"
-  # A drained question loses Stop question, keeps Stop now while h2 runs, and gains Archive.
-  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button><hr><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
+  # A drained question loses Stop question and keeps Stop now while h2 runs; Archive waits for each job to end.
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
