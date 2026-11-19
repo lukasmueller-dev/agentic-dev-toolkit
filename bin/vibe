@@ -4674,7 +4674,7 @@ research_place() {
 }
 
 # research_why DRAIN ENDED COORD — why a question drained, first match: a stop (DRAIN now or drain), the newest ended
-# run (ENDED) failed its smoke test, hit its limit or met the usd gate, COORD's deadline= passed. Empty with none.
+# run (ENDED) failed its smoke test, hit its limit or met the usd gate (the run would pass usd=), COORD's deadline= passed. Empty with none.
 research_why() {
   local x="" dl
   if [[ -n "$2" ]]; then x="$(jstate "$2/run" exit)"; fi
@@ -4688,7 +4688,7 @@ research_why() {
       elif [[ "$x" == 124 ]]; then
         echo "run at its limit"
       elif [[ "$x" == usd ]]; then
-        echo "usd= spent"
+        echo "run over usd="
       elif [[ -n "$3" ]] && dl="$(deadline_of "$3/job" 2>/dev/null)" && [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
         echo "deadline passed"
       fi

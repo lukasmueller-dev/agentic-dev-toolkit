@@ -506,7 +506,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
   line 'drained · smoke failed · on vast'
   echo usd >"$c/run/exit"
-  line 'drained · usd= spent · on vast'
+  line 'drained · run over usd= · on vast'
   rm -r "$c/run"
   line 'drained · deadline passed'
 }
