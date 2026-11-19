@@ -10,20 +10,20 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card-status`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card-status
-- **Last updated:** 2026-11-19 · turing (milestone 2 done)
+- **Last updated:** 2026-11-19 · turing (milestone 3 done)
 
 ## State
 
-Milestones 1 and 2 are done. Card spend sums the coordinator chain and live boxes
-(`research_cost` in `bin/vibe`); tray-noise reads `$0.24 of $35`. After up,
-`place_run` mirrors the instance's `started` and `limit` into `queue/<id>/run/`.
+Milestones 1–3 are done. `research_line` in `bin/vibe` builds the state line;
+`research_row` puts it in the last field of `R_HEAD`. tray-noise reads
+`drained · stop now · on vast`; its pill still reads `done`.
 
 ## Next action
 
-Milestone 3: the state line, its precedence and the drained reason (see `SPEC.md`
-Decisions). `research_row` in `bin/vibe` builds the line today.
+Milestone 4: split the pill label from the CSS state (see `SPEC.md` Decisions).
+`R_PILL` still holds the old four values; the state word is the first field of the line.
 
-Done when the tray-noise card line matches the order in `SPEC.md`.
+Done when the pill reads the state word and a live run still renders `s-gpu`.
 
 ## Blockers
 
@@ -32,8 +32,10 @@ None.
 ## Gotchas (unpromoted)
 
 `failed: smoke`, `Step:` and `Average time:` are safety-critic's own log words.
-They appear nowhere in the toolkit. Keep them inside the `Step:` fallback and
-mark it a shortcut; the `PROGRESS` contract is the real source.
+They appear nowhere else in the toolkit. Keep them inside shortcuts; the `PROGRESS` contract is the real source.
 
-A run from before milestone 2 has no `run/started` or `run/limit`: the card must
-show no box time for it, not fail.
+A run from before milestone 2 has no `run/started` or `run/limit`: the card shows no box time for it.
+
+A job with a `stop` file (`vibe queue stop <id>`) needs no answer: `research_row` treats it as `stopped`.
+
+`docs/vibe-queue.md` §Research card still describes `waits for`: milestone 7 rewrites it.
