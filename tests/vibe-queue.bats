@@ -485,13 +485,16 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line 'drained · stop question · h2 on runpod'
   echo now >"$h2/drain"
   line 'drained · stop now · h2 on runpod'
-  # The held look until the pill has its own state word: a drained question is not done, and keeps Stop now.
-  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · held\n'* ]] || false
+  # The pill reads the state word: a drained question is not done, and keeps Stop now.
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · drained\n'* ]] || false
+  grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
   grep -qF 'data-act="research-stop-now"' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
   line "on runpod · h2 · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
+  # A live run keeps the gpu look: the brand glider runs.
+  grep -qF '<div class="job lane research s-gpu"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">On runpod</span>' "$f"
   echo "done" >"$h2/status" && echo running >"$h/status"
   line coding
   echo '{"metric": 0.5}' >"$h/run-result"
@@ -510,7 +513,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
-  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · held\n'* ]] || false
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · drained\n'* ]] || false
   echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
   line 'drained · smoke failed · on vast'
   echo usd >"$c/run/exit"
@@ -535,7 +538,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo 0.30 >"$h2-gpu/cost"
   echo "done" >"$h2/status"
   rpage
-  grep -qF '<span class="n">closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
+  grep -qF '<span class="n">Closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
   grep -qF '$1.50 of $50' "$f"
   [ "$(grep -o 'data-hid="h2"' "$f" | wc -l)" -eq 1 ]
 }

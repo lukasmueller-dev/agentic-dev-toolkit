@@ -260,10 +260,10 @@ A job with `research=<slug>` is in no repo group: the page shows one card per sl
 - State, first match: `needs you`, `drained` (a `drain` file, or nothing runs or waits and the coordinator is not `done`), `on <place>` (a live run), `coding`, `closing`, `thinking` (the coordinator runs), `queued`, `done`.
 - Reason: for `needs you` what needs you (`paste <hid>`, `<hid> blocked`, `coordinator blocked`); for `drained`, first match, `stop now`, `stop question`, `smoke failed`, `run at its limit`, `run over usd=`, `deadline passed`. A job that `vibe queue stop` ended needs no answer.
 - Run: the newest live run, else the newest ended one; a worker's names its hid. A live run drops `on <place>`: the state holds it. `box until`: a live run's box limit.
-- Pill: a drained question takes `held` (On hold, no Archive).
+- Pill: the state word. Look: `thinking`, `coding`, `closing` → `running`; `on <place>` → `gpu`; `drained` → `held`; `needs you` → `blocked`.
 - Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
 - A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. A `blocked` worker with no `paste.md` has the `answer` field. The card shows Stop question and Stop now until the question is done, then Archive.
-- Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
+- Count: workers `done` / workers. A failed worker alone does not need you.
 - Status and the report: a `Research` group after `Features`, a line (report: a row) per question, `hid · place  state  metric · USD` per worker. A done worker keeps no report row of its own.
 - The `no PR` count of the status header skips a done research job with no PR.
 

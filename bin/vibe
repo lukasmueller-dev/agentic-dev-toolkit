@@ -3318,6 +3318,11 @@ st_label() {
     "needs you") echo "Needs you" ;;
     "no job") echo "No job" ;;
     finished) echo Finished ;;
+    thinking) echo Thinking ;;
+    coding) echo Coding ;;
+    closing) echo Closing ;;
+    drained) echo Drained ;;
+    "on "*) echo "On ${1#on }" ;;
     *) echo "$1" ;;
   esac
 }
@@ -3481,7 +3486,7 @@ status_card() {
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
     research)
-      pill="$(st_label "$3")" txt="$5" pr="$6" cls=" lane research" name="$2${4:+ · $(group_prog "$4")}"
+      pill="$(st_label "$3")" txt="$5" pr="$6" cls=" lane research" name="$2${4:+ · $(group_prog "$4")}" st="$(research_look "$3")"
       extra="$(research_card "$2" "$3" "$7" "$8" "$9" "${10}")"
       ;;
     *) return 0 ;;
@@ -3798,7 +3803,7 @@ page_why() {
 # The block (hidden; the panel shows it): lamp, state, title, meta line, the item's status_card, then Activity (page.js).
 page_row() {
   local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" el="" nm="" l c s e j fj="" body
-  local st="${3:-}" meta="" x sub="" act=""
+  local st="${3:-}" meta="" x sub="" act="" look="${3:-}"
   case "$1" in
     repo)
       P_REPO="$2"
@@ -3807,11 +3812,11 @@ page_row() {
     job) why="$4" pr="$5" dir="$6" ph="${7:-}" k="${6##*/}" ;;
     lane) prog="$(group_prog "$4" "${10}")" why="$7" pr="$6" dir="$8" ph="${11:-}" k="$P_REPO/$2" ;;
     feature) prog="$(group_prog "$4")" why="$(st_label "$3")${5:+ · $5}" k="feature/$2" chip=Feature label="" ;;
-    research) prog="$(group_prog "$4")" why="$5" pr="$6" k="research/$2" chip=Research label="" ;;
+    research) prog="$(group_prog "$4")" why="$5" pr="$6" k="research/$2" chip=Research label="" look="$(research_look "$3")" ;;
     gpu) k="$2" t="GPU run · ${2#*-*-*-}" el="$4" why="${8:-}" label="${5##*/}" ;;
     *) return 0 ;;
   esac
-  case "$1/$3" in
+  case "$1/$look" in
     */running | */gpu) sec=run lamp=ok ;;
     */queued | */) sec=queued lamp=off ;;
     */held | gpu/parked) sec=held lamp=held ;;
@@ -4536,7 +4541,7 @@ research_cost() {
 }
 
 # research_row SLUG — the question of one `research=` slug. A coordinator job has no `hid=`; a worker's latest job
-# (session 2 sorts after session 1) gives its state. Sets R_PILL (needs you, held: drained, running, queued, done), R_PROGRESS (workers
+# (session 2 sorts after session 1) gives its state. Sets R_PILL (the state word of research_line), R_PROGRESS (workers
 # done/all), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|line`, line: research_line),
 # R_ITEMS (`NAME  STATUS  NOTE` per job that needs you) and R_WORKERS (a line per worker, parent first, joined by US:
 # HID DEPTH STATE PLACE LAST METRIC USD IDEA DIR). State: queued, coding (session 1), running (the run), closing
@@ -4649,13 +4654,6 @@ research_row() {
     h="${x%%$'\037'*}" x="${x#*$'\037'}" x="${x#*$'\037'}"
     if [[ "$R_WORKERS" != "$h"$'\037'* && "$R_WORKERS" != *$'\n'"$h"$'\037'* ]]; then R_WORKERS+="${R_WORKERS:+$'\n'}$h"$'\037'0$'\037'"$x"; fi
   done <<<"$flat"
-  if ((you)); then
-    R_PILL="needs you"
-  elif ((run)); then
-    R_PILL=running
-  elif ((wait)); then
-    R_PILL=queued
-  fi
   if ((n)); then R_PROGRESS="$ok/$n"; fi
   best="$(awk -F'\t' -v b="${better:-higher}" '$2 != "" { x = $2 + 0; if (!n || (b == "lower" ? x < bx : x > bx)) { bx = x; bs = $2; bh = $1 } n = 1 }
     END { if (n) print bs " (" bh ")" }' <<<"$ms")"
@@ -4665,8 +4663,6 @@ research_row() {
     st="needs you|$ys"
   elif [[ -n "$dr" ]] || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
     st="drained|$(research_why "$dr" "$ended" "$cd")"
-    # The held look: a drained question is not done.
-    R_PILL=held
   elif [[ -n "$live" ]]; then
     st="on $(research_place "$live")|"
   elif ((code)); then
@@ -4680,6 +4676,7 @@ research_row() {
   else
     st="done|"
   fi
+  R_PILL="${st%%|*}"
   R_HEAD="$best|\$$sp|$usd|$dl|$(research_line "${st%%|*}" "${st#*|}" "${live:-$ended}" "$live")"
 }
 
@@ -4689,6 +4686,16 @@ research_place() {
   p="$(jstate "$1/run" place)"
   [[ -n "$p" ]] || p="$(jget "$1/job" place)"
   echo "${p:-turing}"
+}
+
+# research_look WORD — the CSS state of a research state word: the page's look and section.
+research_look() {
+  case "$1" in
+    thinking | coding | closing) echo running ;;
+    "on "*) echo gpu ;;
+    drained) echo held ;;
+    *) echo "$1" ;;
+  esac
 }
 
 # research_why DRAIN ENDED COORD — why a question drained, first match: a stop (DRAIN now or drain), the newest ended
