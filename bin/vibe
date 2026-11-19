@@ -2509,11 +2509,14 @@ place_gate() {
   mkdir_lock "$l" || return 2
   u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
   if [[ -n "$r" ]]; then
-    s="$(for j in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
-      if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" && "$(jget "${j}job" repo)" == "$g" ]]; then
-        head -n 1 "${j}cost"
-      fi
-    done | awk '{ s += $1 } END { printf "%.2f", s }')"
+    s="$({
+      for j in "$QDIR"/*/; do
+        if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" && "$(jget "${j}job" repo)" == "$g" ]]; then
+          head -n 1 "${j}cost"
+        fi
+      done
+      archived_costs "$r" "$g"
+    } | awk '{ s += $1 } END { printf "%.2f", s }')"
   fi
   # awk compares a number with a word as text: a usd that is no number must refuse here.
   if [[ -n "$u" && ! "$u" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -2533,6 +2536,16 @@ place_gate() {
     echo "vibe: $m: no start"
     return 2
   fi
+}
+
+# archived_costs RESEARCH REPO — the cost of each archived job of RESEARCH and REPO (empty: any repo), a line each.
+archived_costs() {
+  local j
+  for j in "$QROOT"/archive/*/*/; do
+    if [[ -s "${j}cost" && "$(jget "${j}job" research)" == "$1" ]] && [[ -z "$2" || "$(jget "${j}job" repo)" == "$2" ]]; then
+      head -n 1 "${j}cost"
+    fi
+  done
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
@@ -4555,13 +4568,9 @@ research_row() {
     if [[ -n "$c" ]]; then costs+="$c"$'\n'; fi
     if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
-  # A retried job is archived: its cost counts on, as in place_gate (same research= and repo=).
-  x="$(jget "$cd/job" repo)"
-  for d in "$QROOT"/archive/*/*/; do
-    if [[ -s "${d}cost" && "$(jget "${d}job" research)" == "$1" ]] && [[ -z "$x" || "$(jget "${d}job" repo)" == "$x" ]]; then
-      costs+="$(jstate "$d" cost)"$'\n'
-    fi
-  done
+  # A retried job is archived: its cost counts on, as in place_gate.
+  x="$(archived_costs "$1" "$(jget "$cd/job" repo)")"
+  if [[ -n "$x" ]]; then costs+="$x"$'\n'; fi
   if [[ -n "$cd" ]]; then
     R_DIR="$cd" R_PR="$(jstate "$cd" pr)"
     h="$(jget "$cd/job" question)" R_QUESTION="${h:-$1}"
