@@ -1,7 +1,8 @@
-"""page_check.py BROWSER WEB_DIR A B RESEARCH — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
+"""page_check.py BROWSER WEB_DIR A B RESEARCH DRAINED LIVE — drive page.js in a headless browser (CDP over --remote-debugging-pipe).
 
 WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and the research question RESEARCH
-(a coordinator and 4 workers: h1, h4 below h1, h2, h3); it is served under /queue/ and changed in place, with a whoami,
+(a coordinator and 4 workers: h1, h4 below h1, h2, h3), DRAINED (Stop now while its run lives) and LIVE (a run on vast
+with steps, an ETA and a box end); it is served under /queue/ and changed in place, with a whoami,
 a GET writes and an Activity per job as static files; a POST gets its answer in ANSWERS after its delay. Prints one line per check; exits 1 when one fails, 77 when the browser does not
 start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
 Used by tests/vibe-web.bats.
@@ -20,7 +21,7 @@ import tempfile
 import threading
 import time
 
-BROWSER, WEB, A, B, R = sys.argv[1:6]
+BROWSER, WEB, A, B, R, RD, RL = sys.argv[1:8]
 PAGE = os.path.join(WEB, "index.html")
 signal.alarm(80)  # a hung browser fails the test instead of the suite
 
@@ -232,6 +233,21 @@ try:
     time.sleep(2.5)
     check("a second tap leaves the label at Copy", js("%s.querySelectorAll('.paste button[data-copy]')[1].textContent" % RB) == "Copy")
     check("a paste field and both stop buttons are in the block", js("!!%s.querySelector('.wk[data-hid=\"h3\"] .paste textarea[name=text]') && %s.querySelectorAll('button[data-act^=research-stop]').length === 2" % (RB, RB)))
+    # A live run: the pill names its place, the gpu look, the spend of its box; the state line wraps on a phone, its box end in view.
+    LB = "document.getElementById('job-research/%s')" % RL
+    js("location.hash = 'job-research/%s'" % RL)
+    check("a live research block shows", until("!%s.hidden" % LB, 2))
+    check("a live run's pill reads On vast, in the gpu look", js("%s.querySelector('.pill').textContent === 'On vast' && %s.querySelector('.job').classList.contains('s-gpu')" % (LB, LB)))
+    check("a live box counts its spend", js("%s.querySelector('.stats').textContent" % LB) == "$0.40 of $35")
+    LINE = "[...%s.querySelectorAll('.job > p')].find(p => p.textContent.startsWith('on vast · '))" % LB
+    WRAP = "(() => { const p = %s, r = document.createRange(); r.selectNodeContents(p); const q = [...r.getClientRects()]; return p.textContent.includes(' steps · eta ') && p.textContent.includes(' · box until ') && q.length > 1 && q[q.length - 1].right <= document.getElementById('panel').getBoundingClientRect().right && p.scrollWidth <= p.clientWidth; })()" % LINE
+    check("the state line wraps on a phone, the box end in the panel", js(WRAP))
+    # Drained: the held look is a ring with no fill; Stop now while its run lives, no Stop question, no Archive yet.
+    DB = "document.getElementById('job-research/%s')" % RD
+    js("location.hash = 'job-research/%s'" % RD)
+    check("a drained research block shows", until("!%s.hidden" % DB, 2))
+    check("a drained pill reads Drained, its lamp a ring with no fill", js("(() => { const l = getComputedStyle(%s.querySelector('.bh .lamp')); return %s.querySelector('.pill').textContent === 'Drained' && l.backgroundColor === 'rgba(0, 0, 0, 0)' && l.boxShadow !== 'none'; })()" % (DB, DB)))
+    check("a drained card has Stop now alone while its run lives", js("[...%s.querySelectorAll('[data-research] button')].map(b => b.dataset.act).join()" % DB) == "research-stop-now")
     # The five tabs on a desk: each hash tab shows its page alone and is marked; Help ↗ opens Page words.
     cdp("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
     check("whoami shows the buttons", until("document.body.classList.contains('can')", 12))

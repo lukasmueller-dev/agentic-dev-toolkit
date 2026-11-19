@@ -266,9 +266,19 @@ post() {
   date '+%F %T' >"$Q/queue/20261104-070000-run/started"
   echo https://example.com/pull/9 >"$Q/queue/20261104-060000-pr/pr"
   research_fixture "$Q/queue" "$BATS_TEST_TMPDIR/proj"
+  # dq: drained by Stop now while its coordinator's run lives. lv: a live run on vast with steps, an ETA and a box end.
+  local d="$Q/queue/20261117-110000-proj-research-dq" l="$Q/queue/20261117-120000-proj-research-lv" st t
+  rjob "$Q/queue" "${d##*/}" gpu "$BATS_TEST_TMPDIR/proj" research/dq "research=dq" "question=Does dropout help?" "usd=20"
+  mkdir -p "$d/run" && echo now >"$d/drain"
+  rjob "$Q/queue" "${l##*/}" gpu "$BATS_TEST_TMPDIR/proj" research/lv "research=lv" "question=Is the tray noise from the fan?" "usd=35"
+  mkdir -p "$l/run" && echo vast >"$l/run/place"
+  st="$Q/workspaces/research-${l##*/}" t=$(($(date +%s) + 3600))
+  mkdir -p "$st" && echo "$t" >"$st/limit" && echo 0.40 >"$st/price" && echo $((t - 7200)) >"$st/started"
+  printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42-warmup-cosine"}\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42-warmup-cosine"}\n' \
+    $((t - 3700)) $((t - 3600)) >"$st/log"
   echo https://github.com/o/r >"$STUBS/origin"
   "$REPO_ROOT/bin/vibe" queue page
-  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr
+  run python3 "$BATS_TEST_DIRNAME/page_check.py" "$b" "$Q/web" "$a" "$c" lr dq lv
   echo "$output"
   [ "$status" -ne 77 ] || skip "$output"
   [ "$status" -eq 0 ]
