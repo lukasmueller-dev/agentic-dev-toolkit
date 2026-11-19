@@ -588,6 +588,19 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line 'drained · stopped · h2 on runpod'
 }
 
+@test "page: a gpu job whose run ended reads closing (a worker) or thinking (the coordinator), not done" {
+  local r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  rm "$h/paste.md" && echo "done" >"$h/status"
+  # place_run wrote run/exit; the follow-up is not queued yet, so h2 is still gpu.
+  mkdir -p "$h2/run" && echo runpod >"$h2/run/place" && echo 0 >"$h2/run/exit"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · closing\n'*$'\n    closing · h2 on runpod\n'*'h2 · runpod  closing'* ]] || false
+  echo "done" >"$h2/status" && rm -r "$h2/run"
+  echo gpu >"$c/status" && mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 0 >"$c/run/exit"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · thinking\n'*$'\n    thinking · on vast\n'* ]] || false
+}
+
 # shellcheck disable=SC2016  # a literal $ in the expected text
 @test "page: a research best follows better=, skips a null metric; session 2 gives the state and adds its cost" {
   local f="$XDG_STATE_HOME/vibe/web/index.html" r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2"

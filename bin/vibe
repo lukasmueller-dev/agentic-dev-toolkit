@@ -4614,7 +4614,11 @@ research_row() {
     case "$st" in
       running) run=1 think=1 ;;
       # A coordinator in gpu with no run of its own waits for its workers.
-      gpu) if has_run "$cd"; then run=1; else wait=1; fi ;;
+      # Its run ended, its follow-up not queued yet: the coordinator thinks again.
+      gpu)
+        if has_run "$cd"; then run=1; else wait=1; fi
+        if [[ -e "$cd/run/exit" ]]; then think=1; fi
+        ;;
       "" | queued) wait=1 ;;
       blocked | failed | timeout | skipped)
         you=1 ys+="${ys:+, }coordinator $st"
@@ -4640,6 +4644,8 @@ research_row() {
       running) s=coding run=1 ;;
       gpu) s=running run=1 ;;
     esac
+    # Its run ended, its session 2 not queued yet: it closes.
+    if [[ "$st" == gpu && -e "$L/run/exit" ]]; then s=closing; fi
     if [[ -n "$res" || -n "$fo" ]] && [[ "$s" == queued || "$s" == coding ]]; then s=closing; fi
     if [[ "$s" == blocked && -s "$L/paste.md" ]]; then s="paste"; fi
     if [[ "$s" == failed && -e "$L/infra" ]]; then s=infra; fi
