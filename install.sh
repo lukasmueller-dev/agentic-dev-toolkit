@@ -464,6 +464,7 @@ claude_settings_merged() {
     | ($live * $repo)
     | .permissions.allow = ((($live.permissions.allow // []) + ($repo.permissions.allow // [])) | unique)
     | .permissions.deny  = ((($live.permissions.deny  // []) + ($repo.permissions.deny  // [])) | unique)
+    | .permissions.ask   = ((($live.permissions.ask   // []) + ($repo.permissions.ask   // [])) | unique)
     | reduce (
         [["sandbox", "excludedCommands"],
          ["sandbox", "credentials", "files"],
@@ -551,6 +552,55 @@ install_claude_settings() {
   printf '%s\n' "$merged" >"$CLAUDE_SETTINGS_DST"
   warn "  backed up $CLAUDE_SETTINGS_DST.bak.$RUN_TS"
   ok "  merged   $CLAUDE_SETTINGS_DST"
+}
+
+# The baseline's enabledPlugins, installed: settings alone install nothing.
+# A github marketplace is (re)added at its pinned ref when the live record differs.
+# Never `marketplace remove`: it also deletes the entry from settings.json.
+# shortcut: a moved pin updates a plugin only when its version changes; reinstall by hand otherwise.
+install_claude_plugins() {
+  hdr "claude plugins"
+  if ! command -v claude >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    say "  claude or jq not installed — skipped"
+    return
+  fi
+  local dir="$HOME/.claude/plugins" name src have moved=" " p
+  while IFS=$'\t' read -r name src; do
+    have="$(jq -r --arg n "$name" '.[$n].source // {} | (.repo // "") + (if .ref then "#" + .ref else "" end)' \
+      "$dir/known_marketplaces.json" 2>/dev/null || true)"
+    if [[ "$have" == "$src" ]]; then
+      say "  ok       marketplace $name"
+    elif ((DRY)); then
+      say "  would add marketplace $src"
+    elif claude plugin marketplace add "$src" </dev/null >/dev/null 2>&1; then
+      ok "  added    marketplace $src"
+      moved+="$name "
+    else
+      warn "  failed   claude plugin marketplace add $src"
+    fi
+  done < <(jq -r '.extraKnownMarketplaces // {} | to_entries[]
+    | select(.value.source.source == "github")
+    | [.key, .value.source.repo + (if .value.source.ref then "#" + .value.source.ref else "" end)] | @tsv' \
+    "$CLAUDE_SETTINGS_SRC")
+  while IFS= read -r p; do
+    if ! jq -e --arg p "$p" '.plugins[$p]' "$dir/installed_plugins.json" >/dev/null 2>&1; then
+      if ((DRY)); then
+        say "  would install $p"
+      elif claude plugin install "$p" </dev/null >/dev/null 2>&1; then
+        ok "  installed $p"
+      else
+        warn "  failed   claude plugin install $p"
+      fi
+    elif [[ "$moved" == *" ${p#*@} "* ]]; then
+      if claude plugin update "$p" </dev/null >/dev/null 2>&1; then
+        ok "  updated  $p"
+      else
+        warn "  failed   claude plugin update $p"
+      fi
+    else
+      say "  ok       $p"
+    fi
+  done < <(jq -r '.enabledPlugins // {} | to_entries[] | select(.value == true) | .key' "$CLAUDE_SETTINGS_SRC")
 }
 
 # ---------------------------------------------------------------------------
@@ -737,6 +787,7 @@ if ((UNINSTALL)); then
     hdr "claude settings"
     say "  not removed: the baseline was merged into your own settings.json."
     say "  Undo by restoring a backup: $CLAUDE_SETTINGS_DST.bak.*"
+    say "  plugins not removed: claude plugin uninstall <plugin>"
   fi
   printf '\n'
   ok "uninstall complete."
@@ -770,7 +821,10 @@ done
 # skill renamed back to its old name) is treated as a link, not litter.
 prune_orphans
 
-want claude && install_claude_settings
+if want claude; then
+  install_claude_settings
+  install_claude_plugins
+fi
 
 # --- PATH check -------------------------------------------------------------
 if ((DRY == 0)); then

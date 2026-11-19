@@ -14,7 +14,10 @@
       "Bash(git push * *refs/heads/master*)",
       "Bash(gh pr merge:*)",
       "Bash(gh pr ready:*)",
-      "Bash(sudo:*)"
+      "Bash(sudo:*)",
+      "Bash(runpodctl:*)",
+      "Bash(vastai:*)",
+      "mcp__plugin_runpod_runpod__*"
     ]
   },
   "sandbox": {

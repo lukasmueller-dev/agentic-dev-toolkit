@@ -154,8 +154,10 @@ setup() {
   # this is what makes it checkable: nothing under .claude-plugin/ may end up
   # linked into HOME.
   export HOME="$BATS_TEST_TMPDIR/home"
-  mkdir -p "$HOME"
-  run "$REPO_ROOT/install.sh"
+  mkdir -p "$HOME/stub"
+  printf '#!/bin/sh\n' >"$HOME/stub/claude" # the plugin step must not reach the real CLI
+  chmod +x "$HOME/stub/claude"
+  PATH="$HOME/stub:$PATH" run "$REPO_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ ! -e "$HOME/.claude/plugin.json" ]
   [ ! -e "$HOME/.claude-plugin" ]

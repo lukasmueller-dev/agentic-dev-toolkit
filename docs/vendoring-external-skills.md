@@ -107,9 +107,8 @@ Adapt a skill without a hand edit to `vendor/`:
 | A `LICENSE` above the vendored path (`plug` does not copy it) | Name the copyright line in the adapter |
 | A trigger that loads in every session (`code review`) | Copy it into `skills/` with `disable-model-invocation: true`, its `LICENSE` and an `Adapted from <repo> at <sha>` line (`skills/lean-review/`) |
 
-Rejected: plugin marketplaces (Claude-only, unreviewed updates), git
-submodules (opaque SHA bumps), `npx skills add` (Node dependency, mixed
-provenance).
+Rejected: git submodules (opaque SHA bumps), `npx skills add` (Node dependency, mixed
+provenance). A plugin with an MCP server or commands installs from its marketplace at a pinned ref: [`claude-plugins.md`](claude-plugins.md).
 
 ## What breaks it
 
