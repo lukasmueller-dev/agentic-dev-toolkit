@@ -4771,7 +4771,7 @@ research_why() {
 }
 
 # research_progress LOG — `RUN|DONE|TOTAL|ETA` of LOG's last `PROGRESS {"done":…, "total":…, "at":…, "run":…}` line;
-# ETA from the rate of the last two lines; one more than 30 days from now (an `at` in ms or ns) drops. With no such line, DONE is the last `Step:` before `Average time:`. Empty with none.
+# ETA from the rate of the last two lines; one in the past or 6 days or more ahead (a stalled run, an `at` in ms) drops. With no such line, DONE is the last `Step:` before `Average time:`. Empty with none.
 research_progress() {
   local p
   p="$(grep -a '^PROGRESS {' "$1" 2>/dev/null | tail -n 2 | jq -nRr '[inputs | ltrimstr("PROGRESS ") | fromjson? | objects]
@@ -4779,7 +4779,7 @@ research_progress() {
     | [($l.run | strings | gsub("[|[:cntrl:]]"; "")) // "", ($l.done | numbers) // "", ($l.total | numbers) // "",
       (if ([$l.done, $l.total, $l.at, $p.done, $p.at] | all(type == "number")) and $l.done > $p.done and $l.at > $p.at and $l.total > $l.done
        then $l.at + ($l.total - $l.done) * ($l.at - $p.at) / ($l.done - $p.done) | floor
-       | if (. - now | fabs) < 2592000 then . else "" end else "" end)] | join("|")' 2>/dev/null)" || p=""
+       | if . >= now and . < now + 518400 then . else "" end else "" end)] | join("|")' 2>/dev/null)" || p=""
   # shortcut: `Step:` and `Average time:` are safety-critic's log words; drop them when repos emit PROGRESS.
   if [[ -z "$p" && -f "$1" ]]; then
     p="$(awk '/Average time:/ { exit } match($0, /Step: [0-9]+/) { s = substr($0, RSTART + 6, RLENGTH - 6) } END { if (s != "") print "|" s "||" }' "$1" 2>/dev/null)" || p=""
