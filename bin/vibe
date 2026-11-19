@@ -2539,13 +2539,25 @@ place_gate() {
 }
 
 # archived_costs RESEARCH REPO — the cost of each archived job of RESEARCH and REPO (empty: any repo), a line each.
+# One awk for all: a subshell per archived job took 2.5 s at 1800 jobs, on each page render.
 archived_costs() {
   local j
-  for j in "$QROOT"/archive/*/*/; do
-    if [[ -s "${j}cost" && "$(jget "${j}job" research)" == "$1" ]] && [[ -z "$2" || "$(jget "${j}job" repo)" == "$2" ]]; then
-      head -n 1 "${j}cost"
-    fi
+  local -a f=()
+  for j in "$QROOT"/archive/*/*/cost; do
+    if [[ -s "$j" ]]; then f+=("$j"); fi
   done
+  ((${#f[@]})) || return 0
+  # The paths on stdin, not as arguments: a long archive passes ARG_MAX.
+  printf '%s\n' "${f[@]}" | awk -v r="$1" -v g="$2" '{
+    jf = $0; sub(/cost$/, "job", jf); rs = ""; rp = ""; a = 0; b = 0
+    while ((getline l < jf) > 0) {
+      if (!a && index(l, "research=") == 1) { rs = substr(l, 10); a = 1 }
+      if (!b && index(l, "repo=") == 1) { rp = substr(l, 6); b = 1 }
+    }
+    close(jf)
+    if (rs == r && (g == "" || rp == g) && (getline c < $0) > 0) print c
+    close($0)
+  }'
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
