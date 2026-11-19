@@ -833,6 +833,15 @@ EOF
   jq -e '.sandbox.excludedCommands | index("git push *")' "$HOME/.claude/settings.json"
   # fetch still runs without a prompt, now inside the sandbox
   jq -e '.permissions.allow | index("Bash(git fetch:*)")' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: the retired RunPod MCP catch-all ask leaves a live file" {
+  mkdir -p "$HOME/.claude"
+  printf '{ "permissions": { "ask": ["mcp__plugin_runpod_runpod__*"] } }' >"$HOME/.claude/settings.json"
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.permissions.ask | index("mcp__plugin_runpod_runpod__*") | not' "$HOME/.claude/settings.json"
+  jq -e '.permissions.ask | index("mcp__plugin_runpod_runpod__create-pod")' "$HOME/.claude/settings.json"
   jq -e '.sandbox.excludedCommands | index("git fetch *") | not' "$REPO_ROOT/claude/settings.json"
   run "$INSTALL" claude
   [[ "$(printf '%s\n' "$output" | plain)" == *"already applied"* ]] || false
@@ -866,12 +875,20 @@ EOF
   jq -e '.model == "opus"' "$HOME/.claude/settings.json"
 }
 
-@test "claude settings: GPU CLIs and the RunPod MCP server prompt; agent jobs deny them" {
-  local r
+@test "claude settings: GPU CLIs and RunPod MCP writes prompt, MCP reads run; agent jobs deny all" {
+  local r s="$REPO_ROOT/claude/settings.json"
   for r in 'Bash(runpodctl:*)' 'Bash(vastai:*)' 'mcp__plugin_runpod_runpod__*'; do
-    jq -e --arg r "$r" '.permissions.ask | index($r)' "$REPO_ROOT/claude/settings.json"
     jq -e --arg r "$r" '.permissions.deny | index($r)' "$REPO_ROOT/claude/vibe-job-settings.json"
   done
+  for r in 'Bash(runpodctl:*)' 'Bash(vastai:*)' 'mcp__plugin_runpod_runpod__create-pod' \
+    'mcp__plugin_runpod_runpod__pod-action' 'mcp__plugin_runpod_runpod__run-endpoint'; do
+    jq -e --arg r "$r" '.permissions.ask | index($r)' "$s"
+  done
+  jq -e '.permissions.allow | index("mcp__plugin_runpod_runpod__list-gpu-types")' "$s"
+  # ask beats allow: a catch-all ask would prompt on every read
+  jq -e '.permissions.ask | index("mcp__plugin_runpod_runpod__*") | not' "$s"
+  # a RunPod tool that changes or runs something is never allowed outright
+  jq -e '[.permissions.allow[] | select(test("^mcp__plugin_runpod_runpod__(create|delete|update|run|exec|pod-action|deploy|set|purge)"))] == []' "$s"
 }
 
 @test "claude settings: unions the ask array instead of replacing it" {
