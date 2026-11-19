@@ -499,6 +499,13 @@ rpage() { "$VIBE" queue page >/dev/null; }
   grep -qF '<span class="st" title="A run uses its box at that place now.">On runpod</span>' "$f"
   echo "done" >"$h2/status" && echo running >"$h/status"
   line coding
+  # A coordinator that waits for its workers has no run of its own: it is not on turing.
+  echo gpu >"$c/status"
+  line coding
+  echo queued >"$h/status"
+  line queued
+  grep -qF '<span class="pill">Queued</span>' "$f"
+  echo "done" >"$c/status" && echo running >"$h/status"
   echo '{"metric": 0.5}' >"$h/run-result"
   line closing
   echo "done" >"$h/status" && echo running >"$c/status"

@@ -4558,17 +4558,17 @@ research_row() {
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && "$(jget "$d/job" research)" == "$1" ]] || continue
-    # The glob sorts by id: the last run seen is the newest. A gpu job is a run in flight, on turing or a place.
+    h="$(jget "$d/job" hid)"
+    # The glob sorts by id: the last run seen is the newest. A gpu worker, or a gpu job with a run, is a run in flight.
     if [[ -e "$d/run/exit" ]]; then
       ended="$d"
-    elif [[ "$(jstate "$d" status)" == gpu ]]; then
+    elif [[ "$(jstate "$d" status)" == gpu ]] && { [[ -n "$h" ]] || has_run "$d"; }; then
       live="$d"
     fi
     case "$(jstate "$d" drain)" in
       now) dr=now ;;
       drain) dr="${dr:-drain}" ;;
     esac
-    h="$(jget "$d/job" hid)"
     if [[ -n "$h" ]]; then
       wl+="$d"$'\t'"$h"$'\n'
       continue
@@ -4590,7 +4590,8 @@ research_row() {
     if [[ -e "$cd/stop" && "$st" == failed ]]; then st=stopped; fi
     case "$st" in
       running) run=1 think=1 ;;
-      gpu) run=1 ;;
+      # A coordinator in gpu with no run of its own waits for its workers.
+      gpu) if has_run "$cd"; then run=1; else wait=1; fi ;;
       "" | queued) wait=1 ;;
       blocked | failed | timeout | skipped)
         you=1 ys+="${ys:+, }coordinator $st"
@@ -4685,6 +4686,9 @@ research_row() {
   R_PILL="${st%%|*}"
   R_HEAD="$best|\$$sp|$usd|$dl|$(research_line "${st%%|*}" "${st#*|}" "${live:-$ended}" "$live")"
 }
+
+# has_run JOB — true when JOB asked for a run of its own: a place run (run/) or a gpu-queue run (gpu-job); a waiting coordinator has none.
+has_run() { [[ -d "$1/run" || -s "$1/gpu-job" ]]; }
 
 # research_place JOB — the place of JOB's run: run/place, else the job's place=, else turing (a gpu-queue run).
 research_place() {
