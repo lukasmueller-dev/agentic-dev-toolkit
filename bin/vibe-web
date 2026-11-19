@@ -3,6 +3,7 @@
 
 Listens on 127.0.0.1:<web_port> (queue.conf, default 7341); tailscale serve
 mounts it at /queue/api. Setup: docs/vibe-queue.md step 3; routes: Page actions.
+A write answers right after its command; `vibe queue page` runs after it in the background, once for writes in a row.
 """
 import datetime
 import html
@@ -145,6 +146,20 @@ def qconf(key, default=""):
 FILES = ("report.md", "gate.log", "pr.md", "result", "note", "log", "tool.log", "out/report.md", "out/files", "activity")
 TIMEOUT = int(os.environ.get("VIBE_WEB_TIMEOUT") or 120)  # s per command: a hung one must not hold WRITE for ever
 WRITE = threading.Lock()  # one write at a time; reads (whoami) never wait on a slow client
+WAITING = []  # an argv per write that holds or waits for WRITE (GET writes); list append and remove are atomic
+DIRTY, RENDERING = threading.Event(), threading.Event()  # a write since the last render started; a render runs
+
+
+def renderer():
+    """vibe queue page after a write; the writes during a render share the next one."""
+    while DIRTY.wait():
+        RENDERING.set()
+        DIRTY.clear()
+        try:
+            subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=TIMEOUT)
+        except (subprocess.TimeoutExpired, OSError):  # no fork (ENOMEM), no bin/vibe mid-update: the next write tries again
+            pass
+        RENDERING.clear()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -183,6 +198,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {"error": "login"})
         if self.route() == "whoami":
             return self.reply(200, {"login": who})
+        if self.route() == "writes":  # page.js: the writes before yours; tests: the render is done
+            return self.reply(200, {"writes": len(WAITING), "render": DIRTY.is_set() or RENDERING.is_set()})
         if self.route().startswith("job/"):
             return self.job_file(self.route().split("/"))
         return self.reply(404, {"error": "no route"})
@@ -240,8 +257,12 @@ class Handler(BaseHTTPRequestHandler):
         argv = argv_of(self.route(), body)
         if argv is None:
             return self.reply(400, {"error": "bad args"})
-        with WRITE:
-            return self.write(who, argv)
+        WAITING.append(argv)
+        try:
+            with WRITE:
+                return self.write(who, argv)
+        finally:
+            WAITING.remove(argv)
 
     def write(self, who, argv):
         run = TOOLS.get(argv[0], argv[:1]) + argv[1:]
@@ -255,10 +276,7 @@ class Handler(BaseHTTPRequestHandler):
         os.makedirs(QROOT, exist_ok=True)
         with open(os.path.join(QROOT, "actions.log"), "a", encoding="utf-8") as f:
             f.write("%s\t%s\t%s\t%d\n" % (datetime.datetime.now().strftime("%F %T"), who, shlex.join(argv), r.returncode))
-        try:
-            subprocess.run([VIBE, "queue", "page"], stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=TIMEOUT)
-        except subprocess.TimeoutExpired:
-            pass
+        DIRTY.set()
         out = r.stdout + r.stderr
         if len(out) > 16000:  # a listing leads with its first item, an error ends the output: keep both ends
             out = out[:12000] + "\n…\n" + out[-4000:]
@@ -270,6 +288,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     port = int(qconf("web_port", "7341"))
+    threading.Thread(target=renderer, daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 

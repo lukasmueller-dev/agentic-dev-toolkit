@@ -28,8 +28,9 @@ case "\$1 \$2 \$*" in
 esac
 EOF
   # git: origin's URL from STUBS/origin (none: exit 2), every other call to the real git; a clone's own origin never shows.
+  # The origin call is once per page render (gh_url): a line in STUBS/renders, 2 s more with STUBS/slow.
   # shellcheck disable=SC2016  # the stub's own $3 $4 $5 and $@
-  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$(command -v git)" >"$STUBS/git"
+  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then echo x >>"%s/renders"; [ ! -f "%s/slow" ] || sleep 2; cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$STUBS" "$STUBS" "$(command -v git)" >"$STUBS/git"
   chmod +x "$STUBS/systemctl" "$STUBS/gh" "$STUBS/git"
   PATH="$STUBS:$PATH"
   git_env
@@ -45,8 +46,30 @@ web_start() {
 }
 
 teardown() {
+  eventually rendered || true # the render after the last write must not outlive the test
   kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" 2>/dev/null || true
 }
+
+# eventually CMD... — CMD succeeds within 10 s: the server renders the page after it answers a write.
+eventually() {
+  local i
+  for i in $(seq 100); do
+    if "$@"; then return 0; fi
+    sleep 0.1
+  done
+  return 1
+}
+
+# rendered — false while a render runs or waits (GET writes); true with no server or a 403.
+rendered() {
+  case "$(req GET /queue/api/writes -H 'Tailscale-User-Login: me@example.com')" in *'"render": true'*) return 1 ;; esac
+}
+
+# page_lacks ERE — no line of the page matches ERE.
+page_lacks() { ! grep -qE "$1" "$Q/web/index.html"; }
+
+# writes_say JSON — GET writes answers JSON.
+writes_say() { [ "$(req GET /writes -H 'Tailscale-User-Login: me@example.com' | sed -n 1p)" = "$1" ]; }
 
 # req METHOD PATH [CURL ARG...] — the HTTP code, then the body.
 req() {
@@ -70,12 +93,31 @@ post() {
   [ -e "$Q/paused" ]
   [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 1 ]
   grep -q $'\tme@example.com\tvibe queue pause\t0$' "$Q/actions.log"
-  grep -q 'data-act="resume"' "$Q/web/index.html"
+  eventually grep -q 'data-act="resume"' "$Q/web/index.html"
   run post /resume
   [ "${lines[1]}" = 200 ]
   [ ! -e "$Q/paused" ]
   [ "$(wc -l <"$Q/actions.log" | tr -d ' ')" = 2 ]
-  grep -q 'data-act="pause"' "$Q/web/index.html"
+  eventually grep -q 'data-act="pause"' "$Q/web/index.html"
+}
+
+@test "vibe-web: a write answers before its render; writes during a render share the next one; GET writes counts the writes in flight" {
+  touch "$STUBS/slow"
+  run act pause '{}' --max-time 1.5
+  [ "${lines[1]}" = 200 ]
+  run act resume '{}' --max-time 1.5
+  [ "${lines[1]}" = 200 ]
+  run act pause '{}' --max-time 1.5
+  [ "${lines[1]}" = 200 ]
+  writes_say '{"writes": 0, "render": true}'
+  eventually rendered
+  [ "$(wc -l <"$STUBS/renders" | tr -d ' ')" = 2 ]
+  grep -q 'data-act="resume"' "$Q/web/index.html"
+  touch "$STUBS/hang"
+  act restart '{}' >/dev/null &
+  eventually writes_say '{"writes": 1, "render": false}'
+  wait $!
+  writes_say '{"writes": 0, "render": true}'
 }
 
 @test "vibe-web: a wrong or absent login, a foreign Origin, a non-JSON body get 403 and change nothing" {
@@ -189,11 +231,11 @@ post() {
   grep -qF "if (!v && 'opt' in x.dataset && !('need' in b.dataset)) continue;" "$js"
   grep -qF "vals[x.name] = (x.dataset.pre || '') + v;" "$js"
   grep -qF "if (!v) { x.focus(); return; }" "$js"
-  grep -qF "const args = Object.assign({}, card && card.dataset, vals);" "$js"
+  grep -qF "const args = Object.assign({}, card && card.dataset, vals), act = b.dataset.act;" "$js"
   # The swap leaves a part alone while a field in it has focus or a value other than its default, and tries again next poll.
   grep -qF "const held = n => [...n.querySelectorAll('input, textarea, select')].some(f => f === document.activeElement || (f.tagName === 'SELECT' ? f.options[f.selectedIndex] !== dflt(f) : f.value !== f.defaultValue));" "$js"
   # A send resets a select to its default option too, so its part swaps again.
-  grep -qF "if (done) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
+  grep -qF "if (keep) fields.forEach(x => { if (x.tagName !== 'SELECT') x.value = x.defaultValue; else if (dflt(x)) dflt(x).selected = true; });" "$js"
   grep -qF "if (held(live)) { if (swapIn(live, \$(s, n))) kept = true; else p[2] = h; continue; }" "$js"
   grep -qF "if (r.ok && !kept) last = t;" "$js"
   # The panel: Close, the empty note, the blocks, the output; no New job.
@@ -320,6 +362,18 @@ post() {
   [ ! -e "$STUBS/docker.log" ]
 }
 
+@test "vibe-web: a render that cannot start leaves the render thread up" {
+  mkdir -p "$BATS_TEST_TMPDIR/root/bin"
+  cp "$REPO_ROOT/bin/vibe-web" "$BATS_TEST_TMPDIR/root/bin/"
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")" && wait "$(cat "$BATS_TEST_TMPDIR/web.pid")" || true
+  "$BATS_TEST_TMPDIR/root/bin/vibe-web" 2>>"$BATS_TEST_TMPDIR/web.log" &
+  echo $! >"$BATS_TEST_TMPDIR/web.pid"
+  curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$PORT/"
+  run act pause '{}'
+  [[ "${lines[0]}" == *'"code": 127'* ]] || false
+  eventually rendered
+}
+
 @test "vibe-web: a bad Content-Length gets 403; a stalled client blocks nobody" {
   run post /queue/api/pause -H 'Content-Length: -1' --max-time 5
   [ "${lines[1]}" = 403 ]
@@ -418,8 +472,7 @@ ID=20261104-080000-proj-task
   grep -qx now=1 "$Q/queue/$ID/job"
   run act noreview "{\"id\": \"$ID\"}"
   grep -qx after= "$Q/queue/$ID/job"
-  run grep -c 'data-act="now"\|data-act="noreview"' "$Q/web/index.html"
-  [ "$output" = 0 ]
+  eventually page_lacks 'data-act="(now|noreview)"'
 }
 
 @test "route retry: Run again with no note: a failed job is queued again with its own task, the old one archived" {
@@ -765,7 +818,7 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
   grep -qx "pr ready $URL" "$STUBS/gh.log"
   grep -qx "pr ready https://github.com/o/b/pull/3" "$STUBS/gh.log"
   [ -e "$Q/features/teleop.ready" ]
-  grep -q 'data-act="feature-archive" data-confirm' "$Q/web/index.html"
+  eventually grep -q 'data-act="feature-archive" data-confirm' "$Q/web/index.html"
   run act feature-ready '{"feature": "teleop"}'
   [[ "${lines[0]}" == *"is merge"* ]] || false
 }

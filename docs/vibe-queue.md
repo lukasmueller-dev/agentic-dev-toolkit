@@ -99,7 +99,7 @@ The page is a monitor with one-click decisions. Its labels: [Page words](#page-w
 - Workspaces Start: a place and hours form for a tool with 2+ places, else one button. While the lock is held, the turing option names the GPU holder for a `gpu=yes` tool.
 - Layout: centered, at most 1440 px. From 1200 px the job list (at most 600 px) has the panel as a right column, always open, with Close only under a button's output. Under 1200 px one column, the panel a modal over the list; on a phone a bottom sheet, the tabs on a line of their own.
 - `j`/`k` move the selection; no single key writes. In a field, `⌘↵` or `Ctrl↵` sends and `Esc` clears.
-- The page fetches itself every 10 s and swaps each part that changed; open folds stay. A field in focus or with a changed value stays as it is, and so does its panel block; the rest of its part swaps. Without JS it needs a reload.
+- The page fetches itself every 10 s and swaps each part that changed; open folds stay. After a write it fetches every 2 s until the write's card changes, at most 60 s. A field in focus or with a changed value stays as it is, and so does its panel block; the rest of its part swaps. Without JS it needs a reload.
 - The tab title is `(N) vibe`, N the Needs-you count. The glider moves while a job runs, except with reduced motion. Light and dark follow the system; one indigo accent, red only for a failure.
 
 Buttons, server only: `bin/vibe-web` runs one fixed command per route; `web_login` in `queue.conf` first.
@@ -113,7 +113,8 @@ curl -s -H 'Tailscale-User-Login: <web_login>' http://127.0.0.1:7341/whoami   # 
 
 - The page shows buttons only after `GET /queue/api/whoami` returns your login. Server down: the page reads, no buttons.
 - A write needs `Tailscale-User-Login` = `web_login`, POST, `Content-Type: application/json` and `Origin` = the host; else 403.
-- Each write goes to `actions.log` (time, login, command, exit code); then `vibe queue page` writes the page.
+- Each write goes to `actions.log` (time, login, command, exit code). The answer comes right after the command.
+  Then `vibe queue page` writes the page in the background: one render for all the writes that arrive during a render.
 - Buttons, routes and commands: [Page actions](#page-actions).
 - A button's output and a file link open under the block in the panel.
 - A `.md` in the panel keeps raw tags: `style` elements go, and every attribute except `href`, `src`, `alt`, `title`, `type`, `checked`, `start`. Its buttons do nothing; CSP blocks scripts and frames.
@@ -355,6 +356,15 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
 | Workspaces: Start | `ws-start` | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
 | Workspaces: Stop ✓ | `ws-stop` | `vibe ws stop <name>` |
+| Any write: the output | `GET writes` | `{"writes": <n>, "render": <true or false>}`: the writes that hold or wait for the lock; a render runs or waits |
+
+The output of a write, under the block:
+
+- While it runs: the command as the page sends it (the route and its values), a seconds counter, and `1 write before yours` while another write holds or waits for the lock. The page reads the count again each second.
+- The answer: `Done in N s` or `Failed (exit N)`, then the command output. A refused write shows `refused: <error>`.
+- No answer, for example a dropped connection: `No answer. The command can still run.`
+- The button is off with a verb (`Starting…`, `Archiving…`) while the write runs.
+  After the write worked or got no answer, the button stays off until a fetched page shows a change in its card, at most 60 s. A failed or refused write turns it on again.
 
 Not on the page (the CLI has them): merge, single-PR ready or close, the `run-ci` label, prompt edits, tool-job creation, new jobs, fix jobs (a `/fix` comment starts one), triage (an hourly timer runs it), merge order, worktree cleanup, sync, toolkit update.
 
@@ -442,6 +452,7 @@ The PR footer line and the report row end with the job's size, from the last `re
 - No share when `resetsAt` changes during the job, the log has under two events, or a job that overlaps has no `result` event.
 - The footer is written at publish: a job still running then has no `result` event, so the report row can show a share the footer lacks.
 - The report header ends with `limit 5h: 46%, resets 14:30`: the newest `rate_limit_event` in any job log.
+- A final job keeps its share in `queue/<id>/limit-pct` once each job it overlaps is final. Delete the file to compute the share again.
 
 ## What breaks it
 
