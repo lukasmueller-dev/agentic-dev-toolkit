@@ -2404,9 +2404,10 @@ run_alive() {
 # until the stop bound before the limit or a stop --now (JOB/drain: now), then exec stop, pull, down. All output to the
 # runner's log in the instance state, run/log at the end (fresh: no write through a link); /ws/out to JOB/out/.
 # A failed fetch, price or up writes JOB/infra; a refused start ends as usd, a stop --now before up as stopped.
+# After up, run/started and run/limit mirror the instance's.
 # Then cost, run/exit and the follow-up.
 place_run() {
-  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t pid cut=0
+  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t pid f cut=0
   p="$(jstate "$d/run" place)" c="$(jstate "$d/run" commit)"
   # The agent can write its job dir: a commit git reads as an option, a host place, or a link to a host file runs
   # or reads outside the sandbox. The error names no value: through a link, it can be a secret's first line.
@@ -2438,6 +2439,10 @@ place_run() {
   if [[ "$rc" == 0 ]]; then
     t0="$(date +%s)"
     ws_place "$inst" up >>"$st/log" 2>&1 || rc=infra
+    # The card of an ended run reads them here: the instance dir goes with the box.
+    for f in started limit; do
+      if [[ "$rc" == 0 && -f "$st/$f" ]]; then fresh "$d/run/$f" <"$st/$f" || true; fi
+    done
   fi
   if [[ "$rc" == infra ]]; then
     tail -n 1 "$st/log" | fresh "$d/infra" || true

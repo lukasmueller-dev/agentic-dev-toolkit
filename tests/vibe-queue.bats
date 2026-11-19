@@ -3025,6 +3025,7 @@ case "\$v" in
     if [ -e "$STUBS/fail-up" ]; then echo "\${0##*/}: no machine free" >&2 && exit 1; fi
     echo pod-1 >"\$WS_STATE/id"
     echo "\$WS_NAME" >"$STUBS/ws-name"
+    date +%s >"\$WS_STATE/started"
     if [ -e "$STUBS/short-limit" ]; then echo \$((\$(date +%s) + 3)); else echo \$((\$(date +%s) + WS_HOURS * 3600)); fi >"\$WS_STATE/limit"
     ;;
   exec)
@@ -3087,6 +3088,10 @@ EOF
   grep -qx "in repo at $(cat "$Q/01-a/run/commit"), commits: 1" "$Q/01-a/run/log"
   [ "$(cat "$Q/01-a/run/exit")" = 0 ]
   [ "$(cat "$Q/01-a/run/price")" = 0 ]
+  # The card of an ended run reads them: the instance dir is gone.
+  [[ "$(cat "$Q/01-a/run/started")" =~ ^[0-9]+$ ]] || false
+  [[ "$(cat "$Q/01-a/run/limit")" =~ ^[0-9]+$ ]] || false
+  [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
   [ "$(cat "$Q/01-a/cost")" = 0.00 ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"
