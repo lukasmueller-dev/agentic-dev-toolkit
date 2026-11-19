@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-19: **agent tools come as Claude Code plugins from the baseline**:
+  RunPod and Vast.ai pinned upstream, W&B MCP from `claude/marketplace/`; keys in
+  `~/.config/vibe/secrets.env` (+ `secrets/<repo>.env`); `ask` guard on GPU CLIs.
+  Recipe: `docs/claude-plugins.md`; decisions: PR #220.
 - 2026-11-17: **a research is a coordinator job and parallel workers**: only the
   coordinator writes `RESEARCH.md`; it starts up to `workers=` workers, one run
   each on turing, RunPod, vast or slurm. `usd=` and `deadline=` gate a start and
