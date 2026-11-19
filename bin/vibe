@@ -2541,14 +2541,8 @@ place_gate() {
 # archived_costs RESEARCH REPO — the cost of each archived job of RESEARCH and REPO (empty: any repo), a line each.
 # One awk for all: a subshell per archived job took 2.5 s at 1800 jobs, on each page render.
 archived_costs() {
-  local j
-  local -a f=()
-  for j in "$QROOT"/archive/*/*/cost; do
-    if [[ -s "$j" ]]; then f+=("$j"); fi
-  done
-  ((${#f[@]})) || return 0
-  # The paths on stdin, not as arguments: a long archive passes ARG_MAX.
-  printf '%s\n' "${f[@]}" | awk -v r="$1" -v g="$2" '{
+  # A missing or empty cost file reads no line: awk prints nothing for it.
+  printf '%s\n' "$QROOT"/archive/*/*/cost | awk -v r="$1" -v g="$2" '{
     jf = $0; sub(/cost$/, "job", jf); rs = ""; rp = ""; a = 0; b = 0
     while ((getline l < jf) > 0) {
       if (!a && index(l, "research=") == 1) { rs = substr(l, 10); a = 1 }
