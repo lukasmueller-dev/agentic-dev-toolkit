@@ -545,6 +545,10 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
+  # The agent writes run/place: other text than runpod or vast gives the job's place=.
+  printf 'evil|x\033]0;t\007\n' >"$c/run/place"
+  line 'drained · run at its limit · on turing'
+  echo vast >"$c/run/place"
   # An ended run keeps its steps from run/log, with no ETA.
   printf 'PROGRESS {"done":1,"total":9,"at":1}\nPROGRESS {"done":2,"total":9,"at":2,"run":"s1"}\n' >"$c/run/log"
   line 'drained · run at its limit · s1 on vast · 2 of 9 steps'

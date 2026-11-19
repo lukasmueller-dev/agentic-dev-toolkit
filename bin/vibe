@@ -4697,10 +4697,11 @@ research_row() {
 has_run() { [[ -d "$1/run" || -s "$1/gpu-job" ]]; }
 
 # research_place JOB — the place of JOB's run: run/place, else the job's place=, else turing (a gpu-queue run).
+# The agent writes run/place: only runpod or vast passes, as in place_run; other text reaches the terminal and R_HEAD.
 research_place() {
   local p
   p="$(jstate "$1/run" place)"
-  [[ -n "$p" ]] || p="$(jget "$1/job" place)"
+  [[ "$p" =~ ^(runpod|vast)$ ]] || p="$(jget "$1/job" place)"
   echo "${p:-turing}"
 }
 
