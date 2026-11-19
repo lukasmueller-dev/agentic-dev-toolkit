@@ -2439,7 +2439,7 @@ place_run() {
   if [[ "$rc" == 0 ]]; then
     t0="$(date +%s)"
     ws_place "$inst" up >>"$st/log" 2>&1 || rc=infra
-    # shortcut: no code reads this mirror yet (SPEC.md keeps it for an ended run's box time); the instance dir goes with the box.
+    # shortcut: no code reads this mirror yet (kept for an ended run's box time; PR research-card-status); the instance dir goes with the box.
     for f in started limit; do
       if [[ "$rc" == 0 && -f "$st/$f" ]]; then fresh "$d/run/$f" <"$st/$f" || true; fi
     done
