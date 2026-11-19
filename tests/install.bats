@@ -9,6 +9,11 @@ setup() {
   export HOME="$BATS_TEST_TMPDIR/home"
   mkdir -p "$HOME"
   INSTALL="$REPO_ROOT/install.sh"
+  # A stub claude: the plugin step must never reach the real CLI or the network.
+  mkdir -p "$BATS_TEST_TMPDIR/stub"
+  printf '#!/bin/sh\necho "$*" >>"$HOME/claude.log"\n' >"$BATS_TEST_TMPDIR/stub/claude"
+  chmod +x "$BATS_TEST_TMPDIR/stub/claude"
+  export PATH="$BATS_TEST_TMPDIR/stub:$PATH"
 }
 
 # Drops ANSI colour so assertions match on text, not escape sequences.
@@ -859,6 +864,93 @@ EOF
   run "$INSTALL" claude
   [ "$status" -eq 0 ]
   jq -e '.model == "opus"' "$HOME/.claude/settings.json"
+}
+
+@test "claude settings: GPU CLIs and the RunPod MCP server prompt; agent jobs deny them" {
+  local r
+  for r in 'Bash(runpodctl:*)' 'Bash(vastai:*)' 'mcp__plugin_runpod_runpod__*'; do
+    jq -e --arg r "$r" '.permissions.ask | index($r)' "$REPO_ROOT/claude/settings.json"
+    jq -e --arg r "$r" '.permissions.deny | index($r)' "$REPO_ROOT/claude/vibe-job-settings.json"
+  done
+}
+
+@test "claude settings: unions the ask array instead of replacing it" {
+  mkdir -p "$HOME/.claude"
+  printf '{ "permissions": { "ask": ["Bash(my-ask:*)"] } }' >"$HOME/.claude/settings.json"
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  jq -e '.permissions.ask | index("Bash(my-ask:*)")' "$HOME/.claude/settings.json"
+  jq -e '.permissions.ask | index("Bash(vastai:*)")' "$HOME/.claude/settings.json"
+}
+
+@test "claude plugins: adds each marketplace at its pin and installs each enabled plugin" {
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  local m p
+  while IFS= read -r m; do
+    grep -qxF "plugin marketplace add $m" "$HOME/claude.log"
+  done < <(jq -r '.extraKnownMarketplaces[].source | .repo + (if .ref then "#" + .ref else "" end)' "$REPO_ROOT/claude/settings.json")
+  while IFS= read -r p; do
+    grep -qxF "plugin install $p" "$HOME/claude.log"
+  done < <(jq -r '.enabledPlugins | keys[]' "$REPO_ROOT/claude/settings.json")
+  grep -qx 'plugin install runpod@runpod' "$HOME/claude.log"
+  # the repo's own marketplace, by its linked path
+  grep -qxF "plugin marketplace add $HOME/.claude/marketplace" "$HOME/claude.log"
+  grep -qx 'plugin install wandb@toolkit' "$HOME/claude.log"
+}
+
+# plugin_state — known_marketplaces.json and installed_plugins.json as the baseline pins them.
+plugin_state() {
+  mkdir -p "$HOME/.claude/plugins"
+  jq --arg p "$HOME/.claude/marketplace" '.extraKnownMarketplaces + {toolkit: {source: {source: "directory", path: $p}}}' \
+    "$REPO_ROOT/claude/settings.json" >"$HOME/.claude/plugins/known_marketplaces.json"
+  jq '{plugins: (.enabledPlugins | map_values([{scope: "user"}]))}' "$REPO_ROOT/claude/settings.json" \
+    >"$HOME/.claude/plugins/installed_plugins.json"
+}
+
+@test "claude plugins: the W&B key reaches the MCP header but not sandboxed Bash" {
+  jq -e '.sandbox.credentials.envVars | index({name: "WANDB_API_KEY", mode: "deny"})' "$REPO_ROOT/claude/settings.json"
+  jq -e '.mcpServers.wandb.headers.Authorization == "Bearer ${WANDB_API_KEY}"' "$REPO_ROOT/claude/marketplace/wandb/.mcp.json"
+  # the repo's file after the shared one: systemd lets the later file win
+  [ "$(grep '^EnvironmentFile=' "$REPO_ROOT/claude/systemd/claude-rc@.service")" = "EnvironmentFile=-%h/.config/vibe/secrets.env
+EnvironmentFile=-%h/.config/vibe/secrets/%i.env" ]
+}
+
+@test "claude plugins: a pinned and installed state calls claude for nothing" {
+  plugin_state
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/claude.log" ]
+}
+
+@test "claude plugins: a moved pin re-adds that marketplace and updates its plugin only" {
+  plugin_state
+  local f="$HOME/.claude/plugins/known_marketplaces.json"
+  jq '.["vast-ai"].source.ref = "0000000000000000000000000000000000000000"' "$f" >"$f.tmp"
+  mv "$f.tmp" "$f"
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  [ "$(cat "$HOME/claude.log")" = "plugin marketplace add $(jq -r '.extraKnownMarketplaces["vast-ai"].source | .repo + "#" + .ref' "$REPO_ROOT/claude/settings.json")
+plugin update vastai@vast-ai" ]
+}
+
+@test "claude plugins: a failed claude call warns and the install still succeeds" {
+  printf '#!/bin/sh\nexit 1\n' >"$BATS_TEST_TMPDIR/stub/claude"
+  run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"failed   claude plugin install runpod@runpod"* ]] || false
+}
+
+@test "claude plugins: no claude on PATH skips the step" {
+  PATH="$(path_without claude)" run "$INSTALL" claude
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | plain)" == *"claude or jq not installed"* ]] || false
+}
+
+@test "claude plugins: a dry run calls claude for nothing" {
+  run "$INSTALL" --dry claude
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/claude.log" ]
 }
 
 @test "claude settings: refuses to touch invalid JSON" {

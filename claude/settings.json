@@ -123,7 +123,8 @@
       "Bash(echo:*)",
       "Bash(printf:*)",
       "Bash(tmux ls)",
-      "Bash(tmux list-sessions:*)"
+      "Bash(tmux list-sessions:*)",
+      "mcp__plugin_wandb_wandb__*"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -202,6 +203,11 @@
       "Read(**/.aws/credentials)",
       "Read(**/gh/hosts.yml)",
       "Read(**/.netrc)"
+    ],
+    "ask": [
+      "Bash(runpodctl:*)",
+      "Bash(vastai:*)",
+      "mcp__plugin_runpod_runpod__*"
     ]
   },
   "sandbox": {
@@ -214,6 +220,9 @@
         { "mode": "deny", "path": "~/.ssh" },
         { "mode": "deny", "path": "~/.config/gh/hosts.yml" },
         { "mode": "deny", "path": "~/.netrc" }
+      ],
+      "envVars": [
+        { "name": "WANDB_API_KEY", "mode": "deny" }
       ]
     },
     "network": {
@@ -283,6 +292,25 @@
         "source": "github",
         "repo": "anthropics/claude-plugins-official"
       }
+    },
+    "runpod": {
+      "source": {
+        "source": "github",
+        "repo": "runpod/runpod-plugins-official",
+        "ref": "44ab4dc6834ce37ee60f5cf10a3afe3b289c5f38"
+      }
+    },
+    "vast-ai": {
+      "source": {
+        "source": "github",
+        "repo": "vast-ai/vast-claude-plugin",
+        "ref": "c90a6cceb7d5fd0e206c0dc705d7750a198d7768"
+      }
     }
+  },
+  "enabledPlugins": {
+    "runpod@runpod": true,
+    "vastai@vast-ai": true,
+    "wandb@toolkit": true
   }
 }

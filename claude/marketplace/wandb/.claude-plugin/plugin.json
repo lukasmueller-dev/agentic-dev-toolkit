@@ -1,0 +1,5 @@
+{
+  "name": "wandb",
+  "version": "1.0.0",
+  "description": "W&B MCP server; key from WANDB_API_KEY (docs/claude-plugins.md)."
+}

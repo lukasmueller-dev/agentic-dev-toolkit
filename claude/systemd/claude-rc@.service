@@ -12,6 +12,9 @@ After=network-online.target
 Type=forking
 WorkingDirectory=%h/github/%i
 Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+# Keys for MCP headers (WANDB_API_KEY), KEY=VALUE, mode 600; the repo's file wins: docs/claude-plugins.md
+EnvironmentFile=-%h/.config/vibe/secrets.env
+EnvironmentFile=-%h/.config/vibe/secrets/%i.env
 ExecCondition=/bin/sh -c 'grep -qx server %h/.config/vibe/role || { echo "role is not server: echo server > ~/.config/vibe/role" >&2; exit 1; }'
 ExecStart=/usr/bin/env tmux -L claude-rc-%i new-session -d -s %i 'claude remote-control --spawn worktree --name "%i · main" --remote-control-session-name-prefix %i'
 ExecStop=/usr/bin/env tmux -L claude-rc-%i kill-server

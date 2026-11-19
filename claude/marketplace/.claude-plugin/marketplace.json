@@ -1,0 +1,11 @@
+{
+  "name": "toolkit",
+  "owner": { "name": "agentic-dev-toolkit" },
+  "plugins": [
+    {
+      "name": "wandb",
+      "source": "./wandb",
+      "description": "W&B MCP server; key from WANDB_API_KEY (docs/claude-plugins.md)."
+    }
+  ]
+}
