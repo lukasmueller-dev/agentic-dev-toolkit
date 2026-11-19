@@ -3442,20 +3442,28 @@ research_paste() {
 
 # research_card SLUG PILL DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS,
 # R_WORKERS): the head line, the state line, a line per job that needs you, the coordinator's buttons until
-# it is done, the two stop buttons until the question is done, then Archive, then a row per worker: lamp, hid, state,
+# it is done, the two stop buttons until the question drains or is done, then Archive (drained: Stop now while a run lives), then a row per worker: lamp, hid, state,
 # place, metric, USD, idea, last step, for a worker in `paste` its steps, for another blocked one an answer field. A builds= row is indented by its depth.
 research_card() {
-  local l w h dp s pl lt m u idea lamp mu rows=""
+  local l w h dp s pl lt m u idea lamp mu b sq sn rows=""
   rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>$(esc "${4##*|}")</p>"
   while IFS= read -r l; do
     if [[ -n "$l" ]]; then rows+="<p>$(esc "$(page_why "$l")")</p>"; fi
   done <<<"$5"
   if [[ -n "$3" && "$(jstate "$3" status)" != "done" ]]; then rows+="$(job_buttons "$3")"; fi
-  if [[ "$2" != "done" ]]; then
-    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(btn_rows '<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>' '<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>')</div>"
-  else
-    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(act_btn research-archive)</div>"
-  fi
+  sq='<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>'
+  sn='<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>'
+  case "$2" in
+    "done") b="$(act_btn research-archive)" ;;
+    # Drained: no Stop question; Stop now while a run lives (a coordinator run or a worker in `running`).
+    drained)
+      b=""
+      if { [[ -n "$3" && "$(jstate "$3" status)" == gpu ]] && has_run "$3"; } || [[ "$6" == *$'\037'running$'\037'* ]]; then b="$sn"; fi
+      b="$(btn_rows "$b" "$(act_btn research-archive)")"
+      ;;
+    *) b="$(btn_rows "$sq" "$sn")" ;;
+  esac
+  rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$b</div>"
   rows+='<div class="wks">'
   while IFS=$'\037' read -r h dp s pl lt m u idea w; do
     [[ -n "$h" ]] || continue
@@ -3560,10 +3568,13 @@ gpu_exit() {
 }
 
 # group_prog N/M [DIRS] — a lane, feature or research progress as the page names it: `N of M items`; a branch of jobs
-# with no lane= (DIRS, one per line): the milestone of its SPEC.md, else `N of M jobs`.
+# with no lane= (DIRS, one per line): the milestone of its SPEC.md, else `N of M jobs`. Other text (`0 of 3 workers`) as it is.
 group_prog() {
   local d m
-  [[ "$1" == */* ]] || return 0
+  if [[ "$1" != */* ]]; then
+    echo "$1"
+    return 0
+  fi
   if [[ -n "${2:-}" && -z "$(jget "${2%%$'\n'*}/job" lane)" ]]; then
     while IFS= read -r d; do
       m="$(spec_prog "$d")"
@@ -4553,7 +4564,7 @@ research_cost() {
 
 # research_row SLUG — the question of one `research=` slug. A coordinator job has no `hid=`; a worker's latest job
 # (session 2 sorts after session 1) gives its state. Sets R_PILL (the state word of research_line), R_PROGRESS (workers
-# done/all), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|line`, line: research_line),
+# done/all, else `0 of <workers=> workers`), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|line`, line: research_line),
 # R_ITEMS (`NAME  STATUS  NOTE` per job that needs you) and R_WORKERS (a line per worker, parent first, joined by US:
 # HID DEPTH STATE PLACE LAST METRIC USD IDEA DIR). State: queued, coding (session 1), running (the run), closing
 # (session 2), paste, infra, else the job's status.
@@ -4666,7 +4677,11 @@ research_row() {
     h="${x%%$'\037'*}" x="${x#*$'\037'}" x="${x#*$'\037'}"
     if [[ "$R_WORKERS" != "$h"$'\037'* && "$R_WORKERS" != *$'\n'"$h"$'\037'* ]]; then R_WORKERS+="${R_WORKERS:+$'\n'}$h"$'\037'0$'\037'"$x"; fi
   done <<<"$flat"
-  if ((n)); then R_PROGRESS="$ok/$n"; fi
+  if ((n)); then
+    R_PROGRESS="$ok/$n"
+  elif [[ -n "$cd" ]]; then
+    x="$(jget "$cd/job" workers)" R_PROGRESS="0 of ${x:-3} workers"
+  fi
   best="$(awk -F'\t' -v b="${better:-higher}" '$2 != "" { x = $2 + 0; if (!n || (b == "lower" ? x < bx : x > bx)) { bx = x; bs = $2; bh = $1 } n = 1 }
     END { if (n) print bs " (" bh ")" }' <<<"$ms")"
   sp="$(awk '{ s += $1 } END { printf "%.2f", s }' <<<"$costs")"

@@ -465,6 +465,19 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$("$VIBE" queue status | head -n 1)" == *" · 1 no PR · "* ]] || false
 }
 
+@test "page: a research question with no worker job reads its workers= budget in the head" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" c="$Q/20261117-100000-proj-research-lr" r
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  rm -r "$Q"/20261117-1001* "$Q"/20261117-1002* "$Q"/20261117-1003* "$Q"/20261117-1004*
+  echo running >"$c/status"
+  rpage
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 0 of 3 workers · thinking\n'* ]] || false
+  grep -qF '<b>lr <span class="n">0 of 3 workers</span></b>' "$f"
+  sed -i.bak 's/^workers=3$/workers=5/' "$c/job"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 0 of 5 workers · thinking\n'* ]] || false
+}
+
 # shellcheck disable=SC2016  # a literal $ in the expected text
 @test "page: a research state line, first match: needs you, drained, on <place>, coding, closing, thinking, queued, done" {
   local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st t
@@ -489,7 +502,8 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · drained\n'* ]] || false
   grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
   grep -qF '<span class="st" title="No new run starts: the state line says why.">Drained</span>' "$f"
-  grep -qF 'data-act="research-stop-now"' "$f"
+  # A drained question loses Stop question, keeps Stop now while h2 runs, and gains Archive.
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button><hr><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
@@ -545,6 +559,8 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
+  # No run lives: Archive alone.
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
   # The agent writes run/place: other text than runpod or vast gives the job's place=.
   printf 'evil|x\033]0;t\007\n' >"$c/run/place"
   line 'drained · run at its limit · on turing'
