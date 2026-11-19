@@ -4661,7 +4661,8 @@ research_row() {
   st=""
   if ((you)); then
     st="needs you|$ys"
-  elif [[ -n "$dr" ]] || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
+  # A drain file counts while a job runs or waits: an ended question whose coordinator is done is done (its PR row, Archive).
+  elif { [[ -n "$dr" ]] && ((run || wait)); } || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
     st="drained|$(research_why "$dr" "$ended" "$cd")"
   elif [[ -n "$live" ]]; then
     st="on $(research_place "$live")|"

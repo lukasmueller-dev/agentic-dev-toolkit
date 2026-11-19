@@ -257,7 +257,7 @@ A job with `research=<slug>` is in no repo group: the page shows one card per sl
 
 - Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files of the coordinator chain, the workers and their archived jobs; a box that is up counts price × (now − started)), `deadline=`.
 - State line: `<state> · <reason> · <run> on <place> · box until <time>`, empty fields dropped. Status and the report print it too.
-- State, first match: `needs you`, `drained` (a `drain` file, or nothing runs or waits and the coordinator is not `done`), `on <place>` (a live run), `coding`, `closing`, `thinking` (the coordinator runs), `queued`, `done`.
+- State, first match: `needs you`, `drained` (a `drain` file while a job runs or waits, or nothing runs or waits and the coordinator is not `done`), `on <place>` (a live run), `coding`, `closing`, `thinking` (the coordinator runs), `queued`, `done`.
 - Reason: for `needs you` what needs you (`paste <hid>`, `<hid> blocked`, `coordinator blocked`); for `drained`, first match, `stop now`, `stop question`, `smoke failed`, `run at its limit`, `run over usd=`, `deadline passed`. A job that `vibe queue stop` ended needs no answer.
 - Run: the newest live run, else the newest ended one; a worker's names its hid. A live run drops `on <place>`: the state holds it. `box until`: a live run's box limit.
 - Pill: the state word. Look: `thinking`, `coding`, `closing` → `running`; `on <place>` → `gpu`; `drained` → `held`; `needs you` → `blocked`.

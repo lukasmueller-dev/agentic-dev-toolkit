@@ -509,6 +509,12 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line queued
   echo "done" >"$c/status"
   line "done"
+  # A stopped question that ended with its coordinator done is done: its PR to review and Archive stay.
+  echo drain >"$c/drain" && echo https://github.com/o/proj/pull/5 >"$c/pr"
+  line "done"
+  grep -qF '<a class="btn" href="https://github.com/o/proj/pull/5" target="_blank" rel="noopener">Open PR ↗</a>' "$f"
+  grep -qF 'data-act="research-archive"' "$f"
+  rm "$c/drain" "$c/pr"
   # A coordinator that `vibe queue stop` ended needs no answer: the question drained, the newest run says why.
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
