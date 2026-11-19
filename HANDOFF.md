@@ -10,24 +10,18 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card-status`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card-status
-- **Last updated:** 2026-11-19 · turing (milestone 6 done)
+- **Last updated:** 2026-11-19 · turing (milestone 7 done)
 
 ## State
 
-Milestones 1–6 are done. `research_line` in `bin/vibe` builds the state line;
-`research_progress` reads the run's `PROGRESS` lines (else `Step:`) for its steps and ETA.
-`R_PILL` holds the state word, and `research_look` maps the word to the CSS state.
-`research_card` gives a drained question Stop now while a run lives, and Archive once each job has settled.
-Before the first worker job, `R_PROGRESS` is `0 of <workers=> workers`; `group_prog` passes it as it is.
-tray-noise reads `tray-noise · 0 of 3 workers · drained` and `drained · stop now · on vast` at `$0.24 of $35`.
+Milestones 1–7 are done. `docs/vibe-queue.md` §Research card names the state line, steps, ETA, reasons and buttons.
+`tests/page_check.py` checks a live card (`lv`) and a drained card (`dq`): pill, look, live spend, buttons, the line wrap on a phone.
+tray-noise reads `$0.24 of $35` and `drained · stop now · on vast` in `vibe queue status`.
 
 ## Next action
 
-Milestone 7: docs and tests (see `SPEC.md`).
-Make `docs/vibe-queue.md` §Research card match the state line, the pill, the head and the buttons.
-Add a `tests/page_check.py` case for each new branch.
-
-Done when `docs/vibe-queue.md` §Research card matches and `page_check.py` covers each new branch.
+End action of `SPEC.md`: `delete`. Move each decision of `SPEC.md` to `pr.md`, then `git rm SPEC.md HANDOFF.md`.
+Put the open human decisions below into the PR body first.
 
 ## Blockers
 

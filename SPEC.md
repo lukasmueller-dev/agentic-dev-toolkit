@@ -55,7 +55,7 @@ of the states the question is in, not `Running` for a session that only closes.
 - [x] Pill label and CSS state split — code — done when the pill reads the state word and a live run still renders `s-gpu`
 - [x] `PROGRESS` contract, the `Step:` fallback and the ETA — code — done when a log with two PROGRESS lines renders steps and an ETA
 - [x] Head budget and the drained buttons — code — done when a drained question shows Archive and no Stop question
-- [ ] Docs and tests — code — done when `docs/vibe-queue.md` §Research card matches and `page_check.py` covers each new branch
+- [x] Docs and tests — code — done when `docs/vibe-queue.md` §Research card matches and `page_check.py` covers each new branch
 - [ ] End action
 
 ## End action
