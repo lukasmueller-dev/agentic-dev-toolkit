@@ -50,7 +50,7 @@ of the states the question is in, not `Running` for a session that only closes.
 ## Milestones
 
 - [x] Spend counts the coordinator chain — code — done when `vibe queue status` prints a non-zero spend for tray-noise
-- [ ] `place_run` mirrors `started` and `limit` into `run/` — code — done when a new run's `queue/<id>/run/started` holds an epoch
+- [x] `place_run` mirrors `started` and `limit` into `run/` — code — done when a new run's `queue/<id>/run/started` holds an epoch
 - [ ] State line, precedence and the drained reason — code — done when the tray-noise card line matches the order above
 - [ ] Pill label and CSS state split — code — done when the pill reads the state word and a live run still renders `s-gpu`
 - [ ] `PROGRESS` contract, the `Step:` fallback and the ETA — code — done when a log with two PROGRESS lines renders steps and an ETA
