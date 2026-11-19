@@ -628,6 +628,9 @@ rpage() { "$VIBE" queue page >/dev/null; }
   rjob "$a" 20261116-090200-proj-research-x failed "$r" research/x research=x
   echo 9 >"$a/20261116-090200-proj-research-x/cost"
   [[ "$("$VIBE" queue status)" == *'$4.84 of $50'* ]] || false
+  # With the coordinator archived, the workers' repo still keeps another repo's cost out.
+  mv "$c" "$c-gpu" "$a/"
+  [[ "$("$VIBE" queue status)" == *$'(h4) · $4.84\n'* ]] || false
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text

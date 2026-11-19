@@ -4575,12 +4575,12 @@ research_cost() {
 # (session 2), paste, infra, else the job's status.
 research_row() {
   local d h x st s fo L res c m cs lt bd hl wl="" cd="" flat="" ms="" costs="" ys="" better="" usd="" dl="" sp best ok=0 n=0 you=0 run=0 wait=0
-  local live="" ended="" dr="" think=0 code=0 close=0
+  local live="" ended="" dr="" g="" think=0 code=0 close=0
   R_PILL="done" R_PROGRESS="" R_QUESTION="$1" R_PR="" R_DIR="" R_HEAD="" R_ITEMS="" R_WORKERS=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && "$(jget "$d/job" research)" == "$1" ]] || continue
-    h="$(jget "$d/job" hid)"
+    g="${g:-$(jget "$d/job" repo)}" h="$(jget "$d/job" hid)"
     # The glob sorts by id: the last run seen is the newest. A gpu worker, or a gpu job with a run, is a run in flight.
     if [[ -e "$d/run/exit" ]]; then
       ended="$d"
@@ -4601,7 +4601,8 @@ research_row() {
     if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
   # A retried job is archived: its cost counts on, as in place_gate.
-  x="$(archived_costs "$1" "$(jget "$cd/job" repo)")"
+  # The repo of any job of the question: with the coordinator archived, an empty repo would sum every repo's.
+  x="$(archived_costs "$1" "$g")"
   if [[ -n "$x" ]]; then costs+="$x"$'\n'; fi
   if [[ -n "$cd" ]]; then
     R_DIR="$cd" R_PR="$(jstate "$cd" pr)"
