@@ -16,7 +16,7 @@
 
 Milestones 1–3 are done. `research_line` in `bin/vibe` builds the state line;
 `research_row` puts it in the last field of `R_HEAD`. tray-noise reads
-`drained · stop now · on vast`; its pill still reads `done`.
+`drained · stop now · on vast`; a drained question's pill is `held` (On hold) until milestone 4 gives it the state word.
 
 ## Next action
 
