@@ -493,7 +493,18 @@ rpage() { "$VIBE" queue page >/dev/null; }
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
-  line "on runpod · h2 · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
+  hm() { LC_ALL=C date -d "@$1" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$1" '+%a %H:%M'; }
+  line "on runpod · h2 · box until $(hm "$t")"
+  # The PROGRESS contract names the run and gives its steps; the last two lines give the ETA.
+  printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
+    $((t - 3700)) $((t - 3600)) >"$st/log"
+  line "on runpod · seed42 · 200 of 1000 steps · eta $(hm $((t - 2800))) · box until $(hm "$t")"
+  # One line gives no ETA; with no PROGRESS line, the last Step: before Average time: gives the steps.
+  sed -i.bak 1d "$st/log"
+  line "on runpod · seed42 · 200 of 1000 steps · box until $(hm "$t")"
+  printf 'INFO - Step: 0\nINFO - Step: 131072\nINFO - Average time: 21.5 s\nINFO - Step: 9\n' >"$st/log"
+  line "on runpod · h2 · 131072 steps · box until $(hm "$t")"
+  rm "$st/log"
   # A live run keeps the gpu look: the brand glider runs.
   grep -qF '<div class="job lane research s-gpu"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">On runpod</span>' "$f"
   grep -qF '<span class="st" title="A run uses its box at that place now.">On runpod</span>' "$f"
@@ -528,6 +539,9 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
+  # An ended run keeps its steps from run/log, with no ETA.
+  printf 'PROGRESS {"done":1,"total":9,"at":1}\nPROGRESS {"done":2,"total":9,"at":2,"run":"s1"}\n' >"$c/run/log"
+  line 'drained · run at its limit · s1 on vast · 2 of 9 steps'
   [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · drained\n'* ]] || false
   echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
   line 'drained · smoke failed · on vast'

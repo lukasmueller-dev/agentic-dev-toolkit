@@ -4743,12 +4743,32 @@ research_why() {
   esac
 }
 
-# research_line STATE REASON RUN LIVE — `<state> · <reason> · <run> on <place> · box until <time>`, empty fields
-# dropped; a live run gives the place in the state. RUN: the newest run (a worker's names its hid); LIVE: the same job while its box is up, for the box end.
+# research_progress LOG — `RUN|DONE|TOTAL|ETA` of LOG's last `PROGRESS {"done":…, "total":…, "at":…, "run":…}` line;
+# ETA from the rate of the last two lines. With no such line, DONE is the last `Step:` before `Average time:`. Empty with none.
+research_progress() {
+  local p
+  p="$(grep -a '^PROGRESS {' "$1" 2>/dev/null | tail -n 2 | jq -nRr '[inputs | ltrimstr("PROGRESS ") | fromjson? | objects]
+    | select(length > 0) | .[-1] as $l | (if length > 1 then .[-2] else {} end) as $p
+    | [($l.run | strings | gsub("[|[:cntrl:]]"; "")) // "", ($l.done | numbers) // "", ($l.total | numbers) // "",
+      (if ([$l.done, $l.total, $l.at, $p.done, $p.at] | all(type == "number")) and $l.done > $p.done and $l.at > $p.at and $l.total > $l.done
+       then $l.at + ($l.total - $l.done) * ($l.at - $p.at) / ($l.done - $p.done) | floor else "" end)] | join("|")' 2>/dev/null)" || p=""
+  # shortcut: `Step:` and `Average time:` are safety-critic's log words; drop them when repos emit PROGRESS.
+  if [[ -z "$p" && -f "$1" ]]; then
+    p="$(awk '/Average time:/ { exit } match($0, /Step: [0-9]+/) { s = substr($0, RSTART + 6, RLENGTH - 6) } END { if (s != "") print "|" s "||" }' "$1" 2>/dev/null)" || p=""
+  fi
+  echo "$p"
+}
+
+# research_line STATE REASON RUN LIVE — `<state> · <reason> · <run> on <place> · <done> of <total> steps · eta <time> ·
+# box until <time>`, empty fields dropped; a live run gives the place in the state. RUN: the newest run, named by its
+# PROGRESS line, else a worker's hid; LIVE: the same job while its box is up, for the ETA and the box end.
 research_line() {
-  local l="$1" r="" t="" p
+  local l="$1" r="" t="" p n="" dn="" tt="" eta=""
   if [[ -n "$3" ]]; then
-    r="$(jget "$3/job" hid)" p="$(research_place "$3")"
+    # A live run's log is in its instance dir; an ended run's in run/.
+    if [[ -n "$4" ]]; then p="$WS_STATES/research-${4##*/}/log"; else p="$3/run/log"; fi
+    IFS='|' read -r n dn tt eta <<<"$(research_progress "$p")"
+    r="${n:-$(jget "$3/job" hid)}" p="$(research_place "$3")"
     # The live run's place is the state itself: `on vast · h2`, not `on vast · h2 on vast`.
     if [[ "$1" != "on $p" ]]; then r="${r:+$r }on $p"; fi
   fi
@@ -4758,6 +4778,8 @@ research_line() {
   fi
   l+="${2:+ · $2}"
   if [[ -n "$r" ]]; then l+=" · $r"; fi
+  if [[ -n "$dn" ]]; then l+=" · $dn${tt:+ of $tt} steps"; fi
+  if [[ -n "$4" && "$eta" =~ ^[0-9]+$ ]]; then l+=" · eta $(at_time "$eta" '%a %H:%M')"; fi
   echo "$l${t:+ · box until $t}"
 }
 
