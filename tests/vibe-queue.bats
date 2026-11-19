@@ -575,6 +575,10 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line 'drained · run over usd= · on vast'
   rm -r "$c/run"
   line 'drained · deadline passed'
+  # No other reason: the stop file says why, not a bare drained.
+  sed -i.bak 's/^deadline=.*/deadline=2099-01-01 00:00/' "$c/job"
+  mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 0 >"$c/run/exit"
+  line 'drained · stopped · on vast'
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
