@@ -4696,7 +4696,7 @@ research_row() {
     st="needs you|$ys"
   # A drain file counts while a job runs or waits: an ended question whose coordinator is done is done (its PR row, Archive).
   elif { [[ -n "$dr" ]] && ((run || wait)); } || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
-    st="drained|$(research_why "$dr" "$ended" "$cd")"
+    st="drained|$(research_why "$dr" "$cd")"
   elif [[ -n "$live" ]]; then
     st="on $(research_place "$live")|"
   elif ((code)); then
@@ -4736,9 +4736,9 @@ research_look() {
   esac
 }
 
-# research_why DRAIN ENDED COORD — why a question drained, first match: a stop (DRAIN now or drain), the newest ended
-# run (ENDED) failed its smoke test, hit its limit or met the usd gate (the run would pass usd=), COORD's deadline= passed,
-# else `vibe queue stop` ended COORD (its stop file). Empty with none.
+# research_why DRAIN COORD — why a question drained, first match: a stop (DRAIN now or drain), COORD's own run failed
+# its smoke test, hit its limit or met the usd gate (the run would pass usd=), COORD's deadline= passed, else
+# `vibe queue stop` ended COORD (its stop file). An older worker's run gives no reason. Empty with none.
 research_why() {
   local x="" dl
   if [[ -n "$2" ]]; then x="$(jstate "$2/run" exit)"; fi
@@ -4753,9 +4753,9 @@ research_why() {
         echo "run at its limit"
       elif [[ "$x" == usd ]]; then
         echo "run over usd="
-      elif [[ -n "$3" ]] && dl="$(deadline_of "$3/job" 2>/dev/null)" && [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
+      elif [[ -n "$2" ]] && dl="$(deadline_of "$2/job" 2>/dev/null)" && [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
         echo "deadline passed"
-      elif [[ -n "$3" && -e "$3/stop" ]]; then
+      elif [[ -n "$2" && -e "$2/stop" ]]; then
         echo "stopped"
       fi
       ;;

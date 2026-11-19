@@ -579,6 +579,10 @@ rpage() { "$VIBE" queue page >/dev/null; }
   sed -i.bak 's/^deadline=.*/deadline=2099-01-01 00:00/' "$c/job"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 0 >"$c/run/exit"
   line 'drained · stopped · on vast'
+  # An older worker run that hit its limit is no reason: the stopped coordinator has no run of its own.
+  rm -r "$c/run"
+  mkdir -p "$h2/run" && echo runpod >"$h2/run/place" && echo 124 >"$h2/run/exit"
+  line 'drained · stopped · h2 on runpod'
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
