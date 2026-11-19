@@ -119,7 +119,7 @@ rjob() {
 
 # research_fixture QDIR REPO — the question `lr` as job dirs, written by hand from the contract: a coordinator
 # (done) and 4 workers. h1 turing, done, 0.81; h2 runpod, run in flight, $1.20; h3 slurm, blocked on a paste;
-# h4 turing, done, 0.84, builds on h1. Spent $1.20 of $50; best 0.84 (h4); waits for you (paste h3).
+# h4 turing, done, 0.84, builds on h1. Spent $1.20 of $50; best 0.84 (h4); state line `needs you · paste h3 · h2 on runpod`.
 research_fixture() {
   local q="$1" r="$2" w="research-lr"
   rjob "$q" 20261117-100000-proj-$w "done" "$r" research/lr "research=lr" "question=Does a wider net help & by how much?" \

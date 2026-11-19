@@ -216,6 +216,7 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 | `vibe queue stop --research <slug> [--now]` | drain: no new worker, each run finishes; `--now`: no new run, each place run runs `stop`, `pull`, `down` |
 | The repo's `.claude/research/` | `workspace.conf` (`kind=run`, `result=folder`), `Dockerfile`, `run`, `stop`, `job.sbatch` (the slurm job); [workspace contract](workspaces.md) |
 | A run | the command `/ws/in/cmd` runs in `/ws/in/repo`; its last output line is `RESULT {"metric": <number>}`; `stop` adds `"partial": true` |
+| A run's progress (optional) | `PROGRESS {"done": <n>, "total": <n>, "at": <epoch seconds>, "run": "<name>"}` lines in its output; the last one wins |
 | `## Research` in the repo's instruction file | Places, Metric command, Smoke check, Data, Tracker, Cost limit: [`research.md`](../skills/fill-queue/references/research.md) |
 
 - Work order and lab book: `RESEARCH.md` in the worktree ([`templates/RESEARCH.md`](../templates/RESEARCH.md)): question, metric, budget, limits, how a run is made, known facts, backlog, own ideas, ledger, end action.
@@ -253,13 +254,18 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 
 ## Research card
 
-A job with `research=<slug>` is in no repo group: the page shows one card per slug. A coordinator has `question=`, a worker `hid=`. The card reads job files and job dir files, never `RESEARCH.md`.
+A job with `research=<slug>` is in no repo group: the page shows one card per slug. A coordinator has `question=`, a worker `hid=`. The card reads job files, job dir files and a live run's instance dir `workspaces/research-<id>/`, never `RESEARCH.md`.
 
-- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files), `deadline=`, `waits for`.
-- `waits for`, first match: `you (…)` (`paste <hid>`: a blocked worker with `paste.md`; `<hid> blocked`; `coordinator blocked`, `failed`, `timeout`, `skipped`), `GPU` (a worker's run on turing), `coordinator` (queued or running), `nothing`.
-- Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
-- A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. A `blocked` worker with no `paste.md` has the `answer` field. The card shows Stop question and Stop now until the question is done, then Archive.
-- Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
+- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files of the coordinator chain, the workers and their archived jobs; a box that is up counts price × (now − started)), `deadline=`.
+- State line: `<state> · <reason> · <run> on <place> · <done> of <total> steps · eta <time> · box until <time>`, empty fields dropped. Status and the report print it too.
+- State, first match: `needs you`, `drained` (a `drain` file while a job runs or waits, or nothing runs or waits and the coordinator is not `done`), `on <place>` (a live run), `coding`, `closing`, `thinking` (the coordinator runs, or its run ended and no follow-up runs yet), `queued`, `done`.
+- Reason: for `needs you` what needs you (`paste <hid>`, `<hid> blocked`, `coordinator blocked`); for `drained`, first match, `stop now`, `stop question`, then from the coordinator's own run and job `smoke failed`, `run at its limit`, `run over usd=`, `deadline passed`, `stopped` (its `stop` file). A job that `vibe queue stop` ended needs no answer.
+- Run: the newest live run, else the newest ended one. Its name: the `PROGRESS` line's `run`, else a worker's hid. A live run drops `on <place>`: the state holds it. `box until`: a live run's box limit.
+- Steps: the last `PROGRESS` line of the run log, else the last `Step: <n>` before `Average time:` (shortcut: safety-critic's log words). `eta`: a live run only, from the last two `PROGRESS` lines; one line, or an ETA in the past or 6 days or more ahead, gives none.
+- Pill: the state word. Look: `thinking`, `coding`, `closing` → `running`; `on <place>` → `gpu`; `drained` → `held`; `needs you` → `blocked`.
+- Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job, a `run-result`, or a `gpu` job whose `run/exit` is written), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
+- A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. A `blocked` worker with no `paste.md` has the `answer` field. The card shows Stop question and Stop now until the question drains or is done. Drained: Stop now while a run lives, Archive once each job has settled. Done: Archive.
+- Count: workers `done` / workers; before the first worker, `0 of <workers=> workers`. A failed worker alone does not need you.
 - Status and the report: a `Research` group after `Features`, a line (report: a row) per question, `hid · place  state  metric · USD` per worker. A done worker keeps no report row of its own.
 - The `no PR` count of the status header skips a done research job with no PR.
 
@@ -398,7 +404,7 @@ Add a route or a button:
 | `queue/<id>/requeued` | time the runner queued the job again after its process died; a second death ends it `failed` |
 | `queue/<id>-review<n>/` | review round `n`: `review.json` (reviewer output), `findings`, `verdicts` (`<n>=fixed <sha>` / `rejected <reason>` / `open`), `rounds`, `round-details.md` |
 | `queue/<id>-verify/` | the verify step: `verify.json` (checker output), `verify` (the `V:` verdict), `agent/evidence/` (screenshots, logs) |
-| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd` (from `agent/run/`); the runner adds `pid`, `price` (USD per hour), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
+| `queue/<id>/run/` | a place run (`vibe queue gpu --place`): `place`, `commit`, `cmd` (from `agent/run/`); the runner adds `pid`, `price` (USD per hour), `started` and `limit` (epochs, after `up`), `log` (at the end; while the run goes: `workspaces/research-<id>/log`), `exit` |
 | `queue/<id>/run-result`, `infra`, `cost`, `out/` | [research](#research-jobs): the JSON of the last `RESULT` line; why `price` or `up` failed; the USD of the run; the pulled `/ws/out` |
 | `queue/<id>/drain`, `paste.md`, `slurm.log` | [research](#research-jobs): `drain` or `now` (`vibe queue stop --research`); a slurm worker's steps; the output its answer gave |
 | `queue/<id>/workers.log` | [research](#research-jobs) coordinator: the output of each worker the runner queued or refused |

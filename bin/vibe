@@ -984,8 +984,8 @@ limit_reset() {
   echo "${BASH_REMATCH[1]}"
 }
 
-# at_time EPOCH — EPOCH as YYYY-MM-DD HH:MM, GNU or BSD date.
-at_time() { date -d "@$1" '+%F %H:%M' 2>/dev/null || date -r "$1" '+%F %H:%M'; }
+# at_time EPOCH [FORMAT] — EPOCH in FORMAT (default YYYY-MM-DD HH:MM), GNU or BSD date, C locale.
+at_time() { LC_ALL=C date -d "@$1" "+${2:-%F %H:%M}" 2>/dev/null || LC_ALL=C date -r "$1" "+${2:-%F %H:%M}"; }
 
 # limited — true until the usage limit a job hit resets.
 limited() {
@@ -2404,9 +2404,10 @@ run_alive() {
 # until the stop bound before the limit or a stop --now (JOB/drain: now), then exec stop, pull, down. All output to the
 # runner's log in the instance state, run/log at the end (fresh: no write through a link); /ws/out to JOB/out/.
 # A failed fetch, price or up writes JOB/infra; a refused start ends as usd, a stop --now before up as stopped.
+# After up, run/started and run/limit mirror the instance's.
 # Then cost, run/exit and the follow-up.
 place_run() {
-  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t pid cut=0
+  local d="$1" inst="research-${1##*/}" st lim secs stop="${VIBE_WS_STOP_SECS:-300}" rc=0 t0="" p c t pid f cut=0
   p="$(jstate "$d/run" place)" c="$(jstate "$d/run" commit)"
   # The agent can write its job dir: a commit git reads as an option, a host place, or a link to a host file runs
   # or reads outside the sandbox. The error names no value: through a link, it can be a secret's first line.
@@ -2438,6 +2439,10 @@ place_run() {
   if [[ "$rc" == 0 ]]; then
     t0="$(date +%s)"
     ws_place "$inst" up >>"$st/log" 2>&1 || rc=infra
+    # shortcut: no code reads this mirror yet (kept for an ended run's box time; PR research-card-status); the instance dir goes with the box.
+    for f in started limit; do
+      if [[ "$rc" == 0 && -f "$st/$f" ]]; then fresh "$d/run/$f" <"$st/$f" || true; fi
+    done
   fi
   if [[ "$rc" == infra ]]; then
     tail -n 1 "$st/log" | fresh "$d/infra" || true
@@ -2504,11 +2509,14 @@ place_gate() {
   mkdir_lock "$l" || return 2
   u="$(jget "$d/job" usd)" r="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
   if [[ -n "$r" ]]; then
-    s="$(for j in "$QDIR"/*/ "$QROOT"/archive/*/*/; do
-      if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" && "$(jget "${j}job" repo)" == "$g" ]]; then
-        head -n 1 "${j}cost"
-      fi
-    done | awk '{ s += $1 } END { printf "%.2f", s }')"
+    s="$({
+      for j in "$QDIR"/*/; do
+        if [[ "${j%/}" != "$d" && -s "${j}cost" && "$(jget "${j}job" research)" == "$r" && "$(jget "${j}job" repo)" == "$g" ]]; then
+          head -n 1 "${j}cost"
+        fi
+      done
+      archived_costs "$r" "$g"
+    } | awk '{ s += $1 } END { printf "%.2f", s }')"
   fi
   # awk compares a number with a word as text: a usd that is no number must refuse here.
   if [[ -n "$u" && ! "$u" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -2528,6 +2536,22 @@ place_gate() {
     echo "vibe: $m: no start"
     return 2
   fi
+}
+
+# archived_costs RESEARCH REPO — the cost of each archived job of RESEARCH and REPO (empty: any repo), a line each.
+# One awk for all: a subshell per archived job took 2.5 s at 1800 jobs, on each page render.
+archived_costs() {
+  # A missing or empty cost file reads no line: awk prints nothing for it.
+  printf '%s\n' "$QROOT"/archive/*/*/cost | awk -v r="$1" -v g="$2" '{
+    jf = $0; sub(/cost$/, "job", jf); rs = ""; rp = ""; a = 0; b = 0
+    while ((getline l < jf) > 0) {
+      if (!a && index(l, "research=") == 1) { rs = substr(l, 10); a = 1 }
+      if (!b && index(l, "repo=") == 1) { rp = substr(l, 6); b = 1 }
+    }
+    close(jf)
+    if (rs == r && (g == "" || rp == g) && (getline c < $0) > 0) print c
+    close($0)
+  }'
 }
 
 # run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
@@ -2619,6 +2643,8 @@ follow_ready() {
 # One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
 # In a job ($VIBE_JOB_DIR is JOB/agent: the sandbox writes no queue), the checks, then the ask: `<hid> <place>` in
 # JOB/agent/workers. The runner then runs this command with JOB as the job dir (workers_take), under the lock.
+# The default workers= of a research coordinator: the worker gate and the card head.
+RESEARCH_WORKERS=3
 cmd_queue_worker() {
   local d="${VIBE_JOB_DIR:-}" h="" p=turing s g k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|slurm]"
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue worker runs inside a queue job (VIBE_JOB_DIR)"
@@ -2646,7 +2672,7 @@ cmd_queue_worker() {
   deadline_gate "$d" "start no worker"
   [[ ! -e "$d/drain" ]] || die "research $s is stopped (vibe queue stop --research): start no worker, close the runs"
   k="$(jget "$d/job" workers)"
-  k="${k:-3}"
+  k="${k:-$RESEARCH_WORKERS}"
   [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"
   # One start at a time, from the count to the queued job.
   if [[ "$d" != */agent ]]; then
@@ -3149,7 +3175,7 @@ status_line() {
       ;;
     research)
       printf '  %s%s · %s\n' "$2" "${4:+ · $4}" "$3"
-      printf '    %s\n' "$5" "$(research_head "$8") · waits for ${8##*|}"
+      printf '    %s\n' "$5" "$(research_head "$8")" "${8##*|}"
       if [[ -n "$6" ]]; then printf '    PR: %s\n' "$6"; fi
       research_workers "${10}" | sed 's/^/    /'
       while IFS= read -r r; do
@@ -3300,6 +3326,11 @@ st_label() {
     "needs you") echo "Needs you" ;;
     "no job") echo "No job" ;;
     finished) echo Finished ;;
+    thinking) echo Thinking ;;
+    coding) echo Coding ;;
+    closing) echo Closing ;;
+    drained) echo Drained ;;
+    "on "*) echo "On ${1#on }" ;;
     *) echo "$1" ;;
   esac
 }
@@ -3328,6 +3359,11 @@ st_tip() {
     *"Checks failed"*) echo "The checks of the repo (.vibe-jobs/gate) failed: read the Checks log." ;;
     *"Verify: "*) echo "The verify agent did not pass the change." ;;
     "push failed"* | "PR not created"*) echo "The runner could not push the branch or open the PR." ;;
+    Thinking) echo "The coordinator agent plans the next runs." ;;
+    Coding) echo "A worker agent writes its run." ;;
+    Closing) echo "A worker agent reads its run result." ;;
+    Drained) echo "No new run starts: the state line says why." ;;
+    "On "*) echo "A run uses its box at that place now." ;;
   esac
 }
 
@@ -3407,21 +3443,34 @@ research_paste() {
 }
 
 # research_card SLUG PILL DIR HEAD ITEMS WORKERS — the body of a research block (research_row's R_DIR, R_HEAD, R_ITEMS,
-# R_WORKERS): the head line, what the question waits for, a line per job that needs you, the coordinator's buttons until
-# it is done, the two stop buttons until the question is done, then Archive, then a row per worker: lamp, hid, state,
+# R_WORKERS): the head line, the state line, a line per job that needs you, the coordinator's buttons until
+# it is done, the two stop buttons until the question drains or is done, then Archive (drained: Stop now while a run lives), then a row per worker: lamp, hid, state,
 # place, metric, USD, idea, last step, for a worker in `paste` its steps, for another blocked one an answer field. A builds= row is indented by its depth.
 research_card() {
-  local l w h dp s pl lt m u idea lamp mu rows=""
-  rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>waits for $(esc "${4##*|}")</p>"
+  local l w h dp s pl lt m u idea lamp mu a b sq sn rows=""
+  rows="<p class=\"stats\">$(esc "$(research_head "$4")")</p><p>$(esc "${4##*|}")</p>"
   while IFS= read -r l; do
     if [[ -n "$l" ]]; then rows+="<p>$(esc "$(page_why "$l")")</p>"; fi
   done <<<"$5"
   if [[ -n "$3" && "$(jstate "$3" status)" != "done" ]]; then rows+="$(job_buttons "$3")"; fi
-  if [[ "$2" != "done" ]]; then
-    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(btn_rows '<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>' '<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>')</div>"
-  else
-    rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$(act_btn research-archive)</div>"
-  fi
+  sq='<button data-act="research-stop" title="No new worker: each run finishes">Stop question</button>'
+  sn='<button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button>'
+  case "$2" in
+    "done") b="$(act_btn research-archive)" ;;
+    # Drained: no Stop question; Stop now while a run lives (a coordinator run or a worker in `running`);
+    # Archive once each job has settled, as `queue archive --research` asks.
+    drained)
+      b="" a="$(act_btn research-archive)"
+      if { [[ -n "$3" && "$(jstate "$3" status)" == gpu ]] && has_run "$3"; } || [[ "$6" == *$'\037'running$'\037'* ]]; then b="$sn"; fi
+      if [[ -n "$3" ]] && ! job_settled "$3"; then a=""; fi
+      while IFS=$'\037' read -r h dp s pl lt m u idea w; do
+        if [[ -n "$w" ]] && ! job_settled "$w"; then a=""; fi
+      done <<<"$6"
+      b="$(btn_rows "$b" "$a")"
+      ;;
+    *) b="$(btn_rows "$sq" "$sn")" ;;
+  esac
+  rows+="<div class=\"jacts\" data-research=\"$(esc "$1")\">$b</div>"
   rows+='<div class="wks">'
   while IFS=$'\037' read -r h dp s pl lt m u idea w; do
     [[ -n "$h" ]] || continue
@@ -3463,7 +3512,7 @@ status_card() {
       if [[ -n "$extra" ]]; then extra="<div class=\"jacts\" data-feature=\"$(esc "$2")\">$extra</div>"; fi
       ;;
     research)
-      pill="$(st_label "$3")" txt="$5" pr="$6" cls=" lane research" name="$2${4:+ · $(group_prog "$4")}"
+      pill="$(st_label "$3")" txt="$5" pr="$6" cls=" lane research" name="$2${4:+ · $(group_prog "$4")}" st="$(research_look "$3")"
       extra="$(research_card "$2" "$3" "$7" "$8" "$9" "${10}")"
       ;;
     *) return 0 ;;
@@ -3526,10 +3575,13 @@ gpu_exit() {
 }
 
 # group_prog N/M [DIRS] — a lane, feature or research progress as the page names it: `N of M items`; a branch of jobs
-# with no lane= (DIRS, one per line): the milestone of its SPEC.md, else `N of M jobs`.
+# with no lane= (DIRS, one per line): the milestone of its SPEC.md, else `N of M jobs`. Other text (`0 of 3 workers`) as it is.
 group_prog() {
   local d m
-  [[ "$1" == */* ]] || return 0
+  if [[ "$1" != */* ]]; then
+    echo "$1"
+    return 0
+  fi
   if [[ -n "${2:-}" && -z "$(jget "${2%%$'\n'*}/job" lane)" ]]; then
     while IFS= read -r d; do
       m="$(spec_prog "$d")"
@@ -3780,7 +3832,7 @@ page_why() {
 # The block (hidden; the panel shows it): lamp, state, title, meta line, the item's status_card, then Activity (page.js).
 page_row() {
   local sec lamp t="${2:-}" why="" pr="" dir="" ph="" k="" chip="" label="${P_REPO:-}" prog="" btn="" b="" el="" nm="" l c s e j fj="" body
-  local st="${3:-}" meta="" x sub="" act=""
+  local st="${3:-}" meta="" x sub="" act="" look="${3:-}"
   case "$1" in
     repo)
       P_REPO="$2"
@@ -3789,11 +3841,11 @@ page_row() {
     job) why="$4" pr="$5" dir="$6" ph="${7:-}" k="${6##*/}" ;;
     lane) prog="$(group_prog "$4" "${10}")" why="$7" pr="$6" dir="$8" ph="${11:-}" k="$P_REPO/$2" ;;
     feature) prog="$(group_prog "$4")" why="$(st_label "$3")${5:+ · $5}" k="feature/$2" chip=Feature label="" ;;
-    research) prog="$(group_prog "$4")" why="$5" pr="$6" k="research/$2" chip=Research label="" ;;
+    research) prog="$(group_prog "$4")" why="$5" pr="$6" k="research/$2" chip=Research label="" look="$(research_look "$3")" ;;
     gpu) k="$2" t="GPU run · ${2#*-*-*-}" el="$4" why="${8:-}" label="${5##*/}" ;;
     *) return 0 ;;
   esac
-  case "$1/$3" in
+  case "$1/$look" in
     */running | */gpu) sec=run lamp=ok ;;
     */queued | */) sec=queued lamp=off ;;
     */held | gpu/parked) sec=held lamp=held ;;
@@ -4113,7 +4165,7 @@ feature_md() {
 }
 
 # research_md — the report's Research table: per question its pill, done/workers, the question, the head line,
-# each worker as `hid place state`, what it waits for, the coordinator's PR. No question, no table.
+# each worker as `hid place state`, the state line, the coordinator's PR. No question, no table.
 research_md() {
   local slug w rows="" h dp s pl _x pr
   while IFS= read -r slug; do
@@ -4128,7 +4180,7 @@ research_md() {
     rows+="| $slug | $R_PILL | $R_PROGRESS | ${R_QUESTION//|//} | $(research_head "$R_HEAD") | $w | ${R_HEAD##*|} | $pr |"$'\n'
   done < <(research_slugs)
   [[ -n "$rows" ]] || return 0
-  printf '\n## Research\n\n| Research | State | Done | Question | Best, USD | Workers | Waits for | Links |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n%s' "$rows"
+  printf '\n## Research\n\n| Research | State | Done | Question | Best, USD | Workers | State line | Links |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n%s' "$rows"
 }
 
 # queue_front_md — held jobs under "Yours", then the triage lines: the top of the report. The page has its own: page_sections.
@@ -4505,33 +4557,71 @@ research_tree() {
   done <<<"$1"
 }
 
+# research_cost JOB — JOB's USD: price × (now − started) while its box is up (0 before up), else its cost file.
+research_cost() {
+  local st="$WS_STATES/research-${1##*/}" t
+  if [[ -d "$st" && ! -e "$1/run/exit" ]]; then
+    t="$(jstate "$st" started)"
+    [[ "$t" =~ ^[0-9]+$ ]] || t=""
+    awk -v p="$(jstate "$st" price)" -v t="$t" -v n="$(date +%s)" 'BEGIN { printf "%.2f\n", t ? p * (n - t) / 3600 : 0 }'
+  else
+    jstate "$1" cost
+  fi
+}
+
 # research_row SLUG — the question of one `research=` slug. A coordinator job has no `hid=`; a worker's latest job
-# (session 2 sorts after session 1) gives its state. Sets R_PILL (needs you, running, queued, done), R_PROGRESS (workers
-# done/all), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|waits for`),
+# (session 2 sorts after session 1) gives its state. Sets R_PILL (the state word of research_line), R_PROGRESS (workers
+# done/all, else `0 of <workers=> workers`), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|line`, line: research_line),
 # R_ITEMS (`NAME  STATUS  NOTE` per job that needs you) and R_WORKERS (a line per worker, parent first, joined by US:
 # HID DEPTH STATE PLACE LAST METRIC USD IDEA DIR). State: queued, coding (session 1), running (the run), closing
 # (session 2), paste, infra, else the job's status.
 research_row() {
-  local d h x st s fo L res c m cs lt bd hl wl="" cd="" flat="" ms="" costs="" ys="" better="" usd="" dl="" sp best ok=0 n=0 you=0 run=0 wait=0 gpu=0 coord=0 waits=nothing
+  local d h x st s fo L res c m cs lt bd hl wl="" cd="" flat="" ms="" costs="" ys="" better="" usd="" dl="" sp best ok=0 n=0 you=0 run=0 wait=0
+  local live="" ended="" dr="" g="" think=0 code=0 close=0
   R_PILL="done" R_PROGRESS="" R_QUESTION="$1" R_PR="" R_DIR="" R_HEAD="" R_ITEMS="" R_WORKERS=""
   for d in "$QDIR"/*/; do
     d="${d%/}"
     [[ -f "$d/job" && "$(jget "$d/job" research)" == "$1" ]] || continue
-    h="$(jget "$d/job" hid)"
+    g="${g:-$(jget "$d/job" repo)}" h="$(jget "$d/job" hid)"
+    # The glob sorts by id: the last run seen is the newest. A gpu worker, or a gpu job with a run, is a run in flight.
+    if [[ -e "$d/run/exit" ]]; then
+      ended="$d"
+    elif [[ "$(jstate "$d" status)" == gpu ]] && { [[ -n "$h" ]] || has_run "$d"; }; then
+      live="$d"
+    fi
+    case "$(jstate "$d" drain)" in
+      now) dr=now ;;
+      drain) dr="${dr:-drain}" ;;
+    esac
     if [[ -n "$h" ]]; then
       wl+="$d"$'\t'"$h"$'\n'
-    elif [[ -z "$cd" || "$d" > "$cd" ]]; then
-      cd="$d"
+      continue
     fi
+    # Each coordinator job of the chain pays for its own box.
+    c="$(research_cost "$d")"
+    if [[ -n "$c" ]]; then costs+="$c"$'\n'; fi
+    if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
+  # A retried job is archived: its cost counts on, as in place_gate.
+  # The repo of any job of the question: with the coordinator archived, an empty repo would sum every repo's.
+  x="$(archived_costs "$1" "$g")"
+  if [[ -n "$x" ]]; then costs+="$x"$'\n'; fi
   if [[ -n "$cd" ]]; then
     R_DIR="$cd" R_PR="$(jstate "$cd" pr)"
     h="$(jget "$cd/job" question)" R_QUESTION="${h:-$1}"
     better="$(jget "$cd/job" better)" usd="$(jget "$cd/job" usd)" dl="$(jget "$cd/job" deadline)"
     st="$(jstate "$cd" status)"
+    # A job that `vibe queue stop` ended failed needs no answer; until the runner ends it, it still runs.
+    if [[ -e "$cd/stop" && "$st" == failed ]]; then st=stopped; fi
     case "$st" in
-      running | gpu) run=1 coord=1 ;;
-      "" | queued) wait=1 coord=1 ;;
+      running) run=1 think=1 ;;
+      # A coordinator in gpu with no run of its own waits for its workers.
+      # Its run ended, its follow-up not queued yet: the coordinator thinks again.
+      gpu)
+        if has_run "$cd"; then run=1; else wait=1; fi
+        if [[ -e "$cd/run/exit" ]]; then think=1; fi
+        ;;
+      "" | queued) wait=1 ;;
       blocked | failed | timeout | skipped)
         you=1 ys+="${ys:+, }coordinator $st"
         R_ITEMS+="coordinator  $st  $(jstate "$cd" note)"$'\n'
@@ -4547,7 +4637,8 @@ research_row() {
       [[ "$x" == "$h" ]] || continue
       L="$d"
       if [[ -s "$d/run-result" ]]; then res="$d/run-result"; fi
-      if [[ -s "$d/cost" ]]; then cs+="$(jstate "$d" cost)"$'\n'; fi
+      c="$(research_cost "$d")"
+      if [[ -n "$c" ]]; then cs+="$c"$'\n'; fi
     done <<<"$wl"
     st="$(jstate "$L" status)" fo="$(jget "$L/job" follow)" s="$st"
     case "$st" in
@@ -4555,6 +4646,8 @@ research_row() {
       running) s=coding run=1 ;;
       gpu) s=running run=1 ;;
     esac
+    # Its run ended, its session 2 not queued yet: it closes.
+    if [[ "$st" == gpu && -e "$L/run/exit" ]]; then s=closing; fi
     if [[ -n "$res" || -n "$fo" ]] && [[ "$s" == queued || "$s" == coding ]]; then s=closing; fi
     if [[ "$s" == blocked && -s "$L/paste.md" ]]; then s="paste"; fi
     if [[ "$s" == failed && -e "$L/infra" ]]; then s=infra; fi
@@ -4570,7 +4663,10 @@ research_row() {
         R_ITEMS+="$h  blocked  $(jstate "$L" note)"$'\n'
         ;;
     esac
-    if [[ "$s" == running && "$(jget "$L/job" place)" == turing ]]; then gpu=1; fi
+    case "$s" in
+      coding) code=1 ;;
+      closing) close=1 ;;
+    esac
     m=""
     if [[ -n "$res" ]]; then m="$(research_metric "$res")"; fi
     if [[ -n "$m" ]]; then ms+="$h"$'\t'"$m"$'\n'; fi
@@ -4595,21 +4691,125 @@ research_row() {
     h="${x%%$'\037'*}" x="${x#*$'\037'}" x="${x#*$'\037'}"
     if [[ "$R_WORKERS" != "$h"$'\037'* && "$R_WORKERS" != *$'\n'"$h"$'\037'* ]]; then R_WORKERS+="${R_WORKERS:+$'\n'}$h"$'\037'0$'\037'"$x"; fi
   done <<<"$flat"
-  if ((you)); then
-    R_PILL="needs you" waits="you ($ys)"
-  elif ((run)); then
-    R_PILL=running
-  elif ((wait)); then
-    R_PILL=queued
-  fi
-  if ((n)); then R_PROGRESS="$ok/$n"; fi
-  if [[ "$waits" == nothing ]]; then
-    if ((gpu)); then waits=GPU; elif ((coord)); then waits=coordinator; fi
+  if ((n)); then
+    R_PROGRESS="$ok/$n"
+  elif [[ -n "$cd" ]]; then
+    x="$(jget "$cd/job" workers)" R_PROGRESS="0 of ${x:-$RESEARCH_WORKERS} workers"
   fi
   best="$(awk -F'\t' -v b="${better:-higher}" '$2 != "" { x = $2 + 0; if (!n || (b == "lower" ? x < bx : x > bx)) { bx = x; bs = $2; bh = $1 } n = 1 }
     END { if (n) print bs " (" bh ")" }' <<<"$ms")"
   sp="$(awk '{ s += $1 } END { printf "%.2f", s }' <<<"$costs")"
-  R_HEAD="$best|\$$sp|$usd|$dl|$waits"
+  st=""
+  if ((you)); then
+    st="needs you|$ys"
+  # A drain file counts while a job runs or waits: an ended question whose coordinator is done is done (its PR row, Archive).
+  elif { [[ -n "$dr" ]] && ((run || wait)); } || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
+    st="drained|$(research_why "$dr" "$cd")"
+  elif [[ -n "$live" ]]; then
+    st="on $(research_place "$live")|"
+  elif ((code)); then
+    st="coding|"
+  elif ((close)); then
+    st="closing|"
+  elif ((think)); then
+    st="thinking|"
+  elif ((wait)); then
+    st="queued|"
+  else
+    st="done|"
+  fi
+  R_PILL="${st%%|*}"
+  R_HEAD="$best|\$$sp|$usd|$dl|$(research_line "${st%%|*}" "${st#*|}" "${live:-$ended}" "$live")"
+}
+
+# has_run JOB — true when JOB asked for a run of its own: a place run (run/) or a gpu-queue run (gpu-job); a waiting coordinator has none.
+has_run() { [[ -d "$1/run" || -s "$1/gpu-job" ]]; }
+
+# research_place JOB — the place of JOB's run: run/place, else the job's place=, else turing (a gpu-queue run).
+# The agent writes run/place: only runpod or vast passes, as in place_run; other text reaches the terminal and R_HEAD.
+research_place() {
+  local p
+  p="$(jstate "$1/run" place)"
+  [[ "$p" =~ ^(runpod|vast)$ ]] || p="$(jget "$1/job" place)"
+  echo "${p:-turing}"
+}
+
+# research_look WORD — the CSS state of a research state word: the page's look and section.
+research_look() {
+  case "$1" in
+    thinking | coding | closing) echo running ;;
+    "on "*) echo gpu ;;
+    drained) echo held ;;
+    *) echo "$1" ;;
+  esac
+}
+
+# research_why DRAIN COORD — why a question drained, first match: a stop (DRAIN now or drain), COORD's own run failed
+# its smoke test, hit its limit or met the usd gate (the run would pass usd=), COORD's deadline= passed, else
+# `vibe queue stop` ended COORD (its stop file). An older worker's run gives no reason. Empty with none.
+research_why() {
+  local x="" dl
+  if [[ -n "$2" ]]; then x="$(jstate "$2/run" exit)"; fi
+  case "$1" in
+    now) echo "stop now" ;;
+    drain) echo "stop question" ;;
+    *)
+      # shortcut: `failed: smoke` is safety-critic's log word; drop it when repos emit PROGRESS.
+      if [[ "$x" == 1 ]] && grep -aqF 'failed: smoke' "$2/run/log" 2>/dev/null; then
+        echo "smoke failed"
+      elif [[ "$x" == 124 ]]; then
+        echo "run at its limit"
+      elif [[ "$x" == usd ]]; then
+        echo "run over usd="
+      elif [[ -n "$2" ]] && dl="$(deadline_of "$2/job" 2>/dev/null)" && [[ -n "$dl" ]] && (($(date +%s) >= dl)); then
+        echo "deadline passed"
+      elif [[ -n "$2" && -e "$2/stop" ]]; then
+        echo "stopped"
+      fi
+      ;;
+  esac
+}
+
+# research_progress LOG — `RUN|DONE|TOTAL|ETA` of LOG's last `PROGRESS {"done":…, "total":…, "at":…, "run":…}` line;
+# ETA from the rate of the last two lines; one in the past or 6 days or more ahead (a stalled run, an `at` in ms) drops. With no such line, DONE is the last `Step:` before `Average time:`. Empty with none.
+research_progress() {
+  local p
+  p="$(grep -a '^PROGRESS {' "$1" 2>/dev/null | tail -n 2 | jq -nRr '[inputs | ltrimstr("PROGRESS ") | fromjson? | objects]
+    | select(length > 0) | .[-1] as $l | (if length > 1 then .[-2] else {} end) as $p
+    | [($l.run | strings | gsub("[|[:cntrl:]]"; "")) // "", ($l.done | numbers) // "", ($l.total | numbers) // "",
+      (if ([$l.done, $l.total, $l.at, $p.done, $p.at] | all(type == "number")) and $l.done > $p.done and $l.at > $p.at and $l.total > $l.done
+       then $l.at + ($l.total - $l.done) * ($l.at - $p.at) / ($l.done - $p.done) | floor
+       | if . >= now and . < now + 518400 then . else "" end else "" end)] | join("|")' 2>/dev/null)" || p=""
+  # shortcut: `Step:` and `Average time:` are safety-critic's log words; drop them when repos emit PROGRESS.
+  if [[ -z "$p" && -f "$1" ]]; then
+    p="$(awk '/Average time:/ { exit } match($0, /Step: [0-9]+/) { s = substr($0, RSTART + 6, RLENGTH - 6) } END { if (s != "") print "|" s "||" }' "$1" 2>/dev/null)" || p=""
+  fi
+  echo "$p"
+}
+
+# research_line STATE REASON RUN LIVE — `<state> · <reason> · <run> on <place> · <done> of <total> steps · eta <time> ·
+# box until <time>`, empty fields dropped; a live run gives the place in the state. RUN: the newest run, named by its
+# PROGRESS line, else a worker's hid; LIVE: the same job while its box is up, for the ETA and the box end.
+research_line() {
+  local l="$1" r="" t="" p n="" dn="" tt="" eta=""
+  if [[ -n "$3" ]]; then
+    # A live run's log is in its instance dir; an ended run's in run/.
+    if [[ -n "$4" ]]; then p="$WS_STATES/research-${4##*/}/log"; else p="$3/run/log"; fi
+    IFS='|' read -r n dn tt eta <<<"$(research_progress "$p")"
+    r="${n:-$(jget "$3/job" hid)}" p="$(research_place "$3")"
+    # The live run's place is the state itself: `on vast · h2`, not `on vast · h2 on vast`.
+    if [[ "$1" != "on $p" ]]; then r="${r:+$r }on $p"; fi
+  fi
+  if [[ -n "$4" ]]; then
+    t="$(jstate "$WS_STATES/research-${4##*/}" limit)"
+    if [[ "$t" =~ ^[0-9]+$ ]]; then t="$(at_time "$t" '%a %H:%M')"; else t=""; fi
+  fi
+  l+="${2:+ · $2}"
+  if [[ -n "$r" ]]; then l+=" · $r"; fi
+  if [[ -n "$dn" ]]; then l+=" · $dn${tt:+ of $tt} steps"; fi
+  # The ETA comes from the repo's log: a time date cannot format drops it.
+  if [[ -n "$4" && "$eta" =~ ^[0-9]+$ ]] && eta="$(at_time "$eta" '%a %H:%M' 2>/dev/null)"; then l+=" · eta $eta"; fi
+  echo "$l${t:+ · box until $t}"
 }
 
 # --- job: recurring jobs, added to the queue by the 01:00 timer (docs/vibe-jobs.md)
@@ -4784,7 +4984,7 @@ job_rows() {
   while IFS= read -r job; do
     [[ -n "$job" ]] || continue
     last="$(job_state "$1" "$job" last-run)"
-    if [[ -n "$last" ]]; then last="$(date -d "@$last" +%F 2>/dev/null || date -r "$last" +%F)"; fi
+    if [[ -n "$last" ]]; then last="$(at_time "$last" %F)"; fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$job" "$(job_key "$1" "$job" schedule -)" "$(job_key "$1" "$job" day -)" "${last:-never}" "$(job_due "$1" "$job")"
   done < <(job_names "$1")
 }

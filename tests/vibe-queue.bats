@@ -453,7 +453,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
   grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2 of 4 items</span></b><span class="why">h3 · paste · Research · proj</span></a></div>' "$f"
   grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="One of its items needs your answer or your check.">Needs you</span><h2>lr <span class="n">2 of 4 items</span></h2><code class="meta">proj · Research</code></div><div class="job lane research s-blocked">' "$f"
-  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>waits for you (paste h3)</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
+  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>needs you · paste h3 · h2 on runpod</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
   # The order: h4 builds on h1, so it sits below it, one level in.
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
   grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">Running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">run on runpod</p></div>' "$f"
@@ -465,35 +465,146 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$("$VIBE" queue status | head -n 1)" == *" · 1 no PR · "* ]] || false
 }
 
-@test "page: a research question waits for you, the GPU, the coordinator, nothing, in that order" {
-  local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr"
+@test "page: a research question with no worker job reads its workers= budget in the head" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" c="$Q/20261117-100000-proj-research-lr" r
   r="$(make_repo proj)"
   research_fixture "$Q" "$r"
-  # waits <text> <pill> — the page's waits line and the block's state.
-  waits() {
+  rm -r "$Q"/20261117-1001* "$Q"/20261117-1002* "$Q"/20261117-1003* "$Q"/20261117-1004*
+  echo running >"$c/status"
+  rpage
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 0 of 3 workers · thinking\n'* ]] || false
+  grep -qF '<b>lr <span class="n">0 of 3 workers</span></b>' "$f"
+  sed -i.bak 's/^workers=3$/workers=5/' "$c/job"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 0 of 5 workers · thinking\n'* ]] || false
+}
+
+# shellcheck disable=SC2016  # a literal $ in the expected text
+@test "page: a research state line, first match: needs you, drained, on <place>, coding, closing, thinking, queued, done" {
+  local f="$XDG_STATE_HOME/vibe/web/index.html" r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st t
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  # line <text> — the card's state line on the page and in the status.
+  line() {
     rpage
-    grep -qF "<p>waits for $1</p>" "$f"
-    grep -qE "<span class=\"st\" title=\"[^\"]+\">$2</span><h2>lr " "$f"
+    grep -qF "<p>$1</p>" "$f"
+    [[ "$("$VIBE" queue status)" == *$'\n'"    $1"$'\n'* ]] || false
   }
-  waits 'you (paste h3)' 'Needs you'
-  # A coordinator that needs the user comes first, with its own buttons.
+  line 'needs you · paste h3 · h2 on runpod'
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
-  waits 'you (coordinator blocked, paste h3)' 'Needs you'
-  grep -qF '<span class="why">coordinator · Has a question: name the metric · Research · proj</span>' "$f"
-  grep -qF "<div class=\"jacts\" data-id=\"${c##*/}\">" "$f"
-  echo "done" >"$c/status"
-  # The paste is back: h3 is done.
-  echo "done" >"$h/status"
-  waits nothing Running
-  sed -i.bak 's/^place=runpod/place=turing/' "$Q"/*-h2/job
-  waits GPU Running
+  line 'needs you · coordinator blocked, paste h3 · h2 on runpod'
+  echo "done" >"$c/status" && echo "done" >"$h/status"
+  # After a Stop, drained comes before a live run.
+  echo drain >"$c/drain"
+  line 'drained · stop question · h2 on runpod'
+  echo now >"$h2/drain"
+  line 'drained · stop now · h2 on runpod'
+  # The pill reads the state word: a drained question is not done, and keeps Stop now.
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · drained\n'* ]] || false
+  grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
+  grep -qF '<span class="st" title="No new run starts: the state line says why.">Drained</span>' "$f"
+  # A drained question loses Stop question and keeps Stop now while h2 runs; Archive waits for each job to end.
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
+  rm "$c/drain" "$h2/drain"
+  st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
+  mkdir -p "$st" && echo "$t" >"$st/limit"
+  hm() { LC_ALL=C date -d "@$1" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$1" '+%a %H:%M'; }
+  line "on runpod · h2 · box until $(hm "$t")"
+  # The PROGRESS contract names the run and gives its steps; the last two lines give the ETA.
+  printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
+    $((t - 3700)) $((t - 3600)) >"$st/log"
+  line "on runpod · seed42 · 200 of 1000 steps · eta $(hm $((t - 2800))) · box until $(hm "$t")"
+  # The repo writes the run name: a | and control bytes drop out, so the fields hold and no escape reaches the terminal.
+  printf 'PROGRESS {"done":2,"total":10,"at":1,"run":"a|b\\u001b]0;x\\u0007c"}\n' >"$st/log"
+  line "on runpod · ab]0;xc · 2 of 10 steps · box until $(hm "$t")"
+  # An `at` in ms or ns, or a stalled run, gives an ETA in the past or a week out: no ETA, no error.
+  printf 'PROGRESS {"done":1,"total":10,"at":1700000000000000000}\nPROGRESS {"done":2,"total":10,"at":1700000001000000000}\n' >"$st/log"
+  line "on runpod · h2 · 2 of 10 steps · box until $(hm "$t")"
+  printf 'PROGRESS {"done":200,"total":1000,"at":%s000}\nPROGRESS {"done":300,"total":1000,"at":%s000}\n' $((t - 3700)) $((t - 3600)) >"$st/log"
+  line "on runpod · h2 · 300 of 1000 steps · box until $(hm "$t")"
+  printf 'PROGRESS {"done":100,"total":300,"at":%s}\nPROGRESS {"done":200,"total":300,"at":%s}\n' $((t - 435600)) $((t - 349200)) >"$st/log"
+  line "on runpod · h2 · 200 of 300 steps · box until $(hm "$t")"
+  printf 'PROGRESS {"done":1,"total":10000,"at":%s}\nPROGRESS {"done":2,"total":10000,"at":%s}\n' $((t - 3700)) $((t - 3600)) >"$st/log"
+  line "on runpod · h2 · 2 of 10000 steps · box until $(hm "$t")"
+  [[ "$("$VIBE" queue status 2>&1 >/dev/null)" != *date:* ]] || false
+  printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
+    $((t - 3700)) $((t - 3600)) >"$st/log"
+  # One line gives no ETA; with no PROGRESS line, the last Step: before Average time: gives the steps.
+  sed -i.bak 1d "$st/log"
+  line "on runpod · seed42 · 200 of 1000 steps · box until $(hm "$t")"
+  printf 'INFO - Step: 0\nINFO - Step: 131072\nINFO - Average time: 21.5 s\nINFO - Step: 9\n' >"$st/log"
+  line "on runpod · h2 · 131072 steps · box until $(hm "$t")"
+  rm "$st/log"
+  # A live run keeps the gpu look: the brand glider runs.
+  grep -qF '<div class="job lane research s-gpu"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">On runpod</span>' "$f"
+  grep -qF '<span class="st" title="A run uses its box at that place now.">On runpod</span>' "$f"
+  echo "done" >"$h2/status" && echo running >"$h/status"
+  line coding
+  # A coordinator that waits for its workers has no run of its own: it is not on turing.
+  echo gpu >"$c/status"
+  line coding
+  echo queued >"$h/status"
+  line queued
+  grep -qF '<span class="pill">Queued</span>' "$f"
+  echo "done" >"$c/status" && echo running >"$h/status"
+  echo '{"metric": 0.5}' >"$h/run-result"
+  line closing
+  echo "done" >"$h/status" && echo running >"$c/status"
+  line thinking
+  # A stop the runner has not done yet: the coordinator still runs.
+  touch "$c/stop"
+  line thinking
+  rm "$c/stop"
   echo queued >"$c/status"
-  waits GPU Running
-  echo "done" >"$Q"/*-h2/status
-  waits coordinator Queued
+  line queued
   echo "done" >"$c/status"
-  waits nothing Done
-  [[ "$(grep -o '<div class="row" data-k="research/lr">.*' "$f")" == *'<i class="lamp l-done"></i>'* ]] || false
+  line "done"
+  # A stopped question that ended with its coordinator done is done: its PR to review and Archive stay.
+  echo drain >"$c/drain" && echo https://github.com/o/proj/pull/5 >"$c/pr"
+  line "done"
+  grep -qF '<a class="btn" href="https://github.com/o/proj/pull/5" target="_blank" rel="noopener">Open PR ↗</a>' "$f"
+  grep -qF 'data-act="research-archive"' "$f"
+  rm "$c/drain" "$c/pr"
+  # A coordinator that `vibe queue stop` ended needs no answer: the question drained, the newest run says why.
+  echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
+  mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
+  line 'drained · run at its limit · on vast'
+  # No run lives: Archive alone.
+  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
+  # The agent writes run/place: other text than runpod or vast gives the job's place=.
+  printf 'evil|x\033]0;t\007\n' >"$c/run/place"
+  line 'drained · run at its limit · on turing'
+  echo vast >"$c/run/place"
+  # An ended run keeps its steps from run/log, with no ETA.
+  printf 'PROGRESS {"done":1,"total":9,"at":1}\nPROGRESS {"done":2,"total":9,"at":2,"run":"s1"}\n' >"$c/run/log"
+  line 'drained · run at its limit · s1 on vast · 2 of 9 steps'
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · drained\n'* ]] || false
+  echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
+  line 'drained · smoke failed · on vast'
+  echo usd >"$c/run/exit"
+  line 'drained · run over usd= · on vast'
+  rm -r "$c/run"
+  line 'drained · deadline passed'
+  # No other reason: the stop file says why, not a bare drained.
+  sed -i.bak 's/^deadline=.*/deadline=2099-01-01 00:00/' "$c/job"
+  mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 0 >"$c/run/exit"
+  line 'drained · stopped · on vast'
+  # An older worker run that hit its limit is no reason: the stopped coordinator has no run of its own.
+  rm -r "$c/run"
+  mkdir -p "$h2/run" && echo runpod >"$h2/run/place" && echo 124 >"$h2/run/exit"
+  line 'drained · stopped · h2 on runpod'
+}
+
+@test "page: a gpu job whose run ended reads closing (a worker) or thinking (the coordinator), not done" {
+  local r h="$Q/20261117-100300-proj-research-lr-h3" c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2"
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  rm "$h/paste.md" && echo "done" >"$h/status"
+  # place_run wrote run/exit; the follow-up is not queued yet, so h2 is still gpu.
+  mkdir -p "$h2/run" && echo runpod >"$h2/run/place" && echo 0 >"$h2/run/exit"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · closing\n'*$'\n    closing · h2 on runpod\n'*'h2 · runpod  closing'* ]] || false
+  echo "done" >"$h2/status" && rm -r "$h2/run"
+  echo gpu >"$c/status" && mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 0 >"$c/run/exit"
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · thinking\n'*$'\n    thinking · on vast\n'* ]] || false
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
@@ -512,9 +623,44 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo 0.30 >"$h2-gpu/cost"
   echo "done" >"$h2/status"
   rpage
-  grep -qF '<span class="n">closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
+  grep -qF '<span class="n">Closing · runpod</span></span><span class="wm">$1.50</span>' "$f"
   grep -qF '$1.50 of $50' "$f"
   [ "$(grep -o 'data-hid="h2"' "$f" | wc -l)" -eq 1 ]
+}
+
+# shellcheck disable=SC2016  # a literal $ in the expected text
+@test "research: spend sums the coordinator chain's cost and the archived jobs'; a live box counts price × (now − started), not its reservation" {
+  local r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st a
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  echo 0.19 >"$c/cost"
+  rjob "$Q" "${c##*/}-gpu" "done" "$r" research/lr research=lr usd=50
+  echo 0.05 >"$c-gpu/cost"
+  [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
+  # h2's box is up an hour at 2 USD/h: its cost file holds the gate's reservation of 1.20.
+  st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}"
+  mkdir -p "$st" "$h2/run"
+  echo 2 >"$st/price" && echo $(($(date +%s) - 3600)) >"$st/started"
+  run "$VIBE" queue status
+  [[ "$output" == *'h2 · runpod  running  $2.00'* && "$output" == *'$2.24 of $50'* ]] || false
+  # Gate passed, box not up yet: a price and no started is 0, not price × now.
+  rm "$st/started"
+  run "$VIBE" queue status
+  [[ "$output" == *'h2 · runpod  running  $0.00'* && "$output" == *'$0.24 of $50'* ]] || false
+  echo 0 >"$h2/run/exit"
+  [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
+  # A retried job is archived: its cost counts on; another repo's or another research's does not.
+  a="$XDG_STATE_HOME/vibe/archive/2026-11"
+  rjob "$a" 20261116-090000-proj-research-lr failed "$r" research/lr research=lr
+  echo 3.40 >"$a/20261116-090000-proj-research-lr/cost"
+  rjob "$a" 20261116-090100-other-research-lr failed /elsewhere research/lr research=lr
+  echo 9 >"$a/20261116-090100-other-research-lr/cost"
+  rjob "$a" 20261116-090200-proj-research-x failed "$r" research/x research=x
+  echo 9 >"$a/20261116-090200-proj-research-x/cost"
+  [[ "$("$VIBE" queue status)" == *'$4.84 of $50'* ]] || false
+  # With the coordinator archived, the workers' repo still keeps another repo's cost out.
+  mv "$c" "$c-gpu" "$a/"
+  [[ "$("$VIBE" queue status)" == *$'(h4) · $4.84\n'* ]] || false
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
@@ -524,10 +670,11 @@ rpage() { "$VIBE" queue page >/dev/null; }
   research_fixture "$Q" "$r"
   run "$VIBE" queue status
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | sed -n '3,12p')" = 'Research
+  [ "$(printf '%s\n' "$output" | sed -n '3,13p')" = 'Research
   lr · 2/4 · needs you
     Does a wider net help & by how much?
-    best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 · waits for you (paste h3)
+    best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00
+    needs you · paste h3 · h2 on runpod
     h1 · turing  done  0.81 · $0.00
       h4 · turing  done  0.84 · $0.00
     h2 · runpod  running  $1.20
@@ -539,7 +686,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo blocked >"$c/status" && echo "blocked: name the metric" >"$c/note"
   [[ "$("$VIBE" queue status)" == *$'    needs you: coordinator blocked: name the metric\n    needs you: h3 paste'* ]] || false
   run "$VIBE" queue report
-  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 slurm paste | you (coordinator blocked, paste h3) |  |' <<<"$output"
+  grep -qF '| lr | needs you | 2/4 | Does a wider net help & by how much? | best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00 | h1 turing done · h4 turing done · h2 runpod running · h3 slurm paste | needs you · coordinator blocked, paste h3 · h2 on runpod |  |' <<<"$output"
   # The coordinator's PR is in the row: its done job has no row of its own.
   echo https://example.com/pull/5 >"$c/pr"
   [[ "$("$VIBE" queue report)" == *'| [PR](https://example.com/pull/5) |'* ]] || false
@@ -3002,6 +3149,7 @@ case "\$v" in
     if [ -e "$STUBS/fail-up" ]; then echo "\${0##*/}: no machine free" >&2 && exit 1; fi
     echo pod-1 >"\$WS_STATE/id"
     echo "\$WS_NAME" >"$STUBS/ws-name"
+    date +%s >"\$WS_STATE/started"
     if [ -e "$STUBS/short-limit" ]; then echo \$((\$(date +%s) + 3)); else echo \$((\$(date +%s) + WS_HOURS * 3600)); fi >"\$WS_STATE/limit"
     ;;
   exec)
@@ -3064,6 +3212,10 @@ EOF
   grep -qx "in repo at $(cat "$Q/01-a/run/commit"), commits: 1" "$Q/01-a/run/log"
   [ "$(cat "$Q/01-a/run/exit")" = 0 ]
   [ "$(cat "$Q/01-a/run/price")" = 0 ]
+  # place_run copies them before the instance dir goes; no code reads them yet (PR research-card-status keeps the copy).
+  [[ "$(cat "$Q/01-a/run/started")" =~ ^[0-9]+$ ]] || false
+  [[ "$(cat "$Q/01-a/run/limit")" =~ ^[0-9]+$ ]] || false
+  [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
   [ "$(cat "$Q/01-a/cost")" = 0.00 ]
   [ "$(cat "$Q/01-a/run-result")" = '{"metric":0.7,"seed":1}' ]
   grep -qF -- '- Result: {"metric":0.7,"seed":1}' "$Q/01-a-gpu/prompt.md"

@@ -32,6 +32,9 @@ contract and the installer's auto-discovery rules.
   centered top bar with five tabs, plain labels (`docs/vibe-queue.md` § Page
   words), a job panel open from 1200 px; specs, tasks and roadmap work stay in a
   session. Still the bash render of `vibe queue page`. Decisions: PR for `queue-page-v2`.
+- 2026-11-19: **a research card reads one state line**: state first, box end last;
+  progress from an optional `PROGRESS {…}` log line; spend counts the coordinator
+  chain. `docs/vibe-queue.md` § Research card; decisions: PR for `research-card-status`.
 - 2026-11-15: **outside research tools run through `vibe ws`**: one folder per
   tool under `workspaces/`, each in a container; a service stays up with a link,
   a `kind=run` tool is a queue job (`tool=`) with stop, steer and a checked
