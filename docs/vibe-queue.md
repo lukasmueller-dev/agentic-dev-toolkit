@@ -255,8 +255,11 @@ An open question with a metric, a budget and a backlog of experiments runs as a 
 
 A job with `research=<slug>` is in no repo group: the page shows one card per slug. A coordinator has `question=`, a worker `hid=`. The card reads job files and job dir files, never `RESEARCH.md`.
 
-- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files of the coordinator chain and the workers; a box that is up counts price × (now − started)), `deadline=`, `waits for`.
-- `waits for`, first match: `you (…)` (`paste <hid>`: a blocked worker with `paste.md`; `<hid> blocked`; `coordinator blocked`, `failed`, `timeout`, `skipped`), `GPU` (a worker's run on turing), `coordinator` (queued or running), `nothing`.
+- Head: question, best metric with its hid (`better=`, a `run-result` without a number is none), USD spent of `usd=` (the `cost` files of the coordinator chain, the workers and their archived jobs; a box that is up counts price × (now − started)), `deadline=`.
+- State line: `<state> · <reason> · <run> on <place> · box until <time>`, empty fields dropped. Status and the report print it too.
+- State, first match: `needs you`, `drained` (a `drain` file, or nothing runs or waits and the coordinator is not `done`), `on <place>` (a live run), `coding`, `closing`, `thinking` (the coordinator runs), `queued`, `done`.
+- Reason: for `needs you` what needs you (`paste <hid>`, `<hid> blocked`, `coordinator blocked`); for `drained`, first match, `stop now`, `stop question`, `smoke failed`, `run at its limit`, `run over usd=`, `deadline passed`. A job that `vibe queue stop` ended needs no answer.
+- Run: the newest live run, else the newest ended one; a worker's names its hid. `box until`: a live run's box limit.
 - Worker row: the latest job of its `hid=`. State: `queued`, `coding` (session 1), `running` (the run: status `gpu`), `closing` (session 2: a follow-up job or a `run-result`), `paste`, `infra` (`failed` with an `infra` file), else the job status. A `builds=<hid>` row sits indented below its parent.
 - A worker in `paste`: each non-blank line of its `paste.md` is a step (a list marker and a fence line are dropped) with a Copy button. One field posts the RESULT line to `answer` for that worker. A `blocked` worker with no `paste.md` has the `answer` field. The card shows Stop question and Stop now until the question is done, then Archive.
 - Pill, first match: `needs you`, `running`, `queued`, `done`. Count: workers `done` / workers. A failed worker alone does not need you.
