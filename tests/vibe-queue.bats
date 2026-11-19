@@ -532,6 +532,10 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo 2 >"$st/price" && echo $(($(date +%s) - 3600)) >"$st/started"
   run "$VIBE" queue status
   [[ "$output" == *'h2 · runpod  running  $2.00'* && "$output" == *'$2.24 of $50'* ]] || false
+  # Gate passed, box not up yet: a price and no started is 0, not price × now.
+  rm "$st/started"
+  run "$VIBE" queue status
+  [[ "$output" == *'h2 · runpod  running  $0.00'* && "$output" == *'$0.24 of $50'* ]] || false
   echo 0 >"$h2/run/exit"
   [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
 }
