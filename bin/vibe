@@ -2643,6 +2643,8 @@ follow_ready() {
 # One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
 # In a job ($VIBE_JOB_DIR is JOB/agent: the sandbox writes no queue), the checks, then the ask: `<hid> <place>` in
 # JOB/agent/workers. The runner then runs this command with JOB as the job dir (workers_take), under the lock.
+# The default workers= of a research coordinator: the worker gate and the card head.
+RESEARCH_WORKERS=3
 cmd_queue_worker() {
   local d="${VIBE_JOB_DIR:-}" h="" p=turing s g k j x live="" n=0 wt md it wb e t u="usage: vibe queue worker <hid> [--place turing|runpod|vast|slurm]"
   [[ -n "$d" && -f "$d/job" ]] || die "vibe queue worker runs inside a queue job (VIBE_JOB_DIR)"
@@ -2670,7 +2672,7 @@ cmd_queue_worker() {
   deadline_gate "$d" "start no worker"
   [[ ! -e "$d/drain" ]] || die "research $s is stopped (vibe queue stop --research): start no worker, close the runs"
   k="$(jget "$d/job" workers)"
-  k="${k:-3}"
+  k="${k:-$RESEARCH_WORKERS}"
   [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"
   # One start at a time, from the count to the queued job.
   if [[ "$d" != */agent ]]; then
@@ -4692,7 +4694,7 @@ research_row() {
   if ((n)); then
     R_PROGRESS="$ok/$n"
   elif [[ -n "$cd" ]]; then
-    x="$(jget "$cd/job" workers)" R_PROGRESS="0 of ${x:-3} workers"
+    x="$(jget "$cd/job" workers)" R_PROGRESS="0 of ${x:-$RESEARCH_WORKERS} workers"
   fi
   best="$(awk -F'\t' -v b="${better:-higher}" '$2 != "" { x = $2 + 0; if (!n || (b == "lower" ? x < bx : x > bx)) { bx = x; bs = $2; bh = $1 } n = 1 }
     END { if (n) print bs " (" bh ")" }' <<<"$ms")"
