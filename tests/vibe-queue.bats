@@ -499,6 +499,12 @@ rpage() { "$VIBE" queue page >/dev/null; }
   printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
     $((t - 3700)) $((t - 3600)) >"$st/log"
   line "on runpod · seed42 · 200 of 1000 steps · eta $(hm $((t - 2800))) · box until $(hm "$t")"
+  # An `at` in ns gives a time date cannot format: no ETA, no error.
+  printf 'PROGRESS {"done":1,"total":10,"at":1700000000000000000}\nPROGRESS {"done":2,"total":10,"at":1700000001000000000}\n' >"$st/log"
+  line "on runpod · h2 · 2 of 10 steps · box until $(hm "$t")"
+  [[ "$("$VIBE" queue status 2>&1 >/dev/null)" != *date:* ]] || false
+  printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
+    $((t - 3700)) $((t - 3600)) >"$st/log"
   # One line gives no ETA; with no PROGRESS line, the last Step: before Average time: gives the steps.
   sed -i.bak 1d "$st/log"
   line "on runpod · seed42 · 200 of 1000 steps · box until $(hm "$t")"

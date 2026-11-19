@@ -4779,7 +4779,8 @@ research_line() {
   l+="${2:+ · $2}"
   if [[ -n "$r" ]]; then l+=" · $r"; fi
   if [[ -n "$dn" ]]; then l+=" · $dn${tt:+ of $tt} steps"; fi
-  if [[ -n "$4" && "$eta" =~ ^[0-9]+$ ]]; then l+=" · eta $(at_time "$eta" '%a %H:%M')"; fi
+  # The ETA comes from the repo's log: a time date cannot format (an `at` in ns) drops it.
+  if [[ -n "$4" && "$eta" =~ ^[0-9]+$ ]] && eta="$(at_time "$eta" '%a %H:%M' 2>/dev/null)"; then l+=" · eta $eta"; fi
   echo "$l${t:+ · box until $t}"
 }
 
