@@ -10,26 +10,20 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card-status`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card-status
-- **Last updated:** 2026-11-19 · turing
+- **Last updated:** 2026-11-19 · turing (milestone 1 done)
 
 ## State
 
-Nothing is implemented. `SPEC.md` holds the design, confirmed in a grilling
-session on 2026-11-19. Work its first open milestone.
-
-The live example is the `tray-noise` question of safety-critic. Its card reads
-`/bin/bash.00 of 5` and `waits for coordinator`, and names neither its run nor the
-two vast boxes that ran.
+Milestone 1 is done: the card spend sums the coordinator chain, and a box that is up
+counts `price × (now − started)` (`research_cost` in `bin/vibe`). tray-noise reads
+`$0.24 of $35`. Work the next open milestone of `SPEC.md`.
 
 ## Next action
 
-Milestone 1: spend counts the coordinator chain. `research_row` in `bin/vibe`
-sums `cost` from worker job dirs only, so a coordinator's box money is never
-read. Add the coordinator chain's `cost` files. For a box that is still up,
-use `price × (now − started)` in place of the gate's full-hours reservation.
+Milestone 2: `place_run` mirrors `started` and `limit` into `queue/<id>/run/` at
+start, beside the `price` mirror. The instance dir goes when the box goes.
 
-Done when `vibe queue status` prints a non-zero spend for tray-noise. Its two
-coordinator jobs hold `cost=0.19` and `cost=0.05`.
+Done when a new run's `queue/<id>/run/started` holds an epoch.
 
 ## Blockers
 

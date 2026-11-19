@@ -4505,6 +4505,18 @@ research_tree() {
   done <<<"$1"
 }
 
+# research_cost JOB — JOB's USD: price × (now − started) while its box is up (0 before up), else its cost file.
+research_cost() {
+  local st="$WS_STATES/research-${1##*/}" t
+  if [[ -d "$st" && ! -e "$1/run/exit" ]]; then
+    t="$(jstate "$st" started)"
+    [[ "$t" =~ ^[0-9]+$ ]] || t=""
+    awk -v p="$(jstate "$st" price)" -v t="$t" -v n="$(date +%s)" 'BEGIN { printf "%.2f\n", t ? p * (n - t) / 3600 : 0 }'
+  else
+    jstate "$1" cost
+  fi
+}
+
 # research_row SLUG — the question of one `research=` slug. A coordinator job has no `hid=`; a worker's latest job
 # (session 2 sorts after session 1) gives its state. Sets R_PILL (needs you, running, queued, done), R_PROGRESS (workers
 # done/all), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|waits for`),
@@ -4520,9 +4532,12 @@ research_row() {
     h="$(jget "$d/job" hid)"
     if [[ -n "$h" ]]; then
       wl+="$d"$'\t'"$h"$'\n'
-    elif [[ -z "$cd" || "$d" > "$cd" ]]; then
-      cd="$d"
+      continue
     fi
+    # Each coordinator job of the chain pays for its own box.
+    c="$(research_cost "$d")"
+    if [[ -n "$c" ]]; then costs+="$c"$'\n'; fi
+    if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
   if [[ -n "$cd" ]]; then
     R_DIR="$cd" R_PR="$(jstate "$cd" pr)"
@@ -4547,7 +4562,8 @@ research_row() {
       [[ "$x" == "$h" ]] || continue
       L="$d"
       if [[ -s "$d/run-result" ]]; then res="$d/run-result"; fi
-      if [[ -s "$d/cost" ]]; then cs+="$(jstate "$d" cost)"$'\n'; fi
+      c="$(research_cost "$d")"
+      if [[ -n "$c" ]]; then cs+="$c"$'\n'; fi
     done <<<"$wl"
     st="$(jstate "$L" status)" fo="$(jget "$L/job" follow)" s="$st"
     case "$st" in

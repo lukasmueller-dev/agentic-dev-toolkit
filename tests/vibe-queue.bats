@@ -518,6 +518,25 @@ rpage() { "$VIBE" queue page >/dev/null; }
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
+@test "research: spend sums the coordinator chain's cost; a live box counts price × (now − started), not its reservation" {
+  local r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st
+  r="$(make_repo proj)"
+  research_fixture "$Q" "$r"
+  echo 0.19 >"$c/cost"
+  rjob "$Q" "${c##*/}-gpu" "done" "$r" research/lr research=lr usd=50
+  echo 0.05 >"$c-gpu/cost"
+  [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
+  # h2's box is up an hour at 2 USD/h: its cost file holds the gate's reservation of 1.20.
+  st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}"
+  mkdir -p "$st" "$h2/run"
+  echo 2 >"$st/price" && echo $(($(date +%s) - 3600)) >"$st/started"
+  run "$VIBE" queue status
+  [[ "$output" == *'h2 · runpod  running  $2.00'* && "$output" == *'$2.24 of $50'* ]] || false
+  echo 0 >"$h2/run/exit"
+  [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
+}
+
+# shellcheck disable=SC2016  # a literal $ in the expected text
 @test "research: status has a Research group with a line per question (2/4) and a line per worker with its place; the report has one row" {
   local r c="$Q/20261117-100000-proj-research-lr"
   r="$(make_repo proj)"
