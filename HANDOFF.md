@@ -38,4 +38,3 @@ A run from before milestone 2 has no `run/started` or `run/limit`: the card show
 
 A job with a `stop` file (`vibe queue stop <id>`) needs no answer: `research_row` treats it as `stopped`.
 
-`docs/vibe-queue.md` §Research card still describes `waits for`: milestone 7 rewrites it.
