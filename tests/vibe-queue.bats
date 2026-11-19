@@ -516,9 +516,11 @@ rpage() { "$VIBE" queue page >/dev/null; }
   # The repo writes the run name: a | and control bytes drop out, so the fields hold and no escape reaches the terminal.
   printf 'PROGRESS {"done":2,"total":10,"at":1,"run":"a|b\\u001b]0;x\\u0007c"}\n' >"$st/log"
   line "on runpod · ab]0;xc · 2 of 10 steps · box until $(hm "$t")"
-  # An `at` in ns gives a time date cannot format: no ETA, no error.
+  # An `at` in ms or ns gives an ETA far from now: no ETA, no error.
   printf 'PROGRESS {"done":1,"total":10,"at":1700000000000000000}\nPROGRESS {"done":2,"total":10,"at":1700000001000000000}\n' >"$st/log"
   line "on runpod · h2 · 2 of 10 steps · box until $(hm "$t")"
+  printf 'PROGRESS {"done":200,"total":1000,"at":%s000}\nPROGRESS {"done":300,"total":1000,"at":%s000}\n' $((t - 3700)) $((t - 3600)) >"$st/log"
+  line "on runpod · h2 · 300 of 1000 steps · box until $(hm "$t")"
   [[ "$("$VIBE" queue status 2>&1 >/dev/null)" != *date:* ]] || false
   printf 'PROGRESS {"done":100,"total":1000,"at":%s,"run":"seed42"}\nStep: 7\nPROGRESS {"done":200,"total":1000,"at":%s,"run":"seed42"}\n' \
     $((t - 3700)) $((t - 3600)) >"$st/log"
