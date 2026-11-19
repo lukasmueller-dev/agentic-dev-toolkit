@@ -533,8 +533,8 @@ rpage() { "$VIBE" queue page >/dev/null; }
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text
-@test "research: spend sums the coordinator chain's cost; a live box counts price × (now − started), not its reservation" {
-  local r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st
+@test "research: spend sums the coordinator chain's cost and the archived jobs'; a live box counts price × (now − started), not its reservation" {
+  local r c="$Q/20261117-100000-proj-research-lr" h2="$Q/20261117-100200-proj-research-lr-h2" st a
   r="$(make_repo proj)"
   research_fixture "$Q" "$r"
   echo 0.19 >"$c/cost"
@@ -553,6 +553,15 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [[ "$output" == *'h2 · runpod  running  $0.00'* && "$output" == *'$0.24 of $50'* ]] || false
   echo 0 >"$h2/run/exit"
   [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
+  # A retried job is archived: its cost counts on; another repo's or another research's does not.
+  a="$XDG_STATE_HOME/vibe/archive/2026-11"
+  rjob "$a" 20261116-090000-proj-research-lr failed "$r" research/lr research=lr
+  echo 3.40 >"$a/20261116-090000-proj-research-lr/cost"
+  rjob "$a" 20261116-090100-other-research-lr failed /elsewhere research/lr research=lr
+  echo 9 >"$a/20261116-090100-other-research-lr/cost"
+  rjob "$a" 20261116-090200-proj-research-x failed "$r" research/x research=x
+  echo 9 >"$a/20261116-090200-proj-research-x/cost"
+  [[ "$("$VIBE" queue status)" == *'$4.84 of $50'* ]] || false
 }
 
 # shellcheck disable=SC2016  # a literal $ in the expected text

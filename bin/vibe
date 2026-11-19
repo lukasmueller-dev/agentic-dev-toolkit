@@ -4555,6 +4555,13 @@ research_row() {
     if [[ -n "$c" ]]; then costs+="$c"$'\n'; fi
     if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
+  # A retried job is archived: its cost counts on, as in place_gate (same research= and repo=).
+  x="$(jget "$cd/job" repo)"
+  for d in "$QROOT"/archive/*/*/; do
+    if [[ -s "${d}cost" && "$(jget "${d}job" research)" == "$1" ]] && [[ -z "$x" || "$(jget "${d}job" repo)" == "$x" ]]; then
+      costs+="$(jstate "$d" cost)"$'\n'
+    fi
+  done
   if [[ -n "$cd" ]]; then
     R_DIR="$cd" R_PR="$(jstate "$cd" pr)"
     h="$(jget "$cd/job" question)" R_QUESTION="${h:-$1}"
