@@ -10,20 +10,22 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card-status`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card-status
-- **Last updated:** 2026-11-19 · turing (milestone 4 done)
+- **Last updated:** 2026-11-19 · turing (milestone 5 done)
 
 ## State
 
-Milestones 1–4 are done. `research_line` in `bin/vibe` builds the state line;
-`R_PILL` holds its state word, and `research_look` maps the word to the CSS state.
+Milestones 1–5 are done. `research_line` in `bin/vibe` builds the state line;
+`research_progress` reads the run's `PROGRESS` lines (else `Step:`) for its steps and ETA.
+`R_PILL` holds the state word, and `research_look` maps the word to the CSS state.
 tray-noise reads `drained · stop now · on vast` at `$0.24 of $35`.
 
 ## Next action
 
-Milestone 5: the `PROGRESS` contract, the `Step:` fallback and the ETA (see `SPEC.md` Decisions).
-They fill `<done> of <total> steps · eta <time>` in `research_line`, before `box until`.
+Milestone 6: the head budget and the drained buttons (see `SPEC.md` Decisions).
+The head reads `0 of 3 workers` from `workers=` until the first worker job exists.
+A drained question loses Stop question, keeps Stop now while a run lives, and gains Archive.
 
-Done when a log with two PROGRESS lines renders steps and an ETA.
+Done when a drained question shows Archive and no Stop question.
 
 ## Blockers
 
@@ -38,3 +40,4 @@ A run from before milestone 2 has no `run/started` or `run/limit`: the card show
 
 A job with a `stop` file (`vibe queue stop <id>`) needs no answer: `research_row` treats it as `stopped`.
 
+The ETA shows only for a live run; an ended run keeps its steps from `run/log`.
