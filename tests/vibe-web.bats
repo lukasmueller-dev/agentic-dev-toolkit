@@ -264,7 +264,7 @@ post() {
   [ "$status" -eq 1 ]
 }
 
-@test "vibe queue page: Workspaces from the state files alone: a card per service, Start or a place and hours form, Open UI, Stop and time left when up; a card per run tool with its job and last run; a tab dot while one runs" {
+@test "vibe queue page: Workspaces from the state files alone: a card per service, Start or a place and hours form, Open UI, Stop and time left when up; a card per run tool with its live job and no last run; a tab dot while one runs" {
   local w="$BATS_TEST_TMPDIR/workspaces" st="$Q/workspaces" f="$Q/web/index.html" now a="$Q/archive/2026-11/20261103-080000-proj-loop1"
   printf '#!/bin/sh\necho "$*" >>"%s/docker.log"\n' "$STUBS" >"$STUBS/docker"
   chmod +x "$STUBS/docker"
@@ -276,13 +276,13 @@ post() {
   grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
   grep -qF '<div class="wrow" id="ws-svc"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>Svc</b><span class="role">Serves one thing.</span><span class="meta">Runs on: turing, runpod · 4 h</span></div><div class="jacts" data-name="svc"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><label>Hours<input name="hours" type="number" min="1" value="4"></label><button data-act="ws-start">Start</button></span></div></div>' "$f"
   grep -qF '<div class="wrow" id="ws-one"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>one</b><span class="role">One place.</span><span class="meta">Runs on: turing</span></div><span class="jacts p" data-name="one"><button data-act="ws-start">Start</button></span></div>' "$f"
-  grep -qF '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards"><div class="wrow" id="ws-loop"><div class="t"><span class="why"><i class="lamp l-off"></i>Idle · no run yet</span><b>Loop</b><span class="role">Runs a loop.</span><span class="meta">Runs on: turing</span></div></div></div></section>' "$f"
-  # A run tool: its live job, else Idle; its last ended job, live or archived, with the date of its id.
+  grep -qF '<section class="sec" aria-label="Tools that run as a job"><h2>Tools that run as a job <span>a session queues one</span></h2><div class="cards"><div class="wrow" id="ws-loop"><div class="t"><span class="why"><i class="lamp l-off"></i>Idle</span><b>Loop</b><span class="role">Runs a loop.</span><span class="meta">Runs on: turing</span></div></div></div></section>' "$f"
+  # A run tool: its live job, else Idle; an ended job, live or archived, adds no last-run text.
   qjob 20261104-080000-proj-loop running
   echo tool=loop >>"$Q/queue/20261104-080000-proj-loop/job"
   mkdir -p "$a" && printf 'repo=%s/proj\nbranch=loop1\ntool=loop\n' "$BATS_TEST_TMPDIR" >"$a/job" && echo "done" >"$a/status" && echo "done: wrote 3 files" >"$a/note"
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF '<span class="why"><i class="lamp l-ok"></i>Running · loop · last run 2026-11-03: wrote 3 files</span><b>Loop</b>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-ok"></i>Running · loop</span><b>Loop</b>' "$f"
   grep -qF '<a class="tw" href="#workspaces">Workspaces <i class="lamp l-ok"></i></a>' "$f"
   rm -r "$Q/queue/20261104-080000-proj-loop"
   # No hours= in the conf: an optional Hours field; page.js sends no hours, the start has no limit.
@@ -291,6 +291,9 @@ post() {
   grep -qF '<span class="meta">Runs on: turing, runpod</span>' "$f"
   grep -qF '<label>Hours<input name="hours" type="number" min="1" data-opt placeholder="no limit"></label><button data-act="ws-start">Start</button>' "$f"
   grep -qF '<a class="tw" href="#workspaces">Workspaces</a>' "$f"
+  grep -qF '<span class="why"><i class="lamp l-off"></i>Idle</span><b>Loop</b>' "$f"
+  run grep -c 'last run\|no run yet' "$f"
+  [ "$output" = 0 ]
   printf '%s\n' label=Svc "role=Serves one thing." kind=service gpu=no places=turing,runpod hours=4 ports=8080 >"$w/svc/workspace.conf"
   now="$(date +%s)"
   mkdir -p "$st/svc" "$st/one"
@@ -964,7 +967,7 @@ optin() {
   r="$(make_repo proj)"
   optin "$r" codebase-health
   "$REPO_ROOT/bin/vibe" queue page
-  grep -qF "<div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button></div>" "$Q/web/index.html"
+  grep -qF "<div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
   mkdir -p "${f%/*}" && echo 2 >"$f"
   "$REPO_ROOT/bin/vibe" queue page
   grep -qF "<td>stopped</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"reset\">Reset</button></div>" "$Q/web/index.html"
@@ -978,6 +981,24 @@ optin() {
   [[ "${lines[0]}" == *'"code": 0'* ]] || false
   [ ! -e "$f" ]
   run act reset "{\"repo\": \"$r\", \"job\": \"../x\"}"
+  [ "${lines[1]}" = 400 ]
+}
+
+@test "routes skip and skip-undo: the state file, and the page shows Skip, then Undo; a bad job is 400" {
+  local r f="$Q/jobs/proj/codebase-health"
+  r="$(make_repo proj)"
+  optin "$r" codebase-health
+  "$REPO_ROOT/bin/vibe" queue page
+  grep -qF "<td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
+  run act skip "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ -s "$f/skip" ]
+  grep -qF "<td>skips next run</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip-undo\">Undo</button></div>" "$Q/web/index.html"
+  run act skip-undo "{\"repo\": \"$r\", \"job\": \"codebase-health\"}"
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  [ ! -e "$f/skip" ]
+  grep -qF "<td><div class=\"jacts\" data-repo=\"$r\" data-job=\"codebase-health\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div>" "$Q/web/index.html"
+  run act skip "{\"repo\": \"$r\", \"job\": \"../x\"}"
   [ "${lines[1]}" = 400 ]
 }
 
@@ -1114,6 +1135,57 @@ optin() {
   [ "$(grep -o '<code>[^<]*</code></b><p></p></div><div class="jacts" data-server="[^"]*"><button data-act="server-restart" data-confirm>Restart</button>' "$Q/web/index.html" | sed 's/.*data-server="//; s/".*//' | paste -sd, -)" = agentic-dev-toolkit,thesis ]
 }
 
+@test "route server-remove and vibe server-remove: systemctl disables and stops, the unit symlink goes, a drop-in dir and a real unit file stay; the page has a Remove per server" {
+  local u="$XDG_CONFIG_HOME/systemd/user" src="$BATS_TEST_TMPDIR/unit-src"
+  mkdir -p "$u/claude-rc@thesis.service.d" "$src"
+  touch "$src/claude-rc@thesis.service" "$u/claude-rc@other.service" "$u/claude-rc@thesis.service.d/override.conf"
+  ln -s "$src/claude-rc@thesis.service" "$u/claude-rc@thesis.service"
+  run "$REPO_ROOT/bin/vibe" queue page
+  grep -qF '<button data-act="server-restart" data-confirm>Restart</button><button data-act="server-remove" data-confirm>Remove</button>' "$Q/web/index.html"
+  grep -qF 'data-server="thesis"' "$Q/web/index.html"
+  # A failed disable leaves the link: the server is not half removed.
+  cp "$STUBS/systemctl" "$STUBS/systemctl.ok"
+  printf '#!/bin/sh\nexit 1\n' >"$STUBS/systemctl"
+  run "$REPO_ROOT/bin/vibe" server-remove thesis
+  [ "$status" -ne 0 ]
+  [ -L "$u/claude-rc@thesis.service" ]
+  mv "$STUBS/systemctl.ok" "$STUBS/systemctl"
+  run act server-remove '{"server": "thesis"}'
+  [ "${lines[1]}" = 200 ]
+  [[ "${lines[0]}" == *'"code": 0'* ]] || false
+  grep -qx -- '--user disable --now claude-rc@thesis' "$STUBS/systemctl.log"
+  [ ! -e "$u/claude-rc@thesis.service" ]
+  [ ! -L "$u/claude-rc@thesis.service" ]
+  [ -f "$u/claude-rc@thesis.service.d/override.conf" ]
+  [ -f "$src/claude-rc@thesis.service" ]
+  run grep -c 'data-server="thesis"' "$Q/web/index.html"
+  [ "$output" = 0 ]
+  # A unit file that is no symlink stays; a name with no unit file is refused before systemctl runs.
+  run "$REPO_ROOT/bin/vibe" server-remove other
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not a symlink: kept"* ]] || false
+  [ -f "$u/claude-rc@other.service" ]
+  : >"$STUBS/systemctl.log"
+  run act server-remove '{"server": "nosuch"}'
+  [[ "${lines[0]}" == *'"code": 1'*"no claude-rc@nosuch unit file"* ]] || false
+  [ ! -s "$STUBS/systemctl.log" ]
+  for body in '{"server": "*"}' '{"server": "-x"}' '{"server": "a b"}' '{"server": "../x"}' '{}'; do
+    run act server-remove "$body"
+    [ "${lines[1]}" = 400 ]
+  done
+}
+
+@test "vibe server-remove: an empty or missing name, or a name with no unit file, is refused before systemctl runs" {
+  local n
+  for n in "" nosuch; do
+    run "$REPO_ROOT/bin/vibe" server-remove "$n"
+    [ "$status" -ne 0 ]
+  done
+  run "$REPO_ROOT/bin/vibe" server-remove
+  [ "$status" -ne 0 ]
+  [ ! -s "$STUBS/systemctl.log" ]
+}
+
 # get PATH [CURL ARG...] — a read by the right login: the body, then the HTTP code.
 get() {
   local p="$1"
@@ -1225,7 +1297,7 @@ get() {
 l = importlib.machinery.SourceFileLoader("vw", sys.argv[1]); m = importlib.util.module_from_spec(importlib.util.spec_from_loader("vw", l)); l.exec_module(m)
 print(" ".join(sorted(m.ROUTES)))' "$REPO_ROOT/bin/vibe-web"
   [ "$status" -eq 0 ]
-  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-restart steer stop unlimit ws-start ws-stop' ]
+  [ "$output" = 'answer archive cancel conf feature-archive feature-ready gpu-cancel hold noreview now pause research-archive research-stop research-stop-now reset restart resume retry run server-remove server-restart skip skip-undo steer stop unlimit ws-start ws-stop' ]
   for r in fix merge-order new roadmap roadmap-new opt-in triage servers worktrees worktree-remove sync update-toolkit; do
     run act "$r" '{"id": "20261104-080000-proj-task", "repo": "/x", "pr": "https://github.com/o/p/pull/1", "text": "x"}'
     [ "${lines[1]}" = 404 ]

@@ -2302,7 +2302,7 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   [ "$output" = 0 ]
 }
 
-@test "page: Settings holds Slots, the usage limit, any key=value and the restarts; Recurring per repo its jobs with Run, and Reset when stopped; no page actions" {
+@test "page: Settings holds Slots, the usage limit, any key=value and the restarts; Recurring per repo its jobs with Run, Skip or Undo, and Reset when stopped; no page actions" {
   local r f="$XDG_STATE_HOME/vibe/web/index.html" i
   r="$(make_repo proj)"
   pandoc_stub FAIL
@@ -2318,8 +2318,8 @@ acts_of() { printf '%s' "$1" | grep -o '<hr>\|data-act="[a-z-]*"\|class="lbl"\|c
   grep -qF '<b>Other setting</b><p>A key=value line in ' "$f"
   grep -qF '<input name="set" placeholder="key=value" aria-label="Setting"><button data-act="conf">Set</button>' "$f"
   grep -qF '<button data-act="restart" data-confirm>Restart queue runner</button>' "$f"
-  # Per repo a table: job, schedule, last run, state, Run; Reset only for the stopped job.
-  grep -qF "<section class=\"sec\"><h2>proj</h2><div class=\"card\"><table><tr><th>Job</th><th>Schedule</th><th>Last run</th><th>State</th><th></th></tr><tr><td>audit</td><td>monthly</td><td>never</td><td>due</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"audit\"><button data-act=\"run\">Run</button></div></td></tr><tr><td>health</td><td>weekly · sun</td><td>never</td><td>stopped</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"health\"><button data-act=\"run\">Run</button><button data-act=\"reset\">Reset</button></div></td></tr></table></div></section>" "$f"
+  # Per repo a table: job, schedule, last run, state, Run; Skip for a due job, Reset for the stopped job.
+  grep -qF "<section class=\"sec\"><h2>proj</h2><div class=\"card\"><table><tr><th>Job</th><th>Schedule</th><th>Last run</th><th>State</th><th></th></tr><tr><td>audit</td><td>monthly</td><td>never</td><td>due</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"audit\"><button data-act=\"run\">Run</button><button data-act=\"skip\">Skip</button></div></td></tr><tr><td>health</td><td>weekly · sun</td><td>never</td><td>stopped</td><td><div class=\"jacts\" data-repo=\"$r\" data-job=\"health\"><button data-act=\"run\">Run</button><button data-act=\"reset\">Reset</button></div></td></tr></table></div></section>" "$f"
   for i in $(seq -w 1 25); do printf '2026-11-16 10:00:%s\tme\tvibe queue pause\t0\n' "$i" >>"$XDG_STATE_HOME/vibe/actions.log"; done
   VIBE_ROOT="$BATS_TEST_TMPDIR" "$VIBE" queue page >/dev/null
   run grep -c 'Page actions\|2026-11-16 10:00' "$f"
