@@ -35,9 +35,10 @@ None.
 
 ## Gotchas (unpromoted)
 
-Open review finding: `research_why` takes its reason from the newest ended run of any job.
-After `vibe queue stop <coordinator>`, an old worker's exit 124 reads `run at its limit`.
-A `stopped` reason before the exit codes makes the smoke, limit, usd and deadline reasons unreachable: only a `stop` file reaches drained with no drain file. The human decides.
+Open review finding (reviews 1 and 2): `research_why` takes its reason from the newest ended run of any job.
+After `vibe queue stop <coordinator>`, an old worker's exit 124 reads `run at its limit`; `stopped` shows only when no other reason matches.
+Only a `stop` file reaches drained with no drain file: `stopped` first makes the smoke, limit, usd and deadline reasons of SPEC.md unreachable. The human decides.
+Review 2 asks again to delete the `run/started` and `run/limit` mirror; SPEC.md keeps it. The human decides.
 
 `failed: smoke`, `Step:` and `Average time:` are safety-critic's own log words.
 They appear nowhere else in the toolkit. Keep them inside shortcuts; the `PROGRESS` contract is the real source.
