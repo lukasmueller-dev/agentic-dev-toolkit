@@ -10,20 +10,20 @@
 - **Repo:** agentic-dev-toolkit
 - **Branch:** `research-card-status`
 - **Worktree:** /home/lukas-mueller/github/agentic-dev-toolkit/.claude/worktrees/research-card-status
-- **Last updated:** 2026-11-19 · turing (milestone 3 done)
+- **Last updated:** 2026-11-19 · turing (milestone 4 done)
 
 ## State
 
-Milestones 1–3 are done. `research_line` in `bin/vibe` builds the state line;
-`research_row` puts it in the last field of `R_HEAD`. tray-noise reads
-`drained · stop now · on vast`; a drained question's pill is `held` (On hold) until milestone 4 gives it the state word.
+Milestones 1–4 are done. `research_line` in `bin/vibe` builds the state line;
+`R_PILL` holds its state word, and `research_look` maps the word to the CSS state.
+tray-noise reads `drained · stop now · on vast` at `$0.24 of $35`.
 
 ## Next action
 
-Milestone 4: split the pill label from the CSS state (see `SPEC.md` Decisions).
-`R_PILL` still holds the old four values; the state word is the first field of the line.
+Milestone 5: the `PROGRESS` contract, the `Step:` fallback and the ETA (see `SPEC.md` Decisions).
+They fill `<done> of <total> steps · eta <time>` in `research_line`, before `box until`.
 
-Done when the pill reads the state word and a live run still renders `s-gpu`.
+Done when a log with two PROGRESS lines renders steps and an ETA.
 
 ## Blockers
 
