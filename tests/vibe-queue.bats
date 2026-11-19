@@ -485,16 +485,23 @@ rpage() { "$VIBE" queue page >/dev/null; }
   line 'drained · stop question · h2 on runpod'
   echo now >"$h2/drain"
   line 'drained · stop now · h2 on runpod'
+  # The held look until the pill has its own state word: a drained question is not done, and keeps Stop now.
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 3/4 · held\n'* ]] || false
+  grep -qF 'data-act="research-stop-now"' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
-  line "on runpod · h2 on runpod · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
+  line "on runpod · h2 · box until $(LC_ALL=C date -d "@$t" '+%a %H:%M' 2>/dev/null || LC_ALL=C date -r "$t" '+%a %H:%M')"
   echo "done" >"$h2/status" && echo running >"$h/status"
   line coding
   echo '{"metric": 0.5}' >"$h/run-result"
   line closing
   echo "done" >"$h/status" && echo running >"$c/status"
   line thinking
+  # A stop the runner has not done yet: the coordinator still runs.
+  touch "$c/stop"
+  line thinking
+  rm "$c/stop"
   echo queued >"$c/status"
   line queued
   echo "done" >"$c/status"
@@ -503,6 +510,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
+  [[ "$("$VIBE" queue status)" == *$'\n  lr · 4/4 · held\n'* ]] || false
   echo 1 >"$c/run/exit" && echo 'failed: smoke' >"$c/run/log"
   line 'drained · smoke failed · on vast'
   echo usd >"$c/run/exit"

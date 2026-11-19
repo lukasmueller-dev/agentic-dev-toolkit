@@ -4523,7 +4523,7 @@ research_cost() {
 }
 
 # research_row SLUG — the question of one `research=` slug. A coordinator job has no `hid=`; a worker's latest job
-# (session 2 sorts after session 1) gives its state. Sets R_PILL (needs you, running, queued, done), R_PROGRESS (workers
+# (session 2 sorts after session 1) gives its state. Sets R_PILL (needs you, held: drained, running, queued, done), R_PROGRESS (workers
 # done/all), R_QUESTION, R_PR, R_DIR (the coordinator's latest job), R_HEAD (`best|spent|usd|deadline|line`, line: research_line),
 # R_ITEMS (`NAME  STATUS  NOTE` per job that needs you) and R_WORKERS (a line per worker, parent first, joined by US:
 # HID DEPTH STATE PLACE LAST METRIC USD IDEA DIR). State: queued, coding (session 1), running (the run), closing
@@ -4567,8 +4567,8 @@ research_row() {
     h="$(jget "$cd/job" question)" R_QUESTION="${h:-$1}"
     better="$(jget "$cd/job" better)" usd="$(jget "$cd/job" usd)" dl="$(jget "$cd/job" deadline)"
     st="$(jstate "$cd" status)"
-    # A job that `vibe queue stop` ended failed needs no answer.
-    if [[ -e "$cd/stop" ]]; then st=stopped; fi
+    # A job that `vibe queue stop` ended failed needs no answer; until the runner ends it, it still runs.
+    if [[ -e "$cd/stop" && "$st" == failed ]]; then st=stopped; fi
     case "$st" in
       running) run=1 think=1 ;;
       gpu) run=1 ;;
@@ -4656,6 +4656,8 @@ research_row() {
     st="needs you|$ys"
   elif [[ -n "$dr" ]] || { ((!run && !wait)) && [[ -n "$cd" && "$(jstate "$cd" status)" != "done" ]]; }; then
     st="drained|$(research_why "$dr" "$ended" "$cd")"
+    # The held look: a drained question is not done.
+    R_PILL=held
   elif [[ -n "$live" ]]; then
     st="on $(research_place "$live")|"
   elif ((code)); then
@@ -4704,17 +4706,20 @@ research_why() {
 }
 
 # research_line STATE REASON RUN LIVE — `<state> · <reason> · <run> on <place> · box until <time>`, empty fields
-# dropped. RUN: the newest run (a worker's names its hid); LIVE: the same job while its box is up, for the box end.
+# dropped; a live run gives the place in the state. RUN: the newest run (a worker's names its hid); LIVE: the same job while its box is up, for the box end.
 research_line() {
-  local l="$1" r="" t=""
-  if [[ -n "$3" ]]; then r="$(jget "$3/job" hid)" r="${r:+$r }on $(research_place "$3")"; fi
+  local l="$1" r="" t="" p
+  if [[ -n "$3" ]]; then
+    r="$(jget "$3/job" hid)" p="$(research_place "$3")"
+    # The live run's place is the state itself: `on vast · h2`, not `on vast · h2 on vast`.
+    if [[ "$1" != "on $p" ]]; then r="${r:+$r }on $p"; fi
+  fi
   if [[ -n "$4" ]]; then
     t="$(jstate "$WS_STATES/research-${4##*/}" limit)"
     if [[ "$t" =~ ^[0-9]+$ ]]; then t="$(at_time "$t" '%a %H:%M')"; else t=""; fi
   fi
   l+="${2:+ · $2}"
-  # A coordinator's live run is the state itself: `on vast`, not `on vast · on vast`.
-  if [[ -n "$r" && "$r" != "$1" ]]; then l+=" · $r"; fi
+  if [[ -n "$r" ]]; then l+=" · $r"; fi
   echo "$l${t:+ · box until $t}"
 }
 
