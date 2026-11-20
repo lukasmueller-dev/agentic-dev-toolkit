@@ -1385,3 +1385,24 @@ print(" ".join(sorted(m.ROUTES)))' "$REPO_ROOT/bin/vibe-web"
   [[ "${lines[0]}" == *'"code": 0'*'bad '?'ufffd byte'* ]] || false
   grep -q $'\tsystemctl --user restart vibe-queue\t0$' "$Q/actions.log"
 }
+
+@test "extension routes: a vibe argv with ARGS slots is a route; a built-in act, another program or an unknown slot is skipped with a log line" {
+  local x="$BATS_TEST_TMPDIR/ext/kard/kard"
+  mkdir -p "${x%/*}"
+  # shellcheck disable=SC2016 # the stub's own $1
+  printf '%s\n' '#!/bin/sh' '[ "$1" = describe ] || exit 0' 'echo "route kard-go vibe queue pause"' 'echo "route stop vibe queue cancel {id}"' \
+    'echo "route shx sh -c {id}"' 'echo "route badkey vibe queue stop {nokey}"' >"$x"
+  chmod +x "$x" && echo "$x" >"$XDG_CONFIG_HOME/vibe/extensions"
+  kill "$(cat "$BATS_TEST_TMPDIR/web.pid")"
+  web_start
+  run act kard-go '{}'
+  [ "${lines[1]}" = 200 ]
+  grep -q $'\tvibe queue pause\t' "$Q/actions.log"
+  run act stop "{\"id\": \"$ID\"}"
+  grep -q $'\tvibe queue stop '"$ID"$'\t' "$Q/actions.log"
+  for r in shx badkey; do
+    run act "$r" "{\"id\": \"$ID\"}"
+    [ "${lines[1]}" = 404 ]
+  done
+  [ "$(grep -c '^vibe-web: route skipped: ' "$BATS_TEST_TMPDIR/web.log")" = 3 ]
+}
