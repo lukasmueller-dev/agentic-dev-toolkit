@@ -101,7 +101,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 | `publish=push` | the runner pushes the branch and opens no PR; `vibe queue worker` writes it | `hid=` in `job_publish` |
 | `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 
-Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `run-result`, `cost`, `infra`, `slot`.
+Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `cost`, `infra`, `slot`.
 A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job waits queued. The `research` extension writes it at `pass` and removes it when the tool run ends.
 An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`, `workers.log`, `fan`, `run-result`).
 An extension queues a job with `vibe queue add <dir>` and ends a job in status `gpu` itself: `status` done, `note`, `ended`.
