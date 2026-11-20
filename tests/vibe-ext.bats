@@ -174,3 +174,20 @@ EOF
   run "$tk/bin/vibe" --help
   [[ "$output" != *"vibe ws"* ]] || false
 }
+
+@test "the research extension edited in place while a command works keeps that command's exit status" {
+  local x="$BATS_TEST_TMPDIR/xt/research" w="$BATS_TEST_TMPDIR/ws" st="$XDG_STATE_HOME/vibe/workspaces/t1" pid
+  mkdir -p "${x%/*}" "$w/t1" "$w/_places" "$st"
+  cp "$REPO_ROOT/extensions/research/research" "$x"
+  printf '%s\n' kind=run places=turing result=folder >"$w/t1/workspace.conf"
+  # shellcheck disable=SC2016 # the stub's own $1 $2
+  printf '#!/bin/sh\nif [ "$1 $2" = "exec run" ]; then sleep 1; fi\n' >"$w/_places/turing"
+  chmod +x "$w/_places/turing"
+  echo turing >"$st/place"
+  VIBE_WORKSPACES="$w" VIBE_BIN="$VIBE" VIBE_STATE="$XDG_STATE_HOME/vibe" "$x" cmd ws run t1 &
+  pid=$!
+  sleep 0.5
+  { head -n 1 "$x" && echo '# a line the running extension never reads, long enough to move its end offset' && tail -n +2 "$x"; } >"$x.new"
+  cat "$x.new" >"$x"
+  wait "$pid"
+}

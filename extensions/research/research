@@ -3,6 +3,7 @@
 # research — the research and workspace extension of vibe (docs/vibe-extensions.md): `vibe ws`, tool jobs
 # and place runs (docs/workspaces.md). It sources no toolkit file and calls no vibe function: it reaches
 # the queue through $VIBE_BIN commands and job files.
+# shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
 script_dir() {
@@ -1194,11 +1195,14 @@ ev_card() {
   done
 }
 
-case "${1:-}" in
-  describe)
-    printf '%s\n' "command ws" "command queue gpu --place" "readonly ws list" "readonly ws status"
-    # The `vibe --help` lines of the ws commands.
-    sed -n 's/^# /help /p' <<'HELP'
+# One group ending in exit: bash reads no more of this file after a long command (a tool run, ws hold), so an
+# edit in place mid-run cannot run a stale fragment.
+{
+  case "${1:-}" in
+    describe)
+      printf '%s\n' "command ws" "command queue gpu --place" "readonly ws list" "readonly ws status"
+      # The `vibe --help` lines of the ws commands.
+      sed -n 's/^# /help /p' <<'HELP'
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
 #   vibe ws status [<instance>]     each tool instance: up, past limit, starts, waits for the GPU or down, from its state files
@@ -1209,24 +1213,26 @@ case "${1:-}" in
 #   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
 #   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
 HELP
-    ;;
-  cmd)
-    shift
-    case "${1:-} ${2:-}" in
-      "queue gpu") cmd_gpu_place "${@:3}" ;;
-      ws\ *) cmd_ws "${@:2}" ;;
-      *) die "research: no command '$*'" ;;
-    esac
-    ;;
-  event)
-    shift
-    case "${1:-}" in
-      pass | prepare | start | steer | holder | card) "ev_$1" "${@:2}" ;;
-      *) ;; # an event it does not hear: no output, exit 0
-    esac
-    ;;
-  *)
-    echo "research: unknown call '${1:-}' — describe, cmd or event (docs/vibe-extensions.md)" >&2
-    exit 2
-    ;;
-esac
+      ;;
+    cmd)
+      shift
+      case "${1:-} ${2:-}" in
+        "queue gpu") cmd_gpu_place "${@:3}" ;;
+        ws\ *) cmd_ws "${@:2}" ;;
+        *) die "research: no command '$*'" ;;
+      esac
+      ;;
+    event)
+      shift
+      case "${1:-}" in
+        pass | prepare | start | steer | holder | card) "ev_$1" "${@:2}" ;;
+        *) ;; # an event it does not hear: no output, exit 0
+      esac
+      ;;
+    *)
+      echo "research: unknown call '${1:-}' — describe, cmd or event (docs/vibe-extensions.md)" >&2
+      exit 2
+      ;;
+  esac
+  exit
+}
