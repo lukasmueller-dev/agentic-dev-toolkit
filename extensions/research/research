@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#
+# research — the research and workspace extension of vibe (docs/vibe-extensions.md).
+# A stub: it owns no command and does nothing at an event, until the code moves here from bin/vibe.
+set -euo pipefail
+
+case "${1:-}" in
+  describe | event) ;;
+  *)
+    echo "research: unknown call '${1:-}' — describe, cmd or event (docs/vibe-extensions.md)" >&2
+    exit 2
+    ;;
+esac

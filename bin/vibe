@@ -58,6 +58,8 @@
 #                                   then its start script; gpu=yes on turing: under the gpu-queue lock, held until stop
 #   vibe ws stop <instance>         its stop script, then down: data copied back, container gone, GPU lock free
 #   vibe ws tick                    each instance: pull every 10 min, down past its limit (the runner, each pass)
+#   vibe ext list                   the extensions vibe finds: name, path (docs/vibe-extensions.md);
+#                                   a command an extension describes runs that extension
 #   vibe job list [--all] [<repo>...]
 #                                   recurring jobs of every repo with .vibe-jobs/, and the repos
 #                                   the fill-queue sweep covers; --all adds the jobs not opted into
@@ -69,7 +71,7 @@
 #                                   queue nothing at the job's next due tick; --undo takes it back
 #   vibe job triage [<repo>...]     agent PRs: merge the base into conflicted ones; your /fix starts a fix job; triage lines; archive merged
 #
-# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md.
+# Docs: docs/remote-sessions.md, docs/vibe-queue.md, docs/vibe-jobs.md, docs/workspaces.md, docs/vibe-extensions.md.
 # shellcheck disable=SC2317  # the closing exit makes shellcheck read every function as unreachable
 set -euo pipefail
 
@@ -1659,6 +1661,7 @@ cmd_queue_run() {
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
     ws_tick_bg
+    ext_event pass || warn "an extension's pass event failed"
     # Before the scan: a follow-up a place run or a worker end makes this pass is in it.
     # A failed write in one job dir must not stop the runner: errexit is off inside both, so each returns on its own.
     for d in "$QDIR"/*/; do
@@ -5870,9 +5873,91 @@ cmd_ws() {
   esac
 }
 
+# --- ext: executables that own commands and hear queue events (docs/vibe-extensions.md) ---
+
+# ext_list — `<name><TAB><path>` per extension: each line of $QCONF/extensions, then each
+# extensions/<name>/<name> of this checkout; the first of a name wins, a path that is no executable warns.
+ext_list() {
+  local f n seen=$'\n'
+  local -a c=()
+  if [[ -f "$QCONF/extensions" ]]; then
+    while IFS= read -r f || [[ -n "$f" ]]; do
+      case "$f" in "" | "#"*) continue ;; \~/*) f="$HOME/${f:2}" ;; esac
+      c+=("$f")
+    done <"$QCONF/extensions"
+  fi
+  for f in "$SELF_ROOT"/extensions/*/; do
+    f="${f%/}"
+    if [[ -d "$f" ]]; then c+=("$f/${f##*/}"); fi
+  done
+  for f in "${c[@]+"${c[@]}"}"; do
+    n="${f##*/}"
+    [[ "$seen" != *$'\n'"$n"$'\n'* ]] || continue
+    if [[ ! -f "$f" || ! -x "$f" ]]; then
+      warn "extension $f is no executable file"
+      continue
+    fi
+    seen+="$n"$'\n'
+    printf '%s\t%s\n' "$n" "$f"
+  done
+}
+
+# ext_call PATH ARG... — PATH ARG... with the contract's environment; stdin: none.
+ext_call() {
+  local p="$1"
+  shift
+  VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" "$p" "$@" </dev/null
+}
+
+# ext_route ARG... — exec the extension whose describe has a `command <words>` line that starts ARG...
+# (an argument `--x=v` matches the word `--x`); returns when none has. On a client, role_gate first.
+ext_route() {
+  local n p l own="" i
+  local -a w a=("$@")
+  while IFS=$'\t' read -r n p; do
+    while IFS= read -r l; do
+      [[ "$l" == "command "* ]] || continue
+      read -r -a w <<<"${l#command }"
+      ((${#w[@]} && ${#w[@]} <= $#)) || continue
+      for ((i = 0; i < ${#w[@]}; i++)); do
+        [[ "${a[i]%%=*}" == "${w[i]}" ]] || continue 2
+      done
+      own="$p"
+      break 2
+    done < <(ext_call "$p" describe || true)
+  done < <(ext_list)
+  [[ -n "$own" ]] || return 0
+  role_gate "$@"
+  VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" exec "$own" cmd "$@"
+}
+
+# ext_event NAME ARG... — `<ext> event NAME ARG...` of each extension in turn; stdout passes through.
+# The first non-zero exit stops the turn and is the status.
+ext_event() {
+  local n p r=0
+  while IFS=$'\t' read -r n p; do
+    ext_call "$p" event "$@" || r=$?
+    if ((r)); then break; fi
+  done < <(ext_list)
+  return "$r"
+}
+
+# vibe ext list — the extensions vibe finds: `<name><TAB><path>`.
+cmd_ext() {
+  case "${1:-}" in
+    list) ext_list ;;
+    *) die "usage: vibe ext list — see vibe --help" ;;
+  esac
+}
+
 # One group ending in exit: bash never reads this file again after the command (an edit mid-run made vibe exit 2).
 {
+  ext_route "$@"
   case "${1:-}" in
+    ext)
+      shift
+      cmd_ext "$@"
+      ;;
     queue)
       shift
       cmd_queue "$@"
