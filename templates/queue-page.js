@@ -14,7 +14,8 @@
   const main = $('body > main'), jobs = $('body > main > #jobs'), panel = $('body > main > #panel'), blocks = $('body > main > #panel > .pblocks');
   const pout = $('body > main > #panel > .pout'), none = $('body > main > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
   /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. No extension tab: no .tw. */
-  const parts = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > .ext', 'body > main > #recurring'].filter(s => $(s)).map(s => [s, $(s), $(s).innerHTML]);
+  const paths = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > .ext', 'body > main > #recurring'];
+  const parts = paths.filter(s => $(s)).map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
   /* A select's default: the option marked selected, else the first. */
@@ -117,6 +118,8 @@
       let kept = false;
       if (r.ok && t !== last) {
         const n = new DOMParser().parseFromString(t, 'text/html');
+        /* A part came or went (the extension tab after a failed card): no live node to swap, so load the page again; a field in use waits. */
+        if (paths.some(s => !$(s) !== !$(s, n))) { if (!held(document.body)) location.reload(); return; }
         doc = n;
         [...pend].forEach(p => { if (p.done && sig(n, p) !== p.was) drop(p); }); /* in flight: a running job's row changes each minute */
         for (const p of parts) {

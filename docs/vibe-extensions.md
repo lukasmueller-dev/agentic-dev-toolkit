@@ -76,7 +76,7 @@ Each extension hears each event. A non-zero exit warns with the extension name; 
 | `follow <from> <to> <kind>` | each follow-up job `vibe` makes: `follow_dir` (kind `answer`, `retry`, `fix`), `review_follow` (`review`), `cmd_queue_follow` (`gpu`, with `GPUQ_EXIT` and `GPUQ_LOG`) | `gpu`: `result <text>`, the Result line of the follow-up's prompt; it copies or drops its own files and keys in `<to>` | a warning; at `follow_dir` the command also stops and queues nothing |
 | `steer <job> <text>` | `cmd_queue_steer`, when the job has no session FIFO | `steered <name>` | 3: not supported; else: failed |
 | `holder` | `gpu_holder`, after the gpu-queue checks | the label of what holds the GPU | none |
-| `card <holder>` | `queue_web`, once per page write; `<holder>`: what holds the GPU (`gpu_holder`), may be empty | lines below | the card is missing |
+| `card <holder>` | `queue_web`, once per page write; `<holder>`: what holds the GPU (`gpu_holder`), may be empty | lines below | the card is missing; `page.js` loads the page again when the tab comes or goes |
 | `status` | `cmd_queue_status`, after the Features group | text lines, verbatim | a warning |
 | `report` | `queue_report_md`, after the Features table | markdown, verbatim | a warning |
 
@@ -110,7 +110,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 
 | Key | Queue effect | Replaces |
 | --- | ------------ | -------- |
-| `card=<ext>` | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR, not archived by `triage_archive` | none |
+| `card=<ext>` | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR, not archived by `triage_archive`. No extension of that name, or a failed `card`, `status` or `report` event: the job is in its repo group again | none |
 | `publish=push` | the runner pushes the branch and opens no PR; `vibe queue worker` writes it | `hid=` in `job_publish` |
 | `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 

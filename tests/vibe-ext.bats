@@ -260,6 +260,27 @@ STUB
   [[ "$output" == *$'\n## Kards\n\n| a |'* ]] || false
 }
 
+@test "a card= job stays in its repo group when its card, status or report event fails, or no extension has its name" {
+  local f="$BATS_TEST_TMPDIR/ext/kard/kard" q="$XDG_STATE_HOME/vibe/queue" p="$XDG_STATE_HOME/vibe/web/index.html"
+  mkdir -p "${f%/*}"
+  rjob "$q" 20261117-100000-proj-a failed /x/proj a card=kard
+  printf '%s\n' '#!/usr/bin/env bash' '[ "$1" = event ] || exit 0' 'echo "title	kt	Kards"; exit 3' >"$f"
+  chmod +x "$f" && echo "$f" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" queue page
+  [[ "$output" == *"extension kard: event card exit 3"* ]] || false
+  grep -qF 'data-k="20261117-100000-proj-a"' "$p"
+  run grep -cF 'class="tw"' "$p"
+  [ "$output" = 0 ]
+  run "$VIBE" queue status
+  [[ "$output" == *"extension kard: event status exit 3"*proj* ]] || false
+  run "$VIBE" queue report
+  [[ "$output" == *"extension kard: event report exit 3"*proj* ]] || false
+  sed -i.bak 's/card=kard/card=gone/' "$q/20261117-100000-proj-a/job"
+  printf '%s\n' '#!/usr/bin/env bash' >"$f"
+  run "$VIBE" queue status
+  [[ "$output" == *proj* ]] || false
+}
+
 @test "a branch line: queue add takes <prefix>/<slug>/<slug> for a described prefix only" {
   local d="$BATS_TEST_TMPDIR/j" r
   r="$(make_repo proj)"

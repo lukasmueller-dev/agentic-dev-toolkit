@@ -2305,7 +2305,7 @@ queue_counts() {
         u="$(jstate "$d" pr)"
         case "$u" in http*) ;; *) u="" ;; esac
         # A card= job opens no PR until its card ends: the card shows it. A failed push or PR is no PR.
-        if [[ "$s" == "done" && -z "$u" && -n "$(jget "$d/job" card)" ]] && ! pr_missed "$(jstate "$d" pr)"; then continue; fi
+        if [[ "$s" == "done" && -z "$u" ]] && in_card "$d" && ! pr_missed "$(jstate "$d" pr)"; then continue; fi
         ;;
     esac
     rows+="$(jget "$d/job" repo)"$'\t'"$(jget "$d/job" branch)"$'\t'"$u"$'\t'"$kind"$'\n'
@@ -2519,7 +2519,7 @@ status_line() {
       if [[ -n "${11:-}" ]]; then printf '    %s\n' "${11//$'\n'/ · }"; fi
       if [[ -n "$9" ]]; then printf '%s\n' "$9" | sed 's/^/    /'; fi
       ;;
-    ext) ext_event status || true ;; # each failure warned
+    ext) ext_event status || EXT_CARDS="" ;; # each failure warned; the card's jobs go to their repo groups
     feature)
       printf '  %s · %s · %s\n' "$2" "$4" "$3"
       if [[ -n "$5" ]]; then printf '    %s\n' "$5"; fi
@@ -2533,6 +2533,8 @@ status_line() {
 # vibe queue status — the header, then per repo each job on two lines, or one row
 # per branch with 2+ jobs and a line below it for each job that needs the user.
 cmd_queue_status() {
+  local EXT_CARDS
+  EXT_CARDS="$(ext_list 2>/dev/null | cut -f1)"
   queue_header
   queue_jobs status_line
 }
@@ -3135,13 +3137,14 @@ card_of() { awk -F'\t' -v k="$1" -v i="$2" '$1 == k && $2 == i { print substr($0
 # queue_web — QROOT/web/index.html, page.js and fonts/ from templates/; the runner writes them each pass.
 # Per-process tmp files: vibe-web runs `vibe queue page` while the runner may be mid-pass.
 queue_web() {
-  local f="$QROOT/web/index.html" r rows jobs you tab=vibe yn="" x hb hold gh help="" et="" ei=""
+  local EXT_CARDS f="$QROOT/web/index.html" r rows jobs you tab=vibe yn="" x hb hold gh help="" et="" ei=""
   read -r r _ <<<"$(queue_counts)"
   gh="$(gh_url)"
   if [[ -n "$gh" ]]; then help="<a href=\"$(esc "$gh")/blob/HEAD/docs/vibe-queue.md#page-words\" target=\"_blank\" rel=\"noopener\">Help ↗</a>"; fi
   hold="$(gpu_holder)"
-  # Read by page_row and job_buttons (card_of).
-  EXT_CARD="$(ext_event card "$hold" || true)"
+  # Read by page_row and job_buttons (card_of). A failed card is none: its jobs go to their repo groups.
+  EXT_CARDS="$(ext_list 2>/dev/null | cut -f1)"
+  EXT_CARD="$(ext_event card "$hold")" || EXT_CARD="" EXT_CARDS=""
   rows="$(queue_jobs page_row)"
   jobs="$(page_sections "$rows")"
   # The extension tab: the first `title<TAB><id><TAB><text>` line names it.
@@ -3263,7 +3266,7 @@ report_rows() {
     # A done member job is in its feature's row.
     # A card= job whose push or PR failed keeps its row: the card's row has the note only.
     if [[ "$cls" == "done" ]] && is_member "$d"; then
-      if [[ -z "$(jget "$d/job" card)" ]] || ! pr_missed "$(jstate "$d" pr)"; then continue; fi
+      if ! in_card "$d" || ! pr_missed "$(jstate "$d" pr)"; then continue; fi
     fi
     group_of "$d"
     pr="$(jstate "$d" pr)" grp=0
@@ -3336,7 +3339,8 @@ queue_front_md() {
 # Features table, then per repo ranked tables (needs a human, PRs to read, the rest), then the next
 # action of every unheld job that did not finish or failed its gate.
 queue_report_md() {
-  local d st g wt repo rows="" lim
+  local d st g wt repo rows="" lim EXT_CARDS
+  EXT_CARDS="$(ext_list 2>/dev/null | cut -f1)"
   echo "# Vibe queue — $(date '+%F %H:%M')"
   echo
   lim="$(limit_line)"
@@ -3344,7 +3348,7 @@ queue_report_md() {
   queue_front_md
   feature_keys
   feature_md
-  ext_event report || true # each failure warned
+  ext_event report || EXT_CARDS="" # each failure warned; the card's jobs go to their repo groups
   while IFS= read -r repo; do
     [[ -n "$repo" ]] || continue
     rows="$(
@@ -3442,10 +3446,20 @@ feature_keys() {
   done < <(feature_files)
 }
 
-# is_member JOB — true when JOB is in a card of its own: a card= job, or a feature member (FKEYS of feature_keys).
+# in_card JOB — true when JOB's card= names an extension whose card works: one of EXT_CARDS (a render's local;
+# unset: ext_list). A missing extension, or a failed card, status or report event, leaves its jobs in their repo groups.
+in_card() {
+  local c n="${EXT_CARDS-}"
+  c="$(jget "$1/job" card)"
+  [[ -n "$c" ]] || return 1
+  if [[ -z "${EXT_CARDS+x}" ]]; then n="$(ext_list 2>/dev/null | cut -f1)"; fi
+  [[ $'\n'"$n"$'\n' == *$'\n'"$c"$'\n'* ]]
+}
+
+# is_member JOB — true when JOB is in a card of its own: a card= job (in_card), or a feature member (FKEYS of feature_keys).
 is_member() {
   local r
-  [[ -z "$(jget "$1/job" card)" ]] || return 0
+  if in_card "$1"; then return 0; fi
   r="$(jget "$1/job" repo)"
   [[ "$FKEYS" == *$'\n'"${r%/}#$(jget "$1/job" branch)"$'\n'* ]]
 }
