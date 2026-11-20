@@ -171,8 +171,40 @@ EOF
   VIBE_JOB_DIR="$BATS_TEST_TMPDIR/job" run "$tk/bin/vibe" queue gpu --place vast -- train
   [ "$status" -eq 1 ]
   [ "$output" = "vibe: usage: vibe queue gpu -- CMD..." ]
+  run "$tk/bin/vibe" queue stop --research q1
+  [ "$status" -eq 1 ]
+  [ "$output" = "vibe: usage: vibe queue stop <id>" ]
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR/job" run "$tk/bin/vibe" queue worker h1
+  [ "$status" -eq 1 ]
+  [ "${#lines[@]}" -eq 1 ]
   run "$tk/bin/vibe" --help
   [[ "$output" != *"vibe ws"* ]] || false
+  [[ "$output" != *"--research"* ]] || false
+}
+
+@test "an extension's handled line ends vibe queue answer; its result line is the Result line of a GPU follow-up" {
+  local q="$XDG_STATE_HOME/vibe/queue" f="$BATS_TEST_TMPDIR/ext/lines/lines"
+  mkdir -p "$q/01-a" "${f%/*}"
+  printf 'repo=%s\nbranch=a\ntool=t\n' "$BATS_TEST_TMPDIR" >"$q/01-a/job"
+  echo 'Do it.' >"$q/01-a/prompt.md"
+  echo blocked >"$q/01-a/status"
+  # shellcheck disable=SC2016 # the stub's own $1 $2 $4
+  printf '%s\n' '#!/usr/bin/env bash' "echo \"\$*\" >>$LOG" 'case "$1 ${2:-}" in' \
+    '  "event answer") echo "handled took $4" ;;' '  "event follow") echo "result 42" ;;' 'esac' >"$f"
+  chmod +x "$f"
+  echo "$f" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" queue answer 01-a my text
+  [ "$status" -eq 0 ]
+  [ "$output" = "took my text" ]
+  [ "$(ls "$q")" = 01-a ]
+  GPUQ_EXIT=0 GPUQ_LOG=/dev/null run "$VIBE" queue follow "$q/01-a"
+  [ "$status" -eq 0 ]
+  grep -qxF -- '- Result: 42' "$q/01-a-gpu/prompt.md"
+  grep -qx "event follow $q/01-a $q/\.follow\.[A-Za-z0-9]* gpu" "$LOG"
+  # The research extension drops tool= at a GPU follow-up: it runs no tool.
+  run grep -c '^tool=' "$q/01-a-gpu/job"
+  [ "$output" = 0 ]
+  [ -z "$(find "$q" -mindepth 1 -maxdepth 1 -name '.*')" ]
 }
 
 @test "the research extension edited in place while a command works keeps that command's exit status" {
