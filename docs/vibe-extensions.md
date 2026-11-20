@@ -3,8 +3,8 @@
 An extension is one executable that owns `vibe` commands and hears queue events.
 The queue names no extension term. With no extension, `vibe` works, and an extension command prints one error line.
 
-Status: `vibe` finds extensions, routes their commands, reads `readonly` and `help`, and sends `pass`, `prepare`, `start`, `steer`, `holder` and `card`.
-`extensions/research/research` owns `vibe ws`, tool jobs and place runs.
+Status: `vibe` finds extensions, routes their commands, reads `readonly` and `help`, and sends every event but `status` and `report`.
+`extensions/research/research` owns `vibe ws`, tool jobs, place runs and the research lifecycle: workers, the worker wake, a slurm answer, `stop --research` and `archive --research`.
 Each line marked planned is the plan of the `extension-seam` milestones. This file maps every research site left in `bin/vibe` to one.
 
 ## Discovery
@@ -58,17 +58,20 @@ Each extension hears each event. A non-zero exit warns with the extension name; 
 | Event | Where | Output | Non-zero exit |
 | ----- | ----- | ------ | ------------- |
 | `pass` | `cmd_queue_run`, each pass before the scan | none | a warning; the runner goes on |
-| `add <dir>` (planned) | `cmd_queue_add`, per dir before `queue_add` | none | the add stops; stderr shows why |
+| `add <dir>` | `cmd_queue_add`, per dir before `queue_add`; it can change the dir | none | the add stops; stderr shows why |
 | `prepare <job>` | `job_prepare`, before the worktree | `end <status> <note>`: the job ends so | the job ends failed |
 | `start <job>` | `job_run`, before the agent session; no cut | `prompt <file>`: the session runs on it; `end <status> <note>`: no session | the job ends failed |
-| `end <job>` (planned) | `job_run`, after a session with a `queued:` result | `wait`: status gpu; `end failed <note>` | the job ends failed |
-| `answer <job> <text>` (planned) | `cmd_queue_answer` first; `cmd_queue_retry` with a note | `handled`: vibe does nothing more | the answer stops |
-| `follow <from> <to>` (planned) | each follow-up job: `follow_job`, `follow_dir` (answer, retry), `cmd_queue_fix`, `cmd_queue_follow` | none; it copies or drops its own files and keys in `<to>` | a warning |
+| `end <job>` | `job_run`, after a session with a `queued:` result | `run`: it took the session's run; `wait`: the job waits with no run; `end <status> <note>`: the job ends so | the job ends failed |
+| `answer <job> <text>` | `cmd_queue_answer` first; `cmd_queue_retry` with a note, when the job has no `HANDOFF.md` and is no lane side job | `handled [<message>]`: vibe prints the message and does nothing more | the answer stops; no warning, the extension's stderr says why |
+| `follow <from> <to> <kind>` | each follow-up job `vibe` makes: `follow_dir` (kind `answer`, `retry`, `fix`), `review_follow` (`review`), `cmd_queue_follow` (`gpu`, with `GPUQ_EXIT` and `GPUQ_LOG`) | `gpu`: `result <text>`, the Result line of the follow-up's prompt; it copies or drops its own files and keys in `<to>` | a warning |
 | `steer <job> <text>` | `cmd_queue_steer`, when the job has no session FIFO | `steered <name>` | 3: not supported; else: failed |
 | `holder` | `gpu_holder`, after the gpu-queue checks | the label of what holds the GPU | none |
 | `card <holder>` | `queue_web`, once per page write; `<holder>`: what holds the GPU (`gpu_holder`), may be empty | lines below | the card is missing |
 | `status` (planned) | `cmd_queue_status`, after the Features group | text lines | none |
 | `report` (planned) | `queue_report_md`, after the Features table | markdown | none |
+
+After `end`, the job takes status gpu with a `run` line, a `vibe queue gpu` run, or a `wait` line, in that order; else it fails.
+At `follow`, `<to>` holds `job` and `prompt.md` (kind `gpu`: `job` only) and the runner cannot start it yet: it is no queue dir, or it waits for the end of `<from>`.
 
 `card` prints these lines:
 
@@ -85,8 +88,8 @@ A button sets `data-verb` for its progress text (planned).
 The spec names stop, archive and retry as events. They need none:
 
 - stop: `queue stop --research` is a passed command; a running tool job reads the `stop` file.
-- archive: `queue archive --research` is a passed command.
-- retry: a retry with a note sends `answer` first.
+- archive: `queue archive --research` is a passed command; it archives with `vibe queue archive <id>...`.
+- retry: a retry with a note sends `answer`, unless the note goes to `vibe queue answer`, which sends it.
 
 ## Job keys and files
 
@@ -94,41 +97,28 @@ The queue reads these keys generically. The extension writes them in the job fil
 
 | Key | Queue effect | Replaces |
 | --- | ------------ | -------- |
-| `card=<ext>` | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR | `research=` in `is_member`, `queue_counts`, `report_rows`, `triage_archive` |
-| `publish=push` | the runner pushes the branch and opens no PR | `hid=` in `job_publish` |
+| `card=<ext>` (planned) | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR | `research=` in `is_member`, `queue_counts`, `report_rows`, `triage_archive` |
+| `publish=push` | the runner pushes the branch and opens no PR; `vibe queue worker` writes it | `hid=` in `job_publish` |
 | `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 
 Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `run-result`, `cost`, `infra`, `slot`.
 A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job waits queued. The `research` extension writes it at `pass` and removes it when the tool run ends.
-An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`).
+An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`, `workers.log`, `fan`, `run-result`).
+An extension queues a job with `vibe queue add <dir>` and ends a job in status `gpu` itself: `status` done, `note`, `ended`.
 
 ## Site map: bin/vibe
 
 | Site | Does now | Goes to |
 | ---- | -------- | ------- |
-| header usage: `queue worker`, `--research` | help lines | `help` |
 | header usage `queue ready`, `pr_check` | refuse a PR that holds `RESEARCH.md` | `wip RESEARCH.md` |
 | `branch_ok` | takes `research/<slug>/<hid>` | `branch research` |
-| `coordinator` | research= with no hid= | engine |
 | `deadline_gate` | the deadline of `queue gpu`, `queue gpu --place` and `queue worker` | stays for `queue gpu`; the extension checks `deadline=` for its two commands (tests: `worker: refused past`, `gpu --place: past the job's deadline=`) |
-| `cmd_queue_add` | the research block in a coordinator prompt | `add` |
-| `job_publish` | a worker (`hid=`) pushes and opens no PR | `publish=push` |
-| `job_run` | `queued:`: `workers_take`, `place_take`, a coordinator waits | `end` |
-| `cmd_queue_run` | `fan_in` per job | `pass` |
-| `cmd_queue_archive` | `--research <slug>` | `command queue archive --research` |
-| `cmd_queue_stop` | `--research <slug> [--now]` | `command queue stop --research` |
-| `cmd_queue_retry` | a waiting slurm worker goes to answer | `answer` |
-| `cmd_queue_answer` | a slurm worker: `slurm.log`, `run_result`, session 2 | `answer` |
-| `cmd_queue_answer` | copies `out/`, `tool-exit`, `tool.log`, `close.md` to the follow-up | `follow` |
-| `cmd_queue_fix` | drops `tool=` from the follow-up | `follow` |
 | `cmd_queue_gpu` | the `drain=now` message names research | stays, generic text |
-| `follow_job`, `drain_copy` | drops `tool=`; copies `drain` | `follow` |
-| `cmd_queue_follow` | research: cost 0, the no-RESULT text, the Result line | `follow` |
-| `cmd_queue_worker`, `RESEARCH_WORKERS` | the worker command | `command queue worker` |
 | `gpu_submit`, `session_late` | `deadline=` | stays |
 | `queue_counts` | a done research job with no PR is not counted | `card=` |
 | `queue_jobs` | the Research group | `card`, `status` |
 | `research_cost`, `research_line` | the live box of a place run through `vibe ws box` | `card` |
+| `research_row`, `RESEARCH_WORKERS` | the archived costs (the extension's `archived_costs`, inline), the default `workers=` | `card` |
 | `status_line research` | terminal rows of a question | `status` |
 | `status_card`, `page_row research` | the page Research card | `card` |
 | `act_btn research-archive`, `st_tip` research tips | page buttons, state tips | `card` |
@@ -150,8 +140,7 @@ A comment that names research moves or changes with the code it describes.
 ## Function lists
 
 Each list leaves `bin/vibe` in one milestone.
-The `ws` functions and the place run (`place_queue place_pass run_alive place_run place_gate`) are in `extensions/research/research` now.
-The extension keeps its own copy of `archived_costs`; the card list still reads it in `bin/vibe`.
+The `ws` functions, the place run (`place_queue place_pass run_alive place_run place_gate`) and the engine list are in `extensions/research/research` now.
 
 Engine list (the research lifecycle):
 `coordinator drain_copy slurm_waits place_take workers_take archived_costs run_result cmd_queue_worker has_baseline research_item fan_in worker_block`
