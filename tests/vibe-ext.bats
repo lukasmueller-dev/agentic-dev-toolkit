@@ -45,6 +45,7 @@ EOF
   a="$(stub alpha)"
   b="$(stub research)"
   mkdir -p "$HOME/x" && cp "$a" "$HOME/x/beta"
+  # shellcheck disable=SC2088 # a literal ~/ the config file holds
   printf '%s\n' "# a comment" "" "$b" "~/x/beta" "$a" >"$HOME/.config/vibe/extensions"
   run "$VIBE" ext list
   [ "$status" -eq 0 ]
@@ -99,6 +100,7 @@ EOF
 
 @test "a failed pass event warns; the runner goes on" {
   mkdir -p "$BATS_TEST_TMPDIR/ext/bad"
+  # shellcheck disable=SC2016 # the stub's own $1
   printf '%s\n' '#!/usr/bin/env bash' '[ "$1" != event ] || exit 4' >"$BATS_TEST_TMPDIR/ext/bad/bad"
   chmod +x "$BATS_TEST_TMPDIR/ext/bad/bad"
   echo "$BATS_TEST_TMPDIR/ext/bad/bad" >"$HOME/.config/vibe/extensions"
