@@ -240,10 +240,10 @@ jobs:
         run: |
           # The research extension owns these terms (docs/vibe-extensions.md); grep exits 2 on a missing file.
           rc=0
-          grep -niE 'research|workspace' bin/vibe bin/vibe-web \
+          grep -niE 'research|workspace|tool[- ](job|run)' bin/vibe bin/vibe-web \
             templates/queue-page.html templates/queue-page.js || rc=$?
           if [ "$rc" -ne 1 ]; then
-            echo "::error::bin/vibe, bin/vibe-web and the queue page must not name research or workspace (or a file is missing)"
+            echo "::error::bin/vibe, bin/vibe-web and the queue page must not name research, workspace, tool job or tool run (or a file is missing)"
             exit 1
           fi
 

@@ -2250,6 +2250,8 @@ ev_report() { research_md; }
 #   vibe queue stop --research <slug> [--now]
 #                                   the research starts no worker; --now: no run either, each place run is cut
 #   vibe queue answer <id> <output> a slurm worker: the output of its run, then its session 2
+#   vibe queue stop <id>            a tool job's run: its stop script, then down
+#   vibe queue steer <id> <text>    a tool job's run: to its steer script; exit 3 there: not supported
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
 #   vibe ws status [<instance>]     each tool instance: up, past limit, starts, waits for the GPU or down, from its state files

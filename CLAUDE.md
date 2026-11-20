@@ -34,8 +34,8 @@ level; anything that only makes sense for one agent goes in that agent's
 directory. Before adding a file, ask which side it belongs on. A skill that
 names Claude Code in its trigger description has been put on the wrong side.
 
-`bin/vibe`, `bin/vibe-web` and the queue page name no research or workspace
-term: that code goes in an extension. CI and `tests/vibe-ext.bats` fail on one.
+`bin/vibe`, `bin/vibe-web` and the queue page name no research, workspace,
+tool job or tool run term: that code goes in an extension. CI and `tests/vibe-ext.bats` fail on one.
 
 `bin/` and `skills/` must stay where they are — live symlinks in `~/bin` and
 `~/.claude/skills` point at those paths.

@@ -31,10 +31,8 @@
 #   vibe queue retry <id> [<note>]  a failed, timeout or skipped job again as a new job; the old one archived;
 #                                   a note: as with answer when blocked, else at the task's end; a blocked job needs one
 #   vibe queue cancel <id>          a queued job ends skipped, note cancelled
-#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue;
-#                                   a tool job's run: its stop script, then down
-#   vibe queue steer <id> <text>    a running job: the text to its session (steer=1 in queue.conf);
-#                                   a tool job's run: to its steer script; exit 3 there: not supported
+#   vibe queue stop <id>            the runner stops a running job: failed, note stopped, no requeue
+#   vibe queue steer <id> <text>    a running job: the text to its session (steer=1 in queue.conf)
 #   vibe queue answer <id> <answer> a blocked job again with your answer (HANDOFF.md, or a lane retry); the old one archived
 #   vibe queue fix <pr-url> <text>  a follow-up job on the PR's branch: fix <text>
 #   vibe queue ready <pr-url>...|--feature <slug>
@@ -1341,7 +1339,7 @@ job_run() {
   fi
   t="$(job_timeout "$d")"
   : >"$d/log"
-  # An extension's work before the session, uncut (a tool run takes hours): `prompt <file>` or `end <status> <note>`.
+  # An extension's work before the session, uncut (its run can take hours): `prompt <file>` or `end <status> <note>`.
   x="$(EXT_CUT=0 ext_event start "$d")" || {
     stopped "$d" || job_end "$d" failed "an extension failed at start — runner.log"
     return 0
@@ -1768,7 +1766,7 @@ follow_dir() {
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
   if [[ -d "$1/in" ]]; then cp -R "$1/in" "$tmp/in"; fi
-  # No cut, and a failure queues nothing: a partial copy of a tool run's out/ without tool-exit runs the paid tool again.
+  # No cut, and a failure queues nothing: an extension's half-copied files can start its paid run again.
   if ! EXT_CUT=0 ext_event follow "$1" "$tmp" "$2" >/dev/null; then
     rm -rf "$tmp"
     die "an extension failed at the follow-up of ${1##*/}: nothing queued"
