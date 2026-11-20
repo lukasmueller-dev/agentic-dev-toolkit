@@ -87,7 +87,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 | `card=<ext>` | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR | `research=` in `is_member`, `queue_counts`, `report_rows`, `triage_archive` |
 | `publish=push` | the runner pushes the branch and opens no PR | `hid=` in `job_publish` |
 | `slot=gpu` | one running job with `slot=gpu` at a time; the next waits queued | `tool_gpu` in `cmd_queue_run` |
-| `deadline=` | stays: the hard stop of `queue gpu` (`deadline_gate`, `session_late`) | none |
+| `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 
 Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `run-result`, `cost`, `infra`.
 An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`).
@@ -102,7 +102,7 @@ An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`
 | main dispatch `ws)`, `cmd_ws` | the `ws` command | `command ws` |
 | `branch_ok` | takes `research/<slug>/<hid>` | `branch research` |
 | `coordinator` | research= with no hid= | engine |
-| `deadline_gate` | the deadline of `queue gpu` and `queue worker` | stays (`deadline=`) |
+| `deadline_gate` | the deadline of `queue gpu`, `queue gpu --place` and `queue worker` | stays for `queue gpu`; the extension checks `deadline=` for its two commands (tests: `worker: refused past`, `gpu --place: past the job's deadline=`) |
 | `cmd_queue_add` | the research block in a coordinator prompt | `add` |
 | `job_prepare` | `tool_check`; a folder result sets `output=report` | `prepare` |
 | `job_publish` | a worker (`hid=`) pushes and opens no PR | `publish=push` |

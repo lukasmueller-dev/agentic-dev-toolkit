@@ -3073,6 +3073,16 @@ gpurace() {
   [ -z "$(ls "$GPU_QUEUE_DIR/queued" 2>/dev/null)" ]
 }
 
+@test "gpu --place: past the job's deadline= it asks for no place run" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 01-a "$r" task-a ok "deadline=2000-01-01 08:00"
+  VIBE_JOB_DIR="$Q/01-a" run "$VIBE" queue gpu --place runpod -- true
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"past this job's deadline (2000-01-01 08:00)"* ]] || false
+  [ ! -e "$Q/01-a/run" ]
+}
+
 @test "gpu: past the job's deadline= the runner queues no run a job asked for by hand; the job fails" {
   local r
   r="$(make_repo proj)"
