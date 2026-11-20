@@ -25,6 +25,9 @@ Each other event and describe line below is the plan of the `extension-seam` mil
 | `<ext> cmd <argv...>` | `vibe <argv...>` starts with a `command` line of the extension | its own; `vibe` execs it, so stdin, stdout and the exit status pass through |
 | `<ext> event <name> <args...>` | the queue reaches the event | per event, below; stdin is empty |
 
+`vibe` cuts `describe` after 10 s and an event after 60 s (`timeout -k 5`; 124: cut).
+Slow work, such as a `ws tick` over ssh, forks and returns at once.
+
 Environment of each call:
 
 | Variable | Value |

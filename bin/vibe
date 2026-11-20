@@ -5902,11 +5902,17 @@ ext_list() {
   done
 }
 
-# ext_call PATH ARG... — PATH ARG... with the contract's environment; stdin: none.
+# ext_call SECS PATH ARG... — PATH ARG... with the contract's environment, cut after SECS (no timeout(1): no cut); stdin: none.
 ext_call() {
-  local p="$1"
-  shift
-  VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" "$p" "$@" </dev/null
+  local s="$1" p="$2"
+  local -a t=()
+  shift 2
+  if command -v timeout >/dev/null 2>&1; then
+    t=(timeout -k 5 "$s")
+  elif command -v gtimeout >/dev/null 2>&1; then
+    t=(gtimeout -k 5 "$s")
+  fi
+  VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" "${t[@]+"${t[@]}"}" "$p" "$@" </dev/null
 }
 
 # ext_route ARG... — exec the extension whose describe has a `command <words>` line that starts ARG...
@@ -5924,7 +5930,7 @@ ext_route() {
       done
       own="$p"
       break 2
-    done < <(ext_call "$p" describe || true)
+    done < <(ext_call 10 "$p" describe || warn "extension $n: describe exit $? (124: past 10 s)")
   done < <(ext_list)
   [[ -n "$own" ]] || return 0
   role_gate "$@"
@@ -5936,7 +5942,7 @@ ext_route() {
 ext_event() {
   local n p r=0
   while IFS=$'\t' read -r n p; do
-    ext_call "$p" event "$@" || r=$?
+    ext_call 60 "$p" event "$@" || r=$?
     if ((r)); then break; fi
   done < <(ext_list)
   return "$r"

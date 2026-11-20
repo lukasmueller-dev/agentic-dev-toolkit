@@ -91,6 +91,19 @@ EOF
   [ "$output" = "vibe: unknown command 'nosuch' — vibe help" ]
 }
 
+@test "a describe that hangs is cut after 10 s with a warning; vibe goes on" {
+  mkdir -p "$BATS_TEST_TMPDIR/ext/slow"
+  printf '%s\n' '#!/usr/bin/env bash' 'sleep 60' >"$BATS_TEST_TMPDIR/ext/slow/slow"
+  chmod +x "$BATS_TEST_TMPDIR/ext/slow/slow"
+  echo "$BATS_TEST_TMPDIR/ext/slow/slow" >"$HOME/.config/vibe/extensions"
+  SECONDS=0
+  run "$VIBE" nosuch
+  [ "$SECONDS" -lt 30 ]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"warning: extension slow: describe exit 124"* ]] || false
+  [[ "$output" == *"unknown command 'nosuch'"* ]] || false
+}
+
 @test "the runner's pass runs each extension's pass event" {
   stub alpha >"$HOME/.config/vibe/extensions"
   run "$VIBE" queue run --claude --drain
