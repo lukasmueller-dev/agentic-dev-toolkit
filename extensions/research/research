@@ -268,16 +268,19 @@ fresh() {
 # place_pass JOB — the runner pass for JOB/run/: start place_run once. A run whose process died before
 # run/exit (a reboot) ends as infra; its instance goes down at its limit (vibe ws tick).
 place_pass() {
-  local d="$1" p
-  if [[ ! -f "$d/job" || ! -f "$d/run/place" || -e "$d/run/exit" ]]; then return 0; fi
-  p="$(jstate "$d/run" pid)"
-  if [[ -z "$p" ]]; then
-    # Once: a run/pid that cannot be written starts no second run in the next pass.
-    if grep -qxF "$d" "$WS_STATES/started" 2>/dev/null; then return 0; fi
-    mkdir -p "$WS_STATES" && echo "$d" >>"$WS_STATES/started" || return 1
+  local d="$1" g="$WS_STATES/run.${1##*/}"
+  if [[ ! -f "$d/job" || ! -f "$d/run/place" ]]; then return 0; fi
+  if [[ -e "$d/run/exit" ]]; then
+    rm -f "$g"
+    return 0
+  fi
+  if [[ -z "$(run_pid "$d")" ]]; then
+    mkdir -p "$WS_STATES" || return 1
     place_run "$d" </dev/null >>"$d/runner.log" 2>&1 &
+    # The extension's copy first: a run/pid it cannot write starts no second run, and after a reboot its dead pid ends the run.
+    echo "$!" >"$g" || warn "$g not written"
     echo "$!" | fresh "$d/run/pid"
-  elif ! run_alive "$d" && [[ ! -e "$d/run/exit" ]]; then
+  elif ! run_alive "$d"; then
     echo "the run process died (a reboot?) — vibe ws status research-${d##*/}" | fresh "$d/infra" || true
     # No run/exit, no follow-up: else each pass queues one.
     echo infra | fresh "$d/run/exit" || return 1
@@ -285,10 +288,17 @@ place_pass() {
   fi
 }
 
-# run_alive JOB — JOB/run/pid is a live fork of this extension's pass event: a pid that a reboot gave to another command is no run.
-run_alive() {
+# run_pid JOB — the pid of JOB's place run: run/pid, else the extension's copy in WS_STATES/run.<job id>.
+run_pid() {
   local p
   p="$(jstate "$1/run" pid)"
+  echo "${p:-$(jstate "$WS_STATES" "run.${1##*/}")}"
+}
+
+# run_alive JOB — JOB's run pid (run_pid) is a live fork of this extension's pass event: a pid that a reboot gave to another command is no run.
+run_alive() {
+  local p
+  p="$(run_pid "$1")"
   [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *"/${0##*/} event pass"* ]]
 }
 
@@ -379,7 +389,7 @@ place_run() {
     fi
     rm -rf "$st"
   fi
-  echo "$rc" | fresh "$d/run/exit" || true
+  if echo "$rc" | fresh "$d/run/exit"; then rm -f "$WS_STATES/run.${d##*/}"; fi
   GPUQ_EXIT="$rc" GPUQ_LOG="$d/run/log" "$VIBE_BIN" queue follow "$d"
 }
 

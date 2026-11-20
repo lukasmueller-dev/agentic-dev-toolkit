@@ -29,7 +29,7 @@ None.
 - Two research jobs are live until 2026-11-22 20:00: the branch must not merge while a research run is live.
 - The `follow` rows (answer copies `out/`, `tool-exit`, `tool.log`, `close.md`; fix and `follow_job` drop `tool=`) still sit in `bin/vibe`: milestone 2 needed no `follow` event.
 - `research_cost` and `research_line` read the live box through `vibe ws box <job>` (`run_box`). The card milestone removes it.
-- A place run is a fork of the extension's `pass` event: `run_alive` matches `*/research event pass`. `$WS_STATES/started` lists each job whose run started once.
+- A place run is a fork of the extension's `pass` event: `run_alive` matches `*/research event pass`. `$WS_STATES/run.<job id>` holds a copy of the run pid until `run/exit` exists.
 - Research tests in `tests/vibe-queue.bats` pick the stub `claude` mode from prompt lines (`CLAUDE.md`, "Before committing").
 - A suite run inside a queue job inherits `VIBE_JOB_DIR`: `vibe queue gpu` in a test then writes `gpu-cmd` into the live job dir. `unset VIBE_JOB_DIR` in setup.
 - The extension executable must not read stdin at `describe` or `event`: `ext_call` gives it `/dev/null`.

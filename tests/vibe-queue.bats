@@ -3583,6 +3583,24 @@ refused() {
   [ "$(cat "$Q/02-b/status")" = "done" ]
 }
 
+@test "gpu --place: after a reboot, a run whose run/pid the runner could not write ends as infra; no second run starts" {
+  local r g="$XDG_STATE_HOME/vibe/workspaces/run.01-a"
+  places
+  r="$(research_repo)"
+  mkjob 01-a "$r" task-a ok
+  echo "$r" >"$Q/01-a/worktree"
+  echo gpu >"$Q/01-a/status"
+  mkdir -p "$Q/01-a/run/pid" "${g%/*}"
+  echo runpod >"$Q/01-a/run/place"
+  echo 999999 >"$g" # the extension's copy of the pid, dead after the reboot
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/01-a/run/exit")" = infra ]
+  grep -qF 'the run process died' "$Q/01-a/infra"
+  [ ! -e "$STUBS/place.log" ]
+  [ ! -e "$g" ]
+}
+
 @test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
   local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake/research" pid
   places
