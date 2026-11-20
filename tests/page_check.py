@@ -5,7 +5,7 @@ WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and th
 with steps, an ETA and a box end); it is served under /queue/ and changed in place, with a whoami,
 a GET writes and an Activity per job as static files; a POST gets its answer in ANSWERS after its delay. Prints one line per check; exits 1 when one fails, 77 when the browser does not
 start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
-Used by tests/vibe-web.bats.
+Used by tests/research-web.bats.
 """
 import base64
 import functools
@@ -247,7 +247,7 @@ try:
     js("location.hash = 'job-research/%s'" % RD)
     check("a drained research block shows", until("!%s.hidden" % DB, 2))
     check("a drained pill reads Drained, its lamp a ring with no fill", js("(() => { const l = getComputedStyle(%s.querySelector('.bh .lamp')); return %s.querySelector('.pill').textContent === 'Drained' && l.backgroundColor === 'rgba(0, 0, 0, 0)' && l.boxShadow !== 'none'; })()" % (DB, DB)))
-    check("a drained card has Stop now alone while its run lives", js("[...%s.querySelectorAll('[data-research] button')].map(b => b.dataset.act).join()" % DB) == "research-stop-now")
+    check("a drained card has Stop now alone while its run lives", js("[...%s.querySelectorAll('[data-slug] button')].map(b => b.dataset.act).join()" % DB) == "research-stop-now")
     # The five tabs on a desk: each hash tab shows its page alone and is marked; Help ↗ opens Page words.
     cdp("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
     check("whoami shows the buttons", until("document.body.classList.contains('can')", 12))
