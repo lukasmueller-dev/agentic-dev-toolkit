@@ -83,9 +83,11 @@ LIB_PROG=vibe
 . "$SELF_ROOT/skills/_lib/lib.sh"
 
 usage() {
+  local h
   # The header from line 5 to its first bare `#`: no line range to keep in step.
-  awk 'NR >= 5 && /^#$/ { exit } NR >= 5 { sub(/^# ?/, ""); print }' "$SELF_ROOT/bin/vibe"
-  ext_lines help
+  h="$(awk 'NR >= 5 && /^#$/ { exit } NR >= 5 { sub(/^# ?/, ""); print }' "$SELF_ROOT/bin/vibe")"
+  # The extensions' help lines go before the job lines, so the header still ends with them. ENVIRON: no escape processing.
+  E="$(ext_lines help)" awk '/^  vibe job list/ && !d { if (ENVIRON["E"] != "") print ENVIRON["E"]; d = 1 } { print }' <<<"$h"
   exit "${1:-0}"
 }
 warn() { echo "vibe: warning: $*" >&2; }

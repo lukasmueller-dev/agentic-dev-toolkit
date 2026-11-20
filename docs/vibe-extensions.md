@@ -47,7 +47,7 @@ The extension sources no toolkit file and calls no `vibe` function. It reads and
 | `readonly <word>...` | on a client, `vibe` forwards the command to the server over ssh |
 | `branch <prefix>` | `branch_ok` takes `<prefix>/<slug>/<slug>` (planned) |
 | `route <act> <argv...>` | a `vibe-web` POST route, in the form of its `ROUTES` table (planned) |
-| `help <text>` | a line at the end of `vibe --help`, the text verbatim |
+| `help <text>` | a line of `vibe --help`, before the `vibe job` lines; the text verbatim |
 | `wip <file>` | `queue ready` refuses a PR that holds the file (planned) |
 
 ## Events
