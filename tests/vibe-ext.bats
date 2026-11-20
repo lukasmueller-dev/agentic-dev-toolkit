@@ -264,3 +264,15 @@ STUB
   [ "$status" -eq 0 ]
   [[ "$output" == *"queued "*"-proj-kb-a-b"* ]] || false
 }
+
+@test "ext lines: a describe that exits non-zero warns with its name and keeps its lines" {
+  local x="$BATS_TEST_TMPDIR/ext/bad/bad"
+  mkdir -p "${x%/*}"
+  # shellcheck disable=SC2016 # the stub's own $1
+  printf '%s\n' '#!/bin/sh' '[ "$1" = describe ] || exit 0' 'echo "wip FOO.md"' 'exit 1' >"$x"
+  chmod +x "$x" && echo "$x" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" ext lines wip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"warning: extension bad: describe exit 1"* ]] || false
+  [[ "$output" == *$'\nFOO.md'* || "$output" == "FOO.md"* ]] || false
+}

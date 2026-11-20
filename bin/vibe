@@ -4348,10 +4348,11 @@ ext_event() {
 }
 
 # ext_lines KIND — the text of each `KIND <text>` describe line of every extension, e.g. the help lines of vibe --help.
+# A describe that fails warns, and its lines count, as in ext_route: a crash must not drop a wip guard unseen.
 ext_lines() {
-  local p d l
-  while IFS=$'\t' read -r _ p; do
-    d="$(ext_call 10 "$p" describe)" || continue
+  local n p d l
+  while IFS=$'\t' read -r n p; do
+    d="$(ext_call 10 "$p" describe)" || warn "extension $n: describe exit $? (124: past 10 s)"
     while IFS= read -r l; do
       if [[ "$l" == "$1 "* ]]; then printf '%s\n' "${l#"$1" }"; fi
     done <<<"$d"
