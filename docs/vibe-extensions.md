@@ -116,7 +116,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 
 The queue writes `pr`: a PR URL, or text that starts with `push failed` or `PR not created` when no PR holds the commits. The `research` card reads it (`pr_missed`, a copy of the queue's).
 Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `cost`, `infra`, `slot`.
-A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job waits queued. The `research` extension writes it at `pass` and removes it when the tool run ends.
+A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job waits queued. The `research` extension writes it at `add`, `follow` and `pass`, and removes it when the tool run ends.
 An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`, `workers.log`, `fan`, `run-result`).
 An extension queues a job with `vibe queue add <dir>` and ends a job in status `gpu` itself: `status` done, `note`, `ended`.
 

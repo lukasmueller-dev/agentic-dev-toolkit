@@ -265,6 +265,21 @@ gpu_free() { kill -TERM -- "-$holdpid" 2>/dev/null || true; }
   [ "$(cat "$STUBS/lock")" = held ]
 }
 
+@test "tool: vibe queue add and a retry write the GPU slot of a gpu=yes tool job before any runner pass" {
+  local r n="$BATS_TEST_TMPDIR/new"
+  r="$(make_repo proj)"
+  tool stub folder gpu=yes
+  mkdir -p "$n"
+  printf 'repo=%s\nbranch=b\ntool=stub\n' "$r" >"$n/job"
+  echo 'Do it.' >"$n/prompt.md"
+  "$VIBE" queue add "$n" >/dev/null
+  [ "$(cat "$Q"/*-proj-b/slot)" = gpu ]
+  mv "$Q"/*-proj-b "$Q/01-b"
+  echo failed >"$Q/01-b/status"
+  "$VIBE" queue retry 01-b >/dev/null
+  [ "$(cat "$Q"/*-proj-b/slot)" = gpu ]
+}
+
 @test "tool: a second gpu=yes tool job stays queued, not in a slot, while the first runs its tool" {
   local r runner
   r="$(make_repo proj)"

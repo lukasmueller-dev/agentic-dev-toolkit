@@ -2034,6 +2034,17 @@ body.can .wrow > .jacts { margin: 0; }
 
 # --- events (docs/vibe-extensions.md, Events) ---
 
+# slot_mark JOB — a tool= job on turing with gpu=yes holds the one GPU slot (its slot file) until its run ends: tool_run drops it.
+# At add and follow too: a job the runner scans before the next pass must not start beside the one that holds it.
+slot_mark() {
+  local d="$1"
+  if tool_gpu "$d"; then
+    [[ "$(jstate "$d" slot)" == gpu ]] || echo gpu | fresh "$d/slot" || warn "$d: slot not written"
+  else
+    rm -f "$d/slot"
+  fi
+}
+
 # ev_pass — `vibe ws tick` in the background; per job: the GPU slot of a tool= job, the place run pass; then each
 # worker end wakes its coordinator (fan_in).
 ev_pass() {
@@ -2042,14 +2053,7 @@ ev_pass() {
   for d in "$QDIR"/*/; do
     d="${d%/}"
     if [[ ! -f "$d/job" ]]; then continue; fi
-    # A tool= job on turing with gpu=yes holds the one GPU slot until its run ends: tool_run drops the file.
-    if [[ -n "$(jget "$d/job" tool)" ]]; then
-      if tool_gpu "$d"; then
-        [[ "$(jstate "$d" slot)" == gpu ]] || echo gpu | fresh "$d/slot" || warn "$d: slot not written"
-      else
-        rm -f "$d/slot"
-      fi
-    fi
+    slot_mark "$d"
     place_pass "$d" || warn "$d: place run pass failed"
   done
   for d in "$QDIR"/*/; do
@@ -2070,6 +2074,7 @@ ev_pass() {
 ev_add() {
   local d="$1"
   if [[ -n "$(jget "$d/job" research)" && -z "$(jget "$d/job" card)" ]]; then echo card=research >>"$d/job"; fi
+  slot_mark "$d"
   if coordinator "$d" && [[ -z "$(jget "$d/job" follow)" ]] && ! grep -qx '## Research job' "$d/prompt.md" 2>/dev/null; then
     {
       echo
@@ -2123,6 +2128,7 @@ ev_follow() {
       fi
       ;;
   esac
+  slot_mark "$to"
   [[ "${3:-}" == gpu ]] || return 0
   run_result "${GPUQ_LOG:-}" "$from"
   if [[ -s "$from/run-result" ]]; then
