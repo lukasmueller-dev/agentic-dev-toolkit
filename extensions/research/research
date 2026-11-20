@@ -457,6 +457,354 @@ archived_costs() {
   }'
 }
 
+# --- the research lifecycle: coordinator, workers, a slurm answer, follow-ups (docs/vibe-queue.md#research-jobs) ---
+
+# The default workers= of a research coordinator: the worker gate.
+RESEARCH_WORKERS=3
+
+# job_final JOB — true when the job has ended.
+job_final() {
+  case "$(jstate "$1" status)" in "done" | blocked | failed | timeout | skipped) return 0 ;; esac
+  return 1
+}
+
+# job_settled JOB — true when the job is final and its process no longer writes (no pid file, or an ended file).
+job_settled() {
+  job_final "$1" || return 1
+  [[ ! -e "$1/pid" || -e "$1/ended" ]]
+}
+
+# is_queued JOB — true while the job waits to start.
+is_queued() {
+  case "$(jstate "$1" status)" in "" | queued) return 0 ;; esac
+  return 1
+}
+
+# coordinator JOB — true for a research coordinator job: research=, no hid=.
+coordinator() { [[ -n "$(jget "$1/job" research)" && -z "$(jget "$1/job" hid)" ]]; }
+
+# session_late JOB — true when JOB's session started past its deadline=, or the deadline does not parse.
+# The session start, not a file's mtime: the agent can set that.
+session_late() {
+  local v dl="" s
+  v="$(jget "$1/job" deadline)"
+  [[ -n "$v" ]] || return 1
+  if [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}$ ]]; then dl="$(epoch_of "$v:00")"; fi
+  [[ -n "$dl" ]] || return 0
+  s="$(epoch_of "$(jstate "$1" started)")"
+  ((${s:-$(date +%s)} >= dl))
+}
+
+# drain_copy FROM TO — FROM's research stop (drain or now) to TO: a follow-up of a stopped research stays stopped.
+drain_copy() {
+  local m
+  m="$(jstate "$1" drain)"
+  case "$m" in drain | now) echo "$m" >"$2/drain" ;; esac
+}
+
+# slurm_waits JOB — a slurm worker that ended blocked with paste.md: its run is out on the cluster until `vibe queue answer`.
+slurm_waits() {
+  [[ -n "$(jget "$1/job" hid)" && "$(jget "$1/job" place)" == slurm && "$(jstate "$1" status)" == blocked && -f "$1/paste.md" ]]
+}
+
+# run_result LOG JOB — JOB/run-result: the json of LOG's last `RESULT {` line; none when it does not parse
+# or its metric is no finite number.
+run_result() {
+  local j
+  rm -f "$2/run-result"
+  j="$(grep -a '^RESULT {' "$1" 2>/dev/null | tail -n 1)" || true
+  # jq 1.7 reads NaN and Infinity as numbers: a diverged run must not pass.
+  j="$(printf '%s' "${j#RESULT }" | jq -ce 'select(.metric | type == "number" and (isnan | not) and (isinfinite | not))' 2>/dev/null)" || j=""
+  if [[ -n "$j" ]]; then echo "$j" >"$2/run-result"; fi
+}
+
+# place_take JOB — after a session that ended `queued:`: JOB/agent/run/ (place_queue) to JOB/run/, plain files only;
+# the next pass starts it (place_pass). False with no ask, a run taken before, or a session that started past deadline=.
+place_take() {
+  local d="$1" a="$1/agent/run" t x
+  if [[ ! -d "$a" || -L "$a" || -e "$d/run" ]] || session_late "$d"; then return 1; fi
+  t="$(mktemp -d "$d/.run.XXXXXX")" || return 1
+  for x in place commit cmd; do
+    if [[ -f "$a/$x" && ! -L "$a/$x" ]]; then cp "$a/$x" "$t/$x"; fi
+  done
+  mv "$t" "$d/run"
+}
+
+# workers_take JOB — after a session that ended `queued:`: `vibe queue worker` with JOB as its job dir for each
+# `<hid> <place>` line of JOB/agent/workers, as of the session start (VIBE_AT). Each refusal goes to JOB/workers.log.
+# False when the session asked for workers and none was queued.
+workers_take() {
+  local d="$1" h p e n=0 ok=0
+  [[ -f "$d/agent/workers" && ! -L "$d/agent/workers" ]] || return 0
+  while read -r h p; do
+    n=$((n + 1))
+    if e="$(VIBE_JOB_DIR="$d" VIBE_AT="$(epoch_of "$(jstate "$d" started)")" "$VIBE_BIN" queue worker "$h" --place "$p" 2>&1)"; then
+      ok=$((ok + 1))
+    fi
+    echo "$e" >>"$d/workers.log"
+  done <"$d/agent/workers"
+  rm -f "$d/agent/workers"
+  ((ok || !n))
+}
+
+# render_template TPL TOKEN VALUE... — TPL with each TOKEN replaced by its VALUE, by index slicing: no `&` or `\` expansion.
+render_template() {
+  local tpl="$1" rest out="" pre i best_at best_i
+  local -a toks=() vals=()
+  shift
+  while (($# >= 2)); do
+    toks+=("$1")
+    vals+=("$2")
+    shift 2
+  done
+  rest="$(cat "$tpl")"
+  while [[ -n "$rest" ]]; do
+    best_at=-1 best_i=0
+    for ((i = 0; i < ${#toks[@]}; i++)); do
+      pre="${rest%%"${toks[$i]}"*}"
+      if [[ "$pre" != "$rest" ]] && ((best_at < 0 || ${#pre} < best_at)); then
+        best_at=${#pre}
+        best_i=$i
+      fi
+    done
+    if ((best_at < 0)); then
+      out+="$rest"
+      break
+    fi
+    out+="${rest:0:best_at}${vals[$best_i]}"
+    rest="${rest:$((best_at + ${#toks[$best_i]}))}"
+  done
+  printf '%s\n' "$out"
+}
+
+# job_prompt TITLE TASK DONE-WHEN SOURCE KIND REPO BRANCH TIMEOUT — fill-queue's job-prompt.md, filled; TITLE is the Context too.
+job_prompt() {
+  # shellcheck disable=SC2016  # a literal template slot
+  render_template "$ROOT/skills/fill-queue/references/job-prompt.md" \
+    '<task title>' "$1" \
+    '<task, verbatim from its source>' "$2" \
+    '<context>' "$1" \
+    '<done-when>' "$3" \
+    '<one of: `PROJECT_ROADMAP.md:<line>` · `HANDOFF.md` next action · new>' "$4" \
+    '<code | gpu>' "$5" \
+    '<repo>' "$6" \
+    '<branch>' "$7" \
+    '<timeout>' "$8" \
+    '<the pr template, verbatim>' "$(cat "$ROOT/templates/job-pr.md")" \
+    '<the report template, verbatim>' "$(cat "$ROOT/templates/job-report.md")"
+}
+
+# vibe queue worker HID [--place P] — from inside a research coordinator job (research=, no hid=): a worker job for
+# item `### HID <name>` of the worktree's committed RESEARCH.md, on a new branch research/<slug>/<hid> from HEAD.
+# Its job: the coordinator's repo, model, effort, timeout, research=, usd=, deadline=; hid=, place= (turing), idea=
+# (the item's name), builds= (its `Builds on:`, else root), after= (no review), publish=push (no PR).
+# Its prompt: job-prompt.md, then the block of fill-queue's references/research-worker.md.
+# One error line and nothing queued: past deadline=, at workers= (3) live workers, no `baseline` ledger row, no item.
+# In a job ($VIBE_JOB_DIR is JOB/agent: the sandbox writes no queue), the checks, then the ask: `<hid> <place>` in
+# JOB/agent/workers. The runner then runs this command with JOB as the job dir (workers_take), under the lock.
+cmd_worker() {
+  local d="${VIBE_JOB_DIR:-}" h="" p=turing s g k j x live="" n=0 wt md it wb e t to u="usage: vibe queue worker <hid> [--place turing|runpod|vast|slurm]"
+  [[ -n "$d" && -f "$d/job" ]] || die "vibe queue worker runs inside a queue job (VIBE_JOB_DIR)"
+  while (($#)); do
+    case "$1" in
+      --place)
+        (($# >= 2)) || die "$u"
+        p="$2"
+        shift
+        ;;
+      --place=*) p="${1#*=}" ;;
+      -h | --help) exec "$VIBE_BIN" --help ;;
+      -*) die "$u" ;;
+      *)
+        [[ -z "$h" ]] || die "$u"
+        h="$1"
+        ;;
+    esac
+    shift
+  done
+  [[ -n "$h" && "$p" =~ ^(turing|runpod|vast|slurm)$ ]] || die "$u"
+  [[ "$(slug "$h")" == "$h" ]] || die "hid '$h' is no slug: lowercase letters, digits, . _ -"
+  s="$(jget "$d/job" research)" g="$(jget "$d/job" repo)"
+  [[ -n "$s" && -z "$(jget "$d/job" hid)" ]] || die "vibe queue worker runs inside a research coordinator job: research=, no hid="
+  deadline_gate "$d" "start no worker"
+  [[ ! -e "$d/drain" ]] || die "research $s is stopped (vibe queue stop --research): start no worker, close the runs"
+  k="$(jget "$d/job" workers)"
+  k="${k:-$RESEARCH_WORKERS}"
+  [[ "$k" =~ ^[0-9]+$ ]] || die "workers=$k — a number"
+  # One start at a time, from the count to the queued job.
+  if [[ "$d" != */agent ]]; then
+    mkdir_lock "$QDIR/.workers" || exit 1
+    trap 'rmdir "$QDIR/.workers.lock" 2>/dev/null || true' EXIT
+  fi
+  # Live: a worker of this repo's research with a job that has not ended (session 2 is queued before session 1 ends),
+  # or whose run is out on the cluster.
+  for j in "$QDIR"/*/; do
+    x="$(jget "${j}job" hid)"
+    if [[ -n "$x" && " $live " != *" $x "* && "$(jget "${j}job" research)" == "$s" && "$(jget "${j}job" repo)" == "$g" ]] &&
+      { ! job_final "${j%/}" || slurm_waits "${j%/}"; }; then
+      live+="${live:+ }$x" n=$((n + 1))
+    fi
+  done
+  # The asks of this session count as live.
+  if [[ "$d" == */agent && -f "$d/workers" ]]; then
+    while read -r x _; do
+      if [[ -n "$x" ]]; then live+="${live:+ }$x" n=$((n + 1)); fi
+    done <"$d/workers"
+  fi
+  [[ " $live " != *" $h "* ]] || die "worker $h runs already"
+  ((n < k)) || die "workers=$k: $live run — start the next one after a worker ends"
+  wt="$(jstate "$d" worktree)"
+  md="$(agent_git -C "$wt" show HEAD:RESEARCH.md 2>/dev/null)" || die "no RESEARCH.md at HEAD in ${wt:-no worktree}: commit it first"
+  has_baseline "$md" || die "no baseline row in the ledger of RESEARCH.md at HEAD: run the baseline first"
+  it="$(research_item "$md" "$h")"
+  [[ -n "$it" ]] || die "no item '### $h <name>' in RESEARCH.md at HEAD: commit it first"
+  wb="research/$s/$h"
+  # The queue takes research/<slug>/<hid> when the slug has no `/`: the hid is a slug already.
+  [[ "$(slug "$s")" == "$s" ]] || die "research=$s is no slug: no worker branch"
+  if [[ "$d" == */agent ]]; then
+    ! agent_git -C "$wt" rev-parse -q --verify "refs/heads/$wb" >/dev/null || die "no branch $wb: it exists — a rerun takes a new hid"
+    echo "$h $p" >>"$d/workers"
+    echo "asked for worker $h at $p — the runner queues it once you exit; write result 'queued: <hids> run'"
+    return 0
+  fi
+  e="$(agent_git -C "$wt" branch --no-track "$wb" HEAD 2>&1)" || die "no branch $wb: ${e%%$'\n'*}"
+  to="$(jget "$d/job" timeout)"
+  # In the queue dir, so the move into the queue is one rename: the runner never sees half a job.
+  t="$(mktemp -d "$QDIR/.worker.XXXXXX")" || die "no temp dir in $QDIR"
+  {
+    grep -E '^(repo|model|effort|timeout|research|usd|deadline)=' "$d/job" || true
+    printf 'branch=%s\ncontext=Research worker %s: %s\nhid=%s\nplace=%s\nidea=%s\nbuilds=%s\nafter=\npublish=push\n' \
+      "$wb" "$h" "${it%%$'\t'*}" "$h" "$p" "${it%%$'\t'*}" "${it#*$'\t'}"
+  } >"$t/job"
+  {
+    job_prompt "Research worker $h: ${it%%$'\t'*}" \
+      "Item \`$h\` of \`RESEARCH.md\`, research \`$s\`: one run at $p. Session 1: the code, the smoke check, the run in the queue, \`queued:\`. Session 2: close the run, \`done:\`." \
+      "\`runs/$h/row.md\` holds the ledger row of the run and the path of its evidence" \
+      "\`RESEARCH.md\` item \`$h\`" gpu "$g" "$wb" "${to:-2h}"
+    echo
+    cat "$ROOT/skills/fill-queue/references/research-worker.md"
+  } >"$t/prompt.md"
+  x="$("$VIBE_BIN" queue add "$t")" || {
+    rm -rf "$t"
+    exit 1
+  }
+  echo "$x: worker $h at $p on $wb"
+}
+
+# has_baseline MD — true when the `## Ledger` table of the RESEARCH.md text MD has a row with the id `baseline`.
+has_baseline() {
+  awk -F'|' '/^## / { l = ($0 == "## Ledger") }
+    l && NF > 2 { x = $2; gsub(/[[:space:]`*]/, "", x); if (tolower(x) == "baseline") f = 1 }
+    END { exit !f }' <<<"$1"
+}
+
+# research_item MD HID — `<name><TAB><builds>` of item `### HID <name> — <state>` (the last ` — ` ends the name) in the
+# RESEARCH.md text MD; builds: the first word of the item's `Builds on:` line, no end punctuation, else root. Nothing
+# when MD has no such item.
+research_item() {
+  H="$2" awk '
+    /^##/ && f { exit }
+    index($0, "### " ENVIRON["H"] " ") == 1 { f = 1; n = substr($0, length(ENVIRON["H"]) + 6); if (match(n, /.* — /)) n = substr(n, 1, RLENGTH - length(" — ")); next }
+    f { x = $0; gsub(/[*`]/, "", x); sub(/^[-[:space:]]+/, "", x); if (index(x, "Builds on:") == 1) { split(substr(x, 11), w, " "); b = w[1]; gsub(/[^[:alnum:]._-]/, "", b); sub(/[.]+$/, "", b) } }
+    END { if (f) print n "\t" (b == "" ? "root" : b) }' <<<"$1"
+}
+
+# fan_in JOB — a research worker's end wakes its coordinator once (JOB/fan). The coordinator's newest job: queued, it
+# gets a `## Worker finished` block; `gpu` (ends done) or `timeout`, a follow-up with it. Running, blocked, failed or
+# skipped: wait for its end or the user's answer or retry. Done or archived: no wake. Never for a worker with a session 2
+# (JOB-gpu), nor while its run is out on the cluster. The pass event, as a tested condition: each failure returns 1.
+fan_in() {
+  local d="$1" c="" f st t
+  if [[ -z "$(jget "$d/job" hid)" || -e "$d/fan" ]] || ! job_settled "$d" || slurm_waits "$d"; then return 0; fi
+  if [[ -e "$d-gpu" ]]; then
+    echo "follow-up ${d##*/}-gpu" >"$d/fan"
+    return 0
+  fi
+  # The newest coordinator job: repo= and research= of the worker, no hid=, no review round; queued or archived.
+  while IFS= read -r f; do
+    f="${f%/job}"
+    if [[ -z "$(jget "$f/job" hid)$(jget "$f/job" review)" && "$(jget "$f/job" repo)" == "$(jget "$d/job" repo)" &&
+    -f "$f/prompt.md" && "${f##*/}" > "${c##*/}" ]]; then c="$f"; fi
+  done < <(grep -lxF -- "research=$(jget "$d/job" research)" "$QDIR"/*/job "$QROOT"/archive/*/*/job 2>/dev/null || true)
+  st="$(jstate "$c" status)"
+  if [[ -z "$c" ]]; then
+    echo "no coordinator" >"$d/fan"
+  elif [[ "$c" != "$QDIR/"* || "$st" == "done" ]]; then
+    if [[ "$c" != "$QDIR/"* ]]; then st=archived; fi
+    echo "no wake: ${c##*/} $st" >"$d/fan"
+  elif [[ "$st" =~ ^(running|blocked|failed|skipped)$ ]]; then
+    return 0
+  elif is_queued "$c"; then
+    # fan first: a wake whose fan cannot be written must not repeat each pass; a failed wake drops it to retry.
+    echo "${c##*/}" >"$d/fan" || return 1
+    worker_block "$d" >>"$c/prompt.md" || {
+      rm -f "$d/fan"
+      return 1
+    }
+  else
+    echo waking >"$d/fan" || return 1
+    t="$(mktemp -d "${TMPDIR:-/tmp}/vibe-job.XXXXXX")" || t=""
+    # A follow-up's job file: the coordinator's, no tool=, follow=1 and parent=; its drain.
+    if [[ -z "$t" ]] || ! { cat "$c/prompt.md" && worker_block "$d"; } >"$t/prompt.md" ||
+      ! { grep -Ev '^(follow|parent|tool)=' "$c/job" || true; } >"$t/job" ||
+      ! printf 'follow=1\nparent=%s\n' "${c##*/}" >>"$t/job" || ! drain_copy "$c" "$t" ||
+      ! t="$("$VIBE_BIN" queue add "$t")"; then
+      rm -f "$d/fan"
+      return 1
+    fi
+    t="${t#queued }"
+    # A coordinator in gpu has no process left: it ends done here, as the queue's job end does.
+    if [[ "$st" == gpu ]] && ! { echo "done" >"$c/status" && echo "worker $(jget "$d/job" hid) ended → $t" >"$c/note" &&
+      date '+%F %T' >"$c/ended" && rm -f "$c/pid"; }; then
+      return 1
+    fi
+    echo "$t" >"$d/fan"
+  fi
+}
+
+# worker_block JOB — the `## Worker finished` block of a worker job: hid, job, branch, end, the run-result of its run.
+worker_block() {
+  local f r="none"
+  for f in "$1" "$QDIR/$(jget "$1/job" parent)"; do
+    if [[ -s "$f/run-result" ]]; then
+      r="$(cat "$f/run-result") ($f/run-result)"
+      break
+    fi
+  done
+  printf '\n## Worker finished\n\n- Worker: %s · job %s · branch %s\n- End: %s — %s\n- Result: %s\n' \
+    "$(jget "$1/job" hid)" "${1##*/}" "$(jget "$1/job" branch)" "$(jstate "$1" status)" "$(jstate "$1" note)" "$r"
+}
+
+# vibe queue stop --research SLUG [--now] — each job of research SLUG in the queue gets the file drain (drain or now):
+# vibe queue worker starts no worker; now: vibe queue gpu queues no run, and each place run is cut (place_run).
+# shortcut: SLUG alone names the research, so a slug two repos share stops both; add --repo when that bites.
+cmd_stop() {
+  local m=drain j n=0
+  [[ -n "${2:-}" && ($# == 2 || ($# == 3 && "$3" == --now)) ]] || die "usage: vibe queue stop <id> | --research <slug> [--now]"
+  if (($# == 3)); then m=now; fi
+  while IFS= read -r j; do
+    echo "$m" | fresh "${j%/job}/drain" || die "${j%/job}/drain not written"
+    n=$((n + 1))
+  done < <(grep -lxF -- "research=$2" "$QDIR"/*/job 2>/dev/null || true)
+  ((n)) || die "no job of research $2 in the queue"
+  echo "research $2: $m — $n jobs"
+}
+
+# vibe queue archive --research SLUG — every job of the question with `vibe queue archive`, none unless each has ended.
+cmd_archive() {
+  local d q
+  [[ $# == 2 && -n "$2" ]] || die "usage: vibe queue archive --research <slug>"
+  q="$2"
+  set --
+  for d in "$QDIR"/*/; do
+    d="${d%/}"
+    if [[ -f "$d/job" && "$(jget "$d/job" research)" == "$q" ]]; then set -- "$@" "${d##*/}"; fi
+  done
+  (($#)) || die "no research job '$q' in $QDIR"
+  for d in "$@"; do job_settled "$QDIR/$d" || die "$d has not ended ($(jstate "$QDIR/$d" status)) — archive the question once every job has"; done
+  exec "$VIBE_BIN" queue archive "$@"
+}
+
 # tool_up JOB — true while a tool= job runs its tool: running, no tool-exit yet.
 tool_up() { [[ -n "$(jget "$1/job" tool)" && "$(jstate "$1" status)" == running && ! -f "$1/tool-exit" ]]; }
 
@@ -1102,7 +1450,8 @@ cmd_gpu_place() {
 
 # --- events (docs/vibe-extensions.md, Events) ---
 
-# ev_pass — `vibe ws tick` in the background; per job: the GPU slot of a tool= job, the place run pass.
+# ev_pass — `vibe ws tick` in the background; per job: the GPU slot of a tool= job, the place run pass; then each
+# worker end wakes its coordinator (fan_in).
 ev_pass() {
   local d
   ws_tick_bg
@@ -1119,6 +1468,80 @@ ev_pass() {
     fi
     place_pass "$d" || warn "$d: place run pass failed"
   done
+  for d in "$QDIR"/*/; do
+    fan_in "${d%/}" || warn "${d%/}: worker wake failed"
+  done
+}
+
+# ev_add JOB — a coordinator (research=, no hid=) gets the block of fill-queue's references/research.md once; a
+# follow-up (follow=1) carries its parent's prompt.
+ev_add() {
+  local d="$1"
+  if coordinator "$d" && [[ -z "$(jget "$d/job" follow)" ]] && ! grep -qx '## Research job' "$d/prompt.md" 2>/dev/null; then
+    {
+      echo
+      cat "$ROOT/skills/fill-queue/references/research.md"
+    } >>"$d/prompt.md"
+  fi
+}
+
+# ev_end JOB — after a session that ended `queued:`: the asks for workers (workers_take), then `run` for a place run
+# taken (place_take), else `wait` for a coordinator: it waits for its workers with no run of its own.
+ev_end() {
+  local d="$1"
+  if ! workers_take "$d"; then
+    echo "end failed each worker this session asked for was refused — $(tail -n 1 "$d/workers.log")"
+  elif place_take "$d"; then
+    echo run
+  elif coordinator "$d"; then
+    echo wait
+  fi
+}
+
+# ev_answer JOB TEXT — a slurm worker (slurm_waits): TEXT is its run's output, slurm.log; its RESULT line the run-result;
+# session 2 closes the run (vibe queue follow). Then `handled <message>`.
+ev_answer() {
+  local d="$1"
+  slurm_waits "$d" || return 0
+  printf '%s\n' "$2" | fresh "$d/slurm.log" || die "${d##*/}/slurm.log not written"
+  run_result "$d/slurm.log" "$d"
+  # A typo must not lose the run: no RESULT line is a failed run, a bad one is refused.
+  if [[ ! -s "$d/run-result" ]] && grep -q '^RESULT {' "$d/slurm.log"; then die 'bad RESULT line — RESULT {"metric": <a finite number>}'; fi
+  GPUQ_EXIT=slurm GPUQ_LOG="$d/slurm.log" "$VIBE_BIN" queue follow "$d" >&2
+  echo "handled queued session 2 of ${d##*/} — result: $(cat "$d/run-result" 2>/dev/null || echo none)"
+}
+
+# ev_follow FROM TO KIND — a follow-up TO of FROM keeps FROM's research stop (drain). answer: a tool run with a result
+# closes again (tool_job), no new run: out/, tool-exit, tool.log and close.md go along. fix, review, gpu: no tool=, no tool
+# run. gpu (GPUQ_EXIT, GPUQ_LOG): FROM/run-result from the log's RESULT line, cost 0 for a research job with none,
+# and `result <text>` for the Result line of the follow-up's prompt.
+ev_follow() {
+  local from="$1" to="$2" r=""
+  drain_copy "$from" "$to"
+  case "${3:-}" in
+    answer)
+      if [[ -s "$from/out/result" ]]; then cp -R "$from/out" "$from/tool-exit" "$from/tool.log" "$to/"; fi
+      if [[ -f "$from/close.md" ]]; then cp "$from/close.md" "$to/"; fi
+      ;;
+    fix | review | gpu)
+      if grep -q '^tool=' "$to/job"; then
+        grep -v '^tool=' "$to/job" >"$to/job.tmp.$$" || true
+        mv -f "$to/job.tmp.$$" "$to/job"
+      fi
+      ;;
+  esac
+  [[ "${3:-}" == gpu ]] || return 0
+  run_result "${GPUQ_LOG:-}" "$from"
+  if [[ -s "$from/run-result" ]]; then
+    r="$(cat "$from/run-result") ($from/run-result)"
+  elif [[ "${GPUQ_EXIT:-}" =~ ^(usd|stopped)$ ]]; then
+    r="none — $(tail -n 1 "$GPUQ_LOG")"
+  elif [[ -n "$(jget "$from/job" research)" || -d "$from/run" ]]; then
+    r="none — no RESULT line: the run failed"
+  fi
+  # turing and a run that never started cost 0 USD.
+  if [[ -n "$(jget "$from/job" research)" && ! -s "$from/cost" ]]; then echo 0 | fresh "$from/cost" || true; fi
+  if [[ -n "$r" ]]; then echo "result $r"; fi
 }
 
 # ev_prepare JOB — a tool= job, not a review round: `end failed <why>` when its tool cannot run (tool_check);
@@ -1210,9 +1633,17 @@ ev_card() {
 {
   case "${1:-}" in
     describe)
-      printf '%s\n' "command ws" "command queue gpu --place" "readonly ws list" "readonly ws status"
-      # The `vibe --help` lines of the ws commands.
+      printf '%s\n' "command ws" "command queue gpu --place" "command queue worker" "command queue stop --research" \
+        "command queue archive --research" "readonly ws list" "readonly ws status"
+      # The `vibe --help` lines of the research and ws commands.
       sed -n 's/^# /help /p' <<'HELP'
+#   vibe queue worker <hid> [--place turing|runpod|vast|slurm]
+#                                   in a research coordinator job: a worker job for item <hid> of RESEARCH.md
+#   vibe queue archive --research <slug>
+#                                   every job of a research question out of the queue, once each has ended
+#   vibe queue stop --research <slug> [--now]
+#                                   the research starts no worker; --now: no run either, each place run is cut
+#   vibe queue answer <id> <output> a slurm worker: the output of its run, then its session 2
 #   vibe ws list                    the tools under workspaces/: name, kind, gpu, places, label: role;
 #                                   a bad workspace.conf prints why, exit 1
 #   vibe ws status [<instance>]     each tool instance: up, past limit, starts, waits for the GPU or down, from its state files
@@ -1228,6 +1659,9 @@ HELP
       shift
       case "${1:-} ${2:-}" in
         "queue gpu") cmd_gpu_place "${@:3}" ;;
+        "queue worker") cmd_worker "${@:3}" ;;
+        "queue stop") cmd_stop "${@:3}" ;;
+        "queue archive") cmd_archive "${@:3}" ;;
         ws\ *) cmd_ws "${@:2}" ;;
         *) die "research: no command '$*'" ;;
       esac
@@ -1235,7 +1669,7 @@ HELP
     event)
       shift
       case "${1:-}" in
-        pass | prepare | start | steer | holder | card) "ev_$1" "${@:2}" ;;
+        pass | add | prepare | start | end | answer | follow | steer | holder | card) "ev_$1" "${@:2}" ;;
         *) ;; # an event it does not hear: no output, exit 0
       esac
       ;;

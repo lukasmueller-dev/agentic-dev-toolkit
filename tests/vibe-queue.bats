@@ -3666,7 +3666,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$output" = "queued ${j##*/}: worker h2 at runpod on research/q1/h2" ]
   [ "$(git -C "$r" rev-parse research/q1/h2)" = "$(git -C "$w" rev-parse HEAD)" ]
   [ "$(cat "$j/job")" = "$(printf '%s\n' "repo=$r" model=sonnet research=q1 usd=5 'deadline=2999-01-01 08:00' timeout=3h \
-    branch=research/q1/h2 'context=Research worker h2: warmup' hid=h2 place=runpod idea=warmup builds=h1 after=)" ]
+    branch=research/q1/h2 'context=Research worker h2: warmup' hid=h2 place=runpod idea=warmup builds=h1 after= publish=push)" ]
   grep -qxF '# Agent job: Research worker h2: warmup' "$j/prompt.md"
   grep -qF -- "- **Repo / branch:** $r · \`research/q1/h2\`" "$j/prompt.md"
   grep -qF -- '- **Time limit:** 3h' "$j/prompt.md"
