@@ -84,6 +84,15 @@ EOF
   [ "$status" -ne 7 ]
 }
 
+@test "on a client, a described command that changes state stops before the extension runs" {
+  stub hello "command queue worker" >"$HOME/.config/vibe/extensions"
+  echo "client example.invalid" >"$HOME/.config/vibe/role"
+  run "$VIBE" queue worker h1 </dev/null
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"the queue runs on the server"* ]] || false
+  if grep -q "^hello cmd" "$LOG"; then false; fi
+}
+
 @test "a command no extension describes stays vibe's: one error line" {
   stub hello "command hello" >"$HOME/.config/vibe/extensions"
   run "$VIBE" nosuch
