@@ -5165,3 +5165,86 @@ gpu_free() { kill -TERM -- "-$holdpid" 2>/dev/null || true; }
   [[ "$(cat "$r/.claude/worktrees/tool-x/HANDOFF.md")" == *"Answer: use make eval"* ]] || false
   [ "$(git -C "$r/.claude/worktrees/tool-x" log --format=%s | grep -c 'feat: tool change')" -eq 1 ]
 }
+
+# xstub — the extension $STUBS/x/x, first in the config. Per event it logs `<event> <job id>`; per job id it sleeps
+# $STUBS/x/<id>.<event>.sleep s, prints $STUBS/x/<id>.<event>.out and exits with $STUBS/x/<id>.<event>.exit.
+# Its pass logs `gpu <id>` and ends each gpu job done: else a drain waits for it.
+xstub() {
+  mkdir -p "$STUBS/x" "$XDG_CONFIG_HOME/vibe"
+  cat >"$STUBS/x/x" <<'EOF'
+#!/usr/bin/env bash
+[ "$1" = event ] || exit 0
+x="${0%/*}" e="$2" id="${3##*/}"
+echo "$e $id" >>"$x/log"
+if [ "$e" = pass ]; then
+  for d in "$VIBE_STATE"/queue/*/; do
+    if [ "$(cat "${d}status" 2>/dev/null)" = gpu ]; then
+      basename "$d" | sed 's/^/gpu /' >>"$x/log"
+      echo done >"${d}status"
+    fi
+  done
+fi
+[ ! -f "$x/$id.$e.sleep" ] || sleep "$(cat "$x/$id.$e.sleep")"
+[ ! -f "$x/$id.$e.out" ] || cat "$x/$id.$e.out"
+exit "$(cat "$x/$id.$e.exit" 2>/dev/null || echo 0)"
+EOF
+  chmod +x "$STUBS/x/x"
+  echo "$STUBS/x/x" >"$XDG_CONFIG_HOME/vibe/extensions"
+}
+
+# st JOB — `<status> <note>` of a queue job.
+st() { echo "$(cat "$Q/$1/status") $(cat "$Q/$1/note")"; }
+
+@test "extension: add refuses; prepare and start end a job by their end line, fail it on a crash or a cut; prompt runs the session on its file" {
+  local r a
+  r="$(make_repo proj)"
+  xstub
+  a="$BATS_TEST_TMPDIR/a"
+  mkprep "$a" "$r" x
+  echo 1 >"$STUBS/x/a.add.exit"
+  run "$VIBE" queue add "$a"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$a: not queued — an extension refused it"* ]] || false
+  [ -z "$(ls "$Q")" ]
+  mkjob 01-a "$r" task-a ok && echo 1 >"$STUBS/x/01-a.prepare.exit"
+  mkjob 02-b "$r" task-b ok && echo 'end skipped not today' >"$STUBS/x/02-b.prepare.out"
+  mkjob 03-c "$r" task-c ok && echo 1 >"$STUBS/x/03-c.start.exit"
+  mkjob 04-d "$r" task-d ok && echo 'end blocked held' >"$STUBS/x/04-d.start.out"
+  # Its own prompt.md would end queued: with no run, so a done job ran on the extension's file.
+  mkjob 05-e "$r" task-e wait && printf 'Do the task.\nMODE=ok\n' >"$STUBS/x/p.md" && echo "prompt $STUBS/x/p.md" >"$STUBS/x/05-e.start.out"
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(st 01-a)" = "failed an extension failed at prepare — runner.log" ]
+  [ "$(st 02-b)" = "skipped not today" ]
+  [ "$(st 03-c)" = "failed an extension failed at start — runner.log" ]
+  [ "$(st 04-d)" = "blocked held" ]
+  [ "$(cat "$Q/05-e/status")" = "done" ]
+  # An event past its cut (EXT_CUT s, 60 by default) fails the job with a warning.
+  mkjob 06-f "$r" task-f ok && echo 10 >"$STUBS/x/06-f.prepare.sleep"
+  EXT_CUT=2 run "$VIBE" queue run --claude --drain
+  [ "$status" -eq 0 ]
+  [ "$(st 06-f)" = "failed an extension failed at prepare — runner.log" ]
+  grep -qF 'warning: extension x: event prepare exit 124' "$Q/06-f/runner.log" || [[ "$output" == *'warning: extension x: event prepare exit 124'* ]] || false
+}
+
+@test "extension: after a queued: session, end ends the job, run takes the run, wait waits; a crash or no run fails it" {
+  local r
+  r="$(make_repo proj)"
+  xstub
+  mkjob 01-a "$r" task-a wait && echo 1 >"$STUBS/x/01-a.end.exit"
+  mkjob 02-b "$r" task-b wait && echo 'end blocked waits for x' >"$STUBS/x/02-b.end.out"
+  mkjob 03-c "$r" task-c wait && echo wait >"$STUBS/x/03-c.end.out"
+  # run beats the session's vibe queue gpu ask: the queue submits nothing.
+  mkjob 04-d "$r" task-d gpu && echo run >"$STUBS/x/04-d.end.out"
+  mkjob 05-e "$r" task-e wait
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(st 01-a)" = "failed failed: an extension failed at end — runner.log" ]
+  [ "$(st 02-b)" = "blocked blocked: waits for x" ]
+  grep -qx 'gpu 03-c' "$STUBS/x/log"
+  grep -qx 'gpu 04-d' "$STUBS/x/log"
+  [ ! -e "$Q/04-d/gpu-job" ]
+  [ -s "$Q/04-d/gpu-cmd" ]
+  [ "$(st 05-e)" = "failed failed: no GPU run asked for (vibe queue gpu), or the session started past deadline=" ]
+  [ "$(grep -c '^end ' "$STUBS/x/log")" -eq 5 ]
+}
