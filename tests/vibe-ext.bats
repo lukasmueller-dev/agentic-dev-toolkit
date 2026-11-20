@@ -111,16 +111,19 @@ EOF
   grep -qxF "alpha event pass | $VIBE | $XDG_STATE_HOME/vibe" "$LOG"
 }
 
-@test "a failed pass event warns; the runner goes on" {
+@test "a failed pass event warns with its name; the next extension still hears it; the runner goes on" {
+  local a
   mkdir -p "$BATS_TEST_TMPDIR/ext/bad"
   # shellcheck disable=SC2016 # the stub's own $1
   printf '%s\n' '#!/usr/bin/env bash' '[ "$1" != event ] || exit 4' >"$BATS_TEST_TMPDIR/ext/bad/bad"
   chmod +x "$BATS_TEST_TMPDIR/ext/bad/bad"
-  echo "$BATS_TEST_TMPDIR/ext/bad/bad" >"$HOME/.config/vibe/extensions"
+  a="$(stub alpha)"
+  printf '%s\n' "$BATS_TEST_TMPDIR/ext/bad/bad" "$a" >"$HOME/.config/vibe/extensions"
   run "$VIBE" queue run --claude --drain
   [ "$status" -eq 0 ]
-  [[ "$output" == *"warning: an extension's pass event failed"* ]] || false
+  [[ "$output" == *"warning: extension bad: event pass exit 4"* ]] || false
   [[ "$output" == *"queue drained"* ]] || false
+  grep -q "^alpha event pass " "$LOG"
 }
 
 @test "the research stub owns no command and is silent at an event" {

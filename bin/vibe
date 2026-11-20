@@ -1661,7 +1661,7 @@ cmd_queue_run() {
   while :; do
     queue_web || warn "queue page not written: $QROOT/web/index.html"
     ws_tick_bg
-    ext_event pass || warn "an extension's pass event failed"
+    ext_event pass || true # each failure warned
     # Before the scan: a follow-up a place run or a worker end makes this pass is in it.
     # A failed write in one job dir must not stop the runner: errexit is off inside both, so each returns on its own.
     for d in "$QDIR"/*/; do
@@ -5937,13 +5937,17 @@ ext_route() {
   VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" exec "$own" cmd "$@"
 }
 
-# ext_event NAME ARG... — `<ext> event NAME ARG...` of each extension in turn; stdout passes through.
-# The first non-zero exit stops the turn and is the status.
+# ext_event NAME ARG... — `<ext> event NAME ARG...` of every extension; stdout passes through.
+# A failure warns with the extension's name; the status is the first non-zero exit.
 ext_event() {
-  local n p r=0
+  local n p r=0 x
   while IFS=$'\t' read -r n p; do
-    ext_call 60 "$p" event "$@" || r=$?
-    if ((r)); then break; fi
+    x=0
+    ext_call 60 "$p" event "$@" || x=$?
+    if ((x)); then
+      warn "extension $n: event $1 exit $x"
+      if ((!r)); then r="$x"; fi
+    fi
   done < <(ext_list)
   return "$r"
 }

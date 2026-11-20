@@ -51,6 +51,7 @@ The extension sources no toolkit file and calls no `vibe` function. It reads and
 ## Events
 
 An event with no output and exit 0 changes nothing. Only `pass` is wired now.
+Each extension hears each event. A non-zero exit warns with the extension name; the event status is the first non-zero exit.
 
 | Event | Where | Output | Non-zero exit |
 | ----- | ----- | ------ | ------------- |
