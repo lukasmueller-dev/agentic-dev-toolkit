@@ -264,6 +264,7 @@ STUB
   local f="$BATS_TEST_TMPDIR/ext/kard/kard" q="$XDG_STATE_HOME/vibe/queue" p="$XDG_STATE_HOME/vibe/web/index.html"
   mkdir -p "${f%/*}"
   rjob "$q" 20261117-100000-proj-a failed /x/proj a card=kard
+  # shellcheck disable=SC2016 # the stub's own $1
   printf '%s\n' '#!/usr/bin/env bash' '[ "$1" = event ] || exit 0' 'echo "title	kt	Kards"; exit 3' >"$f"
   chmod +x "$f" && echo "$f" >"$HOME/.config/vibe/extensions"
   run "$VIBE" queue page
