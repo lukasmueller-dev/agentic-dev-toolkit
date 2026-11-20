@@ -34,6 +34,12 @@ EOF
   echo "$f"
 }
 
+@test "bin/vibe, bin/vibe-web and the queue page name no research or workspace term" {
+  run grep -liE 'research|workspace' "$REPO_ROOT/bin/vibe" "$REPO_ROOT/bin/vibe-web" \
+    "$REPO_ROOT/templates/queue-page.html" "$REPO_ROOT/templates/queue-page.js"
+  [ "$status" -eq 1 ]
+}
+
 @test "ext list: the checkout's extensions/<name>/<name>" {
   run "$VIBE" ext list
   [ "$status" -eq 0 ]
