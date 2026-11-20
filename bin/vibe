@@ -5917,10 +5917,14 @@ ext_call() {
 
 # ext_route ARG... — exec the extension whose describe has a `command <words>` line that starts ARG...
 # (an argument `--x=v` matches the word `--x`); returns when none has. On a client, role_gate first.
+# Each output is read whole first: a loop that leaves early on a pipe kills a writer still writing (SIGPIPE, 141).
 ext_route() {
-  local n p l own="" i
+  local n p l own="" i x d
   local -a w a=("$@")
+  x="$(ext_list)"
   while IFS=$'\t' read -r n p; do
+    [[ -n "$p" ]] || continue
+    d="$(ext_call 10 "$p" describe)" || warn "extension $n: describe exit $? (124: past 10 s)"
     while IFS= read -r l; do
       [[ "$l" == "command "* ]] || continue
       read -r -a w <<<"${l#command }"
@@ -5930,8 +5934,8 @@ ext_route() {
       done
       own="$p"
       break 2
-    done < <(ext_call 10 "$p" describe || warn "extension $n: describe exit $? (124: past 10 s)")
-  done < <(ext_list)
+    done <<<"$d"
+  done <<<"$x"
   [[ -n "$own" ]] || return 0
   role_gate "$@"
   VIBE_BIN="$SELF_ROOT/bin/vibe" VIBE_STATE="$QROOT" exec "$own" cmd "$@"

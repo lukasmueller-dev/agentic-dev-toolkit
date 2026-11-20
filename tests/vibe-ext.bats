@@ -72,6 +72,17 @@ EOF
   grep -qxF "hello cmd hello world again | $VIBE | $XDG_STATE_HOME/vibe" "$LOG"
 }
 
+@test "a describe longer than a pipe buffer routes its first line with no warning" {
+  local a
+  a="$(stub big "command hello")"
+  seq 1 30000 | sed 's/^/help line /' >>"${a%/*}/describe"
+  echo "$a" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" hello </dev/null
+  [ "$status" -eq 7 ]
+  [ "${lines[0]}" = "ran hello" ]
+  [[ "$output" != *warning* ]] || false
+}
+
 @test "a described command matches --x=v, and only as a prefix of the arguments" {
   stub place "command queue gpu --place" >"$HOME/.config/vibe/extensions"
   run "$VIBE" queue gpu --place=runpod -- true </dev/null
