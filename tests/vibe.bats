@@ -523,6 +523,15 @@ make_kit() {
   VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
   [ "$status" -eq 0 ]
   [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
+  # vibe-web reads its extension routes at its start: an extension change restarts it too.
+  rm "$STUBS/systemctl.log"
+  mkdir -p "$o/extensions/x" && echo one >"$o/extensions/x/x"
+  git -C "$o" add extensions
+  git -C "$o" commit -q -m "extension changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
 }
 
 @test "sync: leaves a behind toolkit checkout to update-toolkit" {
