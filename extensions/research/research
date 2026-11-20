@@ -307,10 +307,13 @@ run_pid() {
 }
 
 # run_alive JOB — JOB's run pid (run_pid) is a live fork of this extension's pass event: a pid that a reboot gave to another command is no run.
+# shortcut: a fork of the runner (` queue run --`) is a run its pass started before the extension took it; drop once none lives.
 run_alive() {
-  local p
+  local p c
   p="$(run_pid "$1")"
-  [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *"/${0##*/} event pass"* ]]
+  [[ "$p" =~ ^[1-9][0-9]*$ ]] || return 1
+  c="$(ps -o command= -p "$p" 2>/dev/null || true)"
+  [[ "$c" == *"/${0##*/} event pass"* || "$c" == *" queue run --"* ]]
 }
 
 # place_run JOB — JOB's run in instance research-<id>: in/repo holds run/commit alone (depth 1: no other branch
@@ -1481,6 +1484,10 @@ ev_pass() {
     place_pass "$d" || warn "$d: place run pass failed"
   done
   for d in "$QDIR"/*/; do
+    # shortcut: a worker queued before publish=push gets it before its end, so it opens no PR; drop once none is left.
+    if [[ -f "${d}job" && -n "$(jget "${d}job" hid)" && -z "$(jget "${d}job" publish)" ]]; then
+      echo publish=push >>"${d}job" || warn "${d%/}: publish=push not written"
+    fi
     fan_in "${d%/}" || warn "${d%/}: worker wake failed"
   done
 }

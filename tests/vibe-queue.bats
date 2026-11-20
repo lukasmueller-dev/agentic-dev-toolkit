@@ -3794,6 +3794,19 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(ls "$Q")" = "$(printf '%s\n' 01-a 01-c 02-w)" ]
 }
 
+@test "worker: a worker queued with no publish= gets publish=push at the pass, pushes its branch and opens no PR" {
+  local r
+  r="$(make_repo proj)"
+  mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
+  drain
+  [ "$status" -eq 0 ]
+  [ "$(cat "$Q/02-w/status")" = "done" ]
+  grep -qx publish=push "$Q/02-w/job"
+  git --git-dir="$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify research/q1/h1 >/dev/null
+  touch "$STUBS/gh.log"
+  [ "$(grep -c 'pr create' "$STUBS/gh.log" || true)" = 0 ]
+}
+
 @test "worker: the runner runs each worker, pushes its branch, opens no PR; the worker ends wake the coordinator" {
   local r w c0 h c
   r="$(make_repo proj)"
