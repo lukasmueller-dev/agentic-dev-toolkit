@@ -2537,14 +2537,6 @@ cmd_queue_status() {
 # esc TEXT — TEXT with & < > " as HTML entities.
 esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g'; }
 
-# job_steps JOB — the last 10 tool steps of the job's log, oldest first; empty without jq.
-job_steps() {
-  command -v jq >/dev/null 2>&1 || return 0
-  tail -n 400 "$1/log" 2>/dev/null | jq -R -r 'fromjson? | select(.type == "assistant") | .message.content[]?
-    | select(.type == "tool_use") | (.input.description // (.name + " " + (.input.command // .input.file_path // .input.pattern // .input.path // "" | tostring | .[0:100])))
-    | gsub("\\s+"; " ")' 2>/dev/null | tail -n 10 || true
-}
-
 # btn_rows WRITE CONFIRM — the two button lists with an empty grid row between them, when both are filled.
 btn_rows() { printf '%s%s%s' "$1" "${1:+${2:+<hr>}}" "$2"; }
 
@@ -2946,13 +2938,7 @@ item_split() {
   I_NOTE="${r#"${r%%[! ]*}"}"
 }
 
-# item_why LINE — `NAME STATUS: NOTE` of an item line (item_split); the status once.
-item_why() {
-  item_split "$1"
-  case "$I_NOTE" in "$I_STATE"*) echo "$I_NAME $I_NOTE" ;; *) echo "$I_NAME $I_STATE${I_NOTE:+: $I_NOTE}" ;; esac
-}
-
-# page_why LINE — item_why in page words: `NAME · State: note`, the note without its state prefix.
+# page_why LINE — an item line (item_split) in page words: `NAME · State: note`, the note without its state prefix.
 page_why() {
   local r
   item_split "$1"
