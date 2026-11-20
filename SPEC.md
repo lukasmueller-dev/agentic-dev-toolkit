@@ -35,7 +35,7 @@ That code runs as one executable under `extensions/research/`, called through a 
 
 ## Milestones
 
-- [ ] Contract and dispatcher: `docs/vibe-extensions.md` maps each research and `ws` site of `bin/vibe`, `bin/vibe-web` and the page to an event or a passed command; `vibe` finds extensions and calls a stub — code — done when `bats tests/vibe-ext.bats` passes.
+- [x] Contract and dispatcher: `docs/vibe-extensions.md` maps each research and `ws` site of `bin/vibe`, `bin/vibe-web` and the page to an event or a passed command; `vibe` finds extensions and calls a stub — code — done when `bats tests/vibe-ext.bats` passes.
 - [ ] `ws` and tool jobs behind the contract — code — done when `grep -cE 'ws_|WS_|workspace' bin/vibe` prints 0 and `bats tests/vibe-ws.bats tests/ws-*.bats` and the tool tests of `tests/vibe-queue.bats` pass.
 - [ ] Research lifecycle behind the contract: add, session end, runner pass, worker, place run, stop, archive, answer, retry — code — done when `bin/vibe` defines no function of the engine list in `docs/vibe-extensions.md` and `bats tests/vibe-queue.bats` passes.
 - [ ] Research card, status, report and web routes behind the contract — code — done when `grep -ciE 'research|workspace' bin/vibe bin/vibe-web templates/queue-page.html templates/queue-page.js` prints 0 for each file and `bats tests/vibe-queue.bats tests/vibe-web.bats` pass.

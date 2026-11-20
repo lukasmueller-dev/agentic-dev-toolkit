@@ -14,11 +14,11 @@
 
 ## State
 
-`SPEC.md` is written; no code changed. Research and `ws` code is in `bin/vibe`: 36 engine functions (about 730 lines), about 30 branch sites in queue functions (about 140 lines), about 730 lines of `ws` and tool-job code.
+Milestone 1 is done. `vibe` finds extensions (`ext_list`), routes a described command (`ext_route`) and sends `pass` (`ext_event`). `extensions/research/research` is a stub that owns nothing. `docs/vibe-extensions.md` holds the contract, the site map and the three function lists.
 
 ## Next action
 
-Milestone 1 of `SPEC.md`: write `docs/vibe-extensions.md` (each research and `ws` site of `bin/vibe`, `bin/vibe-web` and the page mapped to an event or a passed command), then make `vibe` find extensions and call a stub. Done when `bats tests/vibe-ext.bats` passes.
+Milestone 2 of `SPEC.md`: move `ws` and tool jobs into `extensions/research/research` behind the contract (the ws list and the `prepare`, `start`, `steer`, `holder`, `card`, `follow` rows of `docs/vibe-extensions.md`). Done when `grep -cE 'ws_|WS_|workspace' bin/vibe` prints 0 and `bats tests/vibe-ws.bats tests/ws-*.bats` and the tool tests of `tests/vibe-queue.bats` pass.
 
 ## Blockers
 
@@ -28,3 +28,5 @@ None.
 
 - Two research jobs are live until 2026-11-22 20:00: the branch must not merge while a research run is live.
 - Research tests in `tests/vibe-queue.bats` pick the stub `claude` mode from prompt lines (`CLAUDE.md`, "Before committing").
+- A suite run inside a queue job inherits `VIBE_JOB_DIR`: `vibe queue gpu` in a test then writes `gpu-cmd` into the live job dir. `unset VIBE_JOB_DIR` in setup.
+- The extension executable must not read stdin at `describe` or `event`: `ext_call` gives it `/dev/null`.
