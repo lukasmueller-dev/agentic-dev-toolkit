@@ -14,11 +14,11 @@
 
 ## State
 
-Milestone 1 is done. `vibe` finds extensions (`ext_list`), routes a described command (`ext_route`) and sends `pass` (`ext_event`). `extensions/research/research` is a stub that owns nothing. `docs/vibe-extensions.md` holds the contract, the site map and the three function lists.
+Milestones 1 and 2 are done. `extensions/research/research` owns `vibe ws`, tool jobs and the place run (`queue gpu --place`, `place_pass`, `place_run`, `place_gate`). `vibe` sends `pass`, `prepare`, `start`, `steer`, `holder` and `card`, and reads `readonly` and `help`. `docs/vibe-extensions.md` marks the rest as planned.
 
 ## Next action
 
-Milestone 2 of `SPEC.md`: move `ws` and tool jobs into `extensions/research/research` behind the contract (the ws list and the `prepare`, `start`, `steer`, `holder`, `card`, `follow` rows of `docs/vibe-extensions.md`). Done when `grep -cE 'ws_|WS_|workspace' bin/vibe` prints 0 and `bats tests/vibe-ws.bats tests/ws-*.bats` and the tool tests of `tests/vibe-queue.bats` pass.
+Milestone 3 of `SPEC.md`: move the research lifecycle (the engine list of `docs/vibe-extensions.md`) into the extension. Wire the planned events `add`, `end`, `answer` and `follow`, and the `card=` and `publish=push` keys. Done when `bin/vibe` defines no function of the engine list and `bats tests/vibe-queue.bats` passes.
 
 ## Blockers
 
@@ -27,6 +27,9 @@ None.
 ## Gotchas (unpromoted)
 
 - Two research jobs are live until 2026-11-22 20:00: the branch must not merge while a research run is live.
+- The `follow` rows (answer copies `out/`, `tool-exit`, `tool.log`, `close.md`; fix and `follow_job` drop `tool=`) still sit in `bin/vibe`: milestone 2 needed no `follow` event.
+- `research_cost` and `research_line` read the live box through `vibe ws box <job>` (`run_box`). The card milestone removes it.
+- A place run is a fork of the extension's `pass` event: `run_alive` matches `*/research event pass`. `$WS_STATES/started` lists each job whose run started once.
 - Research tests in `tests/vibe-queue.bats` pick the stub `claude` mode from prompt lines (`CLAUDE.md`, "Before committing").
 - A suite run inside a queue job inherits `VIBE_JOB_DIR`: `vibe queue gpu` in a test then writes `gpu-cmd` into the live job dir. `unset VIBE_JOB_DIR` in setup.
 - The extension executable must not read stdin at `describe` or `event`: `ext_call` gives it `/dev/null`.
