@@ -1,6 +1,7 @@
 # Workspaces
 
 One folder per outside research tool under `workspaces/`; `vibe ws` reads it.
+`vibe ws` is a command of the `research` extension: [vibe extensions](vibe-extensions.md).
 A `kind=service` tool stays up with a link. A `kind=run` tool runs as a queue job.
 The sections after Commands are the contract: tools and places obey them as written.
 
