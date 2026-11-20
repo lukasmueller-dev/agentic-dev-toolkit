@@ -39,6 +39,15 @@ Environment of each call:
 
 The extension sources no toolkit file and calls no `vibe` function. It reads and writes the job files of the next sections.
 
+The `research` extension also reads these files from its own `../..`; a move out of the toolkit must carry them or find them by another path:
+
+| File | Use |
+| ---- | --- |
+| `skills/fill-queue/references/job-prompt.md`, `templates/job-pr.md`, `templates/job-report.md` | the prompt of a `vibe queue worker` job |
+| `skills/fill-queue/references/research.md`, `research-worker.md` | the coordinator and worker blocks of a prompt |
+| `skills/fill-queue/references/tool-run.md` | the closing prompt of a tool job |
+| `workspaces/` (`VIBE_WORKSPACES`), `docs/workspaces/` | `vibe ws`, tool jobs and the Recipe ↗ links |
+
 ## Describe lines
 
 | Line | Effect |
@@ -104,6 +113,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 | `publish=push` | the runner pushes the branch and opens no PR; `vibe queue worker` writes it | `hid=` in `job_publish` |
 | `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 
+The queue writes `pr`: a PR URL, or text that starts with `push failed` or `PR not created` when no PR holds the commits. The `research` card reads it (`pr_missed`, a copy of the queue's).
 Job-dir files the queue keeps: `stop`, `drain` (`now`: `queue gpu` asks for nothing), `gpu-cmd`, `gpu-job`, `cost`, `infra`, `slot`.
 A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job waits queued. The `research` extension writes it at `pass` and removes it when the tool run ends.
 An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`, `workers.log`, `fan`, `run-result`).

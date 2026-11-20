@@ -3243,7 +3243,7 @@ verify_failed() {
   return 1
 }
 
-# pr_missed TEXT — true when a job's `pr` text says that no PR carries its commits.
+# pr_missed TEXT — true when a job's `pr` text says that no PR carries its commits. A contract string: an extension reads it (docs/vibe-extensions.md).
 pr_missed() { [[ "$1" == "push failed"* || "$1" == "PR not created"* ]]; }
 
 # report_rows REPO TITLE CLASS... — one table of REPO's ended, unheld jobs in
