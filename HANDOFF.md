@@ -27,6 +27,7 @@ None.
 ## Gotchas (unpromoted)
 
 - Two research jobs are live until 2026-11-22 20:00: the branch must not merge while a research run is live.
+- Two shortcuts carry jobs from before this branch: `ev_pass` writes `publish=push` into a `hid=` job, and `run_alive` takes a ` queue run --` fork. Drop both once no such job is left.
 - `card=` is not written yet: the extension must write `card=research` at `add` (coordinator) and in `cmd_worker`; archived research jobs have no `card=`, so `report_rows` and `triage_archive` must still find them.
 - `research_row` holds the `archived_costs` awk inline and its own `RESEARCH_WORKERS=3`; both go with the card list.
 - `research_cost` and `research_line` read the live box through `vibe ws box <job>` (`run_box`). The card milestone removes it.
