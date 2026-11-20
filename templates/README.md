@@ -60,7 +60,7 @@ render still produces a readable file.
 | `<context>` | What the work is about in plain words — the problem, the idea — before any detail (`job-pr.md`, `job-report.md`, `FEATURE.md`; the report's Context column) |
 | `<title>`, `<changed>`, `<verify>`, `<risks>`, `<more>` | PR title; the three TL;DR lines under Context; the folded detail (`job-pr.md` only, filled by the job itself) |
 | `<needs-you>`, `<findings>`, `<not-done>` | What needs a human; one line per finding; what the job left undone (`job-report.md` only, filled by the job itself) |
-| `<tab>`, `<you>`, `<ext-dot>`, `<help>`, `<status>`, `<actions>`, `<jobs>`, `<recurring>`, `<ext-tab>`, `<settings>`, `<blocks>` | Tab title; the Needs-you count; the extension tab's dot (its card `dot` line); the Help ↗ link; the status line; Pause or Resume; the Jobs sections; the Recurring tables; the extension tab (its card `tab` lines); the Settings sections; a panel block per row (`queue-page.html` only) |
+| `<tab>`, `<you>`, `<ext-link>`, `<help>`, `<status>`, `<actions>`, `<ext-style>`, `<jobs>`, `<recurring>`, `<ext-id>`, `<ext-tab>`, `<settings>`, `<blocks>` | Tab title; the Needs-you count; the extension tab's link (its card `title` line, a lamp with its `dot` line; empty with none); the Help ↗ link; the status line; Pause or Resume; the extension CSS (its card `style` lines); the Jobs sections; the Recurring tables; the extension tab's anchor id; the extension tab (its card `tab` lines); the Settings sections; a panel block per row (`queue-page.html` only) |
 
 An unrendered template is itself valid, readable Markdown. That is deliberate:
 an agent with no access to the scripts can copy one by hand and fill the
