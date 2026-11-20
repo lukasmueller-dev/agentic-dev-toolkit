@@ -113,6 +113,7 @@ EOF
 }
 
 @test "a describe that hangs is cut after 10 s with a warning; vibe goes on" {
+  command -v timeout >/dev/null || command -v gtimeout >/dev/null || skip "no timeout(1): no cut"
   mkdir -p "$BATS_TEST_TMPDIR/ext/slow"
   printf '%s\n' '#!/usr/bin/env bash' 'sleep 60' >"$BATS_TEST_TMPDIR/ext/slow/slow"
   chmod +x "$BATS_TEST_TMPDIR/ext/slow/slow"
