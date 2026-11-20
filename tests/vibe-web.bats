@@ -28,9 +28,9 @@ case "\$1 \$2 \$*" in
 esac
 EOF
   # git: origin's URL from STUBS/origin (none: exit 2), every other call to the real git; a clone's own origin never shows.
-  # The origin call is once per page render (gh_url): a line in STUBS/renders, 2 s more with STUBS/slow.
+  # A page render makes two origin calls (gh_url in vibe and in the research extension): a line each in STUBS/renders, 1 s more each with STUBS/slow.
   # shellcheck disable=SC2016  # the stub's own $3 $4 $5 and $@
-  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then echo x >>"%s/renders"; [ ! -f "%s/slow" ] || sleep 2; cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$STUBS" "$STUBS" "$(command -v git)" >"$STUBS/git"
+  printf '#!/bin/sh\nif [ "$3 $4 $5" = "remote get-url origin" ]; then echo x >>"%s/renders"; [ ! -f "%s/slow" ] || sleep 1; cat "%s/origin" 2>/dev/null || exit 2; exit 0; fi\nexec "%s" "$@"\n' "$STUBS" "$STUBS" "$STUBS" "$(command -v git)" >"$STUBS/git"
   chmod +x "$STUBS/systemctl" "$STUBS/gh" "$STUBS/git"
   PATH="$STUBS:$PATH"
   git_env
@@ -111,7 +111,7 @@ post() {
   [ "${lines[1]}" = 200 ]
   writes_say '{"writes": 0, "render": true}'
   eventually rendered
-  [ "$(wc -l <"$STUBS/renders" | tr -d ' ')" = 2 ]
+  [ "$(wc -l <"$STUBS/renders" | tr -d ' ')" = 4 ] # 2 renders
   grep -q 'data-act="resume"' "$Q/web/index.html"
   touch "$STUBS/hang"
   act restart '{}' >/dev/null &
