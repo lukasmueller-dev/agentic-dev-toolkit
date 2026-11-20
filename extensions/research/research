@@ -1427,17 +1427,11 @@ ws_tick_bg() {
   echo "$!" >"$WS_STATES/tick.pid"
 }
 
-# vibe ws box JOB — the instance dir of JOB's place run; vibe's research card reads its log, start, price and limit.
-cmd_ws_box() {
-  (($# == 1)) || die "usage: vibe ws box <job>"
-  echo "$WS_STATES/research-${1##*/}"
-}
-
 cmd_ws() {
   local sub="${1:-}"
   shift || true
   case "$sub" in
-    list | status | build | start | stop | tick | hold | down | run | box) "cmd_ws_$sub" "$@" ;;
+    list | status | build | start | stop | tick | hold | down | run) "cmd_ws_$sub" "$@" ;;
     *) die "usage: vibe ws list|status|build|start|stop|tick — see vibe --help" ;;
   esac
 }
