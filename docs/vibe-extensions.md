@@ -28,7 +28,7 @@ Each line marked planned is the plan of the `extension-seam` milestones. This fi
 
 `vibe` cuts `describe` after 10 s and an event after 60 s (`timeout -k 5`; 124: cut).
 `start` has no cut, because a tool run lasts hours.
-Slow work, such as a `ws tick` over ssh, forks and returns at once.
+Slow work, such as a `ws tick` over ssh, forks into its own process group (`set -m`) and returns at once: a cut signals the whole group of the call.
 
 Environment of each call:
 

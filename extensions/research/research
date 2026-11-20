@@ -284,7 +284,10 @@ place_pass() {
   fi
   if [[ -z "$(run_pid "$d")" ]]; then
     mkdir -p "$WS_STATES" || return 1
+    # Its own process group (set -m): a cut of the pass event (timeout signals its whole group) must not kill a paid run.
+    set -m
     place_run "$d" </dev/null >>"$d/runner.log" 2>&1 &
+    set +m
     # The extension's copy first: a run/pid it cannot write starts no second run, and after a reboot its dead pid ends the run.
     echo "$!" >"$g" || warn "$g not written"
     echo "$!" | fresh "$d/run/pid"
@@ -1414,7 +1417,10 @@ ws_tick_bg() {
   # The command, not only a live pid: tick.pid outlives a reboot, and its pid then names another process.
   if [[ "$p" =~ ^[1-9][0-9]*$ && "$(ps -o command= -p "$p" 2>/dev/null || true)" == *" ws tick" ]]; then return 0; fi
   if ! compgen -G "$WS_STATES/*/id" >/dev/null; then return 0; fi
+  # Its own process group, as a place run: a cut of the pass event must not kill a tick mid down.
+  set -m
   "$VIBE_BIN" ws tick </dev/null >>"$WS_STATES/tick.log" 2>&1 &
+  set +m
   echo "$!" >"$WS_STATES/tick.pid"
 }
 

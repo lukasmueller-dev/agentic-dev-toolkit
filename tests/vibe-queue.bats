@@ -4067,6 +4067,9 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
     if grep -q '^runpod exec run' "$STUBS/place.log" 2>/dev/null; then break; fi
     sleep 0.1
   done
+  # The run leads its own process group: a cut of the pass event (timeout signals its group) leaves it alone.
+  j="$(cat "$Q/01-a/run/pid")"
+  [ "$(ps -o pgid= -p "$j" | tr -d ' ')" = "$j" ]
   run "$VIBE" queue stop --research q1 --now
   [ "$output" = "research q1: now — 1 jobs" ]
   wait "$pid"
