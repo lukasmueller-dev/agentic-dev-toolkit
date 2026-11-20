@@ -323,3 +323,20 @@ STUB
   [ "$(ls "$q")" = 01-a ]
   [ "$(cat "$q/01-a/status")" = failed ]
 }
+
+@test "an extension that fails at follow stops vibe queue follow: no GPU follow-up is queued, the job ends failed" {
+  local q="$XDG_STATE_HOME/vibe/queue" f="$BATS_TEST_TMPDIR/ext/nofollow/nofollow"
+  mkdir -p "$q/01-a" "${f%/*}"
+  printf 'repo=%s\nbranch=a\ntool=t\n' "$BATS_TEST_TMPDIR" >"$q/01-a/job"
+  echo 'Do it.' >"$q/01-a/prompt.md"
+  echo gpu >"$q/01-a/status"
+  # shellcheck disable=SC2016 # the stub's own $1 $2
+  printf '%s\n' '#!/usr/bin/env bash' 'if [ "$1 $2" = "event follow" ]; then exit 1; fi' >"$f"
+  chmod +x "$f"
+  echo "$f" >"$HOME/.config/vibe/extensions"
+  GPUQ_EXIT=0 GPUQ_LOG=/dev/null run "$VIBE" queue follow "$q/01-a"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"GPU run exit 0; no follow-up: an extension failed at follow"* ]] || false
+  [ "$(ls -A "$q")" = 01-a ]
+  [ "$(cat "$q/01-a/status")" = failed ]
+}

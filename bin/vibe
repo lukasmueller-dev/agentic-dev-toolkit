@@ -1099,7 +1099,11 @@ review_follow() {
     if [[ -f "$d/$x" ]]; then cp "$d/$x" "$f/$x"; fi
   done
   follow_job "$d" "$f" "review=$n" "timeout=$(qconf review_timeout 1h)" || return 1
-  ext_event follow "$d" "$f" review >/dev/null || true # each failure warned
+  # A failure queues nothing: the extension drops and copies its own keys and files (a kept tool= runs a paid tool again).
+  if ! ext_event follow "$d" "$f" review >/dev/null; then
+    rm -rf "${f:?}"
+    return 1
+  fi
 }
 
 # review_agent JOB TIMEOUT N — the reviewer: its JSON result in JOB/review.json; its exit code.
@@ -1196,7 +1200,7 @@ review_pr_md() {
 # job's session fixes what it found. A fix that is not trivial earns another round;
 # the last round publishes the PR with the rounds in its body.
 job_review() {
-  local d="$1" n t rc=0 count=0 before wt line f v i=0 s=s next=0 prev ev e
+  local d="$1" n t rc=0 count=0 before wt line f v i=0 s=s next=0 prev ev e nx
   n="$(jget "$d/job" review)" t="$(job_timeout "$d")" wt="$(jstate "$d" worktree)"
   : >"$d/log"
   review_agent "$d" "$t" "$n" || rc=$?
@@ -1250,10 +1254,13 @@ job_review() {
   prev="$(cat "$d/rounds" 2>/dev/null || true)"
   echo "${prev:+$prev · }$line" >"$d/rounds"
   if stopped "$d"; then return 0; fi
-  if ((next)); then
-    review_follow "$d" $((n + 1))
-  elif [[ -n "$(jget "$d/job" verify)" ]]; then
-    review_follow "$d" verify
+  if ((next)) || [[ -n "$(jget "$d/job" verify)" ]]; then
+    nx=verify
+    if ((next)); then nx=$((n + 1)); fi
+    if ! review_follow "$d" "$nx"; then
+      job_end "$d" failed "$line → no review follow-up: an extension failed at follow"
+      return 0
+    fi
   else
     review_publish "$d" || return 0
   fi
@@ -2137,7 +2144,18 @@ cmd_queue_follow() {
   # A hidden dir beside JOB, then one rename: the runner never sees the follow-up before it is whole.
   t="$(mktemp -d "$(dirname "$p")/.follow.XXXXXX")" || die "no temp dir beside $p"
   follow_job "$p" "$t"
-  x="$(ext_event follow "$p" "$t" gpu)" || true # each failure warned
+  # A failure queues nothing, as in follow_dir: the extension drops and copies its own keys and files (a kept tool= runs a paid tool again).
+  if ! x="$(ext_event follow "$p" "$t" gpu)"; then
+    rm -rf "${t:?}"
+    l="GPU run exit ${GPUQ_EXIT:-?}; no follow-up: an extension failed at follow"
+    if [[ "$(jstate "$p" status)" == running && ! -e "$p/ended" ]]; then
+      echo failed >"$p/status"
+      echo "$l" >"$p/note"
+    else
+      job_end "$p" failed "$l"
+    fi
+    die "$l"
+  fi
   while IFS= read -r l; do
     if [[ -z "$r" && "$l" == "result "* ]]; then r="${l#result }"; fi
   done <<<"$x"
