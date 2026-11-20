@@ -1721,7 +1721,7 @@ cmd_queue_cancel() {
 # vibe queue stop ID — the runner stops a running job on its next pass: failed, note
 # stopped; no requeue, no publish. An extension's work before the session reads the stop file itself.
 # vibe queue stop --research SLUG [--now] — each job of research SLUG in the queue gets the file drain (drain or now):
-# vibe queue worker starts no worker; now: vibe queue gpu queues no run, and place_run cuts each place run.
+# vibe queue worker starts no worker; now: vibe queue gpu queues no run, and the research extension cuts each place run (its place_run).
 # shortcut: SLUG alone names the research, so a slug two repos share stops both; add --repo when that bites.
 cmd_queue_stop() {
   local d m=drain j n=0 u="usage: vibe queue stop <id> | --research <slug> [--now]"
@@ -1876,7 +1876,7 @@ cmd_queue_answer() {
     fi
     task_append "$tmp/prompt.md" "Earlier try: git diff $(jstate "$d" start)..$side. Do not merge it." "Answer: $text"
   fi
-  # A tool run with a result: the follow-up closes that run again (tool_job), no new run; close.md: no new merge.
+  # A tool run with a result: the follow-up closes that run again (the research extension's tool_job), no new run; close.md: no new merge.
   if [[ -s "$d/out/result" ]]; then cp -R "$d/out" "$d/tool-exit" "$d/tool.log" "$tmp/"; fi
   if [[ -f "$d/close.md" ]]; then cp "$d/close.md" "$tmp/"; fi
   n="$(queue_add "$tmp")"
@@ -2138,8 +2138,8 @@ session_late() {
   [[ -n "$dl" ]] && ((${s:-$(date +%s)} >= dl))
 }
 
-# place_take JOB — after a session that ended `queued:`: JOB/agent/run/ (place_queue) to JOB/run/, plain files only;
-# the next pass starts it (place_pass). False with no ask, a run taken before, or a session that started past deadline=.
+# place_take JOB — after a session that ended `queued:`: JOB/agent/run/ (the research extension's place_queue) to JOB/run/, plain files only;
+# the next pass starts it (its place_pass). False with no ask, a run taken before, or a session that started past deadline=.
 place_take() {
   local d="$1" a="$1/agent/run" t x
   if [[ ! -d "$a" || -L "$a" || -e "$d/run" ]] || session_late "$d"; then return 1; fi
@@ -4130,7 +4130,7 @@ research_row() {
     if [[ -n "$c" ]]; then costs+="$c"$'\n'; fi
     if [[ -z "$cd" || "$d" > "$cd" ]]; then cd="$d"; fi
   done
-  # A retried job is archived: its cost counts on, as in place_gate.
+  # A retried job is archived: its cost counts on, as in the research extension's place_gate.
   # The repo of any job of the question: with the coordinator archived, an empty repo would sum every repo's.
   x="$(archived_costs "$1" "$g")"
   if [[ -n "$x" ]]; then costs+="$x"$'\n'; fi
@@ -4254,7 +4254,7 @@ research_row() {
 has_run() { [[ -d "$1/run" || -s "$1/gpu-job" ]]; }
 
 # research_place JOB — the place of JOB's run: run/place, else the job's place=, else turing (a gpu-queue run).
-# The agent writes run/place: only runpod or vast passes, as in place_run; other text reaches the terminal and R_HEAD.
+# The agent writes run/place: only runpod or vast passes, as in the research extension's place_run; other text reaches the terminal and R_HEAD.
 research_place() {
   local p
   p="$(jstate "$1/run" place)"
