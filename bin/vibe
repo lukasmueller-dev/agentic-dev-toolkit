@@ -4262,7 +4262,7 @@ ext_list() {
   local f n seen=$'\n'
   local -a c=()
   if [[ -f "$QCONF/extensions" ]]; then
-    while IFS= read -r f || [[ -n "$f" ]]; do
+    while read -r f || [[ -n "$f" ]]; do # read trims the spaces at both ends
       case "$f" in "" | "#"*) continue ;; \~/*) f="$HOME/${f:2}" ;; esac
       c+=("$f")
     done <"$QCONF/extensions"

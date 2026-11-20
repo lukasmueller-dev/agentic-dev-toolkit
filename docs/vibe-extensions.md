@@ -10,7 +10,7 @@ Status: `vibe`, `vibe-web` and the page name no research or workspace term.
 
 | Source | Form |
 | ------ | ---- |
-| `~/.config/vibe/extensions` (`$XDG_CONFIG_HOME/vibe/extensions`) | one path to an executable per line; `~/` expands; blank and `#` lines skip |
+| `~/.config/vibe/extensions` (`$XDG_CONFIG_HOME/vibe/extensions`) | one path to an executable per line, trimmed at both ends; `~/` expands; blank and `#` lines skip |
 | the toolkit checkout | each `extensions/<name>/<name>` |
 
 - The config lines come first. The first extension of a name wins, so a config line replaces a checkout extension of that name.

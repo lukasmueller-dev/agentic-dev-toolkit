@@ -40,15 +40,16 @@ EOF
   [[ "$output" == *"research	$REPO_ROOT/extensions/research/research"* ]] || false
 }
 
-@test "ext list: config lines first, ~/ expanded, comments skipped; the first of a name wins" {
+@test "ext list: config lines first, trimmed, ~/ expanded, blank and comment lines skipped; the first of a name wins" {
   local a b
   a="$(stub alpha)"
   b="$(stub research)"
   mkdir -p "$HOME/x" && cp "$a" "$HOME/x/beta"
   # shellcheck disable=SC2088 # a literal ~/ the config file holds
-  printf '%s\n' "# a comment" "" "$b" "~/x/beta" "$a" >"$HOME/.config/vibe/extensions"
+  printf '%s\n' "# a comment" "" "   " "  # indented" "$b " "  ~/x/beta" "$a" >"$HOME/.config/vibe/extensions"
   run "$VIBE" ext list
   [ "$status" -eq 0 ]
+  [[ "$output" != *warning* ]] || false
   [ "${lines[0]}" = "research	$b" ]
   [ "${lines[1]}" = "beta	$HOME/x/beta" ]
   [ "${lines[2]}" = "alpha	$a" ]
