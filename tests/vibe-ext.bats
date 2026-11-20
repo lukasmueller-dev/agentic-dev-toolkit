@@ -223,3 +223,44 @@ EOF
   cat "$x.new" >"$x"
   wait "$pid"
 }
+
+@test "card, status and report: an extension's tab, CSS, rows and blocks reach the page, <job-buttons ID> as the job's buttons; a card= job leaves its repo group" {
+  local f="$BATS_TEST_TMPDIR/ext/kard/kard" q="$XDG_STATE_HOME/vibe/queue" p="$XDG_STATE_HOME/vibe/web/index.html"
+  mkdir -p "${f%/*}"
+  rjob "$q" 20261117-100000-proj-a failed /x/proj a card=kard
+  cat >"$f" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = event ] || exit 0
+case "$2" in
+  card) printf '%s\n' 'title	kt	Kards' dot 'tab	<p>the tab</p>' 'style	.kard { color: red; }' \
+    'you	<div class="row" data-k="kard/a">row a</div>' 'blk	<div class="blk" id="job-kard/a" hidden>blk a<job-buttons 20261117-100000-proj-a>end</div>' ;;
+  status) printf '\nKards\n  a · needs you\n' ;;
+  report) printf '\n## Kards\n\n| a |\n' ;;
+esac
+STUB
+  chmod +x "$f" && echo "$f" >"$HOME/.config/vibe/extensions"
+  "$VIBE" queue page
+  grep -qF '<a class="tw" href="#kt">Kards <i class="lamp l-ok"></i></a>' "$p"
+  [[ "$(cat "$p")" == *$'<section id="kt" class="page ext">\n<p>the tab</p>'* ]] || false
+  grep -qxF '.kard { color: red; }' "$p"
+  grep -qF '<h2>Needs you <span class="n">1</span></h2><div class="card"><div class="row" data-k="kard/a">row a</div></div>' "$p"
+  grep -qF 'blk a<div class="jacts" data-id="20261117-100000-proj-a"><span class="ask note">' "$p"
+  [ "$(grep -o '<div class="row"' "$p" | wc -l)" -eq 1 ]
+  run "$VIBE" queue status
+  [[ "$output" == *$'\nKards\n  a · needs you'* && "$output" != *proj* ]] || false
+  run "$VIBE" queue report
+  [[ "$output" == *$'\n## Kards\n\n| a |'* ]] || false
+}
+
+@test "a branch line: queue add takes <prefix>/<slug>/<slug> for a described prefix only" {
+  local d="$BATS_TEST_TMPDIR/j" r
+  r="$(make_repo proj)"
+  mkdir -p "$d" && printf 'repo=%s\nbranch=kb/a/b\n' "$r" >"$d/job" && echo task >"$d/prompt.md"
+  run "$VIBE" queue add "$d"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bad branch 'kb/a/b'"* ]] || false
+  stub kard "branch kb" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" queue add "$d"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"queued "*"-proj-kb-a-b"* ]] || false
+}

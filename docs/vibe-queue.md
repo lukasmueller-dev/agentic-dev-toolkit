@@ -355,13 +355,13 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Job panel, Files: a link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `out/report.md` as text; `log`, `tool.log`: the last 64 KB; `out/files`: its file list; a `.md` with `?html` rendered |
 | Feature, Test it yourself: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature, Ready to merge: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
-| Research card, done: Archive ✓ | `research-archive` | `vibe queue archive --research <research>`: every job of the question, none unless each has ended |
-| Research card: Stop question | `research-stop` | `vibe queue stop --research <research>`: no new worker, each run finishes |
-| Research card: Stop now ✓ | `research-stop-now` | `vibe queue stop --research <research> --now` |
+| Research card, done: Archive ✓ | `research-archive` (extension route) | `vibe queue archive --research <slug>`: every job of the question, none unless each has ended |
+| Research card: Stop question | `research-stop` (extension route) | `vibe queue stop --research <slug>`: no new worker, each run finishes |
+| Research card: Stop now ✓ | `research-stop-now` (extension route) | `vibe queue stop --research <slug> --now` |
 | Research worker in `paste` or Has a question: Send answer | `answer` | `vibe queue answer <id> <text>` |
 | Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
-| Workspaces: Start | `ws-start` | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
-| Workspaces: Stop ✓ | `ws-stop` | `vibe ws stop <name>` |
+| Workspaces: Start | `ws-start` (extension route) | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
+| Workspaces: Stop ✓ | `ws-stop` (extension route) | `vibe ws stop <name>` |
 | Any write: the output | `GET writes` | `{"writes": <n>, "render": <true or false>}`: the writes that hold or wait for the lock; a render runs or waits |
 
 The output of a write, under the block:

@@ -3,9 +3,8 @@
 An extension is one executable that owns `vibe` commands and hears queue events.
 The queue names no extension term. With no extension, `vibe` works, and an extension command prints one error line.
 
-Status: `vibe` finds extensions, routes their commands, reads `readonly` and `help`, and sends every event but `status` and `report`.
-`extensions/research/research` owns `vibe ws`, tool jobs, place runs and the research lifecycle: workers, the worker wake, a slurm answer, `stop --research` and `archive --research`.
-Each line marked planned is the plan of the `extension-seam` milestones. This file maps every research site left in `bin/vibe` to one.
+Status: `vibe`, `vibe-web` and the page name no research or workspace term.
+`extensions/research/research` owns `vibe ws`, tool jobs, place runs, the research lifecycle and the research card, status and report.
 
 ## Discovery
 
@@ -17,12 +16,13 @@ Each line marked planned is the plan of the `extension-seam` milestones. This fi
 - The config lines come first. The first extension of a name wins, so a config line replaces a checkout extension of that name.
 - A path that is no executable file prints a warning and is skipped.
 - `vibe ext list` prints `<name><TAB><path>` per extension.
+- `vibe ext lines <kind>` prints the text of each `<kind> <text>` describe line of every extension.
 
 ## Calls
 
 | Call | When | Output |
 | ---- | ---- | ------ |
-| `<ext> describe` | each `vibe` call, and `vibe-web` for its routes | the describe lines below |
+| `<ext> describe` | each `vibe` call, and `vibe-web` at its start for its routes | the describe lines below |
 | `<ext> cmd <argv...>` | `vibe <argv...>` starts with a `command` line of the extension | its own; `vibe` execs it, so stdin, stdout and the exit status pass through |
 | `<ext> event <name> <args...>` | the queue reaches the event | per event, below; stdin is empty |
 
@@ -45,14 +45,14 @@ The extension sources no toolkit file and calls no `vibe` function. It reads and
 | ---- | ------ |
 | `command <word>...` | `vibe` runs the extension for argv that starts with the words; an argument `--x=v` matches the word `--x` |
 | `readonly <word>...` | on a client, `vibe` forwards the command to the server over ssh |
-| `branch <prefix>` | `branch_ok` takes `<prefix>/<slug>/<slug>` (planned) |
-| `route <act> <argv...>` | a `vibe-web` POST route, in the form of its `ROUTES` table (planned) |
+| `branch <prefix>` | `branch_ok` takes `<prefix>/<slug>/<slug>` |
+| `route <act> <argv...>` | a `vibe-web` POST route in the form of its `ROUTES` table: argv starts with `vibe`, each `{x}` is an `ARGS` key; a built-in act wins; read at the `vibe-web` start |
 | `help <text>` | a line of `vibe --help`, before the `vibe job` lines; the text verbatim |
-| `wip <file>` | `queue ready` refuses a PR that holds the file (planned) |
+| `wip <file>` | `queue ready` refuses a PR that holds the file |
 
 ## Events
 
-An event with no output and exit 0 changes nothing. `vibe` does not send a planned event yet.
+An event with no output and exit 0 changes nothing.
 Each extension hears each event. A non-zero exit warns with the extension name; the event status is the first non-zero exit.
 
 | Event | Where | Output | Non-zero exit |
@@ -67,8 +67,8 @@ Each extension hears each event. A non-zero exit warns with the extension name; 
 | `steer <job> <text>` | `cmd_queue_steer`, when the job has no session FIFO | `steered <name>` | 3: not supported; else: failed |
 | `holder` | `gpu_holder`, after the gpu-queue checks | the label of what holds the GPU | none |
 | `card <holder>` | `queue_web`, once per page write; `<holder>`: what holds the GPU (`gpu_holder`), may be empty | lines below | the card is missing |
-| `status` (planned) | `cmd_queue_status`, after the Features group | text lines | none |
-| `report` (planned) | `queue_report_md`, after the Features table | markdown | none |
+| `status` | `cmd_queue_status`, after the Features group | text lines, verbatim | a warning |
+| `report` | `queue_report_md`, after the Features table | markdown, verbatim | a warning |
 
 After `end`, the job takes status gpu with a `run` line, a `vibe queue gpu` run, or a `wait` line, in that order; else it fails.
 At `follow`, `<to>` holds `job` and `prompt.md` (kind `gpu`: `job` only) and the runner cannot start it yet: it is no queue dir, or it waits for the end of `<from>`.
@@ -77,13 +77,16 @@ At `follow`, `<to>` holds `job` and `prompt.md` (kind `gpu`: `job` only) and the
 
 | Line | Effect |
 | ---- | ------ |
+| `title<TAB><id><TAB><text>` | the extension tab: its anchor id and link text; the first such line wins, none: no tab |
 | `dot` | the extension tab shows its lamp |
 | `tab<TAB><html>` | a line of the extension tab (`<ext-tab>` in `queue-page.html`) |
+| `style<TAB><css>` | a line of page CSS (`<ext-style>`) |
 | `chip<TAB><job id><TAB><text>` | the chip of the job's row (`page_row`) |
 | `button<TAB><job id><TAB><html>` | a field or button in the job's block (`job_buttons`) |
-| `<section><TAB><row>`, `blk<TAB><block>`, `style<TAB><css>` | the `page_row` printer form and page CSS (planned) |
+| `<section><TAB><row>`, `blk<TAB><block>` | a row and its panel block in the `page_row` printer form, after the Features rows; section: `you`, `run`, `queued`, `held` or `done` |
 
-A button sets `data-verb` for its progress text (planned).
+In a block, `<job-buttons <job id>>` becomes that job's `job_buttons`.
+A button sets `data-verb` for its progress text; `page.js` falls back to its own `VERB` table.
 
 The spec names stop, archive and retry as events. They need none:
 
@@ -97,7 +100,7 @@ The queue reads these keys generically. The extension writes them in the job fil
 
 | Key | Queue effect | Replaces |
 | --- | ------------ | -------- |
-| `card=<ext>` (planned) | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR | `research=` in `is_member`, `queue_counts`, `report_rows`, `triage_archive` |
+| `card=<ext>` | the job sits in the extension's card: not in its repo group, not in the counts or report rows while done with no PR, not archived by `triage_archive` | none |
 | `publish=push` | the runner pushes the branch and opens no PR; `vibe queue worker` writes it | `hid=` in `job_publish` |
 | `deadline=` | the hard stop of paid work: `queue gpu` (`deadline_gate`) and `gpu_submit` (`session_late`) stay in `vibe`; the extension's `queue worker` and `queue gpu --place` refuse past it themselves (`YYYY-MM-DD HH:MM` local time, `VIBE_AT` as now) | none |
 
@@ -106,44 +109,15 @@ A job whose `slot` file holds `gpu` takes the one GPU slot: the next such job wa
 An extension owns the rest of its files (`run/`, `out/`, `tool.log`, `tool-exit`, `close.md`, `paste.md`, `slurm.log`, `workers`, `workers.log`, `fan`, `run-result`).
 An extension queues a job with `vibe queue add <dir>` and ends a job in status `gpu` itself: `status` done, `note`, `ended`.
 
-## Site map: bin/vibe
+## What stays in the queue
 
-| Site | Does now | Goes to |
-| ---- | -------- | ------- |
-| header usage `queue ready`, `pr_check` | refuse a PR that holds `RESEARCH.md` | `wip RESEARCH.md` |
-| `branch_ok` | takes `research/<slug>/<hid>` | `branch research` |
-| `deadline_gate` | the deadline of `queue gpu`, `queue gpu --place` and `queue worker` | stays for `queue gpu`; the extension checks `deadline=` for its two commands (tests: `worker: refused past`, `gpu --place: past the job's deadline=`) |
-| `cmd_queue_gpu` | the `drain=now` message names research | stays, generic text |
-| `gpu_submit`, `session_late` | `deadline=` | stays |
-| `queue_counts` | a done research job with no PR is not counted | `card=` |
-| `queue_jobs` | the Research group | `card`, `status` |
-| `research_cost`, `research_line` | the live box of a place run through `vibe ws box` | `card` |
-| `research_row`, `RESEARCH_WORKERS` | the archived costs (the extension's `archived_costs`, inline), the default `workers=` | `card` |
-| `status_line research` | terminal rows of a question | `status` |
-| `status_card`, `page_row research` | the page Research card | `card` |
-| `act_btn research-archive`, `st_tip` research tips | page buttons, state tips | `card` |
-| `is_member`, `report_rows`, `triage_archive` | a research job sits in its question's card | `card=` |
-| `queue_report_md` | `research_md` | `report` |
+| Site | Why |
+| ---- | --- |
+| `deadline_gate` | the deadline of `queue gpu`; the extension checks `deadline=` for `queue worker` and `queue gpu --place` |
+| `gpu_submit`, `session_late` | `deadline=` of a `vibe queue gpu` run |
+| `cmd_queue_gpu` | `drain=now`: queue no run |
+| `vibe-web` `FILES` | `tool.log`, `out/report.md`, `out/files`: job files the page lists |
+| `vibe-web` `ARGS` | `slug`, `name`, `place`, `hours`: the arg patterns an extension route uses |
 
-A comment that names research moves or changes with the code it describes.
-
-## Site map: bin/vibe-web and the page
-
-| Site | Does now | Goes to |
-| ---- | -------- | ------- |
-| `vibe-web` `ROUTES` | `research-archive`, `research-stop`, `research-stop-now`, `ws-start`, `ws-stop` | `route` |
-| `vibe-web` `PARAMS` | `research`, `place` patterns | `route` (planned: a generic slug pattern) |
-| `vibe-web` `FILES` | `tool.log`, `out/report.md`, `out/files` | stays: job files the page lists |
-| `queue-page.html` | the Research card and Workspaces tab CSS, `<section id="workspaces">`, the Workspaces tab link | `card` (`style`, `tab`) |
-| `queue-page.js` | `VERB` entries of the research and `ws` acts | `data-verb` on the `card` buttons |
-
-## Function lists
-
-Each list leaves `bin/vibe` in one milestone.
-The `ws` functions, the place run (`place_queue place_pass run_alive place_run place_gate`) and the engine list are in `extensions/research/research` now.
-
-Engine list (the research lifecycle):
-`coordinator drain_copy slurm_waits place_take workers_take archived_costs run_result cmd_queue_worker has_baseline research_item fan_in worker_block`
-
-Card list (research card, status, report):
-`research_head research_mu research_workers research_paste research_card research_md research_slugs research_metric research_tree research_cost research_row has_run research_place research_look research_why research_progress research_line`
+- A research job queued before `card=` gets `card=research` at the next `pass`: a shortcut, dropped once no such job is left.
+- An extension route reaches `vibe-web` at its start: restart `vibe-web` after you add an extension.

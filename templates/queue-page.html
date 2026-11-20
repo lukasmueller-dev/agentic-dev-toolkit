@@ -43,7 +43,7 @@ body:has(.s-running, .s-gpu) .brand svg .run { display: inline; }
 .tabs { display: flex; gap: 24px; }
 .tabs a { display: flex; align-items: center; gap: 6px; padding: 18px 2px 16px; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 500; text-decoration: none; white-space: nowrap; }
 @media (hover: hover) { .tabs a:hover { color: var(--fg); } }
-body:not(:has(#recurring:target, #workspaces:target, #workspaces :target, #settings:target)) .tabs .tj, body:has(#recurring:target) .tabs .tr, body:has(#workspaces:target, #workspaces :target) .tabs .tw, body:has(#settings:target) .tabs .ts { border-bottom-color: var(--accent); color: var(--fg); }
+body:not(:has(#recurring:target, .ext:target, .ext :target, #settings:target)) .tabs .tj, body:has(#recurring:target) .tabs .tr, body:has(.ext:target, .ext :target) .tabs .tw, body:has(#settings:target) .tabs .ts { border-bottom-color: var(--accent); color: var(--fg); }
 .tabs .n { min-width: 18px; padding: 0 5px; background: var(--badge); border-radius: 9px; color: var(--accent); font: 600 12px/18px var(--mono); text-align: center; }
 .tabs .n:empty { display: none; }
 .stat { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); font-size: 12px; font-family: var(--mono); }
@@ -54,7 +54,7 @@ main { display: flex; align-items: flex-start; gap: 28px; max-width: 1440px; mar
 .page { display: none; flex: 1 1 auto; min-width: 0; }
 #jobs { display: block; flex: 1 1 480px; max-width: 600px; }
 .page:target, .page:has(:target) { display: block; }
-body:has(#recurring:target, #workspaces:target, #workspaces :target, #settings:target) #jobs { display: none; }
+body:has(#recurring:target, .ext:target, .ext :target, #settings:target) #jobs { display: none; }
 #recurring, #settings { max-width: 1040px; margin: 0 auto; }
 .page h1 { margin: 0 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
 .page > .note { margin: 0 0 24px; color: var(--muted); }
@@ -139,17 +139,6 @@ body:not(.can) :is(.files, .act) { display: none; }
 .job details.stack { margin: 16px 0 0; }
 .job details.stack > summary { color: var(--muted); font-size: 13px; }
 .stack > .job { padding: 0 0 12px 12px; border-left: 2px solid var(--line); }
-/* Research card: a row per worker; a builds= row is indented by --d. */
-.wks { margin: 12px 0 0; border-top: 1px solid var(--line); }
-.wk { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; margin-left: calc(var(--d, 0) * 16px); padding: 8px 0; border-bottom: 1px solid var(--line); }
-.wk .wh { overflow-wrap: anywhere; }
-.wk .wh .n { color: var(--muted); font-size: 12px; }
-.wk .wm { font: 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-.wk p, .paste, .wk > .jacts { grid-column: 2 / -1; margin: 0; }
-.paste ol { margin: 4px 0; padding: 0; list-style: none; }
-.paste li { display: flex; align-items: center; gap: 8px; }
-.paste code { flex: 1; min-width: 0; padding: 4px 8px; background: var(--surface-2); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
-.paste li button { min-width: 0; }
 /* Write buttons: shown only after GET whoami returns your login (body.can). */
 .jacts { display: none; }
 body.can .jacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 20px 0 0; }
@@ -198,21 +187,7 @@ textarea { resize: vertical; }
 .line .ask { flex: none; flex-wrap: nowrap; }
 .line input { width: 200px; }
 .line input[type="number"] { width: 80px; }
-/* Workspaces: a card per tool; its state on top, its buttons or form below. */
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr)); gap: 16px; }
-.wrow { display: flex; flex-direction: column; gap: 12px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.wrow:target { box-shadow: 0 0 0 2px var(--accent); }
-.wrow .t { display: flex; flex-direction: column; gap: 4px; }
-.wrow .t b { font-size: 16px; font-weight: 600; }
-.wrow .why { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; font-weight: 500; }
-.wrow .why:has(.l-ok) { color: var(--ok); }
-.wrow .why:has(.l-bad) { color: var(--bad); }
-.wrow .role { color: var(--fg-2); font-size: 13px; }
-.why .warn { color: var(--warn); }
-.why .bad { color: var(--bad); }
-body.can .wrow > .jacts { margin: 0; }
-.wrow .ask label:has([name="hours"]) { flex: 0 0 96px; }
-.rcp { align-self: flex-start; font-size: 13px; }
+<ext-style>
 /* Panel: the block the URL hash names (#job-<key>), then a button's output or a file. A column right of the list
    from 1200 px; under it a modal over the list, on a phone a bottom sheet. */
 #panel { position: fixed; inset: 0 0 0 auto; width: min(480px, 100%); height: 100%; max-width: none; max-height: none; margin: 0; padding: 0 0 env(safe-area-inset-bottom); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border: 0; border-left: 1px solid var(--line); color: var(--fg); }
@@ -232,7 +207,7 @@ body.can .wrow > .jacts { margin: 0; }
 @media (min-width: 1200px) {
   #panel { position: sticky; inset: 16px auto auto; display: block; flex: 999 1 560px; width: auto; height: auto; max-height: calc(100vh - 32px); border: 1px solid var(--line); border-radius: 10px; }
   #panel:has(> .pout[hidden]) > .close { display: none; } /* Close only while a button's output shows */
-  body:has(#recurring:target, #workspaces:target, #workspaces :target, #settings:target) #panel { display: none; }
+  body:has(#recurring:target, .ext:target, .ext :target, #settings:target) #panel { display: none; }
 }
 @media (max-width: 1199px) { #jobs { max-width: none; } }
 /* Phone: the tabs on a line of their own; the status keeps its count and Runner stopped. */
@@ -260,7 +235,7 @@ body.can .wrow > .jacts { margin: 0; }
 </style>
 </head>
 <body>
-<header class="top"><div class="bar"><a class="brand" href="#jobs"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe<code>queue</code></span></a><nav class="tabs" aria-label="Main"><a class="tj" href="#jobs">Jobs<span class="n"><you></span></a><a class="tr" href="#recurring">Recurring</a><a class="tw" href="#workspaces">Workspaces<ext-dot></a><a class="ts" href="#settings">Settings</a><help></nav><span class="stat"><status></span><span class="jacts"><actions></span></div></header>
+<header class="top"><div class="bar"><a class="brand" href="#jobs"><svg viewBox="0 0 64 64" aria-hidden="true"><g class="mark"><rect class="i" x="8" y="8" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="42.6" y="25.3" width="13.5" height="13.5" rx="2"/><rect class="i" x="25.3" y="42.6" width="13.5" height="13.5" rx="2"/><rect x="42.6" y="8" width="13.5" height="13.5" rx="2" fill="#e12d1a"/></g><g class="run"><g class="f f0"><rect x="19.5" y="5.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/></g><g class="f f1"><rect x="5.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="19.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f2"><rect x="33.5" y="19.5" width="11" height="11" rx="2"/><rect x="5.5" y="33.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect class="r" x="33.5" y="47.5" width="11" height="11" rx="2"/></g><g class="f f3"><rect x="19.5" y="19.5" width="11" height="11" rx="2"/><rect x="33.5" y="33.5" width="11" height="11" rx="2"/><rect class="r" x="47.5" y="33.5" width="11" height="11" rx="2"/><rect x="19.5" y="47.5" width="11" height="11" rx="2"/><rect x="33.5" y="47.5" width="11" height="11" rx="2"/></g></g></svg><span>vibe<code>queue</code></span></a><nav class="tabs" aria-label="Main"><a class="tj" href="#jobs">Jobs<span class="n"><you></span></a><a class="tr" href="#recurring">Recurring</a><ext-link><a class="ts" href="#settings">Settings</a><help></nav><span class="stat"><status></span><span class="jacts"><actions></span></div></header>
 <main>
 <div id="jobs" class="page">
 <jobs>
@@ -268,7 +243,7 @@ body.can .wrow > .jacts { margin: 0; }
 <section id="recurring" class="page">
 <recurring>
 </section>
-<section id="workspaces" class="page">
+<section id="<ext-id>" class="page ext">
 <ext-tab>
 </section>
 <section id="settings" class="page">

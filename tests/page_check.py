@@ -93,7 +93,7 @@ with open(PAGE, encoding="utf-8") as f:
 # Two service cards, the first with a Place form.
 ROW = '<div class="wrow" id="ws-%s"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>%s</b></div>%s</div>'
 FORM = '<div class="jacts" data-name="one"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><button data-act="ws-start">Start</button></span></div>'
-edit(lambda h: re.sub(r'(<section id="workspaces" class="page">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
+edit(lambda h: re.sub(r'(<section id="workspaces" class="page ext">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
 
 # A block S for the select checks.
 edit(lambda h: h.replace('<div class="pblocks">\n', '<div class="pblocks">\n<div class="blk" id="job-S" hidden><div class="bh"><h2>S</h2></div></div>\n', 1))

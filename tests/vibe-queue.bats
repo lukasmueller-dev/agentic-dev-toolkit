@@ -453,7 +453,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   [ "$(grep -o '<div class="row"' "$f" | wc -l)" -eq 1 ]
   grep -qF '<div class="row" data-k="research/lr"><i class="lamp l-bad"></i><a class="t" href="#job-research/lr"><b>lr <span class="n">2 of 4 items</span></b><span class="why">h3 · paste · Research · proj</span></a></div>' "$f"
   grep -qF '<div class="blk" id="job-research/lr" hidden><div class="bh"><i class="lamp l-bad"></i><span class="st" title="One of its items needs your answer or your check.">Needs you</span><h2>lr <span class="n">2 of 4 items</span></h2><code class="meta">proj · Research</code></div><div class="job lane research s-blocked">' "$f"
-  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>needs you · paste h3 · h2 on runpod</p><p>h3 · paste</p><div class="jacts" data-research="lr">' "$f"
+  grep -qF '<p>Does a wider net help &amp; by how much?</p><p class="stats">best 0.84 (h4) · $1.20 of $50 · deadline 2026-11-18 09:00</p><p>needs you · paste h3 · h2 on runpod</p><p>h3 · paste</p><div class="jacts" data-slug="lr">' "$f"
   # The order: h4 builds on h1, so it sits below it, one level in.
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h1style=--d:1 data-hid=h4style=--d:0 data-hid=h2style=--d:0 data-hid=h3' ]
   grep -qF '<div class="wk" style="--d:0" data-hid="h2"><i class="lamp l-ok"></i><span class="wh"><b>h2</b> <span class="n">Running · runpod</span></span><span class="wm">$1.20</span><p>wider net</p><p class="stats">run on runpod</p></div>' "$f"
@@ -503,7 +503,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   grep -qF '<div class="job lane research s-held"><div class="top"><b>lr · 3 of 4 items</b><span class="pill">Drained</span>' "$f"
   grep -qF '<span class="st" title="No new run starts: the state line says why.">Drained</span>' "$f"
   # A drained question loses Stop question and keeps Stop now while h2 runs; Archive waits for each job to end.
-  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-stop-now" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
+  grep -qF '<div class="jacts" data-slug="lr"><button data-act="research-stop-now" data-verb="Stopping…" data-confirm title="Cut every run now">Stop now</button></div>' "$f"
   rm "$c/drain" "$h2/drain"
   st="$XDG_STATE_HOME/vibe/workspaces/research-${h2##*/}" t=$(($(date +%s) + 3600))
   mkdir -p "$st" && echo "$t" >"$st/limit"
@@ -562,14 +562,14 @@ rpage() { "$VIBE" queue page >/dev/null; }
   echo drain >"$c/drain" && echo https://github.com/o/proj/pull/5 >"$c/pr"
   line "done"
   grep -qF '<a class="btn" href="https://github.com/o/proj/pull/5" target="_blank" rel="noopener">Open PR ↗</a>' "$f"
-  grep -qF 'data-act="research-archive"' "$f"
+  grep -qF 'data-act="research-archive" data-verb="Archiving…"' "$f"
   rm "$c/drain" "$c/pr"
   # A coordinator that `vibe queue stop` ended needs no answer: the question drained, the newest run says why.
   echo failed >"$c/status" && echo stopped >"$c/note" && touch "$c/stop"
   mkdir -p "$c/run" && echo vast >"$c/run/place" && echo 124 >"$c/run/exit"
   line 'drained · run at its limit · on vast'
   # No run lives: Archive alone.
-  grep -qF '<div class="jacts" data-research="lr"><button data-act="research-archive" data-confirm>Archive</button></div>' "$f"
+  grep -qF '<div class="jacts" data-slug="lr"><button data-act="research-archive" data-verb="Archiving…" data-confirm>Archive</button></div>' "$f"
   # The agent writes run/place: other text than runpod or vast gives the job's place=.
   printf 'evil|x\033]0;t\007\n' >"$c/run/place"
   line 'drained · run at its limit · on turing'
@@ -619,7 +619,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   rpage
   grep -qF 'best 0.84 (h4) · ' "$f"
   # Session 2 of h2: a follow-up job on the same hid, queued, with its own cost.
-  rjob "$Q" "${h2##*/}-gpu" queued "$r" research/lr/h2 research=lr hid=h2 place=runpod "idea=wider net" builds=root follow=1 "parent=${h2##*/}"
+  rjob "$Q" "${h2##*/}-gpu" queued "$r" research/lr/h2 research=lr card=research hid=h2 place=runpod "idea=wider net" builds=root follow=1 "parent=${h2##*/}"
   echo 0.30 >"$h2-gpu/cost"
   echo "done" >"$h2/status"
   rpage
@@ -634,7 +634,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   r="$(make_repo proj)"
   research_fixture "$Q" "$r"
   echo 0.19 >"$c/cost"
-  rjob "$Q" "${c##*/}-gpu" "done" "$r" research/lr research=lr usd=50
+  rjob "$Q" "${c##*/}-gpu" "done" "$r" research/lr research=lr card=research usd=50
   echo 0.05 >"$c-gpu/cost"
   [[ "$("$VIBE" queue status)" == *'$1.44 of $50'* ]] || false
   # h2's box is up an hour at 2 USD/h: its cost file holds the gate's reservation of 1.20.
@@ -722,7 +722,7 @@ rpage() { "$VIBE" queue page >/dev/null; }
   sed -i.bak 's/^builds=.*/builds=h3/' "$Q"/*-h1/job
   sed -i.bak 's/^builds=.*/builds=h1/' "$Q"/*-h3/job
   sed -i.bak 's/^builds=.*/builds=h2/' "$Q"/*-h2/job
-  rjob "$Q" 20261117-100500-proj-research-lr-h5 queued "$r" research/lr/h5 research=lr hid=h5 place=turing idea=x builds=h9
+  rjob "$Q" 20261117-100500-proj-research-lr-h5 queued "$r" research/lr/h5 research=lr card=research hid=h5 place=turing idea=x builds=h9
   rpage
   [ "$(grep -o 'style="--d:[0-9]" data-hid="[a-z0-9]*"' "$f" | tr -d '"\n')" = 'style=--d:0 data-hid=h2style=--d:0 data-hid=h5style=--d:0 data-hid=h1style=--d:0 data-hid=h3style=--d:0 data-hid=h4' ]
   # h3 is in the cycle: its paste field is on the page.
@@ -3666,7 +3666,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$output" = "queued ${j##*/}: worker h2 at runpod on research/q1/h2" ]
   [ "$(git -C "$r" rev-parse research/q1/h2)" = "$(git -C "$w" rev-parse HEAD)" ]
   [ "$(cat "$j/job")" = "$(printf '%s\n' "repo=$r" model=sonnet research=q1 usd=5 'deadline=2999-01-01 08:00' timeout=3h \
-    branch=research/q1/h2 'context=Research worker h2: warmup' hid=h2 place=runpod idea=warmup builds=h1 after= publish=push)" ]
+    branch=research/q1/h2 'context=Research worker h2: warmup' hid=h2 place=runpod idea=warmup builds=h1 after= publish=push card=research)" ]
   grep -qxF '# Agent job: Research worker h2: warmup' "$j/prompt.md"
   grep -qF -- "- **Repo / branch:** $r · \`research/q1/h2\`" "$j/prompt.md"
   grep -qF -- '- **Time limit:** 3h' "$j/prompt.md"
@@ -3794,7 +3794,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$(ls "$Q")" = "$(printf '%s\n' 01-a 01-c 02-w)" ]
 }
 
-@test "worker: a worker queued with no publish= gets publish=push at the pass, pushes its branch and opens no PR" {
+@test "worker: a worker queued with no publish= or card= gets publish=push and card=research at the pass, pushes its branch and opens no PR" {
   local r
   r="$(make_repo proj)"
   mkjob 02-w "$r" research/q1/h1 ok research=q1 hid=h1
@@ -3802,6 +3802,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ "$status" -eq 0 ]
   [ "$(cat "$Q/02-w/status")" = "done" ]
   grep -qx publish=push "$Q/02-w/job"
+  grep -qx card=research "$Q/02-w/job"
   git --git-dir="$BATS_TEST_TMPDIR/proj.git" rev-parse -q --verify research/q1/h1 >/dev/null
   touch "$STUBS/gh.log"
   [ "$(grep -c 'pr create' "$STUBS/gh.log" || true)" = 0 ]
@@ -4105,7 +4106,7 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   [ ! -e "$XDG_STATE_HOME/vibe/workspaces/research-01-a" ]
   VIBE_JOB_DIR="$Q/01-a-gpu" run "$VIBE" queue gpu -- true
   [ "$status" -ne 0 ]
-  [ "$output" = "vibe: research stopped (vibe queue stop --research --now): queue no run, finish the task" ]
+  [ "$output" = "vibe: this job is stopped (drain=now): queue no run, finish the task" ]
 }
 
 @test "close: past deadline= and over usd=, a slurm worker's session 2 and the coordinator's close session still run" {

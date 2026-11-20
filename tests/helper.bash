@@ -122,20 +122,20 @@ rjob() {
 # h4 turing, done, 0.84, builds on h1. Spent $1.20 of $50; best 0.84 (h4); state line `needs you · paste h3 · h2 on runpod`.
 research_fixture() {
   local q="$1" r="$2" w="research-lr"
-  rjob "$q" 20261117-100000-proj-$w "done" "$r" research/lr "research=lr" "question=Does a wider net help & by how much?" \
+  rjob "$q" 20261117-100000-proj-$w "done" "$r" research/lr "research=lr" card=research "question=Does a wider net help & by how much?" \
     "usd=50" "workers=3" "better=higher" "deadline=2026-11-18 09:00"
   echo "done: baseline row" >"$q/20261117-100000-proj-$w/note"
-  rjob "$q" 20261117-100100-proj-$w-h1 "done" "$r" research/lr/h1 "research=lr" "hid=h1" "place=turing" "idea=baseline" "builds=root"
+  rjob "$q" 20261117-100100-proj-$w-h1 "done" "$r" research/lr/h1 "research=lr" card=research "hid=h1" "place=turing" "idea=baseline" "builds=root"
   echo '{"metric": 0.81}' >"$q/20261117-100100-proj-$w-h1/run-result"
   echo 0 >"$q/20261117-100100-proj-$w-h1/cost"
   echo "done: row written" >"$q/20261117-100100-proj-$w-h1/note"
-  rjob "$q" 20261117-100200-proj-$w-h2 gpu "$r" research/lr/h2 "research=lr" "hid=h2" "place=runpod" "idea=wider net" "builds=root"
+  rjob "$q" 20261117-100200-proj-$w-h2 gpu "$r" research/lr/h2 "research=lr" card=research "hid=h2" "place=runpod" "idea=wider net" "builds=root"
   echo 1.20 >"$q/20261117-100200-proj-$w-h2/cost"
   echo "queued: run on runpod" >"$q/20261117-100200-proj-$w-h2/note"
-  rjob "$q" 20261117-100300-proj-$w-h3 blocked "$r" research/lr/h3 "research=lr" "hid=h3" "place=slurm" "idea=lr 3e-4" "builds=root"
+  rjob "$q" 20261117-100300-proj-$w-h3 blocked "$r" research/lr/h3 "research=lr" card=research "hid=h3" "place=slurm" "idea=lr 3e-4" "builds=root"
   printf '1. git fetch the commit\n2. sbatch runs/h3/job.sbatch\n3. print the RESULT line\n' >"$q/20261117-100300-proj-$w-h3/paste.md"
   echo "blocked: paste 3 steps on the cluster" >"$q/20261117-100300-proj-$w-h3/note"
-  rjob "$q" 20261117-100400-proj-$w-h4 "done" "$r" research/lr/h4 "research=lr" "hid=h4" "place=turing" "idea=baseline + warmup" "builds=h1"
+  rjob "$q" 20261117-100400-proj-$w-h4 "done" "$r" research/lr/h4 "research=lr" card=research "hid=h4" "place=turing" "idea=baseline + warmup" "builds=h1"
   echo '{"metric": 0.84, "n": 3}' >"$q/20261117-100400-proj-$w-h4/run-result"
   echo 0 >"$q/20261117-100400-proj-$w-h4/cost"
   echo "done: row written" >"$q/20261117-100400-proj-$w-h4/note"

@@ -13,8 +13,8 @@
   /* The real nodes, held at load; in a fetched page, a path from body: a .md in #queue can hold any class, never a child of main. */
   const main = $('body > main'), jobs = $('body > main > #jobs'), panel = $('body > main > #panel'), blocks = $('body > main > #panel > .pblocks');
   const pout = $('body > main > #panel > .pout'), none = $('body > main > #panel > .pnone'), msg = $('.pmsg', pout), pbody = $('.pbody', pout);
-  /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. */
-  const parts = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > #workspaces', 'body > main > #recurring'].map(s => [s, $(s), $(s).innerHTML]);
+  /* [path, live node, its HTML at the last fetch]: open folds and the shown block change the live HTML. No extension tab: no .tw. */
+  const parts = ['body > header > .bar > nav > .tj > .n', 'body > header > .bar > .stat', 'body > header > .bar > .jacts', 'body > main > #jobs', 'body > main > #settings', 'body > main > #panel > .pblocks', 'body > header > .bar > nav > .tw', 'body > main > .ext', 'body > main > #recurring'].filter(s => $(s)).map(s => [s, $(s), $(s).innerHTML]);
   /* A fold's key: its nearest data-k (a section) or id (a block), then its place among that node's folds. */
   const key = d => { const k = d.closest('[data-k], [id]'); return (k.dataset.k || k.id) + '#' + [...k.querySelectorAll('details')].indexOf(d); };
   /* A select's default: the option marked selected, else the first. */
@@ -56,9 +56,8 @@
     });
     return kept;
   };
-  /* A write's verb while its buttons stay off. */
-  const VERB = { now: 'Starting…', retry: 'Starting…', run: 'Starting…', 'ws-start': 'Starting…', archive: 'Archiving…', 'feature-archive': 'Archiving…',
-    'research-archive': 'Archiving…', stop: 'Stopping…', 'research-stop': 'Stopping…', 'research-stop-now': 'Stopping…', 'ws-stop': 'Stopping…',
+  /* A write's verb while its buttons stay off; an extension's button names its own (data-verb). */
+  const VERB = { now: 'Starting…', retry: 'Starting…', run: 'Starting…', archive: 'Archiving…', 'feature-archive': 'Archiving…', stop: 'Stopping…',
     cancel: 'Cancelling…', 'gpu-cancel': 'Cancelling…', restart: 'Restarting…', 'server-restart': 'Restarting…', pause: 'Pausing…', resume: 'Resuming…',
     hold: 'Holding…', answer: 'Sending…', steer: 'Sending…', noreview: 'Skipping…', 'feature-ready': 'Marking ready…', reset: 'Resetting…',
     unlimit: 'Clearing…', conf: 'Saving…' };
@@ -121,10 +120,10 @@
         doc = n;
         [...pend].forEach(p => { if (p.done && sig(n, p) !== p.was) drop(p); }); /* in flight: a running job's row changes each minute */
         for (const p of parts) {
-          const [s, live, was] = p, h = $(s, n).innerHTML;
-          if (h === was) continue;
-          if (live === blocks) { if (swapBlocks($(s, n))) kept = true; else p[2] = h; continue; }
-          if (held(live)) { if (swapIn(live, $(s, n))) kept = true; else p[2] = h; continue; } /* kept: the next poll tries again */
+          const [s, live, was] = p, x = $(s, n), h = x && x.innerHTML;
+          if (!x || h === was) continue;
+          if (live === blocks) { if (swapBlocks(x)) kept = true; else p[2] = h; continue; }
+          if (held(live)) { if (swapIn(live, x)) kept = true; else p[2] = h; continue; } /* kept: the next poll tries again */
           const open = [...live.querySelectorAll('details[open]')].map(key);
           live.innerHTML = h; p[2] = h;
           live.querySelectorAll('details').forEach(d => { d.open = open.includes(key(d)); });
@@ -234,7 +233,7 @@
     b.classList.remove('armed'); /* the poll after the write may swap again */
     /* data-id, data-pr, data-repo, data-feature, data-job, data-server, data-name; then the fields */
     const args = Object.assign({}, card && card.dataset, vals), act = b.dataset.act;
-    const p = { act, key: jkey(card), label: b.textContent.replace('Tap again: ', ''), verb: VERB[act] || 'Sent…' };
+    const p = { act, key: jkey(card), label: b.textContent.replace('Tap again: ', ''), verb: b.dataset.verb || VERB[act] || 'Sent…' };
     p.was = doc ? sig(doc, p) : null;
     pend.push(p); mark(p, true);
     const v = out(p.label, (args.repo || '').split('/').pop() || args.id || args.name || args.server || '');
