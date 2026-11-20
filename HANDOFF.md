@@ -14,11 +14,11 @@
 
 ## State
 
-Milestones 1 to 3 are done. `extensions/research/research` owns `vibe ws`, tool jobs, place runs and the research lifecycle (the engine list, `queue worker`, `stop --research`, `archive --research`). `vibe` sends every event of `docs/vibe-extensions.md` but `status` and `report`. Left in `bin/vibe`: the card list, `branch_ok`, `pr_check`, the `research=` readers that `card=` replaces, and the `drain=now` text of `cmd_queue_gpu`.
+Milestones 1 to 4 are done. `bin/vibe`, `bin/vibe-web` and the page name no research or workspace term. `extensions/research/research` owns `vibe ws`, tool jobs, place runs, the research lifecycle and the research card, status and report; `docs/vibe-extensions.md` is the contract as built. The tests still hold research and `ws` cases in `tests/vibe-queue.bats`, `tests/vibe-web.bats` and `tests/helper.bash`.
 
 ## Next action
 
-Milestone 4 of `SPEC.md`: move the research card, status, report and web routes behind the contract (the card list and the site map rows left in `docs/vibe-extensions.md`). Wire `card=`, `status`, `report`, `branch`, `route` and `wip`. Done when `grep -ciE 'research|workspace' bin/vibe bin/vibe-web templates/queue-page.html templates/queue-page.js` prints 0 for each file and `bats tests/vibe-queue.bats tests/vibe-web.bats` pass.
+Milestone 5 of `SPEC.md`: move the research and `ws` tests, helpers (`research_fixture`, `wsfold`, the research stub modes) and stub modes into their own files; they pass with `extensions/research/` copied outside the checkout. Done when `grep -ci research tests/vibe-queue.bats tests/vibe-web.bats tests/helper.bash` prints 0 for each file and `bats tests/` passes.
 
 ## Blockers
 
@@ -27,13 +27,14 @@ None.
 ## Gotchas (unpromoted)
 
 - Two research jobs are live until 2026-11-22 20:00: the branch must not merge while a research run is live.
-- Two shortcuts carry jobs from before this branch: `ev_pass` writes `publish=push` into a `hid=` job, and `run_alive` takes a ` queue run --` fork. Drop both once no such job is left.
-- `card=` is not written yet: the extension must write `card=research` at `add` (coordinator) and in `cmd_worker`; archived research jobs have no `card=`, so `report_rows` and `triage_archive` must still find them.
-- `research_row` holds the `archived_costs` awk inline and its own `RESEARCH_WORKERS=3`; both go with the card list.
-- `research_cost` and `research_line` read the live box through `vibe ws box <job>` (`run_box`). The card milestone removes it.
+- Three shortcuts carry jobs from before this branch: `ev_pass` writes `publish=push` into a `hid=` job and `card=research` into a `research=` job, and `run_alive` takes a ` queue run --` fork. Drop them once no such job is left.
+- A hand-written research job in a test needs `card=research`, else it sits in its repo group: `research_fixture` writes it.
+- The `tab` lines of every extension go into one tab, named by the first `title` line.
+- `vibe-web` reads extension routes once at its start (`vibe ext lines route`): the module's `ROUTES` holds the built-in ones only.
 - A place run is a fork of the extension's `pass` event: `run_alive` matches `*/research event pass`. `$WS_STATES/run.<job id>` holds a copy of the run pid until `run/exit` exists.
 - Research tests in `tests/vibe-queue.bats` pick the stub `claude` mode from prompt lines (`CLAUDE.md`, "Before committing").
 - A suite run inside a queue job inherits `VIBE_JOB_DIR`: `vibe queue gpu` in a test then writes `gpu-cmd` into the live job dir. `unset VIBE_JOB_DIR` in setup.
 - The extension executable must not read stdin at `describe` or `event`: `ext_call` gives it `/dev/null`.
 - `tests/vibe-queue.bats` runs about 3 times slower in this worktree than in a `git clone` under `$TMPDIR` (7 min there): run the full file in a clone.
 - `vibe-web.bats` fails `routes skip and skip-undo` and `route server-remove` on the base commit too: not this branch.
+- `shellcheck` fails SC2016 on `tests/install.bats` line 14 on the base commit too (local shellcheck version).
