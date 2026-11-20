@@ -375,13 +375,13 @@ suite in a `git clone` in `mktemp -d` (other sessions share `$TMPDIR`); add file
 **`bats -j 8` fails 5 review and verify tests in `vibe-queue.bats` and the gpu=yes lock-wait test in `vibe-ws.bats` under load.**
 Run those two files without `-j`.
 
-**The page.js test in `vibe-web.bats` skips inside the agent sandbox: full Chrome does not start there.**
+**The page.js test in `research-web.bats` skips inside the agent sandbox: full Chrome does not start there.**
 Set `VIBE_TEST_BROWSER` to the Playwright `chrome-headless-shell` under `~/.cache/ms-playwright/`.
 For screenshots, set `PAGE_SHOTS=<dir>`: `tests/page_check.py` writes the page at 2560×1440, 1440×900 and 390×844 there.
 
-**A bare `wait` in `vibe-web.bats` hangs: setup's `vibe-web` is a background job too.** Wait on a pid.
+**A bare `wait` in `vibe-web.bats` or `research-web.bats` hangs: setup's `vibe-web` is a background job too.** Wait on a pid.
 
-**Research tests in `vibe-queue.bats` take the wrong stub mode when a prompt block holds `## GPU run finished` or `## Worker finished`.**
+**Tests in `research-queue.bats` take the wrong stub mode when a prompt block holds `## GPU run finished` or `## Worker finished`.**
 The stub `claude` picks its mode from those lines; keep them out of `skills/fill-queue/references/research*.md`.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
