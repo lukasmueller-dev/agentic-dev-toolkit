@@ -334,11 +334,11 @@ cmd_update_toolkit() {
   units="claude/systemd" # each unit is linked: a changed one needs daemon-reload
   before="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
-  wbefore="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
+  wbefore="$(git -C "$t" ls-tree -r HEAD -- bin/vibe-web extensions)"
   git -C "$t" pull -q --ff-only origin "$def" || die "pull failed — $t has diverged from origin/$def"
   after="$(git -C "$t" rev-parse -q --verify "HEAD:$units" || true)"
   rafter="$(git -C "$t" ls-tree HEAD -- bin/vibe skills/_lib/lib.sh)"
-  wafter="$(git -C "$t" ls-tree HEAD -- bin/vibe-web)"
+  wafter="$(git -C "$t" ls-tree -r HEAD -- bin/vibe-web extensions)"
   echo "toolkit at $(git -C "$t" log -1 --format='%h %s')"
   "$t/install.sh" || die "install.sh failed"
   "$t/install.sh" doctor || die "doctor reports problems"
@@ -363,6 +363,7 @@ cmd_update_toolkit() {
     systemctl --user restart vibe-queue.service
     echo "runner restarted: vibe-queue.service"
   fi
+  # vibe-web reads its extension routes at its start: a change to extensions/ restarts it too.
   if [[ "$wbefore" != "$wafter" ]] && grep -qx server "$HOME/.config/vibe/role" 2>/dev/null; then
     if systemctl --user try-restart vibe-web.service; then
       echo "page endpoint restarted if it was running: vibe-web.service"
