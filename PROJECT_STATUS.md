@@ -5,7 +5,7 @@
 > snapshot, not a log — git history is the log, so finished work is removed
 > rather than archived here.
 
-_Last updated: 2026-11-18 · queue-page-v2_
+_Last updated: 2026-11-20 · extension-seam_
 
 ## Goal
 
@@ -20,6 +20,10 @@ contract and the installer's auto-discovery rules.
 
 ## Key decisions
 
+- 2026-11-20: **research and `vibe ws` run as a `vibe` extension**: one
+  executable, `extensions/research/research`, behind commands, events, job keys
+  and files; the queue names no research term. The move to its own repo is a
+  roadmap item. Contract: `docs/vibe-extensions.md`; decisions: PR for `extension-seam`.
 - 2026-11-19: **agent tools come as Claude Code plugins from the baseline**:
   RunPod and Vast.ai pinned upstream, W&B MCP from `claude/marketplace/`; keys in
   `~/.config/vibe/secrets.env` (+ `secrets/<repo>.env`); `ask` guard on GPU CLIs.

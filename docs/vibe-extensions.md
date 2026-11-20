@@ -3,8 +3,9 @@
 An extension is one executable that owns `vibe` commands and hears queue events.
 The queue names no extension term. With no extension, `vibe` works, and an extension command prints one error line.
 
-Status: `vibe`, `vibe-web` and the page name no research or workspace term.
 `extensions/research/research` owns `vibe ws`, tool jobs, place runs, the research lifecycle and the research card, status and report.
+`vibe`, `vibe-web` and the page name no research or workspace term; CI fails on one.
+Tests: `tests/vibe-ext.bats` holds the contract with stub extensions. The research suites run the extension from a copy outside the checkout (`research_ext` in `tests/research.bash`).
 
 ## Discovery
 
@@ -97,7 +98,7 @@ At `follow`, `<to>` holds `job` and `prompt.md` (kind `gpu`: `job` only) and the
 In a block, `<job-buttons <job id>>` becomes that job's `job_buttons`.
 A button sets `data-verb` for its progress text; `page.js` falls back to its own `VERB` table.
 
-The spec names stop, archive and retry as events. They need none:
+Stop, archive and retry need no event:
 
 - stop: `queue stop --research` is a passed command; a running tool job reads the `stop` file.
 - archive: `queue archive --research` is a passed command; it archives with `vibe queue archive <id>...`.
