@@ -146,13 +146,31 @@ EOF
   grep -q "^alpha event pass " "$LOG"
 }
 
-@test "the research stub owns no command and is silent at an event" {
-  run "$REPO_ROOT/extensions/research/research" describe
+@test "the research extension owns ws and queue gpu --place, is silent at an event it does not hear; with none, each prints one error line" {
+  local x="$REPO_ROOT/extensions/research/research" tk="$BATS_TEST_TMPDIR/tk"
+  VIBE_BIN="$VIBE" VIBE_STATE="$XDG_STATE_HOME/vibe" run "$x" describe
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "command ws" ]
+  [ "${lines[1]}" = "command queue gpu --place" ]
+  VIBE_BIN="$VIBE" VIBE_STATE="$XDG_STATE_HOME/vibe" run "$x" event nosuch
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  run "$REPO_ROOT/extensions/research/research" event pass
-  [ "$status" -eq 0 ]
-  [ -z "$output" ]
-  run "$REPO_ROOT/extensions/research/research" nosuch
+  VIBE_BIN="$VIBE" VIBE_STATE="$XDG_STATE_HOME/vibe" run "$x" nosuch
   [ "$status" -eq 2 ]
+  run "$x" describe
+  [ "$status" -eq 2 ]
+  run "$VIBE" --help
+  grep -qF '  vibe ws stop <instance>         its stop script' <<<"$output"
+  mkdir -p "$tk/bin" "$tk/skills"
+  cp "$VIBE" "$tk/bin/vibe"
+  ln -s "$REPO_ROOT/skills/_lib" "$tk/skills/_lib"
+  run "$tk/bin/vibe" ws list
+  [ "$status" -eq 1 ]
+  [ "$output" = "vibe: unknown command 'ws' — vibe help" ]
+  mkdir -p "$BATS_TEST_TMPDIR/job" && touch "$BATS_TEST_TMPDIR/job/job"
+  VIBE_JOB_DIR="$BATS_TEST_TMPDIR/job" run "$tk/bin/vibe" queue gpu --place vast -- train
+  [ "$status" -eq 1 ]
+  [ "$output" = "vibe: usage: vibe queue gpu -- CMD..." ]
+  run "$tk/bin/vibe" --help
+  [[ "$output" != *"vibe ws"* ]] || false
 }

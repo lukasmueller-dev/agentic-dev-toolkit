@@ -3584,14 +3584,15 @@ refused() {
 }
 
 @test "gpu --place: vibe ws tick leaves an instance past its limit to the place run that owns it; a dead run's goes down" {
-  local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake-runner" pid
+  local r st="$XDG_STATE_HOME/vibe/workspaces/research-01-a" f="$BATS_TEST_TMPDIR/fake/research" pid
   places
   r="$(research_repo)"
   mkjob 01-a "$r" task-a ok
-  mkdir -p "$Q/01-a/run" "$st"
+  mkdir -p "$Q/01-a/run" "$st" "${f%/*}"
   printf '#!/bin/sh\nsleep 30\n' >"$f"
   chmod +x "$f"
-  "$f" queue run --claude &
+  # A place run is a fork of the research extension's pass event.
+  "$f" event pass &
   pid=$!
   echo "$pid" >"$Q/01-a/run/pid"
   echo runpod >"$st/place"
