@@ -18,6 +18,7 @@ global memory this repo installs into every agent) and
 | `completions/`| bash (`<cmd>.bash`) and zsh (`_<cmd>`) completion for a `bin/` CLI | No             |
 | `skills/`     | Agent Skills (`SKILL.md` is an open standard)       | No             |
 | `templates/`  | Documents the tools emit                            | No             |
+| `extensions/` | One `vibe` extension per folder, `extensions/<name>/<name>`; found in place by `vibe`, not installed ([`docs/vibe-extensions.md`](docs/vibe-extensions.md)) | No |
 | `workspaces/` | One folder per outside research tool, `_places/` one script per place; read in place by `vibe ws`, not installed ([`docs/workspaces.md`](docs/workspaces.md)) | No |
 | `memory/`     | Global memory installed into every agent            | No             |
 | `claude/`     | Claude Code config: settings, hooks, response style, systemd unit | Yes |
@@ -32,6 +33,9 @@ global memory this repo installs into every agent) and
 level; anything that only makes sense for one agent goes in that agent's
 directory. Before adding a file, ask which side it belongs on. A skill that
 names Claude Code in its trigger description has been put on the wrong side.
+
+`bin/vibe`, `bin/vibe-web` and the queue page name no research or workspace
+term: that code goes in an extension. CI and `tests/vibe-ext.bats` fail on one.
 
 `bin/` and `skills/` must stay where they are — live symlinks in `~/bin` and
 `~/.claude/skills` point at those paths.
@@ -383,6 +387,9 @@ For screenshots, set `PAGE_SHOTS=<dir>`: `tests/page_check.py` writes the page a
 
 **Tests in `research-queue.bats` take the wrong stub mode when a prompt block holds `## GPU run finished` or `## Worker finished`.**
 The stub `claude` picks its mode from those lines; keep them out of `skills/fill-queue/references/research*.md`.
+
+**A research test sees no extension route, or a job of its own in a repo group.**
+Call `research_ext` before `web_start` (`vibe-web` reads routes at its start); write the job with `research_fixture`, which adds `card=research`.
 
 **An empty read-only `.git/config.lock` in the main checkout is the sandbox's, not git's.**
 It is the sandbox's mount point for its write-deny on `.git/config`; no setting
