@@ -523,6 +523,15 @@ make_kit() {
   VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
   [ "$status" -eq 0 ]
   [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
+  # vibe-web reads its extension routes at its start: an extension change restarts it too.
+  rm "$STUBS/systemctl.log"
+  mkdir -p "$o/extensions/x" && echo one >"$o/extensions/x/x"
+  git -C "$o" add extensions
+  git -C "$o" commit -q -m "extension changed"
+  git -C "$o" push -q origin main
+  VIBE_TOOLKIT="$t" run "$VIBE" update-toolkit
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUBS/systemctl.log")" = "--user try-restart vibe-web.service" ]
 }
 
 @test "sync: leaves a behind toolkit checkout to update-toolkit" {
@@ -603,8 +612,13 @@ complete_vibe() {
   [ "$(complete_vibe job l)" = list ]
   [ "$(complete_vibe f)" = feature ]
   [ "$(complete_vibe feature r)" = ready ]
+  [ "$(complete_vibe e)" = ext ]
+  [ "$(complete_vibe ext l | tr '\n' ' ')" = "list lines " ]
+  # The extension words come from `vibe ext lines`: its command and help lines.
   [ "$(complete_vibe w)" = ws ]
   [ "$(complete_vibe ws st | tr '\n' ' ')" = "status start stop " ]
+  [ "$(complete_vibe queue stop --r)" = --research ]
+  [ "$(complete_vibe queue w)" = worker ]
   r="$(make_repo proj)"
   o="$(clone_repo proj other)"
   git -C "$o" push -q origin main:remote-task
@@ -640,6 +654,8 @@ zcomplete_vibe() {
   ln -s "$REPO_ROOT/bin/vibe" "$STUBS/vibe"
   [ "$(zcomplete_vibe status '')" = --claude ]
   [ "$(zcomplete_vibe ws '' | tr '\n' ' ')" = "list status build start stop tick " ]
+  zcomplete_vibe '' | grep -qx ext
+  [ "$(zcomplete_vibe queue stop '')" = --research ]
   local r
   r="$(make_repo zproj)"
   git -C "$r" branch zsh-task

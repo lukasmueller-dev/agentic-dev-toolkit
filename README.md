@@ -85,7 +85,7 @@ Then start a server per repo: [docs/remote-sessions.md](docs/remote-sessions.md)
 - [vendoring](docs/vendoring-external-skills.md) · [academic writing](docs/academic-writing.md)
   · [plugin](docs/plugin.md) · [SOTA digest](docs/sota-watch.md)
   · [research skills](docs/research-skills.md) · [vibe queue](docs/vibe-queue.md)
-  · [recurring jobs](docs/vibe-jobs.md) · [workspaces](docs/workspaces.md) · [pstack adapter](docs/pstack-adapter.md)
+  · [recurring jobs](docs/vibe-jobs.md) · [workspaces](docs/workspaces.md) · [vibe extensions](docs/vibe-extensions.md) · [pstack adapter](docs/pstack-adapter.md)
 - [CLAUDE.md](CLAUDE.md) — conventions for agents working *on* this repo
 
 ## Requirements

@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 #
 # vibe ws — the workspaces folder (VIBE_WORKSPACES, a temp one per test) and
-# the instance state files under $XDG_STATE_HOME/vibe/workspaces.
+# the instance state files under $XDG_STATE_HOME/vibe/workspaces. The extension runs from a copy outside the checkout.
 
 load helper
+load research
 
 VIBE="$REPO_ROOT/bin/vibe"
 
@@ -16,6 +17,7 @@ setup() {
   echo '#!/usr/bin/env bash' >"$VIBE_WORKSPACES/_places/turing"
   echo '# Workspaces' >"$VIBE_WORKSPACES/README.md"
   HEX=0123456789abcdef0123456789abcdef01234567
+  research_ext
 }
 
 # conf NAME LINE... — write NAME/workspace.conf, one LINE per line.

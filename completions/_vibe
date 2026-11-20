@@ -23,6 +23,20 @@ _vibe_agents() {
   compadd -a agents
 }
 
+# _vibe_ext — the next word of each extension command after the typed words: `vibe ext lines command`, and each
+# `vibe ...` line of `vibe ext lines help` up to its first <arg>, [option] or two spaces.
+_vibe_ext() {
+  (( ${+commands[vibe]} )) || return 0
+  local n=$(( CURRENT - 2 )) l
+  local -a w out
+  for l in ${(f)"$( { vibe ext lines command; vibe ext lines help | sed -n 's/^ *vibe //p' | sed -e 's/  .*//' -e 's/ [<[].*//'; } 2>/dev/null)"}; do
+    w=(${=l})
+    if (( $#w > n )) && [[ "${w[1,n]}" == "${words[2,CURRENT-1]}" ]]; then out+=("$w[n+1]"); fi
+  done
+  out=(${(u)out})
+  compadd -a out
+}
+
 _vibe() {
   if (( CURRENT == 2 )); then
     local -a verbs
@@ -30,11 +44,12 @@ _vibe() {
       'start:start a task in its own worktree'
       'sync:sync worktrees with the default branch'
       'status:show agent servers on this machine'
-      'ws:launch and stop outside research tools'
+      'ext:list extensions and their describe lines'
       'update-toolkit:pull, install and run doctor'
       'help:show usage'
     )
     _describe -t commands verb verbs
+    _vibe_ext
     return
   fi
   case "$words[2]" in
@@ -49,7 +64,8 @@ _vibe() {
       ;;
     sync) compadd -- --all --wip ;;
     status) _vibe_agents ;;
-    ws) (( CURRENT == 3 )) && compadd -- list status build start stop tick ;;
+    ext) (( CURRENT == 3 )) && compadd -- list lines ;;
+    *) _vibe_ext ;;
   esac
 }
 
