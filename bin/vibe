@@ -1768,8 +1768,11 @@ follow_dir() {
   fi
   cp "$1/prompt.md" "$tmp/prompt.md"
   if [[ -d "$1/in" ]]; then cp -R "$1/in" "$tmp/in"; fi
-  # No cut: an answer copies a tool run's out/, and a cut copy without tool-exit runs the paid tool again.
-  EXT_CUT=0 ext_event follow "$1" "$tmp" "$2" >/dev/null || true # each failure warned
+  # No cut, and a failure queues nothing: a partial copy of a tool run's out/ without tool-exit runs the paid tool again.
+  if ! EXT_CUT=0 ext_event follow "$1" "$tmp" "$2" >/dev/null; then
+    rm -rf "$tmp"
+    die "an extension failed at the follow-up of ${1##*/}: nothing queued"
+  fi
   echo "$tmp"
 }
 

@@ -276,3 +276,20 @@ STUB
   [[ "$output" == *"warning: extension bad: describe exit 1"* ]] || false
   [[ "$output" == *$'\nFOO.md'* || "$output" == "FOO.md"* ]] || false
 }
+
+@test "an extension that fails at follow stops vibe queue retry: no follow-up is queued, the old job stays" {
+  local q="$XDG_STATE_HOME/vibe/queue" f="$BATS_TEST_TMPDIR/ext/nofollow/nofollow"
+  mkdir -p "$q/01-a" "${f%/*}"
+  printf 'repo=%s\nbranch=a\n' "$BATS_TEST_TMPDIR" >"$q/01-a/job"
+  echo 'Do it.' >"$q/01-a/prompt.md"
+  echo failed >"$q/01-a/status"
+  # shellcheck disable=SC2016 # the stub's own $1 $2
+  printf '%s\n' '#!/usr/bin/env bash' 'if [ "$1 $2" = "event follow" ]; then exit 1; fi' >"$f"
+  chmod +x "$f"
+  echo "$f" >"$HOME/.config/vibe/extensions"
+  run "$VIBE" queue retry 01-a
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed at the follow-up of 01-a: nothing queued"* ]] || false
+  [ "$(ls "$q")" = 01-a ]
+  [ "$(cat "$q/01-a/status")" = failed ]
+}

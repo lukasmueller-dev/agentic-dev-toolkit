@@ -27,7 +27,7 @@ Status: `vibe`, `vibe-web` and the page name no research or workspace term.
 | `<ext> event <name> <args...>` | the queue reaches the event | per event, below; stdin is empty |
 
 `vibe` cuts `describe` after 10 s and an event after 60 s (`timeout -k 5`; 124: cut).
-`start` has no cut, because a tool run lasts hours. `follow` from `follow_dir` has no cut, because it copies a tool run's `out/`.
+`start` has no cut, because a tool run lasts hours. `follow` from `follow_dir` has no cut, because it copies a tool run's `out/`; a failure there queues nothing.
 Slow work, such as a `ws tick` over ssh, forks into its own process group (`set -m`) and returns at once: a cut signals the whole group of the call.
 
 Environment of each call:
@@ -63,7 +63,7 @@ Each extension hears each event. A non-zero exit warns with the extension name; 
 | `start <job>` | `job_run`, before the agent session; no cut | `prompt <file>`: the session runs on it; `end <status> <note>`: no session | the job ends failed |
 | `end <job>` | `job_run`, after a session with a `queued:` result | `run`: it took the session's run; `wait`: the job waits with no run; `end <status> <note>`: the job ends so | the job ends failed |
 | `answer <job> <text>` | `cmd_queue_answer` first; `cmd_queue_retry` with a note, when the job has no `HANDOFF.md` and is no lane side job | `handled [<message>]`: vibe prints the message and does nothing more | the answer stops; no warning, the extension's stderr says why |
-| `follow <from> <to> <kind>` | each follow-up job `vibe` makes: `follow_dir` (kind `answer`, `retry`, `fix`), `review_follow` (`review`), `cmd_queue_follow` (`gpu`, with `GPUQ_EXIT` and `GPUQ_LOG`) | `gpu`: `result <text>`, the Result line of the follow-up's prompt; it copies or drops its own files and keys in `<to>` | a warning |
+| `follow <from> <to> <kind>` | each follow-up job `vibe` makes: `follow_dir` (kind `answer`, `retry`, `fix`), `review_follow` (`review`), `cmd_queue_follow` (`gpu`, with `GPUQ_EXIT` and `GPUQ_LOG`) | `gpu`: `result <text>`, the Result line of the follow-up's prompt; it copies or drops its own files and keys in `<to>` | a warning; at `follow_dir` the command also stops and queues nothing |
 | `steer <job> <text>` | `cmd_queue_steer`, when the job has no session FIFO | `steered <name>` | 3: not supported; else: failed |
 | `holder` | `gpu_holder`, after the gpu-queue checks | the label of what holds the GPU | none |
 | `card <holder>` | `queue_web`, once per page write; `<holder>`: what holds the GPU (`gpu_holder`), may be empty | lines below | the card is missing |
