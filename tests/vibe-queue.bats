@@ -3671,6 +3671,8 @@ qjob() { find "$Q" -mindepth 1 -maxdepth 1 -name "*$1"; }
   grep -qF -- "- **Repo / branch:** $r · \`research/q1/h2\`" "$j/prompt.md"
   grep -qF -- '- **Time limit:** 3h' "$j/prompt.md"
   grep -qF "\`runs/h2/row.md\` holds the ledger row of the run" "$j/prompt.md"
+  # The extension renders job-prompt.md with its own copy of job_prompt: a slot vibe fills and it does not shows here.
+  no_slot "$j/prompt.md"
   VIBE_JOB_DIR="$Q/01-c" run "$VIBE" queue worker h1
   [ "$status" -eq 0 ]
   j="$(qjob -research-q1-h1)"

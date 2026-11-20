@@ -943,18 +943,6 @@ newjob() { find "$Q/queue" -mindepth 1 -maxdepth 1 ! -name "$ID" ! -name "$ID2";
 # qnew — the one queue dir there is.
 qnew() { find "$Q/queue" -mindepth 1 -maxdepth 1; }
 
-# no_slot PROMPT — true when no slot of job-prompt.md (title, `## Task`, the two templates) is left in PROMPT.
-no_slot() {
-  local s
-  while IFS= read -r s; do
-    if sed '/^## Output templates/q' "$1" | grep -qF -- "$s"; then
-      echo "slot left: $s"
-      return 1
-    fi
-  done < <(awk 'NR == 1 || /^## Task/ { on = 1 } /^## Rules/ { on = 0 } on' "$REPO_ROOT/skills/fill-queue/references/job-prompt.md" | grep -o '<[^>]*>')
-  ! grep -q '<the .* template, verbatim>' "$1"
-}
-
 @test "vibe queue new: every slot filled; refuses no done-when and a queued branch" {
   local r n
   r="$(make_repo proj)"
