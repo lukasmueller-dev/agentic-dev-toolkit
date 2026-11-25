@@ -5,7 +5,7 @@ WEB_DIR holds the page `vibe queue page` wrote, with blocked jobs A and B and th
 with steps, an ETA and a box end); it is served under /queue/ and changed in place, with a whoami,
 a GET writes and an Activity per job as static files; a POST gets its answer in ANSWERS after its delay. Prints one line per check; exits 1 when one fails, 77 when the browser does not
 start (a sandbox that refuses its sockets). PAGE_SHOTS=<dir>: screenshots at 2560x1440, 1440x900 and 390x844 go there.
-Used by tests/vibe-web.bats.
+Used by tests/research-web.bats.
 """
 import base64
 import functools
@@ -93,7 +93,7 @@ with open(PAGE, encoding="utf-8") as f:
 # Two service cards, the first with a Place form.
 ROW = '<div class="wrow" id="ws-%s"><div class="t"><span class="why"><i class="lamp l-off"></i>Off</span><b>%s</b></div>%s</div>'
 FORM = '<div class="jacts" data-name="one"><span class="ask"><label>Place<select name="place"><option>turing</option><option>runpod</option></select></label><button data-act="ws-start">Start</button></span></div>'
-edit(lambda h: re.sub(r'(<section id="workspaces" class="page">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
+edit(lambda h: re.sub(r'(<section id="workspaces" class="page ext">\n).*?(\n</section>)', lambda m: m.group(1) + '<section class="sec" aria-label="Services">' + ROW % ("one", "One", FORM) + ROW % ("two", "Two", "") + '</section>' + m.group(2), h, count=1, flags=re.S))
 
 # A block S for the select checks.
 edit(lambda h: h.replace('<div class="pblocks">\n', '<div class="pblocks">\n<div class="blk" id="job-S" hidden><div class="bh"><h2>S</h2></div></div>\n', 1))
@@ -247,7 +247,7 @@ try:
     js("location.hash = 'job-research/%s'" % RD)
     check("a drained research block shows", until("!%s.hidden" % DB, 2))
     check("a drained pill reads Drained, its lamp a ring with no fill", js("(() => { const l = getComputedStyle(%s.querySelector('.bh .lamp')); return %s.querySelector('.pill').textContent === 'Drained' && l.backgroundColor === 'rgba(0, 0, 0, 0)' && l.boxShadow !== 'none'; })()" % (DB, DB)))
-    check("a drained card has Stop now alone while its run lives", js("[...%s.querySelectorAll('[data-research] button')].map(b => b.dataset.act).join()" % DB) == "research-stop-now")
+    check("a drained card has Stop now alone while its run lives", js("[...%s.querySelectorAll('[data-slug] button')].map(b => b.dataset.act).join()" % DB) == "research-stop-now")
     # The five tabs on a desk: each hash tab shows its page alone and is marked; Help ↗ opens Page words.
     cdp("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
     check("whoami shows the buttons", until("document.body.classList.contains('can')", 12))

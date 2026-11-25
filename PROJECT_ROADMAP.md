@@ -5,7 +5,7 @@
 > discussion that produced it. A snapshot, not a log — finished items are
 > removed; their trail lives in git history and merged PRs.
 
-_Last updated: 2026-11-18 · runpod-first-run_
+_Last updated: 2026-11-20 · extension-seam_
 
 ## Items
 
@@ -18,6 +18,14 @@ staged straight from it. Order matters within a track; tracks are independent.
       apply the retro to `references/cards.md` as one commit.
       Done when NCBF's `PROJECT_STATUS.md` has the kit start date and the sim
       end-state date, and the cards carry the retro commit.
+
+- [ ] **Move the `research` extension to `agentic-research-toolkit`** —
+      `extensions/research/`, its suites (`research-*.bats`, `vibe-ws.bats`,
+      `ws-*.bats`, `research.bash`) and the toolkit files it reads from its
+      `../..` ([list](docs/vibe-extensions.md#calls)); the server finds it by
+      one `~/.config/vibe/extensions` line. Merge only when no research run is live.
+      Done when `test ! -e extensions/research` here, `vibe ext list` on the
+      server prints `research` with a path in that repo, and its suites pass there.
 
 ### Vibe queue follow-ups (design: PR for `job-review`)
 

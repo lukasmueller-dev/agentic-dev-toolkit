@@ -205,6 +205,8 @@ vibe queue ready --feature <slug>  # each member PR checked, then ready, then fe
 
 ## Research jobs
 
+The `research` extension runs research jobs, the research card, tool jobs and `vibe ws`: [contract](vibe-extensions.md). Without it, each of their commands prints one error line.
+
 An open question with a metric, a budget and a backlog of experiments runs as a coordinator job and parallel workers. The coordinator picks the next runs from the last results.
 `/enqueue` makes one: route Research. `/fill-queue` proposes up to 3 from each repo's open questions and metric items; a picked one goes through that route.
 
@@ -270,6 +272,8 @@ A job with `research=<slug>` is in no repo group: the page shows one card per sl
 - The `no PR` count of the status header skips a done research job with no PR.
 
 ## Tool jobs
+
+Run by the `research` extension ([Research jobs](#research-jobs)).
 
 An outside research tool (`kind=run` under `workspaces/`) does the first part of a job; a session closes its run.
 `/enqueue` makes one: route Tool run. Contract: [`docs/workspaces.md`](workspaces.md).
@@ -355,13 +359,13 @@ A tap posts to `/queue/api/<route>`; `bin/vibe-web` runs the route's one fixed a
 | Job panel, Files: a link | `GET job/<id>/<file>` | `report.md`, `pr.md`, `gate.log`, `result`, `note`, `out/report.md` as text; `log`, `tool.log`: the last 64 KB; `out/files`: its file list; a `.md` with `?html` rendered |
 | Feature, Test it yourself: Test passed ✓ | `feature-ready` | `vibe queue ready --feature <feature>` |
 | Feature, Ready to merge: Archive ✓ | `feature-archive` | `vibe feature archive <feature>` |
-| Research card, done: Archive ✓ | `research-archive` | `vibe queue archive --research <research>`: every job of the question, none unless each has ended |
-| Research card: Stop question | `research-stop` | `vibe queue stop --research <research>`: no new worker, each run finishes |
-| Research card: Stop now ✓ | `research-stop-now` | `vibe queue stop --research <research> --now` |
+| Research card, done: Archive ✓ | `research-archive` (extension route) | `vibe queue archive --research <slug>`: every job of the question, none unless each has ended |
+| Research card: Stop question | `research-stop` (extension route) | `vibe queue stop --research <slug>`: no new worker, each run finishes |
+| Research card: Stop now ✓ | `research-stop-now` (extension route) | `vibe queue stop --research <slug> --now` |
 | Research worker in `paste` or Has a question: Send answer | `answer` | `vibe queue answer <id> <text>` |
 | Research worker in `paste`: Copy | none: `page.js` | the step's text to the clipboard |
-| Workspaces: Start | `ws-start` | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
-| Workspaces: Stop ✓ | `ws-stop` | `vibe ws stop <name>` |
+| Workspaces: Start | `ws-start` (extension route) | `vibe ws start <name> [--place=<place>] [--hours=<hours>]` |
+| Workspaces: Stop ✓ | `ws-stop` (extension route) | `vibe ws stop <name>` |
 | Any write: the output | `GET writes` | `{"writes": <n>, "render": <true or false>}`: the writes that hold or wait for the lock; a render runs or waits |
 
 The output of a write, under the block:
@@ -392,7 +396,7 @@ Add a route or a button:
 
 | Path | Holds |
 | --- | --- |
-| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `research=` `usd=` `workers=` `hid=` `place=` `idea=` `builds=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
+| `queue/<id>/job`, `prompt.md` | `repo=` `branch=` `model=` `effort=` `timeout=` `deadline=` `research=` `usd=` `workers=` `hid=` `place=` `idea=` `builds=` `context=` `lane=` `item=` `now=` `follow=` `parent=` `after=` `review=` `review_model=` `verify=` `card=` `publish=` ([extension keys](vibe-extensions.md#job-keys-and-files)) `event=` (the PR comment or review it answers: [triage](vibe-jobs.md)), a tool job's keys ([Queue job](workspaces.md#queue-job)); the job prompt |
 | `queue/<id>/status`, `note` | `queued` `running` `gpu` `done` `blocked` `failed` `timeout` `skipped`; why |
 | `queue/<id>/worktree`, `base`, `log`, `pr`, `milestones` | worktree, base branch, agent stream-json, PR URL, open `SPEC.md` milestones at start |
 | `queue/<id>/agent/` | `$VIBE_JOB_DIR`, the one job-state dir the job sandbox may write; copies of `job`, `base`, `lane-pr.md`, `worktree`, `drain`, fresh each session; the asks `run/` and `workers` ([research](#research-jobs)); a tool job's closing session also gets `in/`, `out/`, `tool.log`, `tool-exit` |

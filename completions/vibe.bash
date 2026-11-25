@@ -25,19 +25,33 @@ _vibe_agents() {
   done
 }
 
-# _vibe_reply WORDS CUR — fill COMPREPLY without mapfile.
+# _vibe_ext — the next word of each extension command after the typed words: `vibe ext lines command`, and each
+# `vibe ...` line of `vibe ext lines help` up to its first <arg>, [option] or two spaces.
+_vibe_ext() {
+  local n=$((COMP_CWORD - 1))
+  local -a w
+  type -P vibe >/dev/null 2>&1 || return 0
+  {
+    vibe ext lines command
+    vibe ext lines help | sed -n 's/^ *vibe //p' | sed -e 's/  .*//' -e 's/ [<[].*//'
+  } 2>/dev/null | while read -r -a w; do
+    if ((${#w[@]} > n)) && [[ "${w[*]:0:n}" == "${COMP_WORDS[*]:1:n}" ]]; then echo "${w[n]}"; fi
+  done
+}
+
+# _vibe_reply WORDS CUR — fill COMPREPLY without mapfile, each word once.
 _vibe_reply() {
   local line
   COMPREPLY=()
   while IFS= read -r line; do
     [[ -n "$line" ]] && COMPREPLY+=("$line")
-  done < <(compgen -W "$1" -- "$2")
+  done < <(compgen -W "$1" -- "$2" | awk '!s[$0]++')
 }
 
 _vibe() {
   local cur="${COMP_WORDS[COMP_CWORD]}" prev="${COMP_WORDS[COMP_CWORD - 1]}" line
   if [[ "$COMP_CWORD" -eq 1 ]]; then
-    _vibe_reply "start sync status queue job feature ws server-remove update-toolkit help" "$cur"
+    _vibe_reply "start sync status queue job feature ext server-remove update-toolkit help $(_vibe_ext)" "$cur"
     return
   fi
   case "${COMP_WORDS[1]}" in
@@ -55,9 +69,9 @@ _vibe() {
     status) _vibe_reply "$(_vibe_agents)" "$cur" ;;
     queue)
       if [[ "$COMP_CWORD" -eq 2 ]]; then
-        _vibe_reply "status add new roadmap report hold archive pause resume page run conf unlimit set retry cancel stop steer answer fix ready merge-order" "$cur"
+        _vibe_reply "status add new roadmap report hold archive pause resume page run conf unlimit set retry cancel stop steer answer fix ready merge-order $(_vibe_ext)" "$cur"
       elif [[ "$cur" == -* ]]; then
-        _vibe_reply "$(_vibe_agents) --now --at --drain --research" "$cur"
+        _vibe_reply "$(_vibe_agents) --now --at --drain $(_vibe_ext)" "$cur"
       else
         COMPREPLY=()
         while IFS= read -r line; do COMPREPLY+=("$line"); done < <(compgen -d -- "$cur")
@@ -78,8 +92,8 @@ _vibe() {
         _vibe_reply "--all --dry --max --undo" "$cur"
       fi
       ;;
-    ws) if [[ "$COMP_CWORD" -eq 2 ]]; then _vibe_reply "list status build start stop tick" "$cur"; else COMPREPLY=(); fi ;;
-    *) COMPREPLY=() ;;
+    ext) if [[ "$COMP_CWORD" -eq 2 ]]; then _vibe_reply "list lines" "$cur"; else COMPREPLY=(); fi ;;
+    *) _vibe_reply "$(_vibe_ext)" "$cur" ;;
   esac
 }
 
